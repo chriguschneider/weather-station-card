@@ -41,10 +41,19 @@ test.describe('skeleton-first paint', () => {
         const hass = window.__wsc.createMock(fix);
         const card = await window.__wsc.mount(cfg, hass);
         const sr = (card as HTMLElement & { shadowRoot?: ShadowRoot | null }).shadowRoot!;
+        // Sample one gridline's namespace + bounding rect. The bug
+        // caught on first deploy: gridlines existed in the DOM but
+        // had no rendered dimensions because they were created via
+        // `html\`\`` instead of `svg\`\``, ending up in the HTML
+        // namespace where <line> renders nothing.
+        const firstGrid = sr.querySelector('svg.forecast-skeleton line.forecast-skeleton-grid');
+        const gridRect = firstGrid ? (firstGrid as SVGElement).getBoundingClientRect() : null;
         return {
           hasSkeletonSvg: !!sr.querySelector('svg.forecast-skeleton'),
           gridlineCount: sr.querySelectorAll('svg.forecast-skeleton line.forecast-skeleton-grid').length,
           axisCount: sr.querySelectorAll('svg.forecast-skeleton line.forecast-skeleton-axis').length,
+          gridFirstNamespace: firstGrid?.namespaceURI ?? null,
+          gridFirstRectHeight: gridRect ? gridRect.height : 0,
           hasCanvas: !!sr.querySelector('canvas#forecastChart'),
           hasLoadingDiv: !!sr.querySelector('.forecast-loading'),
         };
@@ -58,6 +67,14 @@ test.describe('skeleton-first paint', () => {
     // visibleBars from default config (buildBaseConfig sets
     // number_of_forecasts). gridlineCount = visibleBars - 1.
     expect(initialState.gridlineCount).toBeGreaterThan(0);
+    // Namespace must be SVG. HTML namespace would mean Lit created
+    // the elements via `html\`\``; they'd be present in the DOM but
+    // render nothing.
+    expect(initialState.gridFirstNamespace).toBe('http://www.w3.org/2000/svg');
+    // Rendered height > 0 confirms the line is actually painted
+    // with its full y1→y2 span, not collapsed to a 0-pixel HTML
+    // element.
+    expect(initialState.gridFirstRectHeight).toBeGreaterThan(10);
     expect(initialState.hasCanvas).toBe(false);
 
     // Now wait for the real chart to commit, then re-check.

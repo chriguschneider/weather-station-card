@@ -6,7 +6,7 @@
 // `chart_height` + `forecast.number_of_forecasts` so the dimensions
 // match the eventual chart and the swap doesn't reflow.
 
-import { html, type TemplateResult } from 'lit';
+import { html, svg, type TemplateResult, type SVGTemplateResult } from 'lit';
 
 export interface SkeletonOpts {
   chartHeight: number;
@@ -27,10 +27,18 @@ const LABEL_BAND_PX = 28;
 
 export function renderChartSkeleton({ chartHeight, visibleBars }: SkeletonOpts): TemplateResult {
   const cols = visibleBars > 0 ? visibleBars : FALLBACK_COLUMNS;
-  const gridlines: TemplateResult[] = [];
+  // Nested templates MUST use the `svg` tag (not `html`) so Lit
+  // creates elements in the SVG namespace. With `html`, the <line>
+  // is parsed as an unknown HTML element and renders nothing —
+  // exactly what bit us between v1.13 + Slice 1's first deploy:
+  // the inline axis line (in the outer html`<svg>...</svg>`)
+  // showed up because HTML5 parser handles foreign content for
+  // inline <svg>, but the array of `${gridlines}` was created with
+  // html`` outside that context and lost the namespace.
+  const gridlines: SVGTemplateResult[] = [];
   for (let i = 1; i < cols; i++) {
     const xPct = (i / cols) * 100;
-    gridlines.push(html`<line
+    gridlines.push(svg`<line
       class="forecast-skeleton-grid"
       x1="${xPct}%" y1="${LABEL_BAND_PX}"
       x2="${xPct}%" y2="${chartHeight}"
