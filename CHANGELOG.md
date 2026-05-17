@@ -12,6 +12,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   precipitation rate automatically — no extra toggle needed. To hide
   the row, set `show_precipitation: false` in YAML or flip the toggle
   off in the visual editor.
+- **Chart area shows a placeholder while data loads instead of a blank
+  box.** Right after opening the card on the dashboard, the chart
+  area now shows a faint grid that previews where columns will appear;
+  the real chart slides in once the weather data has finished loading.
+  Most noticeable when first opening the HA Companion app or
+  refreshing a browser tab. No layout shift when the chart commits —
+  the rows below stay put. No configuration change needed.
 
 ### Fixed
 - **Today's daily column no longer goes missing in the first quarter
