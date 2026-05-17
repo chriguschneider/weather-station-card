@@ -44,8 +44,9 @@ export async function openHarness(
 
 /** Mount a card into the harness with the given config + fixture.
  *  Returns once the card has rendered its canvas — i.e. the data
- *  sources have resolved their first emit and `_drawChart` has
- *  inserted the Chart.js canvas into the shadow tree. */
+ *  sources have resolved their first emit and the orchestrator's
+ *  drawChart has inserted the uPlot canvas into the shadow tree
+ *  (per ADR-0012; pre-slice-2 it was a Chart.js canvas). */
 export async function mount(
   page: Page,
   config: Record<string, unknown>,

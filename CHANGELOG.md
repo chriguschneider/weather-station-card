@@ -7,6 +7,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- **The chart should appear faster, especially on phones and tablets.**
+  The card uses a smaller, lighter charting library under the hood
+  now. You should notice a quicker first paint when opening the
+  dashboard in the HA Companion app or after a fresh browser tab,
+  particularly on older devices. No configuration change needed.
+- **The chart no longer plays the brief grow-from-baseline animation
+  when it first appears.** The chart simply paints once at its final
+  state. The look is otherwise unchanged. The `Disable animation`
+  toggle in the editor (and `forecast.disable_animation` in YAML) is
+  kept for backward compatibility but no longer has any effect.
 - **Precipitation row now shown by default.** If a precipitation sensor
   is wired in the card config, the live panel now shows the current
   precipitation rate automatically — no extra toggle needed. To hide

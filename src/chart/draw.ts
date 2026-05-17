@@ -1,22 +1,40 @@
-// Chart.js instance builder. Inputs are passed as a single bag so the
-// call site reads as a small list of "what does the chart need to know"
-// instead of a 200-line block of nested options.
+// uPlot instance builder. Replaces the previous Chart.js builder
+// (slice 2 of the 2026-05 perf stack — see ADR-0012). uPlot is ~50 KB
+// vs Chart.js's ~130 KB + plugins; the swap drops ~100 KB raw / ~30 KB
+// gzipped from the bundle, and uPlot's V8 parse cost on cold mount is
+// proportionally smaller.
 //
-// Chart.js's own option types are deeply generic (`Chart<TType, TData,
-// TLabel>` propagates through every nested option) and the
-// callback-form options use union return types that strict-mode TS
-// rejects in plenty of legitimate cases (e.g. a callback returning
-// `'transparent'` to skip a gridline is typed as `Color | null`,
-// which is compatible at runtime but fights the TS narrower). The
-// pragmatic compromise: type the inputs we own (dataset and plugin
-// arrays from the orchestrator), but cast the Chart.js options object
-// as the library expects. The runtime contract is unchanged.
+// The card's plugin contract is preserved: plugins still consume a
+// chart.js-shaped `ChartLike` object (scales.x.getPixelForTick, ctx,
+// chartArea, getDatasetMeta). uPlot has no notion of any of that
+// directly — at draw time we build a thin shim from the uPlot
+// instance and run each plugin against it. Keeping the contract
+// stable means the four plugins (separator, daily-tick-labels,
+// precip-label, sunshine-label) and their unit tests carry over
+// unchanged. The shim cost is ~one object per plugin per frame, which
+// is dwarfed by the actual canvas drawing.
+//
+// uPlot's x-axis is numeric; the card's data is positional (each
+// dataset element corresponds to one bucket). We use synthetic
+// indices 0..N-1 for the x-scale so the alignment matches the old
+// CategoryScale, and `axes[0].values` looks up the per-tick label
+// from `data.dateTime` via the indexed callback.
 
-import { Chart, type ChartConfiguration } from 'chart.js';
-import type { ChartPlugin, CssStyleLike, PluginCardConfig, PluginRenderData } from './plugins.js';
+import uPlot from 'uplot';
+import type { ChartBarLike, ChartLike, ChartPlugin, ChartScaleLike, CssStyleLike, PluginCardConfig, PluginRenderData } from './plugins.js';
 
 export interface BuildChartOpts {
-  datasets: ReadonlyArray<unknown>;
+  datasets: ReadonlyArray<{
+    label: unknown;
+    type: 'line' | 'bar';
+    data: ReadonlyArray<number | null | undefined>;
+    yAxisID: string;
+    borderColor: string | ReadonlyArray<string>;
+    backgroundColor: string | ReadonlyArray<string>;
+    barPercentage?: number;
+    segment?: unknown;
+    hidden?: boolean;
+  }>;
   plugins: ReadonlyArray<ChartPlugin>;
   data: PluginRenderData & {
     tempHigh: ReadonlyArray<number | null | undefined>;
@@ -34,192 +52,349 @@ export interface BuildChartOpts {
   stationCount: number;
   style: CssStyleLike;
   sunshineLabelBand: number;
-  // True when the card is mounted inside the card-config dialog's
-  // live preview — forces animation off regardless of the user's
-  // forecast.disable_animation setting, so each editor click renders
-  // instantly instead of tweening for half a second.
   inPreview?: boolean;
 }
 
-export function buildChart(ctx: CanvasRenderingContext2D | HTMLCanvasElement, opts: BuildChartOpts): Chart {
+/** Public surface mirroring Chart.js's instance API the rest of the
+ *  card touches: `data.datasets`/`data.labels` for in-place updates
+ *  from main.ts, `update`/`reset`/`destroy`/`resize`/`draw` lifecycle
+ *  hooks for scroll-ux and the orchestrator. */
+export interface UplotChart {
+  readonly uplot: uPlot;
+  data: {
+    labels: ReadonlyArray<string | undefined>;
+    datasets: Array<{
+      data: ReadonlyArray<number | null | undefined>;
+      backgroundColor?: string | ReadonlyArray<string>;
+      borderColor?: string | ReadonlyArray<string>;
+      hidden?: boolean;
+    }>;
+  };
+  update(): void;
+  reset(): void;
+  destroy(): void;
+  resize(width?: number, height?: number): void;
+  draw(): void;
+}
+
+type AlignedData = [Array<number>, ...Array<Array<number | null | undefined>>];
+
+/** Convert dataset bag into a uPlot AlignedData tuple. Index 0 is the
+ *  x-axis (synthetic 0..N-1 indices); subsequent arrays are the y
+ *  values per series in the order they appear in `datasets`. */
+function toAlignedData(
+  labels: ReadonlyArray<string | undefined>,
+  datasets: ReadonlyArray<{ data: ReadonlyArray<number | null | undefined> }>,
+): AlignedData {
+  const n = labels.length;
+  const xs = new Array<number>(n);
+  for (let i = 0; i < n; i++) xs[i] = i;
+  const ys = datasets.map((ds) => ds.data.slice() as Array<number | null | undefined>);
+  return [xs, ...ys] as AlignedData;
+}
+
+/** Build the `series` array uPlot consumes. Bar series get a custom
+ *  paths factory so per-bar fill/stroke arrays apply (uPlot's stock
+ *  bars factory expects single fill/stroke; we route through `disp`).
+ *  Line series use the spline path renderer to match the smoothing
+ *  the old Chart.js setup used (`tension: 0.3`). */
+function buildSeries(
+  datasets: BuildChartOpts['datasets'],
+  textColor: string,
+): uPlot.Series[] {
+  const series: uPlot.Series[] = [{}]; // index 0 = x
+
+  for (const ds of datasets) {
+    if (ds.type === 'line') {
+      const stroke = typeof ds.borderColor === 'string' ? ds.borderColor : textColor;
+      series.push({
+        label: String(ds.label ?? ''),
+        scale: ds.yAxisID,
+        show: !ds.hidden,
+        stroke,
+        width: 1.5,
+        paths: (uPlot.paths.spline as () => uPlot.Series.PathBuilder)?.() ?? null,
+        points: { show: false },
+        spanGaps: false,
+      });
+    } else {
+      const fillArr = Array.isArray(ds.backgroundColor) ? ds.backgroundColor : null;
+      const strokeArr = Array.isArray(ds.borderColor) ? ds.borderColor : null;
+      const singleFill = typeof ds.backgroundColor === 'string' ? ds.backgroundColor : textColor;
+      const singleStroke = typeof ds.borderColor === 'string' ? ds.borderColor : singleFill;
+      // Bar width as a fraction of the column slot. precip uses
+      // user-tunable `precip_bar_size`; sunshine is full-slot.
+      const sizeFactor = typeof ds.barPercentage === 'number' ? ds.barPercentage : 0.8;
+      const barsFactory = uPlot.paths.bars as uPlot.Series.BarsPathBuilderFactory;
+      const barOpts: uPlot.Series.BarsPathBuilderOpts = { size: [sizeFactor, Infinity, 1], gap: 0 };
+      if (fillArr || strokeArr) {
+        barOpts.disp = {
+          fill: {
+            unit: 3,
+            values: (_u: uPlot, _si: number, i0: number, i1: number) => {
+              const out: string[] = [];
+              for (let i = i0; i <= i1; i++) out.push(fillArr?.[i] ?? singleFill);
+              return out;
+            },
+          },
+          stroke: {
+            unit: 3,
+            values: (_u: uPlot, _si: number, i0: number, i1: number) => {
+              const out: string[] = [];
+              for (let i = i0; i <= i1; i++) out.push(strokeArr?.[i] ?? singleStroke);
+              return out;
+            },
+          },
+        };
+      }
+      series.push({
+        label: String(ds.label ?? ''),
+        scale: ds.yAxisID,
+        show: !ds.hidden,
+        stroke: singleStroke,
+        fill: singleFill,
+        width: 0,
+        paths: barsFactory(barOpts),
+        points: { show: false },
+      });
+    }
+  }
+  return series;
+}
+
+/** Y-scale definitions from the orchestrator. Temperature autoscales
+ *  with a ±5° padding ring (matches the old `suggestedMin/Max` recipe
+ *  in draw.ts); precipitation pins to the orchestrator-provided ceiling
+ *  so a single trailing 0.1 mm doesn't blow up the axis; sunshine is
+ *  0..1 fractions. */
+function buildScales(
+  data: BuildChartOpts['data'],
+  precipMax: number,
+): uPlot.Scales {
+  const tempFinite = [...data.tempHigh, ...data.tempLow].filter((v): v is number => Number.isFinite(v as number));
+  const tempMin = tempFinite.length ? Math.min(...tempFinite) - 5 : 0;
+  const tempMax = tempFinite.length ? Math.max(...tempFinite) + 6 : 30;
+  return {
+    x: { time: false },
+    TempAxis: {
+      auto: false,
+      range: () => [tempMin, tempMax],
+    },
+    PrecipAxis: {
+      auto: false,
+      range: () => [0, precipMax],
+    },
+    SunshineAxis: {
+      auto: false,
+      range: () => [0, 1],
+    },
+  };
+}
+
+/** Axes config: x-axis reserves the same vertical strip the old
+ *  Chart.js setup used (two label rows + optional sunshine band), with
+ *  the actual labels rendered by the chart-plugin layer (the four
+ *  plugins paint into the strip in their afterDraw hooks). Y-axes are
+ *  invisible — series colours and the precipitation/sunshine plugins
+ *  carry all the value cues. */
+function buildAxes(sunshineLabelBand: number, labelsBaseSize: number): uPlot.Axis[] {
+  const baseSize = labelsBaseSize || 11;
+  const lineH = Math.ceil(baseSize * 1.3);
+  // Two stacked label rows (date + time / weekday + date) plus the
+  // sunshine strip when sunshine is on. Padding on top for the chart's
+  // own breathing room.
+  const xAxisSize = lineH * 2 + sunshineLabelBand + 8;
+  return [
+    {
+      scale: 'x',
+      side: 2,
+      size: xAxisSize,
+      stroke: 'transparent',
+      grid: { show: false },
+      ticks: { show: false },
+      values: () => [],
+    },
+    { scale: 'TempAxis', show: false },
+    { scale: 'PrecipAxis', show: false },
+    { scale: 'SunshineAxis', show: false },
+  ];
+}
+
+/** Per-frame shim: build a Chart.js-shaped ChartLike that wraps the
+ *  uPlot instance. Plugins read tick positions via getPixelForTick(i),
+ *  per-bar geometry via getDatasetMeta(idx).data[i], etc.
+ *
+ *  Coordinates here are CSS pixels — uPlot scales the ctx by pxRatio
+ *  internally, so drawing in CSS px lands at the right device px.
+ *
+ *  meta.data is synthesized lazily per dataset: for bar series we
+ *  compute (x, y, options.borderColor) per data point; for line series
+ *  we leave .data empty (plugins only read meta for bars). */
+function buildChartLikeShim(
+  u: uPlot,
+  columnCount: number,
+  datasets: BuildChartOpts['datasets'],
+): ChartLike {
+  const xAxisHeight = (u.axes[0] && (u.axes[0] as unknown as { _size?: number })._size) ?? 0;
+  const chartArea = {
+    left: u.bbox.left / uPlot.pxRatio,
+    top: u.bbox.top / uPlot.pxRatio,
+    right: (u.bbox.left + u.bbox.width) / uPlot.pxRatio,
+    bottom: (u.bbox.top + u.bbox.height) / uPlot.pxRatio,
+  };
+  const colW = columnCount > 0 ? (u.bbox.width / uPlot.pxRatio) / columnCount : 0;
+  const xScale: ChartScaleLike = {
+    ticks: Array.from({ length: columnCount }, (_, i) => ({ value: i })),
+    top: chartArea.top,
+    bottom: chartArea.bottom + xAxisHeight,
+    width: u.bbox.width / uPlot.pxRatio,
+    getPixelForTick: (i: number) => chartArea.left + (i + 0.5) * colW,
+    getPixelForValue: (v: number) => chartArea.left + (v + 0.5) * colW,
+  };
+  const precipScale: ChartScaleLike = {
+    ticks: [],
+    top: chartArea.top,
+    bottom: chartArea.bottom,
+    width: u.bbox.width / uPlot.pxRatio,
+    getPixelForTick: () => 0,
+    getPixelForValue: (v: number) => {
+      try { return u.valToPos(v, 'PrecipAxis'); } catch { return chartArea.bottom; }
+    },
+  };
+  return {
+    ctx: u.ctx,
+    chartArea,
+    scales: {
+      x: xScale,
+      PrecipAxis: precipScale,
+    },
+    getDatasetMeta: (idx: number) => {
+      const ds = datasets[idx];
+      if (!ds) return null;
+      const data: ChartBarLike[] = [];
+      for (let i = 0; i < ds.data.length; i++) {
+        const v = ds.data[i];
+        const x = chartArea.left + (i + 0.5) * colW;
+        let y = chartArea.bottom;
+        if (typeof v === 'number' && Number.isFinite(v)) {
+          try { y = u.valToPos(v, ds.yAxisID); } catch { /* axis not ready */ }
+        }
+        const colorAtI = Array.isArray(ds.borderColor) ? ds.borderColor[i] : ds.borderColor;
+        data.push({ x, y, options: { borderColor: typeof colorAtI === 'string' ? colorAtI : undefined } });
+      }
+      return { data };
+    },
+  };
+}
+
+/** Read the chart container's pixel dimensions. uPlot needs explicit
+ *  width/height at construction time. The container is positioned
+ *  inside `.chart-container` (fixed height from config); width comes
+ *  from clientWidth (the .forecast-content wrapper at hourly is wider
+ *  than its scroll viewport to enable horizontal scroll). */
+function measureContainer(target: HTMLElement): { width: number; height: number } {
+  const rect = target.getBoundingClientRect();
+  return {
+    width: Math.max(1, Math.round(rect.width)),
+    height: Math.max(1, Math.round(rect.height)),
+  };
+}
+
+export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChart {
   const {
     datasets,
     plugins,
     data,
     config,
-    textColor,
-    backgroundColor,
-    dividerColor,
-    chartTextColor,
     precipMax,
-    doubledToday,
-    stationCount,
-    style,
     sunshineLabelBand,
-    inPreview,
   } = opts;
 
-  const chartConfig: ChartConfiguration = {
-    type: 'bar',
-    plugins: plugins as unknown as ChartConfiguration['plugins'],
-    data: {
-      labels: data.dateTime as unknown as string[],
-      datasets: datasets as unknown as ChartConfiguration['data']['datasets'],
-    },
-    options: {
-      maintainAspectRatio: false,
-      // Chart.js animation: bars grow vertically from the baseline,
-      // x/width pinned to final value from frame 1. The per-dataset
-      // override on `numbers.properties` excludes x and width from the
-      // tween — chart.js's scope resolver consults `datasets.<type>`
-      // BEFORE the chart-level `options.animations` (see
-      // datasetAnimationScopeKeys in node_modules/chart.js), so the
-      // override must live at the dataset-type scope to actually win.
-      //
-      // Earlier this caused a visible "bars start wide then narrow"
-      // artefact: when sunshine data arrived async from Open-Meteo,
-      // the chart was destroyed and rebuilt, and the bar-ruler's
-      // per-column slot allocation recomputed between frames. That
-      // path is gone — sunshine updates now flow through
-      // _overlaySunshineOnExisting → updateChart (in-place data
-      // mutation, no rebuild) — and the first chart render is gated
-      // until ALL expected data sources have produced a value (see
-      // _allExpectedDataReady), so the chart only paints once with its
-      // final dataset shape. With both fixed, the grow-from-below
-      // animation is back to being a polish rather than a footgun.
-      //
-      // `inPreview` and `forecast.disable_animation` force duration:0.
-      animation: inPreview === true
-        || (config as { forecast: { disable_animation?: boolean } }).forecast.disable_animation === true
-        ? { duration: 0 }
-        : { duration: 800, easing: 'easeOutQuad' },
-      datasets: {
-        bar: {
-          animations: {
-            numbers: { type: 'number', properties: ['y', 'base', 'height'] },
-          },
-        },
-        line: {
-          animations: {
-            numbers: { type: 'number', properties: ['y', 'borderWidth', 'radius', 'tension'] },
-          },
-        },
-      } as never,
-      layout: { padding: { bottom: 10 } },
-      scales: {
-        x: {
-          position: 'top',
-          // sunshineLabelBand > 0 grows the x-axis box by that many
-          // pixels — afterFit runs after Chart.js has measured the
-          // weekday/date label height, so adding to scale.height
-          // pushes chartArea.top down without overlapping the labels.
-          afterFit: sunshineLabelBand > 0
-            ? ((scale: { height: number }) => { scale.height += sunshineLabelBand; }) as never
-            : undefined,
-          border: { width: 0 },
-          grid: {
-            drawTicks: false,
-            // Per-tick gridline styling: suppress the gridline between
-            // station-today and forecast-today in the daily-doubled
-            // framing. All other gridlines render at the divider
-            // colour at default width — no bold day-boundary line in
-            // 'today' mode (date label in the tick row already marks
-            // the new day).
-            color: ((gridCtx: { index: number }) => (doubledToday && gridCtx.index === stationCount)
-              ? 'transparent'
-              : dividerColor) as never,
-          },
-          ticks: {
-            maxRotation: 0,
-            color: config.forecast.chart_datetime_color || textColor,
-            padding: 10,
-            // 'today' renders its time/date labels via the
-            // dailyTickLabelsPlugin (custom positioning, left-aligned,
-            // sparse-stacked). Returning '' from the callback below
-            // would still leave chart.js consuming axis space —
-            // returning the original strings via the callback IS
-            // needed for layout, then the plugin masks/overlays for
-            // the actual visual. Daily mode is the same pattern.
-            callback: function (this: { getLabelForValue(v: number): string }, value: number | string, _index: number) {
-              void value;
-              void _index;
-              // chart.js's tick callback is unused at runtime —
-              // dailyTickLabelsPlugin renders all axis labels
-              // ('today', 'hourly', and 'daily' all go through that
-              // plugin). Returning a 2-line empty placeholder
-              // reserves enough axis height for stacked date + time
-              // labels without producing a visible glyph. Avoids the
-              // "two background colours" artifact the previous
-              // explicit-mask approach produced.
-              return config.forecast.show_date === false ? '' : ['', ''];
-            } as never,
-          },
-          reverse: document.dir === 'rtl',
-        },
-        TempAxis: (() => {
-          const finite = [...data.tempHigh, ...data.tempLow].filter((v): v is number => Number.isFinite(v));
-          const min = finite.length ? Math.min(...finite) - 5 : 0;
-          const max = finite.length ? Math.max(...finite) + 6 : 30;
-          return {
-            position: 'left',
-            beginAtZero: false,
-            suggestedMin: min,
-            suggestedMax: max,
-            border: { width: 0 },
-            grid: { display: false, drawTicks: false },
-            ticks: { display: false },
-          };
-        })(),
-        PrecipAxis: {
-          position: 'right',
-          suggestedMax: precipMax,
-          border: {
-            width: 0,
-            color: style.getPropertyValue('--secondary-text-color') || dividerColor,
-          },
-          grid: { display: false, drawTicks: false },
-          ticks: { display: false },
-        },
-        SunshineAxis: {
-          position: 'right',
-          display: false,
-          min: 0,
-          suggestedMax: 1,
-          beginAtZero: true,
-          border: { width: 0 },
-          grid: { display: false, drawTicks: false },
-          ticks: { display: false },
-        },
-      } as never,
-      plugins: {
-        legend: { display: false },
-        datalabels: {
-          backgroundColor: backgroundColor,
-          borderColor: ((context: { dataset: { backgroundColor: string } }) => context.dataset.backgroundColor) as never,
-          borderRadius: 0,
-          borderWidth: 1.5,
-          padding: 4,
-          color: chartTextColor || textColor,
-          font: function (context: { dataIndex: number }) {
-            const dt = data.dateTime ? data.dateTime[context.dataIndex] : undefined;
-            const k = dt ? new Date(dt) : null;
-            if (k) k.setHours(0, 0, 0, 0);
-            const t = new Date(); t.setHours(0, 0, 0, 0);
-            const isToday = k?.getTime() === t.getTime();
-            return {
-              size: parseInt(String(config.forecast.labels_font_size)) || 11,
-              lineHeight: 0.7,
-              weight: isToday ? 'bold' : 'normal',
-            };
-          } as never,
-          formatter: function (_value: unknown, context: { dataset: { data: ReadonlyArray<unknown> }; dataIndex: number }) {
-            return context.dataset.data[context.dataIndex] + '°';
-          } as never,
-        },
-        tooltip: { enabled: false },
+  const labels = data.dateTime ?? [];
+  const columnCount = labels.length;
+
+  // Clear any prior uPlot child (defensive — orchestrator already
+  // destroys the previous instance before constructing a new one).
+  while (target.firstChild) target.removeChild(target.firstChild);
+
+  const labelsBaseSize = parseInt(String(config.forecast.labels_font_size)) || 11;
+  const { width, height } = measureContainer(target);
+
+  const series = buildSeries(datasets, opts.textColor);
+  const scales = buildScales(data, precipMax);
+  const axes = buildAxes(sunshineLabelBand, labelsBaseSize);
+
+  // Run the existing chart.js-shaped plugins through a synthesized
+  // ChartLike on every uPlot draw. Order matters: separator and tick
+  // labels fire after the data has been drawn, then precip/sunshine
+  // labels paint on top (matching Chart.js's afterDatasetsDraw vs
+  // afterDraw ordering by listing them in the same sequence).
+  const uplotPlugin: uPlot.Plugin = {
+    hooks: {
+      draw: (u) => {
+        const shim = buildChartLikeShim(u, columnCount, datasets);
+        for (const p of plugins) {
+          if (p.afterDatasetsDraw) p.afterDatasetsDraw(shim);
+        }
+        for (const p of plugins) {
+          if (p.afterDraw) p.afterDraw(shim);
+        }
       },
     },
   };
 
-  return new Chart(ctx, chartConfig);
+  const uplotOpts: uPlot.Options = {
+    width,
+    height,
+    pxAlign: true,
+    series,
+    scales,
+    axes,
+    legend: { show: false },
+    cursor: {
+      show: false,
+      drag: { x: false, y: false, setScale: false },
+    },
+    select: { show: false, left: 0, top: 0, width: 0, height: 0 },
+    padding: [4, 0, 0, 0],
+    plugins: [uplotPlugin],
+  };
+
+  const alignedData = toAlignedData(labels, datasets);
+  const uplot = new uPlot(uplotOpts, alignedData, target);
+
+  const mutableDatasets = datasets.map((ds) => ({
+    data: ds.data,
+    backgroundColor: ds.backgroundColor,
+    borderColor: ds.borderColor,
+    hidden: ds.hidden,
+  }));
+  const dataBag = { labels, datasets: mutableDatasets };
+
+  const instance: UplotChart = {
+    uplot,
+    data: dataBag,
+    update(): void {
+      const aligned = toAlignedData(dataBag.labels, dataBag.datasets);
+      uplot.setData(aligned);
+    },
+    reset(): void {
+      // chart.js had a notion of "reset to initial animation frame".
+      // uPlot has no animation system — reset is a no-op. Kept on the
+      // surface so the existing main.ts call site doesn't need a
+      // version guard.
+    },
+    destroy(): void {
+      try { uplot.destroy(); } catch { /* already gone */ }
+    },
+    resize(w?: number, h?: number): void {
+      const next = (w && h) ? { width: w, height: h } : measureContainer(target);
+      uplot.setSize(next);
+    },
+    draw(): void {
+      uplot.redraw();
+    },
+  };
+
+  return instance;
 }

@@ -83,35 +83,9 @@ import {
 import { drawChartUnsafe } from './chart/orchestrator.js';
 import { renderChartSkeleton } from './chart/skeleton.js';
 import { cardStyles } from './chart/styles.js';
-import {
-  Chart,
-  BarController,
-  LineController,
-  BarElement,
-  LineElement,
-  PointElement,
-  CategoryScale,
-  LinearScale,
-} from 'chart.js';
-import ChartDataLabels from 'chartjs-plugin-datalabels';
-// Selective registration instead of `...registerables`: the card only
-// draws bar (precip/sunshine) and line (temperature) datasets on a
-// category x-axis with linear y-axes. `registerables` references every
-// controller/scale/plugin chart.js ships, which pins them all against
-// tree-shaking. Built-in plugins (Legend, Tooltip, Filler, …) are
-// intentionally not registered — the card disables the legend/tooltip
-// and sets explicit colours, so their option blocks are inert without
-// registration.
-Chart.register(
-  BarController,
-  LineController,
-  BarElement,
-  LineElement,
-  PointElement,
-  CategoryScale,
-  LinearScale,
-  ChartDataLabels,
-);
+// Chart library: uPlot. Imported transitively via ./chart/draw.js —
+// there is no global registration step (uPlot has no plugin registry;
+// per-instance hooks/plugins are passed directly to the constructor).
 
 /** Card-side extension of `HassLike`. main.ts reads two fields the
  *  data-sources don't (`language`, `selectedLanguage`) — they pick
@@ -1597,6 +1571,11 @@ drawChart(args?: any): unknown[] | undefined {
       // animation consistent across the daily/today/hourly cycle — the
       // lazy-cache otherwise makes only some transitions perceptible.
       // disable_animation and the editor live-preview still suppress it.
+      // uPlot has no animation system, so the chart.js "reset+update
+      // to replay the grow-from-baseline animation" path is a no-op.
+      // The chart simply paints once at its final state. Per
+      // alignment.md the animation is an accepted casualty of the
+      // chart-library swap.
       if (this.config?.forecast?.disable_animation !== true && !this._isInPreview) {
         this.forecastChart.reset();
         this.forecastChart.update();
@@ -1821,7 +1800,7 @@ _onModeToggleClick(ev?: Event) {
             <div class="forecast-scroll ${scrolling ? 'scrolling' : ''}">
               <div class="forecast-content" style="width: ${contentWidthPct}%">
                 <div class="chart-container">
-                  <canvas id="forecastChart"></canvas>
+                  <div id="forecastChart"></div>
                 </div>
                 ${this.renderForecastConditionIcons()}
                 ${this.renderWind()}
