@@ -140,12 +140,24 @@ function buildSeries(
       const strokeArr = Array.isArray(ds.borderColor) ? ds.borderColor : null;
       const singleFill = typeof ds.backgroundColor === 'string' ? ds.backgroundColor : textColor;
       const singleStroke = typeof ds.borderColor === 'string' ? ds.borderColor : singleFill;
-      // When grouping multiple bar series side-by-side, each takes a
-      // 50%-of-slot share (precip on left, sunshine on right). When
-      // standalone, the dataset's barPercentage drives the centered
-      // width as before.
+      // When grouping multiple bar series side-by-side, each gets a
+      // 35%-of-slot sub-slot share (precip on left, sunshine on
+      // right) so the pair fits inside the column with breathing
+      // room around them — matches the Chart.js baseline (precip
+      // ~25 %, sunshine ~35 % of column, leaving small gaps at the
+      // slot edges and a small gap at the column centre between
+      // them).
+      //
+      // Standalone (no sunshine) bars use the full barPercentage of
+      // the slot directly, centered.
       const grouped = barCount > 1;
-      const sizeFactor = grouped ? 0.5 : (typeof ds.barPercentage === 'number' ? ds.barPercentage : 0.8);
+      const rawPct = typeof ds.barPercentage === 'number' ? ds.barPercentage : 0.8;
+      // Grouped: each bar caps at ~25 % of the column slot so the
+      // pair leaves visible gap on both sides AND between them —
+      // matches the Chart.js baseline (precip_bar_size default is
+      // 100 → barPercentage 1.0; without scaling the bars would fill
+      // their entire half-slot with no breathing room).
+      const sizeFactor = grouped ? Math.min(rawPct, 1) * 0.25 : rawPct;
       const align: -1 | 0 | 1 = grouped ? (barIdx === 0 ? -1 : 1) : 0;
       const barsFactory = uPlot.paths.bars as uPlot.Series.BarsPathBuilderFactory;
       const barOpts: uPlot.Series.BarsPathBuilderOpts = {
