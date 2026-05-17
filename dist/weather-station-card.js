@@ -344,10 +344,10 @@
           </div>
           `:nt`
           <div class="forecast-loading" style="height: ${t.forecast.chart_height}px">
-            ${function({chartHeight:t,visibleBars:e}){const n=e>0?e:8,s=[];for(let e=1;e<n;e++){const o=e/n*100;s.push(st`<line
+            ${function({chartHeight:t,visibleBars:e}){const n=e>0?e:8,s=t-2,o=[];for(let t=1;t<n;t++){const e=t/n*100;o.push(st`<line
       class="forecast-skeleton-grid"
-      x1="${o}%" y1="${28}"
-      x2="${o}%" y2="${t}"
+      x1="${e}%" y1="${28}"
+      x2="${e}%" y2="${s}"
     ></line>`)}return nt`
     <svg
       class="forecast-skeleton"
@@ -356,12 +356,12 @@
       role="presentation"
       aria-hidden="true"
     >
+      ${o}
       <line
         class="forecast-skeleton-axis"
-        x1="0" y1="${28}"
-        x2="100%" y2="${28}"
+        x1="0" y1="${s}"
+        x2="100%" y2="${s}"
       ></line>
-      ${s}
     </svg>
   `}({chartHeight:t.forecast.chart_height,visibleBars:r})}
           </div>
