@@ -104,12 +104,23 @@ function toAlignedData(
  *  paths factory so per-bar fill/stroke arrays apply (uPlot's stock
  *  bars factory expects single fill/stroke; we route through `disp`).
  *  Line series use the spline path renderer to match the smoothing
- *  the old Chart.js setup used (`tension: 0.3`). */
+ *  the old Chart.js setup used (`tension: 0.3`).
+ *
+ *  Multi-bar grouping: chart.js auto-grouped multiple bar datasets
+ *  side-by-side within a column slot. uPlot has no equivalent — all
+ *  bar series default to centered on the x value, so two datasets
+ *  overlap. We replicate the side-by-side look by alternating
+ *  `align: -1` (left half of slot) for the first bar series and
+ *  `align: 1` (right half) for the second, with `size: [0.5]` each.
+ *  Single-bar charts keep their full `barPercentage` width centered. */
 function buildSeries(
   datasets: BuildChartOpts['datasets'],
   textColor: string,
 ): uPlot.Series[] {
   const series: uPlot.Series[] = [{}]; // index 0 = x
+
+  const barCount = datasets.filter((d) => d.type === 'bar').length;
+  let barIdx = 0;
 
   for (const ds of datasets) {
     if (ds.type === 'line') {
@@ -129,11 +140,19 @@ function buildSeries(
       const strokeArr = Array.isArray(ds.borderColor) ? ds.borderColor : null;
       const singleFill = typeof ds.backgroundColor === 'string' ? ds.backgroundColor : textColor;
       const singleStroke = typeof ds.borderColor === 'string' ? ds.borderColor : singleFill;
-      // Bar width as a fraction of the column slot. precip uses
-      // user-tunable `precip_bar_size`; sunshine is full-slot.
-      const sizeFactor = typeof ds.barPercentage === 'number' ? ds.barPercentage : 0.8;
+      // When grouping multiple bar series side-by-side, each takes a
+      // 50%-of-slot share (precip on left, sunshine on right). When
+      // standalone, the dataset's barPercentage drives the centered
+      // width as before.
+      const grouped = barCount > 1;
+      const sizeFactor = grouped ? 0.5 : (typeof ds.barPercentage === 'number' ? ds.barPercentage : 0.8);
+      const align: -1 | 0 | 1 = grouped ? (barIdx === 0 ? -1 : 1) : 0;
       const barsFactory = uPlot.paths.bars as uPlot.Series.BarsPathBuilderFactory;
-      const barOpts: uPlot.Series.BarsPathBuilderOpts = { size: [sizeFactor, Infinity, 1], gap: 0 };
+      const barOpts: uPlot.Series.BarsPathBuilderOpts = {
+        size: [sizeFactor, Infinity, 1],
+        gap: 0,
+        align,
+      };
       if (fillArr || strokeArr) {
         barOpts.disp = {
           fill: {
@@ -164,6 +183,7 @@ function buildSeries(
         paths: barsFactory(barOpts),
         points: { show: false },
       });
+      barIdx++;
     }
   }
   return series;
