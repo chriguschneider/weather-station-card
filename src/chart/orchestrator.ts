@@ -549,9 +549,11 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
   });
 
   card._chartPhase = 'init';
+  const chartHeightPx = Number((config as { forecast: { chart_height?: number } }).forecast.chart_height) || 200;
   card.forecastChart = buildChart(chartTarget, {
     datasets: datasets as unknown as Parameters<typeof buildChart>[1]['datasets'],
     plugins,
+    chartHeight: chartHeightPx,
     data,
     config,
     textColor,

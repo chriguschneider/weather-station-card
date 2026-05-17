@@ -52,6 +52,13 @@ export interface BuildChartOpts {
   stationCount: number;
   style: CssStyleLike;
   sunshineLabelBand: number;
+  /** Chart-container height in CSS pixels (from `config.forecast.chart_height`).
+   *  Passed in explicitly because the chart-container's CSS height is set
+   *  inline at render time, but the inner `<div id="forecastChart">`
+   *  target may not have its computed CSS resolved at uPlot construction
+   *  time (Lit just committed the template; layout may still be settling).
+   *  uPlot needs an explicit numeric height up-front. */
+  chartHeight: number;
   inPreview?: boolean;
 }
 
@@ -196,7 +203,12 @@ function buildScales(
  *  the actual labels rendered by the chart-plugin layer (the four
  *  plugins paint into the strip in their afterDraw hooks). Y-axes are
  *  invisible — series colours and the precipitation/sunshine plugins
- *  carry all the value cues. */
+ *  carry all the value cues.
+ *
+ *  X-axis is at the TOP (side: 0) — preserves the Chart.js layout
+ *  (`position: 'top'`) so the daily-tick-labels plugin's `xScale.bottom -
+ *  N` coordinate math lands in the right band (just above the chart
+ *  drawing area). */
 function buildAxes(sunshineLabelBand: number, labelsBaseSize: number): uPlot.Axis[] {
   const baseSize = labelsBaseSize || 11;
   const lineH = Math.ceil(baseSize * 1.3);
@@ -207,7 +219,7 @@ function buildAxes(sunshineLabelBand: number, labelsBaseSize: number): uPlot.Axi
   return [
     {
       scale: 'x',
-      side: 2,
+      side: 0,
       size: xAxisSize,
       stroke: 'transparent',
       grid: { show: false },
@@ -235,7 +247,6 @@ function buildChartLikeShim(
   columnCount: number,
   datasets: BuildChartOpts['datasets'],
 ): ChartLike {
-  const xAxisHeight = (u.axes[0] && (u.axes[0] as unknown as { _size?: number })._size) ?? 0;
   const chartArea = {
     left: u.bbox.left / uPlot.pxRatio,
     top: u.bbox.top / uPlot.pxRatio,
@@ -243,10 +254,15 @@ function buildChartLikeShim(
     bottom: (u.bbox.top + u.bbox.height) / uPlot.pxRatio,
   };
   const colW = columnCount > 0 ? (u.bbox.width / uPlot.pxRatio) / columnCount : 0;
+  // X-axis lives ABOVE the chart drawing area (uPlot side: 0). The
+  // Chart.js plugins were written against that orientation
+  // (`position: 'top'`), so `xScale.top` is the canvas top (0) and
+  // `xScale.bottom` is the boundary between the label band and the
+  // plot area — i.e. chartArea.top.
   const xScale: ChartScaleLike = {
     ticks: Array.from({ length: columnCount }, (_, i) => ({ value: i })),
-    top: chartArea.top,
-    bottom: chartArea.bottom + xAxisHeight,
+    top: 0,
+    bottom: chartArea.top,
     width: u.bbox.width / uPlot.pxRatio,
     getPixelForTick: (i: number) => chartArea.left + (i + 0.5) * colW,
     getPixelForValue: (v: number) => chartArea.left + (v + 0.5) * colW,
@@ -288,16 +304,18 @@ function buildChartLikeShim(
 }
 
 /** Read the chart container's pixel dimensions. uPlot needs explicit
- *  width/height at construction time. The container is positioned
- *  inside `.chart-container` (fixed height from config); width comes
- *  from clientWidth (the .forecast-content wrapper at hourly is wider
- *  than its scroll viewport to enable horizontal scroll). */
-function measureContainer(target: HTMLElement): { width: number; height: number } {
-  const rect = target.getBoundingClientRect();
-  return {
-    width: Math.max(1, Math.round(rect.width)),
-    height: Math.max(1, Math.round(rect.height)),
-  };
+ *  width/height at construction time. Height is passed in from the
+ *  config (chart_height) because the inner div may not have layout
+ *  yet at construction; width is read from the parent
+ *  `.chart-container` (whose `width: 100%` resolves against
+ *  `.forecast-content`, which IS sized by the time drawChart fires).
+ *  Falls back to the target's own width if the container can't be
+ *  resolved. */
+function measureContainer(target: HTMLElement, chartHeight: number): { width: number; height: number } {
+  const container = target.closest('.chart-container') as HTMLElement | null;
+  const rect = (container ?? target).getBoundingClientRect();
+  const width = Math.max(1, Math.round(rect.width || target.getBoundingClientRect().width));
+  return { width, height: Math.max(1, chartHeight) };
 }
 
 export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChart {
@@ -318,7 +336,7 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
   while (target.firstChild) target.removeChild(target.firstChild);
 
   const labelsBaseSize = parseInt(String(config.forecast.labels_font_size)) || 11;
-  const { width, height } = measureContainer(target);
+  const { width, height } = measureContainer(target, opts.chartHeight);
 
   const series = buildSeries(datasets, opts.textColor);
   const scales = buildScales(data, precipMax);
@@ -388,7 +406,7 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
       try { uplot.destroy(); } catch { /* already gone */ }
     },
     resize(w?: number, h?: number): void {
-      const next = (w && h) ? { width: w, height: h } : measureContainer(target);
+      const next = (w && h) ? { width: w, height: h } : measureContainer(target, opts.chartHeight);
       uplot.setSize(next);
     },
     draw(): void {

@@ -196,6 +196,34 @@ export function cardStyles({
       width: 100%;
       direction: ltr;
     }
+    /* The uPlot chart target (per ADR-0012) — uPlot reads the
+     * target's getBoundingClientRect() at construction time to size
+     * its canvas, so a bare <div> with no dimensions would render at
+     * 0×0. Pin it to fill its .chart-container parent. uPlot then
+     * sizes its own canvas to the constructor-passed width/height,
+     * which we feed from measureContainer(target). The bare layout
+     * rules below let uPlot's absolute-positioned axis/over/under
+     * layers stack correctly without pulling in uPlot's full
+     * uPlot.min.css (which sets the .uplot root to width:min-content —
+     * that collapses our flex container). */
+    #forecastChart {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+    #forecastChart .u-wrap {
+      position: relative;
+    }
+    #forecastChart .u-over,
+    #forecastChart .u-under {
+      position: absolute;
+    }
+    #forecastChart .u-under {
+      overflow: hidden;
+    }
+    #forecastChart .u-axis {
+      position: absolute;
+    }
     /* Placeholder rendered while the data sources are still firing
      * their first callbacks. Keeps the chart-row height stable so the
      * page doesn't reflow when data lands. Inner <svg> draws a static
