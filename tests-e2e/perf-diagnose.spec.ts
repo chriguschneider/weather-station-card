@@ -37,6 +37,7 @@ test.describe('perf-diagnose', () => {
     await page.addInitScript(() => {
       (window as unknown as { __perfDiag: unknown }).__perfDiag = {
         longTasks: [] as Array<{ name: string; startTime: number; duration: number }>,
+        paint: [] as Array<{ name: string; startTime: number }>,
       };
       try {
         const obs = new PerformanceObserver((list) => {
@@ -51,6 +52,28 @@ test.describe('perf-diagnose', () => {
         obs.observe({ entryTypes: ['longtask'] });
       } catch {
         // longtask not supported in headless Chromium? leave list empty.
+      }
+      // Paint observer — captures first-paint and first-contentful-
+      // paint as soon as Chromium emits them. addInitScript runs
+      // before any document content, so the observer is installed
+      // before either entry could fire. The existing
+      // performance.getEntriesByType('paint') read in the spec
+      // returned [] in headless mode; buffering them in an init-
+      // script observer gives us the data the spec needs to compare
+      // chrome-paint (skeleton + live-panel) against canvas-paint
+      // (mount_ms).
+      try {
+        const paintObs = new PerformanceObserver((list) => {
+          for (const e of list.getEntries()) {
+            (window as unknown as { __perfDiag: { paint: unknown[] } }).__perfDiag.paint.push({
+              name: e.name,
+              startTime: e.startTime,
+            });
+          }
+        });
+        paintObs.observe({ entryTypes: ['paint'], buffered: true });
+      } catch {
+        // paint timing not supported — leave empty.
       }
     });
 
@@ -128,6 +151,15 @@ test.describe('perf-diagnose', () => {
       out.longTasks =
         (window as unknown as { __perfDiag?: { longTasks: unknown[] } }).__perfDiag
           ?.longTasks || [];
+      // Prefer the addInitScript-buffered paint observer over the
+      // direct getEntriesByType call (which returned empty in
+      // headless Chromium). If both have entries, the buffered one
+      // wins because it's guaranteed to have caught the events.
+      const bufferedPaint =
+        (window as unknown as { __perfDiag?: { paint: unknown[] } }).__perfDiag?.paint;
+      if (Array.isArray(bufferedPaint) && bufferedPaint.length > 0) {
+        out.paint = bufferedPaint;
+      }
       return out;
     });
 
@@ -214,7 +246,18 @@ test.describe('perf-diagnose', () => {
       JSON.stringify(summary, null, 2),
     );
 
+    // Pick out first-paint (FP) and first-contentful-paint (FCP)
+    // for the console line — these are the "card chrome visible"
+    // markers, distinct from mountToRendered_ms which waits for the
+    // chart canvas.
+    const fp = (summary.paint_entries as Array<{ name: string; startTime: number }>)
+      .find((e) => e.name === 'first-paint');
+    const fcp = (summary.paint_entries as Array<{ name: string; startTime: number }>)
+      .find((e) => e.name === 'first-contentful-paint');
+
     console.log('[perf-diagnose] mount_ms=', summary.mountToRendered_ms,
+      'fp_ms=', fp ? Math.round(fp.startTime) : null,
+      'fcp_ms=', fcp ? Math.round(fcp.startTime) : null,
       'heap_used_MB=', summary.heap_jsHeapUsedSize_MB,
       'nodes=', summary.nodes_count,
       'coverage_used_pct=', summary.coverage_pct_used,

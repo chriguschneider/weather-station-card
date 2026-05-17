@@ -198,12 +198,23 @@ export function cardStyles({
     }
     /* Placeholder rendered while the data sources are still firing
      * their first callbacks. Keeps the chart-row height stable so the
-     * page doesn't reflow when data lands. No spinner / text — the
-     * brief blank avoids any visible transition (scroll-state toggles,
-     * partial-data renders) between the placeholder and the final
-     * settled chart. */
+     * page doesn't reflow when data lands. Inner <svg> draws a static
+     * axis-frame (top baseline + N evenly-spaced vertical gridlines)
+     * so the user reads "chart on the way" rather than "card broken".
+     * The grid is non-interactive and disappears the moment the real
+     * chart commits — single swap, no fade. */
     .forecast-loading {
       width: 100%;
+    }
+    .forecast-skeleton {
+      display: block;
+      width: 100%;
+    }
+    .forecast-skeleton-axis,
+    .forecast-skeleton-grid {
+      stroke: var(--divider-color, rgba(127, 127, 127, 0.3));
+      stroke-width: 1;
+      shape-rendering: crispEdges;
     }
     .conditions {
       display: flex;
