@@ -342,9 +342,10 @@
               </button>
             `:""}
           </div>
-          `:nt`
-          <div class="forecast-loading" style="height: ${t.forecast.chart_height}px">
-            ${function({chartHeight:t,visibleBars:e}){const n=e>0?e:8,s=t-2,o=[];for(let t=1;t<n;t++){const e=t/n*100;o.push(st`<line
+          `:(()=>{const e=!1!==t.forecast.condition_icons,n=!1!==t.forecast.show_wind_forecast&&(!1!==t.forecast.show_wind_arrow||!1!==t.forecast.show_wind_speed),s=e?26:0,o=n?26:0;return nt`
+          <div class="forecast-loading">
+            <div class="chart-container">
+              ${function({chartHeight:t,visibleBars:e}){const n=e>0?e:8,s=t-2,o=[];for(let t=1;t<n;t++){const e=t/n*100;o.push(st`<line
       class="forecast-skeleton-grid"
       x1="${e}%" y1="${28}"
       x2="${e}%" y2="${s}"
@@ -364,8 +365,11 @@
       ></line>
     </svg>
   `}({chartHeight:t.forecast.chart_height,visibleBars:r})}
+            </div>
+            ${e?nt`<div class="conditions" style="height: ${s}px"></div>`:""}
+            ${n?nt`<div class="wind-details" style="height: ${o}px"></div>`:""}
           </div>
-          `}
+          `})()}
         </div>
       </ha-card>
     `}renderErrorBanner(){const t=[];return this._stationError&&t.push(`Statistics fetch failed: ${this._stationError}`),this._forecastError&&t.push(`Forecast unavailable: ${this._forecastError}`),this._chartError&&t.push(`Chart render failed: ${this._chartError}`),this._missingSensors?.length&&t.push(`Sensors unavailable: ${this._missingSensors.join(", ")}`),t.length?nt`

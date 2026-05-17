@@ -1840,14 +1840,40 @@ _onModeToggleClick(ev?: Event) {
               </button>
             ` : ''}
           </div>
-          ` : html`
-          <div class="forecast-loading" style="height: ${config.forecast.chart_height}px">
-            ${renderChartSkeleton({
-              chartHeight: config.forecast.chart_height,
-              visibleBars: visibleBars,
-            })}
+          ` : (() => {
+          // Compute which rows the data-ready branch WILL render so
+          // the loading state can reserve the same vertical space.
+          // Otherwise the swap pushes everything below the card down
+          // by ~50 px (conditions row + wind row).
+          const conditionsEnabled = config.forecast.condition_icons !== false;
+          const windEnabled = config.forecast.show_wind_forecast !== false
+            && (config.forecast.show_wind_arrow !== false
+              || config.forecast.show_wind_speed !== false);
+          // Heights match the eventual rendered rows (ha-icon 24 px
+          // + 2 px margin on .forecast-item for conditions; arrow +
+          // single-line speed text + 2 px margin for wind). If the
+          // wind text wraps to a second line on narrow columns the
+          // skeleton under-reserves by ~10 px; over-reserving more
+          // here would cause an upward shift in the common case.
+          const condH = conditionsEnabled ? 26 : 0;
+          const windH = windEnabled ? 26 : 0;
+          return html`
+          <div class="forecast-loading">
+            <div class="chart-container">
+              ${renderChartSkeleton({
+                chartHeight: config.forecast.chart_height,
+                visibleBars: visibleBars,
+              })}
+            </div>
+            ${conditionsEnabled
+              ? html`<div class="conditions" style="height: ${condH}px"></div>`
+              : ''}
+            ${windEnabled
+              ? html`<div class="wind-details" style="height: ${windH}px"></div>`
+              : ''}
           </div>
-          `}
+          `;
+          })()}
         </div>
       </ha-card>
     `;
