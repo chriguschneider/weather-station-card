@@ -32,3 +32,8 @@ export {
   createSunshineLabelPlugin,
   type SunshineLabelPluginOpts,
 } from './plugins/sunshine-label.js';
+
+export {
+  createTempLabelsPlugin,
+  type TempLabelsPluginOpts,
+} from './plugins/temp-labels.js';

@@ -34,6 +34,7 @@ import {
   createDailyTickLabelsPlugin,
   createPrecipLabelPlugin,
   createSunshineLabelPlugin,
+  createTempLabelsPlugin,
   type ChartPlugin,
   type CssStyleLike,
   type PluginCardConfig,
@@ -358,6 +359,8 @@ interface BuildPluginsArgs {
   showSunshineLabels: boolean;
   sunshineColor: string;
   sunshinePerBarColor: string[];
+  temp1Color: string;
+  temp2Color: string;
 }
 
 /** Compose the chart's plugin list. 'today' and 'hourly' skip the
@@ -372,6 +375,7 @@ function buildPlugins(args: BuildPluginsArgs): ChartPlugin[] {
     isHourly, doubledToday, sunshineLabelBand,
     precipUnit, precipPerBarColor, precipColor,
     showSunshineLabels, sunshineColor, sunshinePerBarColor,
+    temp1Color, temp2Color,
   } = args;
 
   const dailyTickLabelsPlugin = createDailyTickLabelsPlugin({
@@ -404,6 +408,15 @@ function buildPlugins(args: BuildPluginsArgs): ChartPlugin[] {
       bandHeight: sunshineLabelBand,
     }));
   }
+
+  // Per-point temperature value labels (style2 only). Plugin no-ops
+  // when forecast.style isn't 'style2'.
+  plugins.push(createTempLabelsPlugin({
+    config, data,
+    tempHighColor: temp1Color,
+    tempLowColor: temp2Color,
+    chartTextColor,
+  }));
 
   return plugins;
 }
@@ -546,6 +559,7 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
     isHourly, doubledToday, sunshineLabelBand,
     precipUnit, precipPerBarColor, precipColor,
     showSunshineLabels, sunshineColor, sunshinePerBarColor,
+    temp1Color, temp2Color,
   });
 
   card._chartPhase = 'init';

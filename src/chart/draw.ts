@@ -86,17 +86,60 @@ export interface UplotChart {
 
 type AlignedData = [Array<number>, ...Array<Array<number | null | undefined>>];
 
+/** Mask a line dataset's data into a station portion and a forecast
+ *  portion. Each portion is the same length as the original; entries
+ *  outside the portion become null so uPlot's spline path only
+ *  renders where the data is.
+ *
+ *  The forecast portion includes the LAST STATION INDEX (boundary)
+ *  too: the spline draws from station-today's value through forecast-
+ *  today's value with the forecast's dashed style. Without this, the
+ *  temp line has an obvious break at the doubled-today boundary —
+ *  the Chart.js segment.borderDash callback used to handle this
+ *  inline; with split series we replicate the connection by
+ *  overlapping by one point. The station portion still draws its
+ *  solid line up to and including the boundary point. */
+function splitLineSeriesData(
+  data: ReadonlyArray<number | null | undefined>,
+  stationCount: number,
+): { station: Array<number | null | undefined>; forecast: Array<number | null | undefined> } {
+  const n = data.length;
+  const station = new Array<number | null | undefined>(n);
+  const forecast = new Array<number | null | undefined>(n);
+  for (let i = 0; i < n; i++) {
+    station[i] = i < stationCount ? data[i] : null;
+    forecast[i] = i >= stationCount - 1 ? data[i] : null;
+  }
+  return { station, forecast };
+}
+
 /** Convert dataset bag into a uPlot AlignedData tuple. Index 0 is the
  *  x-axis (synthetic 0..N-1 indices); subsequent arrays are the y
- *  values per series in the order they appear in `datasets`. */
+ *  values per series.
+ *
+ *  Line datasets expand into TWO uPlot series each (station + forecast
+ *  portion, masked with nulls) so the forecast half can be styled
+ *  dashed via `series.dash`. Bar datasets stay one-to-one. The order
+ *  the shim relies on for `getDatasetMeta(i)` is the ORIGINAL
+ *  `datasets[i]` order — the split is internal to uPlot's view. */
 function toAlignedData(
   labels: ReadonlyArray<string | undefined>,
-  datasets: ReadonlyArray<{ data: ReadonlyArray<number | null | undefined> }>,
+  datasets: ReadonlyArray<{ data: ReadonlyArray<number | null | undefined>; type: 'line' | 'bar' }>,
+  stationCount: number,
+  hasBothBlocks: boolean,
 ): AlignedData {
   const n = labels.length;
   const xs = new Array<number>(n);
   for (let i = 0; i < n; i++) xs[i] = i;
-  const ys = datasets.map((ds) => ds.data.slice() as Array<number | null | undefined>);
+  const ys: Array<Array<number | null | undefined>> = [];
+  for (const ds of datasets) {
+    if (ds.type === 'line' && hasBothBlocks) {
+      const { station, forecast } = splitLineSeriesData(ds.data, stationCount);
+      ys.push(station, forecast);
+    } else {
+      ys.push(ds.data.slice() as Array<number | null | undefined>);
+    }
+  }
   return [xs, ...ys] as AlignedData;
 }
 
@@ -116,6 +159,7 @@ function toAlignedData(
 function buildSeries(
   datasets: BuildChartOpts['datasets'],
   textColor: string,
+  hasBothBlocks: boolean,
 ): uPlot.Series[] {
   const series: uPlot.Series[] = [{}]; // index 0 = x
 
@@ -125,16 +169,48 @@ function buildSeries(
   for (const ds of datasets) {
     if (ds.type === 'line') {
       const stroke = typeof ds.borderColor === 'string' ? ds.borderColor : textColor;
-      series.push({
-        label: String(ds.label ?? ''),
-        scale: ds.yAxisID,
-        show: !ds.hidden,
-        stroke,
-        width: 1.5,
-        paths: (uPlot.paths.spline as () => uPlot.Series.PathBuilder)?.() ?? null,
-        points: { show: false },
-        spanGaps: false,
-      });
+      const splineFactory = uPlot.paths.spline as () => uPlot.Series.PathBuilder;
+      // In combination modes, each temp line dataset emits TWO uPlot
+      // series (station + forecast portions, see toAlignedData's split).
+      // Forecast portion gets `dash: [6, 4]` — same dash Chart.js
+      // used for the segment.borderDash callback on forecast segments.
+      // Single-block modes (station-only / forecast-only) collapse to
+      // one series with no dash for station-only, dashed for
+      // forecast-only.
+      if (hasBothBlocks) {
+        series.push({
+          label: String(ds.label ?? ''),
+          scale: ds.yAxisID,
+          show: !ds.hidden,
+          stroke,
+          width: 1.5,
+          paths: splineFactory?.() ?? null,
+          points: { show: false },
+          spanGaps: false,
+        });
+        series.push({
+          label: '',
+          scale: ds.yAxisID,
+          show: !ds.hidden,
+          stroke,
+          width: 1.5,
+          dash: [6, 4],
+          paths: splineFactory?.() ?? null,
+          points: { show: false },
+          spanGaps: false,
+        });
+      } else {
+        series.push({
+          label: String(ds.label ?? ''),
+          scale: ds.yAxisID,
+          show: !ds.hidden,
+          stroke,
+          width: 1.5,
+          paths: splineFactory?.() ?? null,
+          points: { show: false },
+          spanGaps: false,
+        });
+      }
     } else {
       const fillArr = Array.isArray(ds.backgroundColor) ? ds.backgroundColor : null;
       const strokeArr = Array.isArray(ds.borderColor) ? ds.borderColor : null;
@@ -152,12 +228,14 @@ function buildSeries(
       // the slot directly, centered.
       const grouped = barCount > 1;
       const rawPct = typeof ds.barPercentage === 'number' ? ds.barPercentage : 0.8;
-      // Grouped: each bar caps at ~25 % of the column slot so the
-      // pair leaves visible gap on both sides AND between them —
-      // matches the Chart.js baseline (precip_bar_size default is
-      // 100 → barPercentage 1.0; without scaling the bars would fill
-      // their entire half-slot with no breathing room).
-      const sizeFactor = grouped ? Math.min(rawPct, 1) * 0.25 : rawPct;
+      // Grouped: each bar fills its half of the column — precip
+      // covers the left 50 %, sunshine the right 50 %, touching at
+      // the centre, reaching the column edges. Matches the visual
+      // expectation that "the grid is half precipitation, half
+      // sunshine per column". A dataset's `barPercentage` can shrink
+      // its half-slot share further (e.g. 0.8 → 40 %), but the
+      // default (1.0) gives the full 50/50 split.
+      const sizeFactor = grouped ? Math.min(rawPct, 1) * 0.5 : rawPct;
       const align: -1 | 0 | 1 = grouped ? (barIdx === 0 ? -1 : 1) : 0;
       const barsFactory = uPlot.paths.bars as uPlot.Series.BarsPathBuilderFactory;
       const barOpts: uPlot.Series.BarsPathBuilderOpts = {
@@ -211,8 +289,13 @@ function buildScales(
   precipMax: number,
 ): uPlot.Scales {
   const tempFinite = [...data.tempHigh, ...data.tempLow].filter((v): v is number => Number.isFinite(v as number));
-  const tempMin = tempFinite.length ? Math.min(...tempFinite) - 5 : 0;
-  const tempMax = tempFinite.length ? Math.max(...tempFinite) + 6 : 30;
+  // Extra headroom above tempMax leaves room for the style2 "X°"
+  // labels rendered above the high-temperature spline (the
+  // chartjs-plugin-datalabels positioning the labels above the line
+  // would crash into the date axis at the top of the chart
+  // otherwise). Same on the bottom for the low-temperature labels.
+  const tempMin = tempFinite.length ? Math.min(...tempFinite) - 8 : 0;
+  const tempMax = tempFinite.length ? Math.max(...tempFinite) + 9 : 30;
   return {
     x: { time: false },
     TempAxis: {
@@ -306,7 +389,25 @@ function buildChartLikeShim(
     width: u.bbox.width / uPlot.pxRatio,
     getPixelForTick: () => 0,
     getPixelForValue: (v: number) => {
+      // Anchor value-0 lookups to the actual chart-area bottom: the
+      // precip-label plugin uses this to position the "Xmm" boxes
+      // centered on the PrecipAxis baseline, and we want them sitting
+      // at the bottom of the chart. uPlot's valToPos(0, scale) can
+      // drift when the scale's range is contested by other series on
+      // the same y direction, so for the bar-baseline case we read it
+      // off the bbox directly.
+      if (v === 0) return chartArea.bottom;
       try { return u.valToPos(v, 'PrecipAxis'); } catch { return chartArea.bottom; }
+    },
+  };
+  const tempScale: ChartScaleLike = {
+    ticks: [],
+    top: chartArea.top,
+    bottom: chartArea.bottom,
+    width: u.bbox.width / uPlot.pxRatio,
+    getPixelForTick: () => 0,
+    getPixelForValue: (v: number) => {
+      try { return u.valToPos(v, 'TempAxis'); } catch { return chartArea.top; }
     },
   };
   return {
@@ -315,6 +416,7 @@ function buildChartLikeShim(
     scales: {
       x: xScale,
       PrecipAxis: precipScale,
+      TempAxis: tempScale,
     },
     getDatasetMeta: (idx: number) => {
       const ds = datasets[idx];
@@ -362,6 +464,9 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
 
   const labels = data.dateTime ?? [];
   const columnCount = labels.length;
+  const stationCount = opts.stationCount;
+  const lineCount = datasets.filter((d) => d.type === 'line').length;
+  const hasBothBlocks = stationCount > 0 && stationCount < columnCount && lineCount > 0;
 
   // Clear any prior uPlot child (defensive — orchestrator already
   // destroys the previous instance before constructing a new one).
@@ -370,7 +475,7 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
   const labelsBaseSize = parseInt(String(config.forecast.labels_font_size)) || 11;
   const { width, height } = measureContainer(target, opts.chartHeight);
 
-  const series = buildSeries(datasets, opts.textColor);
+  const series = buildSeries(datasets, opts.textColor, hasBothBlocks);
   const scales = buildScales(data, precipMax);
   const axes = buildAxes(sunshineLabelBand, labelsBaseSize);
 
@@ -406,11 +511,17 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
       drag: { x: false, y: false, setScale: false },
     },
     select: { show: false, left: 0, top: 0, width: 0, height: 0 },
-    padding: [4, 0, 0, 0],
+    // [top, right, bottom, left] in CSS pixels. Bottom 14 px is the
+    // breathing room the precip-label boxes need below the baseline —
+    // the boxes are centered on the PrecipAxis-0 line, so half their
+    // height (~8 px) sits below it. Without padding they clip into
+    // the canvas edge. Matches Chart.js's `layout.padding.bottom: 10`
+    // from the pre-uPlot setup.
+    padding: [4, 0, 14, 0],
     plugins: [uplotPlugin],
   };
 
-  const alignedData = toAlignedData(labels, datasets);
+  const alignedData = toAlignedData(labels, datasets, stationCount, hasBothBlocks);
   const uplot = new uPlot(uplotOpts, alignedData, target);
 
   const mutableDatasets = datasets.map((ds) => ({
@@ -425,7 +536,15 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
     uplot,
     data: dataBag,
     update(): void {
-      const aligned = toAlignedData(dataBag.labels, dataBag.datasets);
+      // dataBag.datasets is the original chart.js-shaped dataset list
+      // (one entry per logical dataset). toAlignedData re-splits line
+      // datasets into station+forecast portions at the current
+      // stationCount; bar datasets stay one-to-one.
+      const splitDatasets = dataBag.datasets.map((d, i) => ({
+        data: d.data,
+        type: datasets[i].type,
+      }));
+      const aligned = toAlignedData(dataBag.labels, splitDatasets, stationCount, hasBothBlocks);
       uplot.setData(aligned);
     },
     reset(): void {
