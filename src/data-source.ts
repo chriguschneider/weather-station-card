@@ -689,22 +689,9 @@ export class MeasuredDataSource {
         }
       }
 
-      // Station hourly: keep `temperature` as the bucket's MEAN (the
-      // pre-existing semantic — the "typical" hourly value). When the
-      // bucket carries a distinct MIN below the mean, emit it as
-      // `templow` too — the chart then renders the second blue spline
-      // representing the cold edge of the hour, matching how the
-      // forecast side renders when its provider emits both
-      // `temperature` and `templow`. When min ≥ mean (flat hour or
-      // missing data) templow is omitted so we don't draw a
-      // redundant overlapping line.
-      const stationTemplow = (tempMin != null && tempMean != null && tempMin < tempMean)
-        ? tempMin
-        : undefined;
       out.push({
         datetime: hourStart.toISOString(),
         temperature: tempMean,
-        ...(stationTemplow !== undefined ? { templow: stationTemplow } : {}),
         precipitation,
         wind_speed: windMean,
         wind_gust_speed: gustMax,

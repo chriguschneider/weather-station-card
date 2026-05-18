@@ -116,6 +116,15 @@ export function pickHourlyTickIndices(
 interface HourlyTempSeriesOpts {
   /** Round every value to integer °C / °F. */
   roundTemp?: boolean;
+  /** Use 3-hour rolling window to derive high/low instead of relying
+   *  on per-entry `templow`. Set true for hourly / today modes — the
+   *  source data (whether station bucket means or forecast provider
+   *  hourly values) often has only one temperature per hour, so a
+   *  rolling window over consecutive entries gives a meaningful
+   *  high/low pair to draw two lines from. Daily mode keeps the
+   *  per-entry `templow` from the provider (which IS the day-low
+   *  computed from full-day data, more accurate than a window). */
+  windowMode?: boolean;
 }
 
 interface HourlyTempSeriesResult {
@@ -160,19 +169,52 @@ export function hourlyTempSeries(
     return round ? Math.round(v) : v;
   };
 
+  const rawTemp: (number | null | undefined)[] = new Array(entries.length);
   const tempHigh: (number | null | undefined)[] = new Array(entries.length);
   const tempLow: (number | null | undefined)[] = new Array(entries.length);
   let anyHaveLow = false;
 
   for (let i = 0; i < entries.length; i++) {
     const d = entries[i] || {};
-    tempHigh[i] = r(d.temperature);
+    rawTemp[i] = r(d.temperature);
     if (typeof d.templow === 'undefined' || d.templow === null) {
       tempLow[i] = null;
     } else {
       tempLow[i] = r(d.templow);
       anyHaveLow = true;
     }
+  }
+
+  if (opts.windowMode === true) {
+    // Hourly / today mode: derive high/low for each entry from a
+    // 3-hour rolling window (entry i-1, i, i+1) of the raw
+    // temperature values. Works regardless of source — station's
+    // hourly bucket means and forecast's per-hour temperatures both
+    // produce a meaningful "warmest hour" and "coolest hour" of the
+    // 3-hour band around each chart column. Entries with NaN/null
+    // temperatures are skipped within the window so a missing hour
+    // doesn't collapse the high/low at neighbouring entries.
+    for (let i = 0; i < entries.length; i++) {
+      let hi: number | null = null;
+      let lo: number | null = null;
+      for (let j = Math.max(0, i - 1); j <= Math.min(entries.length - 1, i + 1); j++) {
+        const v = rawTemp[j];
+        if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+        hi = hi === null ? v : Math.max(hi, v);
+        lo = lo === null ? v : Math.min(lo, v);
+      }
+      tempHigh[i] = hi;
+      tempLow[i] = lo;
+    }
+    // tempLow non-null marker for the consumer: array length > 0
+    // and we always have a value when raw temp existed at i±1.
+    return { tempHigh, tempLow };
+  }
+
+  // Daily mode (default): tempHigh = per-entry temperature, tempLow
+  // = per-entry templow (when provided). Existing behavior preserved.
+  for (let i = 0; i < entries.length; i++) {
+    tempHigh[i] = rawTemp[i];
   }
   return {
     tempHigh,

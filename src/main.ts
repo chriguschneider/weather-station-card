@@ -1637,8 +1637,14 @@ drawChart(args?: any): unknown[] | undefined {
 computeForecastData({ config, forecastItems } = this) {
   const forecast = this.forecasts ? this.forecasts.slice(0, forecastItems) : [];
   const dateTime = forecast.map((d) => d.datetime);
+  const fcType = config.forecast?.type;
   const { tempHigh, tempLow } = hourlyTempSeries(forecast, {
     roundTemp: config.forecast.round_temp === true,
+    // Hourly / today: derive high/low from a 3-hour rolling window so
+    // the second blue spline shows up consistently across station AND
+    // forecast halves, regardless of whether the provider emits a
+    // per-hour `templow` (meteoswiss doesn't; openmeteo-hourly does).
+    windowMode: fcType === 'hourly' || fcType === 'today',
   });
   const precip = forecast.map((d) => d.precipitation);
   // Sunshine columns. Each entry has a normalized hours value (or null
