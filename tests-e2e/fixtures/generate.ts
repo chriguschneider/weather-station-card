@@ -285,7 +285,7 @@ function buildDailyForecast(days: number): Array<Record<string, unknown>> {
 }
 
 /** Build weather/subscribe_forecast hourly payload. */
-function buildHourlyForecast(hours: number): Array<Record<string, unknown>> {
+function buildHourlyForecast(hours: number, opts: { withTemplow?: boolean } = {}): Array<Record<string, unknown>> {
   const today = todayAnchor();
   // Future hours start at "now" (rounded to hour). For deterministic
   // baselines we anchor at fixture-day 18:00 (matching the test's
@@ -304,9 +304,10 @@ function buildHourlyForecast(hours: number): Array<Record<string, unknown>> {
     const date = new Date(start.getTime() + i * HOUR_MS);
     const hr = date.getHours();
     const isDay = hr >= 7 && hr <= 19;
-    return {
+    const t = tempAt(hr);
+    const entry: Record<string, unknown> = {
       datetime: date.toISOString(),
-      temperature: tempAt(hr),
+      temperature: t,
       precipitation: (hr >= 14 && hr <= 17) ? 0.5 : 0,
       wind_speed: windAt(hr),
       wind_bearing: 180,
@@ -314,6 +315,14 @@ function buildHourlyForecast(hours: number): Array<Record<string, unknown>> {
       humidity: 70,
       pressure: 1015,
     };
+    // Some forecast providers (e.g. meteoswiss, openmeteo-hourly mode)
+    // emit BOTH `temperature` and `templow` per hourly forecast bucket.
+    // The card renders that as two temperature lines instead of one —
+    // captured in the today-combination-templow render-modes baseline.
+    if (opts.withTemplow) {
+      entry.templow = round1(t - 1.2);
+    }
+    return entry;
   });
 }
 
@@ -376,6 +385,10 @@ interface FullFixtureOpts {
   hours?: number;
   /** Hours of hourly forecast data. Same reasoning. */
   forecastHours?: number;
+  /** True → hourly forecast carries BOTH `temperature` and `templow`
+   *  per bucket (mirrors meteoswiss / openmeteo-hourly providers).
+   *  The chart then renders two temperature lines instead of one. */
+  forecastWithTemplow?: boolean;
 }
 
 /** One-call composition for the common case: 7-day daily + 168-hour
@@ -395,7 +408,7 @@ export function buildFullFixture(opts: FullFixtureOpts = {}): FixtureBag {
     recorderDaily: buildDailyStats({ days }),
     recorderHourly: buildHourlyStats({ hours }),
     forecastDaily: buildDailyForecast(days),
-    forecastHourly: buildHourlyForecast(forecastHours),
+    forecastHourly: buildHourlyForecast(forecastHours, { withTemplow: opts.forecastWithTemplow }),
   };
 }
 

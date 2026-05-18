@@ -56,6 +56,12 @@ export function createTempLabelsPlugin(opts: TempLabelsPluginOpts): ChartPlugin 
     const tempScale = chart.scales[axisKey];
     if (!xScale || !tempScale?.getPixelForValue) return;
     const c = chart.ctx;
+    // No clamping or flipping — the y-axis scale is pre-padded by
+    // ~33 % at the bottom and ~22 % at the top (in draw.ts) so the
+    // line always renders with enough chart space around it for the
+    // label to fit on its preferred side of the dot. Works the
+    // same for negative temperatures because the padding is
+    // proportional to the data range, not absolute.
     c.save();
     c.textAlign = 'center';
     c.textBaseline = 'middle';
@@ -64,11 +70,6 @@ export function createTempLabelsPlugin(opts: TempLabelsPluginOpts): ChartPlugin 
       const v = values[i];
       if (v == null || !Number.isFinite(v)) continue;
       const x = xScale.getPixelForTick(i);
-      // Label sits at the line point's pixel position + small offset.
-      // No clamping — Chart.js didn't clamp either; a label that
-      // lands just above the chart drawing area (because the high
-      // value is near the scale top) flows into the date band by
-      // design, which is what the baseline screenshots show.
       const y = tempScale.getPixelForValue(v) + offsetY;
       c.font = `${isTodayAt(i) ? 'bold ' : ''}${fontSize}px ${fontFamily}`;
       c.fillText(`${v}°`, x, y);
@@ -80,11 +81,11 @@ export function createTempLabelsPlugin(opts: TempLabelsPluginOpts): ChartPlugin 
     id: 'tempLabels',
     afterDraw(chart: ChartLike): void {
       if (config.forecast.style !== 'style2') return;
-      // tempHigh sits ABOVE the line: negative y-offset.
-      // tempLow sits BELOW the line: positive y-offset.
-      // Smaller offset (just clearing the spline width) gives the
-      // tight "X° hugging the dot" look from the Chart.js baseline.
-      const off = Math.ceil(fontSize / 2);
+      // Offset = font size + dot radius (4) so the text BOTTOM
+      // edge sits above the dot top instead of overlapping it.
+      // Matches the Chart.js baseline's "X°" with clear gap to
+      // the orange/blue dot below it.
+      const off = fontSize + 4;
       drawValueColumn(chart, data.tempHigh, tempHighColor, -off, 'TempAxis');
       drawValueColumn(chart, data.tempLow, tempLowColor, off, 'TempAxis');
     },

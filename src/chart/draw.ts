@@ -148,12 +148,24 @@ function toAlignedData(
   const xs = new Array<number>(n);
   for (let i = 0; i < n; i++) xs[i] = i;
   const ys: Array<Array<number | null | undefined>> = [];
+  // Bars first, then lines — uPlot renders series in order, so the
+  // last-pushed series sit ON TOP. Temperature lines need to render
+  // over the precip and sunshine bars (otherwise a tall sunshine
+  // bar hides the spline behind it). buildSeries uses the same
+  // two-pass order so AlignedData and series array stay aligned.
   for (const ds of datasets) {
-    if (ds.type === 'line' && hasBothBlocks) {
-      const { station, forecast } = splitLineSeriesData(ds.data, stationCount, isHourly);
-      ys.push(station, forecast);
-    } else {
+    if (ds.type === 'bar') {
       ys.push(ds.data.slice() as Array<number | null | undefined>);
+    }
+  }
+  for (const ds of datasets) {
+    if (ds.type === 'line') {
+      if (hasBothBlocks) {
+        const { station, forecast } = splitLineSeriesData(ds.data, stationCount, isHourly);
+        ys.push(station, forecast);
+      } else {
+        ys.push(ds.data.slice() as Array<number | null | undefined>);
+      }
     }
   }
   return [xs, ...ys] as AlignedData;
@@ -182,7 +194,18 @@ function buildSeries(
   const barCount = datasets.filter((d) => d.type === 'bar').length;
   let barIdx = 0;
 
-  for (const ds of datasets) {
+  // Two-pass iteration so bar series go first, line series last.
+  // uPlot draws in series order, so the LATEST-pushed series sit ON
+  // TOP visually. We want temperature lines drawn over the precip
+  // and sunshine bars — otherwise a tall sunshine bar (90 % of
+  // chart height on a sunny day) hides the spline curve behind it.
+  // toAlignedData mirrors this two-pass order so ys[] indexes match.
+  const orderedDatasets: typeof datasets = [
+    ...datasets.filter((d) => d.type === 'bar'),
+    ...datasets.filter((d) => d.type === 'line'),
+  ];
+
+  for (const ds of orderedDatasets) {
     if (ds.type === 'line') {
       const stroke = typeof ds.borderColor === 'string' ? ds.borderColor : textColor;
       const splineFactory = uPlot.paths.spline as () => uPlot.Series.PathBuilder;
@@ -313,45 +336,26 @@ function buildSeries(
  *  so a single trailing 0.1 mm doesn't blow up the axis; sunshine is
  *  0..1 fractions. */
 function buildScales(
-  data: BuildChartOpts['data'],
+  _data: BuildChartOpts['data'],
   precipMax: number,
   columnCount: number,
+  tempMin: number,
+  tempMax: number,
 ): uPlot.Scales {
-  const tempFinite = [...data.tempHigh, ...data.tempLow].filter((v): v is number => Number.isFinite(v as number));
-  // Hard range with wider headroom than Chart.js's suggestedMin/Max
-  // (which let the axis grow naturally). We need extra room above
-  // tempMax for the style2 "X°" labels rendered just above the high
-  // spline — without padding, the high value lands at the chart top
-  // and the label gets clamped into the axis band instead of sitting
-  // inside the chart drawing area near the line.
-  const tempMin = tempFinite.length ? Math.min(...tempFinite) - 8 : 0;
-  const tempMax = tempFinite.length ? Math.max(...tempFinite) + 10 : 30;
   return {
-    // Pad the x scale by 0.5 either side so data values land at
+    // x scale padded by 0.5 either side so data values land at
     // column CENTERS, not at the plot-area edges. Without this
     // padding, uPlot positions data 0 at xOff (left edge) and data
-    // N-1 at xOff+xDim (right edge), which puts bars at the very
-    // edges of the plot — but the daily-tick-labels and other
-    // chart.js-shaped plugins position labels at column-CENTER
-    // (i + 0.5) * colW. With the pad, bar at data i is centered on
-    // (i + 0.5) * colW just like the label, so labels and bars align.
+    // N-1 at xOff+xDim (right edge); the daily-tick-labels and
+    // other plugins position labels at column-CENTER (i+0.5)*colW.
     x: { time: false, range: () => [-0.5, Math.max(0.5, columnCount - 0.5)] },
     TempAxis: {
-      auto: false,
       range: () => [tempMin, tempMax],
     },
     PrecipAxis: {
-      auto: false,
-      // Hard cap at precipMax — values exceeding the cap (e.g. a
-      // station-day with 26 mm vs daily-mode's 20 mm ceiling) clip
-      // visually at the chart top instead of escaping above into
-      // the date band. Matches Chart.js's behavior with the same
-      // scale ceiling.
-      range: (_u, _dataMin, _dataMax) => [0, precipMax],
-      clamp: true as unknown as never,
+      range: () => [0, precipMax],
     },
     SunshineAxis: {
-      auto: false,
       range: () => [0, 1],
     },
   };
@@ -407,6 +411,8 @@ function buildChartLikeShim(
   u: uPlot,
   columnCount: number,
   datasets: BuildChartOpts['datasets'],
+  tempMinForShim: number,
+  tempMaxForShim: number,
 ): ChartLike {
   const chartArea = {
     left: u.bbox.left / uPlot.pxRatio,
@@ -446,6 +452,12 @@ function buildChartLikeShim(
       try { return u.valToPos(v, 'PrecipAxis'); } catch { return chartArea.bottom; }
     },
   };
+  // TempAxis pixel mapping computed directly from the orchestrator's
+  // tempMin/tempMax (passed in via opts) so we don't depend on
+  // u.valToPos(_, 'TempAxis'), which has been returning NaN when
+  // uPlot's scale init paths haven't fully populated the scale's
+  // min/max (split-line series with mostly-null data on one side
+  // can leave the scale unranged).
   const tempScale: ChartScaleLike = {
     ticks: [],
     top: chartArea.top,
@@ -453,7 +465,10 @@ function buildChartLikeShim(
     width: u.bbox.width / uPlot.pxRatio,
     getPixelForTick: () => 0,
     getPixelForValue: (v: number) => {
-      try { return u.valToPos(v, 'TempAxis'); } catch { return chartArea.top; }
+      const drawHeight = chartArea.bottom - chartArea.top;
+      const range = (tempMaxForShim - tempMinForShim) || 1;
+      const fracFromMin = (v - tempMinForShim) / range;
+      return chartArea.bottom - fracFromMin * drawHeight;
     },
   };
   return {
@@ -521,8 +536,36 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
   const labelsBaseSize = parseInt(String(config.forecast.labels_font_size)) || 11;
   const { width, height } = measureContainer(target, opts.chartHeight);
 
+  // Pre-compute TempAxis min/max so the shim and the scale agree.
+  //
+  // Bottom-pad sized so the lowest data value always renders with
+  // ~25 % of the chart drawing area BELOW it — that band is the
+  // exact space the style2 low-temp label ("X°" rendered below the
+  // dot) needs, plus a small gap above the precip-label boxes at
+  // chartArea.bottom. Solved from the proportionality equation
+  //   (lowestValue - tempMin) / (tempMax - tempMin) = 0.25
+  // so the label always fits inside the chart without overlapping
+  // either the line dot or the precip box.
+  // Same on top so the high-temp labels have room above.
+  const tempFiniteForShim = [...data.tempHigh, ...data.tempLow].filter((v): v is number => Number.isFinite(v as number));
+  const rawMin = tempFiniteForShim.length ? Math.min(...tempFiniteForShim) : 0;
+  const rawMax = tempFiniteForShim.length ? Math.max(...tempFiniteForShim) : 30;
+  const rawRange = Math.max(1, rawMax - rawMin);
+  // Reserve a fraction of the y-axis range at top and bottom so
+  // the style2 "X°" labels (rendered below the low spline and above
+  // the high spline) always have chart space to land in without
+  // crashing into the precip-label boxes (bottom) or the date band
+  // (top). Constants are proportional to the data range so they
+  // scale: a narrow temp range (cold week, 3 °C spread) gets just
+  // enough padding; a wide range (cold morning → hot afternoon,
+  // 25 °C spread) gets more headroom.
+  const bottomReserve = 0.24;
+  const topReserve = 0.18;
+  const tempMinForShim = rawMin - (rawRange + 3) * (bottomReserve / (1 - bottomReserve - topReserve));
+  const tempMaxForShim = rawMax + (rawRange + 3) * (topReserve / (1 - bottomReserve - topReserve));
+
   const series = buildSeries(datasets, opts.textColor, hasBothBlocks);
-  const scales = buildScales(data, precipMax, columnCount);
+  const scales = buildScales(data, precipMax, columnCount, tempMinForShim, tempMaxForShim);
   const axes = buildAxes(sunshineLabelBand, labelsBaseSize);
 
   // Run the existing chart.js-shaped plugins through a synthesized
@@ -533,7 +576,7 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
   const uplotPlugin: uPlot.Plugin = {
     hooks: {
       draw: (u) => {
-        const shim = buildChartLikeShim(u, columnCount, datasets);
+        const shim = buildChartLikeShim(u, columnCount, datasets, tempMinForShim, tempMaxForShim);
         for (const p of plugins) {
           if (p.afterDatasetsDraw) p.afterDatasetsDraw(shim);
         }
