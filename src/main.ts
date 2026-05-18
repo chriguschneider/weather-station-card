@@ -28,6 +28,7 @@ import {
 } from './const.js';
 import { DEFAULTS, DEFAULTS_FORECAST, DEFAULTS_UNITS } from './defaults.js';
 import {LitElement, html} from 'lit';
+import {guard} from 'lit/directives/guard.js';
 import './weather-station-card-editor.js';
 import {
   MeasuredDataSource,
@@ -1877,8 +1878,14 @@ _onModeToggleClick(ev?: Event) {
                 <div class="chart-container">
                   <div id="forecastChart"></div>
                 </div>
-                ${this.renderForecastConditionIcons()}
-                ${this.renderWind()}
+                ${guard(
+                  [this.forecasts, this.forecastItems, this.sun, config],
+                  () => this.renderForecastConditionIcons(),
+                )}
+                ${guard(
+                  [this.forecasts, this.forecastItems, this.unitSpeed, config],
+                  () => this.renderWind(),
+                )}
               </div>
             </div>
             ${this.renderModeToggle()}
