@@ -394,12 +394,32 @@ describe('MeasuredDataSource hourly mode', () => {
     expect(out[2].temperature).toBe(22);
   });
 
-  it('omits templow on hourly entries (triggers single-line render)', () => {
+  it('emits templow (bucket min) on hourly entries when below the mean', () => {
+    // Renders as a second blue spline under the orange temperature
+    // line, matching how the forecast side renders when its provider
+    // emits both `temperature` and `templow` (meteoswiss /
+    // openmeteo-hourly). When min == mean (flat hour) templow is
+    // omitted so we don't draw a redundant overlapping line.
     const ds = new MeasuredDataSource(fakeHass, {
       sensors, days: 1, forecast: { type: 'hourly' },
     });
     const stats = {
       'sensor.temp': [{ start: hourMs(1).date.toISOString(), max: 21, min: 19, mean: 20 }],
+    };
+    const [entry] = ds._buildHourlyForecast(stats, sensors, startHour, 1);
+    expect(entry.temperature).toBe(20);
+    expect(entry.templow).toBe(19);
+  });
+
+  it('omits templow when bucket min is not strictly below mean', () => {
+    // Flat hour (min == max == mean): no templow emitted, chart
+    // hides the second line slot so it doesn't draw a redundant
+    // overlapping spline.
+    const ds = new MeasuredDataSource(fakeHass, {
+      sensors, days: 1, forecast: { type: 'hourly' },
+    });
+    const stats = {
+      'sensor.temp': [{ start: hourMs(1).date.toISOString(), max: 20, min: 20, mean: 20 }],
     };
     const [entry] = ds._buildHourlyForecast(stats, sensors, startHour, 1);
     expect('templow' in entry).toBe(false);
