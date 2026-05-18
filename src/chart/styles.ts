@@ -84,6 +84,44 @@ export function cardStyles({
       position: relative;
       width: 100%;
     }
+    /* Start animation — fires once on the very first time the chart
+     * block reaches the DOM in this session. Class is added by the
+     * render() template based on _chartMountAnimationPlayed. Without
+     * this guard, a view-change that triggers a data refetch
+     * (daily↔hourly cache miss) would unmount and remount the block,
+     * replaying the start animation every time the user toggles. */
+    .forecast-scroll-block.first-mount {
+      animation: ws-chart-fadein 420ms ease-out both;
+    }
+    @keyframes ws-chart-fadein {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    /* View-change cross-fade: applied when the user toggles
+     * forecast.type (daily ↔ today ↔ hourly). For the cached case
+     * (no refetch, block stays in DOM) main.ts.updated() restarts
+     * this via a classList remove → reflow → add. For the remount
+     * case (cache miss, block tore down) the template applies it on
+     * the fresh mount via the animation-class field, so the new chart
+     * fades in instead of replaying the start animation. Opacity dips
+     * to 0 at 50% so the chart redraws during the invisible window. */
+    .forecast-scroll-block.view-changing {
+      animation: ws-view-change 360ms ease-in-out both;
+    }
+    @keyframes ws-view-change {
+      0%   { opacity: 1; }
+      50%  { opacity: 0; }
+      100% { opacity: 1; }
+    }
+    .forecast-scroll-block.no-animation,
+    .forecast-scroll-block.no-animation.first-mount,
+    .forecast-scroll-block.no-animation.view-changing {
+      animation: none;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .forecast-scroll-block.first-mount,
+      .forecast-scroll-block.view-changing { animation: none; }
+    }
     .forecast-scroll {
       width: 100%;
     }
@@ -234,15 +272,38 @@ export function cardStyles({
     .forecast-loading {
       width: 100%;
     }
-    .forecast-skeleton {
-      display: block;
+    .forecast-skeleton-wrapper {
+      position: relative;
       width: 100%;
+      overflow: hidden;
     }
-    .forecast-skeleton-axis,
-    .forecast-skeleton-grid {
-      stroke: var(--divider-color, rgba(127, 127, 127, 0.3));
-      stroke-width: 1;
-      shape-rendering: crispEdges;
+    /* Soft highlight sweeps bottom-to-top across the loading area —
+     * subtle "something is happening" cue without redrawing anything.
+     * Compositor-only (animates only background-position) so it stays
+     * smooth on Pi-class GPUs. Honors the system reduced-motion
+     * setting so users with the OS preference don't see the sweep. */
+    .forecast-skeleton-wrapper::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: linear-gradient(
+        0deg,
+        transparent 0%,
+        rgba(127, 127, 127, 0.04) 50%,
+        transparent 100%
+      );
+      background-size: 100% 40%;
+      background-repeat: no-repeat;
+      background-position: 0 130%;
+      animation: ws-skeleton-shimmer 2.4s ease-in-out infinite;
+      pointer-events: none;
+    }
+    @keyframes ws-skeleton-shimmer {
+      0%   { background-position: 0 130%; }
+      100% { background-position: 0 -40%; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .forecast-skeleton-wrapper::after { animation: none; }
     }
     .conditions {
       display: flex;
