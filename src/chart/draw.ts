@@ -289,13 +289,12 @@ function buildScales(
   precipMax: number,
 ): uPlot.Scales {
   const tempFinite = [...data.tempHigh, ...data.tempLow].filter((v): v is number => Number.isFinite(v as number));
-  // Extra headroom above tempMax leaves room for the style2 "X°"
-  // labels rendered above the high-temperature spline (the
-  // chartjs-plugin-datalabels positioning the labels above the line
-  // would crash into the date axis at the top of the chart
-  // otherwise). Same on the bottom for the low-temperature labels.
-  const tempMin = tempFinite.length ? Math.min(...tempFinite) - 8 : 0;
-  const tempMax = tempFinite.length ? Math.max(...tempFinite) + 9 : 30;
+  // Matches Chart.js's `suggestedMin/Max` recipe from pre-uPlot
+  // draw.ts (min - 5 / max + 6). Style2 temp labels above and below
+  // the line are clamped inside the chart area by the temp-labels
+  // plugin so they don't crash into the date band.
+  const tempMin = tempFinite.length ? Math.min(...tempFinite) - 5 : 0;
+  const tempMax = tempFinite.length ? Math.max(...tempFinite) + 6 : 30;
   return {
     x: { time: false },
     TempAxis: {
@@ -304,7 +303,13 @@ function buildScales(
     },
     PrecipAxis: {
       auto: false,
-      range: () => [0, precipMax],
+      // Hard cap at precipMax — values exceeding the cap (e.g. a
+      // station-day with 26 mm vs daily-mode's 20 mm ceiling) clip
+      // visually at the chart top instead of escaping above into
+      // the date band. Matches Chart.js's behavior with the same
+      // scale ceiling.
+      range: (_u, _dataMin, _dataMax) => [0, precipMax],
+      clamp: true as unknown as never,
     },
     SunshineAxis: {
       auto: false,
@@ -328,9 +333,11 @@ function buildAxes(sunshineLabelBand: number, labelsBaseSize: number): uPlot.Axi
   const baseSize = labelsBaseSize || 11;
   const lineH = Math.ceil(baseSize * 1.3);
   // Two stacked label rows (date + time / weekday + date) plus the
-  // sunshine strip when sunshine is on. Padding on top for the chart's
-  // own breathing room.
-  const xAxisSize = lineH * 2 + sunshineLabelBand + 8;
+  // sunshine strip when sunshine is on, plus a small breathing band
+  // (~10 px) between the date row and the plot area. The temp-labels
+  // plugin clamps itself inside the chart area so we don't need a
+  // huge cushion here — Chart.js's natural layout is closer to this.
+  const xAxisSize = lineH * 2 + sunshineLabelBand + 10;
   return [
     {
       scale: 'x',

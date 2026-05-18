@@ -81,13 +81,11 @@ export function createTempLabelsPlugin(opts: TempLabelsPluginOpts): ChartPlugin 
     id: 'tempLabels',
     afterDraw(chart: ChartLike): void {
       if (config.forecast.style !== 'style2') return;
-      // tempHigh sits ABOVE the line: negative y-offset
-      // tempLow sits BELOW the line: positive y-offset
-      // Offset = half text height + small gap so the digit's baseline
-      // clears the spline (1.5 px wide). Sitting close to the line
-      // matches the Chart.js baseline; larger offsets crash labels
-      // into the date band at the top of the chart.
-      const off = Math.ceil(fontSize / 2) + 2;
+      // tempHigh sits ABOVE the line: negative y-offset.
+      // tempLow sits BELOW the line: positive y-offset.
+      // Smaller offset (just clearing the spline width) gives the
+      // tight "X° hugging the dot" look from the Chart.js baseline.
+      const off = Math.ceil(fontSize / 2);
       drawValueColumn(chart, data.tempHigh, tempHighColor, -off, 'TempAxis');
       drawValueColumn(chart, data.tempLow, tempLowColor, off, 'TempAxis');
     },
