@@ -185,7 +185,9 @@ function buildSeries(
           stroke,
           width: 1.5,
           paths: splineFactory?.() ?? null,
-          points: { show: false },
+          // Show a small point at each data value — matches the
+          // Chart.js baseline's `elements.point.radius: 2`.
+          points: { show: true, size: 4, fill: stroke, stroke },
           spanGaps: false,
         });
         series.push({
@@ -196,7 +198,9 @@ function buildSeries(
           width: 1.5,
           dash: [6, 4],
           paths: splineFactory?.() ?? null,
-          points: { show: false },
+          // Show a small point at each data value — matches the
+          // Chart.js baseline's `elements.point.radius: 2`.
+          points: { show: true, size: 4, fill: stroke, stroke },
           spanGaps: false,
         });
       } else {
@@ -207,7 +211,9 @@ function buildSeries(
           stroke,
           width: 1.5,
           paths: splineFactory?.() ?? null,
-          points: { show: false },
+          // Show a small point at each data value — matches the
+          // Chart.js baseline's `elements.point.radius: 2`.
+          points: { show: true, size: 4, fill: stroke, stroke },
           spanGaps: false,
         });
       }
