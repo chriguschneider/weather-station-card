@@ -532,7 +532,17 @@ _extractSensorReadings(hass: HassMain): void {
   this.illuminance = valueOf(sensors.illuminance);
   this.precipitation = valueOf(sensors.precipitation);
   this.precipitation_unit = (attrOf(sensors.precipitation, 'unit_of_measurement') as string | undefined) || undefined;
-  this._maybeDerivePrecipRate(hass);
+  // Gate the cumulative-counter → mm/h derivation on whether the
+  // precipitation row is actually rendered. When show_precipitation
+  // is false, the row never appears, but the derivation still cost
+  // per set hass: a buffer-prune + localStorage saveBuffer write +
+  // a 30-second wall-clock recompute interval. Skipping it for a
+  // disabled row drops those costs entirely. The raw sensor state
+  // is still written above, so re-enabling the row hot-loads from
+  // the existing localStorage buffer on the next set hass.
+  if (this.config.show_precipitation !== false) {
+    this._maybeDerivePrecipRate(hass);
+  }
   this.sunshine_duration = valueOf(sensors.sunshine_duration);
   this.sunshine_duration_unit = (attrOf(sensors.sunshine_duration, 'unit_of_measurement') as string | undefined) || undefined;
 
