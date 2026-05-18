@@ -160,19 +160,31 @@ export function hourlyTempSeries(
     return round ? Math.round(v) : v;
   };
 
+  const rawTemp: (number | null | undefined)[] = new Array(entries.length);
   const tempHigh: (number | null | undefined)[] = new Array(entries.length);
   const tempLow: (number | null | undefined)[] = new Array(entries.length);
   let anyHaveLow = false;
 
   for (let i = 0; i < entries.length; i++) {
     const d = entries[i] || {};
-    tempHigh[i] = r(d.temperature);
+    rawTemp[i] = r(d.temperature);
     if (typeof d.templow === 'undefined' || d.templow === null) {
       tempLow[i] = null;
     } else {
       tempLow[i] = r(d.templow);
       anyHaveLow = true;
     }
+  }
+
+  // tempHigh = per-entry temperature, tempLow = per-entry templow when
+  // provided. For 'today' mode the 3-hour aggregator (aggregateThreeHour)
+  // populates both fields with real source-hour max / min before reaching
+  // this helper, so a single code path covers daily AND today; the
+  // synthetic rolling-window approach was removed (it computed each
+  // entry's high/low from overlapping windows that didn't correspond
+  // to any actual data point).
+  for (let i = 0; i < entries.length; i++) {
+    tempHigh[i] = rawTemp[i];
   }
   return {
     tempHigh,
@@ -347,18 +359,21 @@ export function filterMidnightStaleForecast<T extends { datetime?: string }>(
 }
 
 /** 3-hour aggregator for the 'today' mode. Collapses each consecutive
- *  run of 3 hourly entries into one 3 h block. Numeric fields take the
- *  mean (precipitation + sunshine: sum), the condition becomes the
- *  most-frequent value across the block, and the datetime anchors at
- *  the block's first hour. Trailing entries that don't fill a full
- *  block (e.g. station = 11 hours = 3+3+3+2) emit a partial block from
- *  whatever's left rather than dropping data.
+ *  run of 3 hourly entries into one 3 h block. Temperature uses MAX
+ *  and templow uses MIN across the block's real source-hour values —
+ *  every chart point is an ACTUAL observed/forecast hourly value, not
+ *  a derived mean. The previous mean approach gave a single line in
+ *  the middle and a synthetic templow; max+min give two real lines
+ *  (warmest hour, coolest hour of the 3-hour band). Other numeric
+ *  fields use the mean (precipitation + sunshine: sum), the condition
+ *  becomes the most-frequent value across the block, and the datetime
+ *  anchors at the block's first hour. Trailing entries that don't
+ *  fill a full block (e.g. station = 11 hours = 3+3+3+2) emit a
+ *  partial block from whatever's left rather than dropping data.
  *
  *  Mean values are rounded to one decimal so chart-datalabels render
- *  as "11.1°" rather than "11.0666666666668°" — the raw mean of three
- *  numeric values often has long-tail floating-point residue. The
- *  card's `round_temp` setting still applies on top via
- *  `hourlyTempSeries`. */
+ *  as "11.1°" rather than "11.0666666666668°". The card's `round_temp`
+ *  setting still applies on top via `hourlyTempSeries`. */
 export function aggregateThreeHour<T extends Partial<ForecastEntry>>(
   entries: ReadonlyArray<T>,
 ): ForecastEntry[] {
@@ -367,26 +382,39 @@ export function aggregateThreeHour<T extends Partial<ForecastEntry>>(
   for (let i = 0; i < entries.length; i += 3) {
     const slice = entries.slice(i, i + 3);
     if (!slice.length) continue;
-    const meanField = (key: keyof ForecastEntry): number | null => {
+    const collect = (key: keyof ForecastEntry): number[] => {
       const values: number[] = [];
       for (const e of slice) {
         const v = (e as Record<string, unknown>)[key as string];
         if (v != null && typeof v === 'number' && Number.isFinite(v)) values.push(v);
       }
+      return values;
+    };
+    const meanField = (key: keyof ForecastEntry): number | null => {
+      const values = collect(key);
       if (!values.length) return null;
       const mean = values.reduce((a, b) => a + b, 0) / values.length;
       return Math.round(mean * 10) / 10;
     };
     const sumField = (key: keyof ForecastEntry): number | null => {
-      const values: number[] = [];
-      for (const e of slice) {
-        const v = (e as Record<string, unknown>)[key as string];
-        if (v != null && typeof v === 'number' && Number.isFinite(v)) values.push(v);
-      }
+      const values = collect(key);
       if (!values.length) return null;
       const sum = values.reduce((a, b) => a + b, 0);
       return Math.round(sum * 10) / 10;
     };
+    // Pool all real temperature readings in the block (both `temperature`
+    // and `templow` when the source provides them). Both lines come from
+    // this single pool so even a source that emits only `temperature` per
+    // hour still yields a meaningful high/low pair per 3-hour block.
+    const tempPool: number[] = [];
+    for (const e of slice) {
+      const t = (e as ForecastEntry).temperature;
+      const l = (e as ForecastEntry).templow;
+      if (typeof t === 'number' && Number.isFinite(t)) tempPool.push(t);
+      if (typeof l === 'number' && Number.isFinite(l)) tempPool.push(l);
+    }
+    const tempHigh = tempPool.length ? Math.round(Math.max(...tempPool) * 10) / 10 : null;
+    const tempLow = tempPool.length ? Math.round(Math.min(...tempPool) * 10) / 10 : null;
     const modeField = (key: keyof ForecastEntry): string => {
       const counts = new Map<string, number>();
       for (const e of slice) {
@@ -404,8 +432,8 @@ export function aggregateThreeHour<T extends Partial<ForecastEntry>>(
     };
     blocks.push({
       datetime: (slice[0] as ForecastEntry).datetime,
-      temperature: meanField('temperature'),
-      templow: meanField('templow'),
+      temperature: tempHigh,
+      templow: tempLow,
       precipitation: sumField('precipitation'),
       // Sum hourly sunshine duration over the 3-hour block. Each
       // hourly entry carries 0..1 hours of sun (cap=day_length=1 in

@@ -1,5 +1,5 @@
 // Unit tests for the data / format / classifier / chart-plugin layers.
-// Lit DOM / Chart.js orchestration / editor render paths covered by
+// Lit DOM / chart orchestration / editor render paths covered by
 // Playwright E2E (#14); see TESTING.md.
 //
 // Coverage thresholds gated in CI (npm run coverage in build.yml).
@@ -10,6 +10,11 @@ export default {
   test: {
     environment: 'node',
     include: ['tests/**/*.test.js'],
+    // uPlot reads window.matchMedia at module-load time for retina DPR
+    // detection. jsdom doesn't ship a matchMedia stub by default, so
+    // every test file that imports main.ts (which transitively imports
+    // uPlot) blows up at import. setup.js provides a no-op stub.
+    setupFiles: ['./tests/setup.js'],
     coverage: {
       provider: 'v8',
       reporter: ['text-summary', 'text', 'lcov'],

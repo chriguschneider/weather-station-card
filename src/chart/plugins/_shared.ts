@@ -42,6 +42,10 @@ export interface ChartLike {
   scales: { x?: ChartScaleLike; PrecipAxis?: ChartScaleLike } & Record<string, ChartScaleLike | undefined>;
   ctx: CanvasRenderingContext2D;
   chartArea: { top: number; bottom: number; left: number; right: number };
+  /** The DOM canvas the chart renders into. Plugins use it to walk up
+   *  to the horizontal-scroll wrapper (`.forecast-scroll.scrolling`)
+   *  for hourly mode so they can react to the user's scroll position. */
+  canvas?: HTMLCanvasElement | null;
   getDatasetMeta(idx: number): ChartMetaLike | null;
 }
 

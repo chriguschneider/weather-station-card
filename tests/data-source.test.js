@@ -394,7 +394,13 @@ describe('MeasuredDataSource hourly mode', () => {
     expect(out[2].temperature).toBe(22);
   });
 
-  it('omits templow on hourly entries (triggers single-line render)', () => {
+  it('omits templow on hourly entries (chart layer derives via 3h block aggregation)', () => {
+    // Hourly station data-source emits only `temperature`. The
+    // dual-line look for 'today' mode comes from aggregateThreeHour(...)
+    // pooling 3 consecutive hours' temperature values into a real
+    // max/min pair per block — keeps the data-source layer focused on
+    // per-bucket extraction and lets the chart layer handle the visual
+    // presentation.
     const ds = new MeasuredDataSource(fakeHass, {
       sensors, days: 1, forecast: { type: 'hourly' },
     });
@@ -402,6 +408,7 @@ describe('MeasuredDataSource hourly mode', () => {
       'sensor.temp': [{ start: hourMs(1).date.toISOString(), max: 21, min: 19, mean: 20 }],
     };
     const [entry] = ds._buildHourlyForecast(stats, sensors, startHour, 1);
+    expect(entry.temperature).toBe(20);
     expect('templow' in entry).toBe(false);
   });
 

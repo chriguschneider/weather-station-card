@@ -1,11 +1,12 @@
 // Chart orchestration: takes the card's `forecasts` + config and
-// produces a configured Chart.js instance.
+// produces a configured chart instance (uPlot under the hood since
+// slice 2 of the 2026-05 perf stack — see ADR-0012).
 //
 // Responsibilities:
 //   - normalize the config (forecast.type fallback for typo'd YAML)
-//   - locate the canvas in card.renderRoot, RAF-retry if Lit hasn't
-//     committed it yet
-//   - destroy any previous Chart.js instance so we don't leak handles
+//   - locate the chart container in card.renderRoot, RAF-retry if Lit
+//     hasn't committed it yet
+//   - destroy any previous chart instance so we don't leak handles
 //   - read live theme tokens from getComputedStyle(document.body)
 //   - compute precip max, station/forecast gap framing, sunshine
 //     fraction data, dataset segment-options (transparent boundary
@@ -23,17 +24,17 @@
 // the LitElement class) avoids a circular type dependency between
 // main.ts and this module.
 
-import { Chart } from 'chart.js';
 import { normalizeForecastMode } from '../forecast-utils.js';
 import { lightenColor } from '../format-utils.js';
 import { resolveCssVar } from '../utils/resolve-css-var.js';
 import { sunshineFractions } from '../sunshine-source.js';
-import { buildChart } from './draw.js';
+import { buildChart, type UplotChart } from './draw.js';
 import {
   createSeparatorPlugin,
   createDailyTickLabelsPlugin,
   createPrecipLabelPlugin,
   createSunshineLabelPlugin,
+  createTempLabelsPlugin,
   type ChartPlugin,
   type CssStyleLike,
   type PluginCardConfig,
@@ -75,7 +76,7 @@ interface OrchestratorConfig extends PluginCardConfig {
  *  is set at the boundaries of the long-running phases. */
 export interface CardLike {
   forecasts: ReadonlyArray<unknown> | null;
-  forecastChart: Chart | null;
+  forecastChart: UplotChart | null;
   renderRoot: ParentNode;
   _hass: { config: { unit_system: { temperature: string; length: string } } };
   _stationCount?: number;
@@ -169,26 +170,13 @@ function computePrecipMax(isHourlyish: boolean, lengthUnit: string): number {
   return lengthUnit === 'km' ? 20 : 1;
 }
 
-/** Set the global Chart.defaults to match the current theme. chart.js's
- *  Chart.defaults are nested optional objects in the type definitions;
- *  runtime they're plain objects. Cast once and assign — subsequent
- *  charts in the page inherit these. */
-function applyChartDefaults(textColor: string, dividerColor: string): void {
-  const defaults = Chart.defaults as unknown as {
-    color: string;
-    scale: { grid: { color: string } };
-    elements: {
-      line: { fill: boolean; tension: number; borderWidth: number };
-      point: { radius: number; hitRadius: number };
-    };
-  };
-  defaults.color = textColor;
-  defaults.scale.grid.color = dividerColor;
-  defaults.elements.line.fill = false;
-  defaults.elements.line.tension = 0.3;
-  defaults.elements.line.borderWidth = 1.5;
-  defaults.elements.point.radius = 2;
-  defaults.elements.point.hitRadius = 10;
+/** uPlot has no equivalent of Chart.js's global defaults — series
+ *  colours and per-axis styling are passed directly into each
+ *  instance. Theme tokens are still read at draw time (textColor /
+ *  dividerColor) and forwarded into draw.ts via the opts bag. */
+function applyChartDefaults(_textColor: string, _dividerColor: string): void {
+  // intentional no-op (kept as a named function so the call-site
+  // ordering documentation stays readable)
 }
 
 /** Boundary handling between station and forecast blocks differs by mode:
@@ -371,6 +359,8 @@ interface BuildPluginsArgs {
   showSunshineLabels: boolean;
   sunshineColor: string;
   sunshinePerBarColor: string[];
+  temp1Color: string;
+  temp2Color: string;
 }
 
 /** Compose the chart's plugin list. 'today' and 'hourly' skip the
@@ -385,6 +375,7 @@ function buildPlugins(args: BuildPluginsArgs): ChartPlugin[] {
     isHourly, doubledToday, sunshineLabelBand,
     precipUnit, precipPerBarColor, precipColor,
     showSunshineLabels, sunshineColor, sunshinePerBarColor,
+    temp1Color, temp2Color,
   } = args;
 
   const dailyTickLabelsPlugin = createDailyTickLabelsPlugin({
@@ -418,6 +409,15 @@ function buildPlugins(args: BuildPluginsArgs): ChartPlugin[] {
     }));
   }
 
+  // Per-point temperature value labels (style2 only). Plugin no-ops
+  // when forecast.style isn't 'style2'.
+  plugins.push(createTempLabelsPlugin({
+    config, data,
+    tempHighColor: temp1Color,
+    tempLowColor: temp2Color,
+    chartTextColor,
+  }));
+
   return plugins;
 }
 
@@ -437,19 +437,14 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
   // chart code path.
   const { config } = normalizeForecastMode(rawConfig);
 
-  const chartCanvas = card.renderRoot?.querySelector('#forecastChart');
-  if (!chartCanvas) {
-    // Canvas isn't in the DOM yet. With the loading-placeholder flow
+  const chartTarget = card.renderRoot?.querySelector<HTMLElement>('#forecastChart');
+  if (!chartTarget) {
+    // Target isn't in the DOM yet. With the loading-placeholder flow
     // in main.ts, drawChart is called synchronously inside
     // _refreshForecasts before Lit's microtask commits the new
     // template — the chart-container only appears on the NEXT render.
     // requestAnimationFrame retries on the next browser tick, by
-    // which point Lit has committed and the canvas is mountable. Used
-    // to log an error and bail; that errored on every initial mount
-    // and only succeeded via a serendipitous ResizeObserver-triggered
-    // measureCard call, which happens too late for the chart.js
-    // initial animation to register with the animator service in a
-    // way the user can see.
+    // which point Lit has committed and the target is mountable.
     if (typeof requestAnimationFrame !== 'undefined') {
       requestAnimationFrame(() => card.drawChart());
     }
@@ -470,13 +465,6 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
   const backgroundColor = style.getPropertyValue('--card-background-color');
   const textColor = style.getPropertyValue('--primary-text-color');
   const dividerColor = style.getPropertyValue('--divider-color');
-  const canvas = card.renderRoot.querySelector<HTMLCanvasElement>('#forecastChart');
-  if (!canvas) {
-    requestAnimationFrame(() => card.drawChart());
-    return undefined;
-  }
-
-  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
 
   // 'today' is hourly granularity (per-hour bars), same precip scale
   // as 'hourly'. 'daily' aggregates over the full day, scale is wider.
@@ -571,12 +559,15 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
     isHourly, doubledToday, sunshineLabelBand,
     precipUnit, precipPerBarColor, precipColor,
     showSunshineLabels, sunshineColor, sunshinePerBarColor,
+    temp1Color, temp2Color,
   });
 
   card._chartPhase = 'init';
-  card.forecastChart = buildChart(ctx, {
-    datasets,
+  const chartHeightPx = Number((config as { forecast: { chart_height?: number } }).forecast.chart_height) || 200;
+  card.forecastChart = buildChart(chartTarget, {
+    datasets: datasets as unknown as Parameters<typeof buildChart>[1]['datasets'],
     plugins,
+    chartHeight: chartHeightPx,
     data,
     config,
     textColor,
@@ -588,6 +579,7 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
     tempUnit,
     doubledToday,
     stationCount,
+    isHourly,
     style,
     sunshineLabelBand,
     inPreview: card._isInPreview === true,

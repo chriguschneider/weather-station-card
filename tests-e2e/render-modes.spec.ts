@@ -48,6 +48,43 @@ for (const theme of THEMES) {
       await unmountAll(page);
     });
 
+    // Dedicated baseline for the "two temperature lines in 24h
+    // view" case — some forecast providers (meteoswiss,
+    // openmeteo-hourly) emit BOTH `temperature` and `templow` per
+    // hourly forecast bucket, which the card renders as the second
+    // dashed line under the high-temp spline. Without this snapshot,
+    // a regression in the templow handling would silently strip the
+    // second line and only get caught by hand-eyeball next deploy.
+    {
+      const themeSuffix = theme === 'dark' ? '-dark' : '';
+      const name = `today-combination-templow${themeSuffix}`;
+      test(name, async ({ page }) => {
+        const fixture = buildFullFixture({
+          days: 1,
+          hours: 24,
+          forecastHours: 24,
+          forecastWithTemplow: true,
+        });
+        await mount(
+          page,
+          buildBaseConfig({
+            show_station: true,
+            show_forecast: true,
+            days: 1,
+            forecast_days: 1,
+            forecast: {
+              type: 'today',
+              disable_animation: true,
+            },
+          }),
+          fixture,
+        );
+        await expect(page.locator(cardSelector())).toHaveScreenshot(
+          `${name}.png`,
+        );
+      });
+    }
+
     // 3 × 3 × 2 = 18 systematic baselines per theme.
     for (const mode of Object.keys(MODES) as Mode[]) {
       for (const forecastType of FORECAST_TYPES) {

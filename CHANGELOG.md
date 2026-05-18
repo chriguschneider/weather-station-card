@@ -7,6 +7,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- **The chart should appear faster, especially on phones and tablets.**
+  The card uses a smaller, lighter charting library under the hood
+  now. You should notice a quicker first paint when opening the
+  dashboard in the HA Companion app or after a fresh browser tab,
+  particularly on older devices. No configuration change needed.
+- **The chart no longer plays the brief grow-from-baseline animation
+  when it first appears.** The chart simply paints once at its final
+  state. The look is otherwise unchanged. The `Disable animation`
+  toggle in the editor (and `forecast.disable_animation` in YAML) is
+  kept for backward compatibility but no longer has any effect.
 - **Precipitation row now shown by default.** If a precipitation sensor
   is wired in the card config, the live panel now shows the current
   precipitation rate automatically — no extra toggle needed. To hide
@@ -21,6 +31,36 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the rows below stay put. No configuration change needed.
 
 ### Fixed
+- **24-hour view now shows real high and low temperatures from the
+  actual hourly readings.** The high-temp line now traces the warmest
+  hour of each 3-hour block, the low-temp line the coolest — both are
+  real measured or forecast values, not averages. The second line also
+  shows up consistently across both halves of the chart (the past
+  observations and the future forecast), regardless of which weather
+  integration you use.
+- **Hourly view no longer draws a duplicate temperature line.** Some
+  weather integrations (notably the Open-Meteo hourly forecast)
+  publish a "low" value per hour that is identical to the regular
+  temperature. The card was drawing both, leaving a dashed line
+  directly on top of the solid one. The hourly view now shows a single
+  temperature line — the dual high/low pair stays in the 24-hour and
+  daily views where it is meaningful.
+- **Column labels in the 24-hour view stay on the 3-hour grid across
+  all providers.** With some forecast providers the chart used to show
+  a small 2-hour gap in the time labels at the boundary between
+  observed and forecast data (e.g. "...13:00, 15:00, 18:00..." instead
+  of "...13:00, 16:00, 19:00..."). The boundary is now de-duplicated
+  so both halves stay on the same 3-hour grid regardless of which
+  integration emits the hourly forecast.
+- **Date label always visible in the hourly view.** When you open the
+  hourly chart or scroll horizontally, the current date now stays
+  pinned to the left edge of the visible portion. Day boundaries also
+  carry their own date label so it is always clear which day a column
+  belongs to, including after a midnight crossing.
+- **Weather icons now align with their chart columns.** The condition
+  icon row underneath the chart used to drift out of column alignment
+  when the icons had slightly different widths. Each icon now occupies
+  an equal-width cell matched to the column above it.
 - **Today's daily column no longer goes missing in the first quarter
   hour after midnight.** Right after midnight (until your station has
   aggregated its first reading of the new day) the chart used to drop

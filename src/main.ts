@@ -83,35 +83,9 @@ import {
 import { drawChartUnsafe } from './chart/orchestrator.js';
 import { renderChartSkeleton } from './chart/skeleton.js';
 import { cardStyles } from './chart/styles.js';
-import {
-  Chart,
-  BarController,
-  LineController,
-  BarElement,
-  LineElement,
-  PointElement,
-  CategoryScale,
-  LinearScale,
-} from 'chart.js';
-import ChartDataLabels from 'chartjs-plugin-datalabels';
-// Selective registration instead of `...registerables`: the card only
-// draws bar (precip/sunshine) and line (temperature) datasets on a
-// category x-axis with linear y-axes. `registerables` references every
-// controller/scale/plugin chart.js ships, which pins them all against
-// tree-shaking. Built-in plugins (Legend, Tooltip, Filler, …) are
-// intentionally not registered — the card disables the legend/tooltip
-// and sets explicit colours, so their option blocks are inert without
-// registration.
-Chart.register(
-  BarController,
-  LineController,
-  BarElement,
-  LineElement,
-  PointElement,
-  CategoryScale,
-  LinearScale,
-  ChartDataLabels,
-);
+// Chart library: uPlot. Imported transitively via ./chart/draw.js —
+// there is no global registration step (uPlot has no plugin registry;
+// per-instance hooks/plugins are passed directly to the constructor).
 
 /** Card-side extension of `HassLike`. main.ts reads two fields the
  *  data-sources don't (`language`, `selectedLanguage`) — they pick
@@ -1001,7 +975,25 @@ async _refreshPressureDelta(): Promise<void> {
     const isToday = fcType === 'today';
 
     const station = effectiveCfg.show_station !== false ? (this._stationData || []) : [];
-    const forecast = this._sliceForecast(effectiveCfg, fcType, isToday, todayStartMs);
+    const rawForecast = this._sliceForecast(effectiveCfg, fcType, isToday, todayStartMs);
+    // De-overlap forecast against station's last observed hour/day.
+    // Providers emit forecast entries at different anchors: meteoswiss
+    // starts at the NEXT full hour after "now", openmeteo-hourly
+    // includes the CURRENT hour (which is already in station's last
+    // bucket). Without trim, the chart shows duplicate adjacent columns
+    // at the boundary (visible 13/13 or 15/15) AND the icon row below
+    // ends up misaligned because the icons are emitted one-per-data-row
+    // but the chart columns are one-per-unique-timestamp. Station is
+    // observed truth, so trim forecast.
+    const lastStationMs = station.length
+      ? new Date((station[station.length - 1] as { datetime?: string }).datetime ?? '').getTime()
+      : -Infinity;
+    const forecast = Number.isFinite(lastStationMs)
+      ? rawForecast.filter((e: { datetime?: string }) => {
+          const t = new Date(e.datetime ?? '').getTime();
+          return !Number.isFinite(t) || t > lastStationMs;
+        })
+      : rawForecast;
     // Earlier code dropped the trailing station-today entry when it
     // carried no recorded data yet (temperature + templow + precipitation
     // all null). That removed the FR-station column from ~00:00 to ~00:15
@@ -1067,6 +1059,9 @@ async _refreshPressureDelta(): Promise<void> {
   //   3. Recompute day_length to 3 (3 hours per block).
   // deno-lint-ignore no-explicit-any
   _buildTodayForecasts(station: any[], forecast: any[]): void {
+    // De-overlap is now done centrally in _refreshForecasts so the
+    // hourly + daily flows benefit too. Forecast here is already
+    // strictly after station's last hour.
     const merged = overlayFromOpenMeteo(
       [...station, ...forecast],
       this._hass,
@@ -1597,6 +1592,11 @@ drawChart(args?: any): unknown[] | undefined {
       // animation consistent across the daily/today/hourly cycle — the
       // lazy-cache otherwise makes only some transitions perceptible.
       // disable_animation and the editor live-preview still suppress it.
+      // uPlot has no animation system, so the chart.js "reset+update
+      // to replay the grow-from-baseline animation" path is a no-op.
+      // The chart simply paints once at its final state. Per
+      // alignment.md the animation is an accepted casualty of the
+      // chart-library swap.
       if (this.config?.forecast?.disable_animation !== true && !this._isInPreview) {
         this.forecastChart.reset();
         this.forecastChart.update();
@@ -1658,9 +1658,18 @@ drawChart(args?: any): unknown[] | undefined {
 computeForecastData({ config, forecastItems } = this) {
   const forecast = this.forecasts ? this.forecasts.slice(0, forecastItems) : [];
   const dateTime = forecast.map((d) => d.datetime);
-  const { tempHigh, tempLow } = hourlyTempSeries(forecast, {
+  const fcType = config.forecast?.type;
+  const { tempHigh, tempLow: rawTempLow } = hourlyTempSeries(forecast, {
     roundTemp: config.forecast.round_temp === true,
   });
+  // Pure 'hourly' mode shows raw hourly entries — each hour has a single
+  // temperature value, so a second low-temp line makes no semantic sense.
+  // Some providers (openmeteo-hourly) emit a per-hour `templow` anyway
+  // (often identical to `temperature`), which would draw a dashed line
+  // directly on top of the high — visual noise. Force single-line by
+  // discarding tempLow at the hourly mode boundary. Daily and 3h-aggregated
+  // 'today' mode keep their real high/low pairs.
+  const tempLow = fcType === 'hourly' ? null : rawTempLow;
   const precip = forecast.map((d) => d.precipitation);
   // Sunshine columns. Each entry has a normalized hours value (or null
   // when no source resolved) and a day_length the bar is scaled against.
@@ -1821,7 +1830,7 @@ _onModeToggleClick(ev?: Event) {
             <div class="forecast-scroll ${scrolling ? 'scrolling' : ''}">
               <div class="forecast-content" style="width: ${contentWidthPct}%">
                 <div class="chart-container">
-                  <canvas id="forecastChart"></canvas>
+                  <div id="forecastChart"></div>
                 </div>
                 ${this.renderForecastConditionIcons()}
                 ${this.renderWind()}

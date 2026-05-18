@@ -36,6 +36,9 @@ test.describe('skeleton-first paint', () => {
     // Mount WITHOUT awaiting the canvas. Inside the evaluate we
     // capture the initial-paint state: are skeleton + canvas
     // present in the shadow DOM right after Lit's first updateComplete?
+    // Note: with the uPlot swap (ADR-0012) the canvas is created by
+    // uPlot as a child of `<div id="forecastChart">`, not as the
+    // forecastChart element itself.
     const initialState = await page.evaluate(
       async ([cfg, fix]) => {
         const hass = window.__wsc.createMock(fix);
@@ -54,7 +57,7 @@ test.describe('skeleton-first paint', () => {
           axisCount: sr.querySelectorAll('svg.forecast-skeleton line.forecast-skeleton-axis').length,
           gridFirstNamespace: firstGrid?.namespaceURI ?? null,
           gridFirstRectHeight: gridRect ? gridRect.height : 0,
-          hasCanvas: !!sr.querySelector('canvas#forecastChart'),
+          hasCanvas: !!sr.querySelector('#forecastChart canvas'),
           hasLoadingDiv: !!sr.querySelector('.forecast-loading'),
         };
       },
@@ -82,7 +85,7 @@ test.describe('skeleton-first paint', () => {
       (sel) => {
         const card = document.querySelector(sel);
         const sr = (card as HTMLElement & { shadowRoot?: ShadowRoot | null })?.shadowRoot;
-        return !!sr?.querySelector('canvas#forecastChart');
+        return !!sr?.querySelector('#forecastChart canvas');
       },
       cardSelector(),
       { timeout: 5000 },
@@ -94,7 +97,7 @@ test.describe('skeleton-first paint', () => {
         const sr = (card as HTMLElement & { shadowRoot?: ShadowRoot | null })?.shadowRoot;
         return {
           hasSkeleton: !!sr?.querySelector('svg.forecast-skeleton'),
-          hasCanvas: !!sr?.querySelector('canvas#forecastChart'),
+          hasCanvas: !!sr?.querySelector('#forecastChart canvas'),
         };
       },
       cardSelector(),
