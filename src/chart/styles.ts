@@ -83,6 +83,29 @@ export function cardStyles({
     .forecast-scroll-block {
       position: relative;
       width: 100%;
+      /* content-visibility: auto lets the browser skip layout + paint
+       * for this subtree when it's scrolled off-screen, then materialise
+       * it on demand when it becomes visible. The chart + icons +
+       * wind row are the heaviest block in the card; skipping them when
+       * the card is in a dashboard list below the fold trims first
+       * paint for the visible cards above.
+       *
+       * contain-intrinsic-size reserves a height while the block is
+       * skipped so the rest of the page lays out without shift. The
+       * leading auto keyword tells the browser to remember the
+       * rendered height after first paint and use that on subsequent
+       * skip/restore cycles; the explicit fallback covers the
+       * pre-paint state. ~120 px on top of chartHeight covers the
+       * icons row (~40 px) + wind row (~40 px) + scroll-indicator
+       * padding.
+       *
+       * Browser support: Chromium-based (HA dashboard in Chrome,
+       * Android Companion App, iPad/iPhone Companion App via WKWebView
+       * Safari 18+). Older WebViews silently ignore the property —
+       * no regression, just no win.
+       */
+      content-visibility: auto;
+      contain-intrinsic-size: auto ${chartHeight + 120}px;
     }
     /* Start animation — fires once on the very first time the chart
      * block reaches the DOM in this session. Class is added by the
