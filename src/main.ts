@@ -975,7 +975,25 @@ async _refreshPressureDelta(): Promise<void> {
     const isToday = fcType === 'today';
 
     const station = effectiveCfg.show_station !== false ? (this._stationData || []) : [];
-    const forecast = this._sliceForecast(effectiveCfg, fcType, isToday, todayStartMs);
+    const rawForecast = this._sliceForecast(effectiveCfg, fcType, isToday, todayStartMs);
+    // De-overlap forecast against station's last observed hour/day.
+    // Providers emit forecast entries at different anchors: meteoswiss
+    // starts at the NEXT full hour after "now", openmeteo-hourly
+    // includes the CURRENT hour (which is already in station's last
+    // bucket). Without trim, the chart shows duplicate adjacent columns
+    // at the boundary (visible 13/13 or 15/15) AND the icon row below
+    // ends up misaligned because the icons are emitted one-per-data-row
+    // but the chart columns are one-per-unique-timestamp. Station is
+    // observed truth, so trim forecast.
+    const lastStationMs = station.length
+      ? new Date((station[station.length - 1] as { datetime?: string }).datetime ?? '').getTime()
+      : -Infinity;
+    const forecast = Number.isFinite(lastStationMs)
+      ? rawForecast.filter((e: { datetime?: string }) => {
+          const t = new Date(e.datetime ?? '').getTime();
+          return !Number.isFinite(t) || t > lastStationMs;
+        })
+      : rawForecast;
     // Earlier code dropped the trailing station-today entry when it
     // carried no recorded data yet (temperature + templow + precipitation
     // all null). That removed the FR-station column from ~00:00 to ~00:15
@@ -1041,6 +1059,9 @@ async _refreshPressureDelta(): Promise<void> {
   //   3. Recompute day_length to 3 (3 hours per block).
   // deno-lint-ignore no-explicit-any
   _buildTodayForecasts(station: any[], forecast: any[]): void {
+    // De-overlap is now done centrally in _refreshForecasts so the
+    // hourly + daily flows benefit too. Forecast here is already
+    // strictly after station's last hour.
     const merged = overlayFromOpenMeteo(
       [...station, ...forecast],
       this._hass,
@@ -1638,14 +1659,17 @@ computeForecastData({ config, forecastItems } = this) {
   const forecast = this.forecasts ? this.forecasts.slice(0, forecastItems) : [];
   const dateTime = forecast.map((d) => d.datetime);
   const fcType = config.forecast?.type;
-  const { tempHigh, tempLow } = hourlyTempSeries(forecast, {
+  const { tempHigh, tempLow: rawTempLow } = hourlyTempSeries(forecast, {
     roundTemp: config.forecast.round_temp === true,
-    // Hourly / today: derive high/low from a 3-hour rolling window so
-    // the second blue spline shows up consistently across station AND
-    // forecast halves, regardless of whether the provider emits a
-    // per-hour `templow` (meteoswiss doesn't; openmeteo-hourly does).
-    windowMode: fcType === 'hourly' || fcType === 'today',
   });
+  // Pure 'hourly' mode shows raw hourly entries — each hour has a single
+  // temperature value, so a second low-temp line makes no semantic sense.
+  // Some providers (openmeteo-hourly) emit a per-hour `templow` anyway
+  // (often identical to `temperature`), which would draw a dashed line
+  // directly on top of the high — visual noise. Force single-line by
+  // discarding tempLow at the hourly mode boundary. Daily and 3h-aggregated
+  // 'today' mode keep their real high/low pairs.
+  const tempLow = fcType === 'hourly' ? null : rawTempLow;
   const precip = forecast.map((d) => d.precipitation);
   // Sunshine columns. Each entry has a normalized hours value (or null
   // when no source resolved) and a day_length the bar is scaled against.

@@ -415,17 +415,35 @@ describe('aggregateThreeHour', () => {
     expect(blocks[0].datetime).toBe('2026-05-06T00:00:00');
   });
 
-  it('takes the mean for temperature/templow/wind/pressure/humidity/uv', () => {
+  it('takes max/min of the pooled temp+templow readings for temperature/templow', () => {
     const blocks = aggregateThreeHour(hourly(3));
-    // hourly(3) has temperature 10, 11, 12 → mean 11
-    expect(blocks[0].temperature).toBe(11);
-    expect(blocks[0].templow).toBe(6);   // 5 + 6 + 7 = 18 / 3
+    // hourly(3) has temperature 10,11,12 and templow 5,6,7
+    // pool = [10,5,11,6,12,7] → max 12, min 5 (both real source values)
+    expect(blocks[0].temperature).toBe(12);
+    expect(blocks[0].templow).toBe(5);
+  });
+
+  it('takes the mean for wind/pressure/humidity/uv', () => {
+    const blocks = aggregateThreeHour(hourly(3));
     expect(blocks[0].wind_speed).toBe(5);  // 4 + 5 + 6 = 15 / 3
     expect(blocks[0].wind_gust_speed).toBe(9);  // 8 + 9 + 10
     expect(blocks[0].wind_bearing).toBe(91); // 90 + 91 + 92
     expect(blocks[0].pressure).toBe(1011);
     expect(blocks[0].humidity).toBe(61);
     expect(blocks[0].uv_index).toBe(2);
+  });
+
+  it('falls back to temperature-only pool when source has no templow per hour', () => {
+    // Hourly providers (meteoswiss, openmeteo-hourly with no low) emit only
+    // temperature per hour — the block still gets a real high/low pair.
+    const entries = [
+      { datetime: '2026-05-06T00:00:00', temperature: 10, condition: 'sunny' },
+      { datetime: '2026-05-06T01:00:00', temperature: 14, condition: 'sunny' },
+      { datetime: '2026-05-06T02:00:00', temperature: 12, condition: 'sunny' },
+    ];
+    const blocks = aggregateThreeHour(entries);
+    expect(blocks[0].temperature).toBe(14); // warmest hour
+    expect(blocks[0].templow).toBe(10);     // coolest hour
   });
 
   it('sums precipitation and sunshine across the block', () => {
@@ -436,15 +454,15 @@ describe('aggregateThreeHour', () => {
     expect(blocks[0].sunshine).toBe(1.8);
   });
 
-  it('rounds means to one decimal so chart-datalabels stay readable', () => {
-    // mean of 11.0, 11.1, 11.1 = 11.0666… should round to 11.1
+  it('rounds tempHigh/tempLow to one decimal so chart-datalabels stay readable', () => {
     const entries = [
-      { datetime: '2026-05-06T00:00:00', temperature: 11.0, condition: 'sunny' },
-      { datetime: '2026-05-06T01:00:00', temperature: 11.1, condition: 'sunny' },
-      { datetime: '2026-05-06T02:00:00', temperature: 11.1, condition: 'sunny' },
+      { datetime: '2026-05-06T00:00:00', temperature: 11.06666, condition: 'sunny' },
+      { datetime: '2026-05-06T01:00:00', temperature: 11.13333, condition: 'sunny' },
+      { datetime: '2026-05-06T02:00:00', temperature: 11.11111, condition: 'sunny' },
     ];
     const blocks = aggregateThreeHour(entries);
-    expect(blocks[0].temperature).toBe(11.1);
+    expect(blocks[0].temperature).toBe(11.1); // max rounded
+    expect(blocks[0].templow).toBe(11.1);     // min rounded
   });
 
   it('takes the most-frequent condition across the block', () => {
@@ -462,8 +480,10 @@ describe('aggregateThreeHour', () => {
     const blocks = aggregateThreeHour(hourly(11));
     expect(blocks).toHaveLength(4);
     expect(blocks[3].datetime).toBe('2026-05-06T09:00:00');
-    // mean of last two: (19 + 20) / 2 = 19.5
-    expect(blocks[3].temperature).toBe(19.5);
+    // hourly(11) entries 9, 10 → temperature 19, 20; templow 14, 15
+    // pool = [19, 14, 20, 15] → max 20, min 14
+    expect(blocks[3].temperature).toBe(20);
+    expect(blocks[3].templow).toBe(14);
   });
 
   it('returns null for fields where every value in the slice is null/non-finite', () => {
@@ -474,17 +494,19 @@ describe('aggregateThreeHour', () => {
     ];
     const blocks = aggregateThreeHour(entries);
     expect(blocks[0].temperature).toBeNull();
+    expect(blocks[0].templow).toBeNull();
   });
 
-  it('mean ignores null/non-finite entries (uses only valid values)', () => {
+  it('max/min ignore null/non-finite entries (uses only valid values)', () => {
     const entries = [
       { datetime: '2026-05-06T00:00:00', temperature: 10, condition: 'sunny' },
       { datetime: '2026-05-06T01:00:00', temperature: null, condition: 'sunny' },
       { datetime: '2026-05-06T02:00:00', temperature: 14, condition: 'sunny' },
     ];
     const blocks = aggregateThreeHour(entries);
-    // mean of 10, 14 = 12 (null skipped)
-    expect(blocks[0].temperature).toBe(12);
+    // pool = [10, 14] (null skipped) → max 14, min 10
+    expect(blocks[0].temperature).toBe(14);
+    expect(blocks[0].templow).toBe(10);
   });
 
   it('handles 24 hourly entries → 8 blocks (typical today-mode case)', () => {

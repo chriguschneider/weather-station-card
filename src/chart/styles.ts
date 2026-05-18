@@ -255,6 +255,8 @@ export function cardStyles({
       display: flex;
       flex-direction: column;
       align-items: center;
+      flex: 1 1 0;
+      min-width: 0;
       margin: 1px;
     }
     .wind-details {

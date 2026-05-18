@@ -473,6 +473,7 @@ function buildChartLikeShim(
   };
   return {
     ctx: u.ctx,
+    canvas: (u.ctx ? u.ctx.canvas : null) as HTMLCanvasElement | null,
     chartArea,
     scales: {
       x: xScale,

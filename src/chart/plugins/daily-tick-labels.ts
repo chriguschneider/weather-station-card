@@ -94,10 +94,12 @@ function drawHourlyTimeLabels(chart: ChartLike, ctx: RenderContext): void {
   // position exceeds the wrapper's scrollLeft. 'today' has no
   // scroll, so the leftmost visible == i === 0.
   let leftmostVisibleIdx = 0;
-  if (ctx.config.forecast.type === 'hourly') {
+  let scrollLeft = 0;
+  const isScrollable = ctx.config.forecast.type === 'hourly';
+  if (isScrollable) {
     const canvas = (chart as { canvas?: HTMLElement | null }).canvas ?? null;
     const wrapper = canvas ? canvas.closest('.forecast-scroll.scrolling') : null;
-    const scrollLeft = wrapper ? wrapper.scrollLeft : 0;
+    scrollLeft = wrapper ? (wrapper as HTMLElement).scrollLeft : 0;
     leftmostVisibleIdx = findLeftmostVisibleTick(chart, scrollLeft);
   }
 
@@ -107,6 +109,7 @@ function drawHourlyTimeLabels(chart: ChartLike, ctx: RenderContext): void {
   const dateBaseY = xScale.bottom - 2 - ctx.sunshineLabelBand;
   const labelGap = 4;
 
+  let prevDKey: number | null = null;
   for (let i = 0; i < xScale.ticks.length; i++) {
     const x = xScale.getPixelForTick(i);
     const colLeft = x - colW / 2;
@@ -119,10 +122,19 @@ function drawHourlyTimeLabels(chart: ChartLike, ctx: RenderContext): void {
     const info = ctx.getTickInfo(dataIdx);
     if (!info) continue;
 
-    if (info.isMidnight) {
-      // Bold day-boundary marker at midnight columns: thick vertical
-      // line from chart bottom up to the TOP of the date text,
-      // anchored at the column's LEFT edge.
+    // Day boundary detected either by an exact midnight tick OR by the
+    // calendar date (dKey) changing across consecutive columns. The
+    // dKey-change branch covers 3h-aggregated 'today' mode where no
+    // column anchors at exactly 00:00 (the midnight hour is pooled
+    // inside the 22:00 block; the next column anchors at 01:00 of the
+    // new day).
+    const dayChanged = prevDKey !== null && info.dKey !== prevDKey;
+    const isDayBoundary = info.isMidnight || dayChanged;
+
+    if (isDayBoundary) {
+      // Bold day-boundary marker: thick vertical line from chart bottom
+      // up to the TOP of the date text, anchored at the column's LEFT
+      // edge.
       c.save();
       c.strokeStyle = weekdayColor;
       c.lineWidth = 2;
@@ -133,15 +145,27 @@ function drawHourlyTimeLabels(chart: ChartLike, ctx: RenderContext): void {
       c.restore();
     }
 
-    const showDate = i === leftmostVisibleIdx || info.isMidnight;
+    const showDate = i === leftmostVisibleIdx || isDayBoundary;
     if (showDate) {
+      // Sticky placement for the leftmost-visible date in scrollable
+      // hourly mode: when the column's left edge is scrolled off-screen
+      // (colLeft < scrollLeft), the date label would land outside the
+      // viewport. Clamp to scrollLeft so the date sits at the viewport's
+      // left edge — what the user expects from a "currently showing"
+      // date marker. Day-boundary labels stay at colLeft so they line
+      // up with the bold midnight stroke.
+      const stickyLeft = isScrollable && i === leftmostVisibleIdx && !isDayBoundary;
+      const dateLabelX = stickyLeft
+        ? Math.max(labelX, scrollLeft + labelGap)
+        : labelX;
       c.font = `bold ${fontSize}px Helvetica, Arial, sans-serif`;
       c.fillStyle = weekdayColor;
-      c.fillText(info.dateShort, labelX, dateBaseY - lineH);
+      c.fillText(info.dateShort, dateLabelX, dateBaseY - lineH);
     }
     c.font = `${fontSize}px Helvetica, Arial, sans-serif`;
     c.fillStyle = weekdayColor;
     c.fillText(info.time24, labelX, dateBaseY);
+    prevDKey = info.dKey;
   }
   c.restore();
 }
