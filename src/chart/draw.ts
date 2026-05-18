@@ -50,6 +50,12 @@ export interface BuildChartOpts {
   tempUnit: string;
   doubledToday: boolean;
   stationCount: number;
+  /** True for hourly/today (per-hour bars). False for daily.
+   *  Drives the boundary handling for split temp lines: hourly
+   *  shows a dashed segment across the station→forecast boundary;
+   *  daily leaves a gap there (matching Chart.js's transparent
+   *  borderColor on the boundary segment in daily-combo). */
+  isHourly: boolean;
   style: CssStyleLike;
   sunshineLabelBand: number;
   /** Chart-container height in CSS pixels (from `config.forecast.chart_height`).
@@ -102,13 +108,22 @@ type AlignedData = [Array<number>, ...Array<Array<number | null | undefined>>];
 function splitLineSeriesData(
   data: ReadonlyArray<number | null | undefined>,
   stationCount: number,
+  isHourly: boolean,
 ): { station: Array<number | null | undefined>; forecast: Array<number | null | undefined> } {
   const n = data.length;
   const station = new Array<number | null | undefined>(n);
   const forecast = new Array<number | null | undefined>(n);
+  // Hourly: forecast includes the boundary point (stationCount-1) so
+  //   the spline draws a dashed segment from station-now to
+  //   forecast-now — visual cue "measured up to now, predicted from
+  //   now on".
+  // Daily: forecast starts at stationCount, so the spline LEAVES a
+  //   gap at the doubled-today boundary. Matches Chart.js's
+  //   transparent boundary borderColor for daily-combo.
+  const forecastStart = isHourly ? stationCount - 1 : stationCount;
   for (let i = 0; i < n; i++) {
     station[i] = i < stationCount ? data[i] : null;
-    forecast[i] = i >= stationCount - 1 ? data[i] : null;
+    forecast[i] = i >= forecastStart ? data[i] : null;
   }
   return { station, forecast };
 }
@@ -127,6 +142,7 @@ function toAlignedData(
   datasets: ReadonlyArray<{ data: ReadonlyArray<number | null | undefined>; type: 'line' | 'bar' }>,
   stationCount: number,
   hasBothBlocks: boolean,
+  isHourly: boolean,
 ): AlignedData {
   const n = labels.length;
   const xs = new Array<number>(n);
@@ -134,7 +150,7 @@ function toAlignedData(
   const ys: Array<Array<number | null | undefined>> = [];
   for (const ds of datasets) {
     if (ds.type === 'line' && hasBothBlocks) {
-      const { station, forecast } = splitLineSeriesData(ds.data, stationCount);
+      const { station, forecast } = splitLineSeriesData(ds.data, stationCount, isHourly);
       ys.push(station, forecast);
     } else {
       ys.push(ds.data.slice() as Array<number | null | undefined>);
@@ -241,6 +257,12 @@ function buildSeries(
       // sunshine per column". A dataset's `barPercentage` can shrink
       // its half-slot share further (e.g. 0.8 → 40 %), but the
       // default (1.0) gives the full 50/50 split.
+      // Each grouped bar gets ~50 % of the column. With the x-scale
+      // padded by 0.5 either side, data point i is centered at
+      // (i + 0.5) * colW — column centers, not plot edges — so the
+      // 50/50 bars sit inside their own column and don't bleed into
+      // neighbours. Matches the "half precip, half sunshine per
+      // column" layout from the Chart.js baseline.
       const sizeFactor = grouped ? Math.min(rawPct, 1) * 0.5 : rawPct;
       const align: -1 | 0 | 1 = grouped ? (barIdx === 0 ? -1 : 1) : 0;
       const barsFactory = uPlot.paths.bars as uPlot.Series.BarsPathBuilderFactory;
@@ -293,16 +315,27 @@ function buildSeries(
 function buildScales(
   data: BuildChartOpts['data'],
   precipMax: number,
+  columnCount: number,
 ): uPlot.Scales {
   const tempFinite = [...data.tempHigh, ...data.tempLow].filter((v): v is number => Number.isFinite(v as number));
-  // Matches Chart.js's `suggestedMin/Max` recipe from pre-uPlot
-  // draw.ts (min - 5 / max + 6). Style2 temp labels above and below
-  // the line are clamped inside the chart area by the temp-labels
-  // plugin so they don't crash into the date band.
-  const tempMin = tempFinite.length ? Math.min(...tempFinite) - 5 : 0;
-  const tempMax = tempFinite.length ? Math.max(...tempFinite) + 6 : 30;
+  // Hard range with wider headroom than Chart.js's suggestedMin/Max
+  // (which let the axis grow naturally). We need extra room above
+  // tempMax for the style2 "X°" labels rendered just above the high
+  // spline — without padding, the high value lands at the chart top
+  // and the label gets clamped into the axis band instead of sitting
+  // inside the chart drawing area near the line.
+  const tempMin = tempFinite.length ? Math.min(...tempFinite) - 8 : 0;
+  const tempMax = tempFinite.length ? Math.max(...tempFinite) + 10 : 30;
   return {
-    x: { time: false },
+    // Pad the x scale by 0.5 either side so data values land at
+    // column CENTERS, not at the plot-area edges. Without this
+    // padding, uPlot positions data 0 at xOff (left edge) and data
+    // N-1 at xOff+xDim (right edge), which puts bars at the very
+    // edges of the plot — but the daily-tick-labels and other
+    // chart.js-shaped plugins position labels at column-CENTER
+    // (i + 0.5) * colW. With the pad, bar at data i is centered on
+    // (i + 0.5) * colW just like the label, so labels and bars align.
+    x: { time: false, range: () => [-0.5, Math.max(0.5, columnCount - 0.5)] },
     TempAxis: {
       auto: false,
       range: () => [tempMin, tempMax],
@@ -489,7 +522,7 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
   const { width, height } = measureContainer(target, opts.chartHeight);
 
   const series = buildSeries(datasets, opts.textColor, hasBothBlocks);
-  const scales = buildScales(data, precipMax);
+  const scales = buildScales(data, precipMax, columnCount);
   const axes = buildAxes(sunshineLabelBand, labelsBaseSize);
 
   // Run the existing chart.js-shaped plugins through a synthesized
@@ -534,7 +567,7 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
     plugins: [uplotPlugin],
   };
 
-  const alignedData = toAlignedData(labels, datasets, stationCount, hasBothBlocks);
+  const alignedData = toAlignedData(labels, datasets, stationCount, hasBothBlocks, opts.isHourly);
   const uplot = new uPlot(uplotOpts, alignedData, target);
 
   const mutableDatasets = datasets.map((ds) => ({
@@ -557,7 +590,7 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
         data: d.data,
         type: datasets[i].type,
       }));
-      const aligned = toAlignedData(dataBag.labels, splitDatasets, stationCount, hasBothBlocks);
+      const aligned = toAlignedData(dataBag.labels, splitDatasets, stationCount, hasBothBlocks, opts.isHourly);
       uplot.setData(aligned);
     },
     reset(): void {

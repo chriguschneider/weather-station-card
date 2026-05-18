@@ -579,6 +579,7 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
     tempUnit,
     doubledToday,
     stationCount,
+    isHourly,
     style,
     sunshineLabelBand,
     inPreview: card._isInPreview === true,

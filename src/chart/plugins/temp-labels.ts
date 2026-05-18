@@ -56,11 +56,6 @@ export function createTempLabelsPlugin(opts: TempLabelsPluginOpts): ChartPlugin 
     const tempScale = chart.scales[axisKey];
     if (!xScale || !tempScale?.getPixelForValue) return;
     const c = chart.ctx;
-    // Clamp the label y inside the chart drawing area so the digit
-    // doesn't crash into the weekday/date band above (high temps)
-    // or the precip-label boxes / bottom padding (low temps).
-    const minY = chart.chartArea.top + fontSize / 2 + 1;
-    const maxY = chart.chartArea.bottom - fontSize / 2 - 1;
     c.save();
     c.textAlign = 'center';
     c.textBaseline = 'middle';
@@ -69,8 +64,12 @@ export function createTempLabelsPlugin(opts: TempLabelsPluginOpts): ChartPlugin 
       const v = values[i];
       if (v == null || !Number.isFinite(v)) continue;
       const x = xScale.getPixelForTick(i);
-      const rawY = tempScale.getPixelForValue(v) + offsetY;
-      const y = Math.min(maxY, Math.max(minY, rawY));
+      // Label sits at the line point's pixel position + small offset.
+      // No clamping — Chart.js didn't clamp either; a label that
+      // lands just above the chart drawing area (because the high
+      // value is near the scale top) flows into the date band by
+      // design, which is what the baseline screenshots show.
+      const y = tempScale.getPixelForValue(v) + offsetY;
       c.font = `${isTodayAt(i) ? 'bold ' : ''}${fontSize}px ${fontFamily}`;
       c.fillText(`${v}°`, x, y);
     }
