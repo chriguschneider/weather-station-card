@@ -208,6 +208,22 @@ class WeatherStationCard extends LitElement {
   _stationCount: number = 0;
   _forecastCount: number = 0;
   _missingSensors: string[] = [];
+  /** Last forecast.type that the chart block was actually rendered
+   *  with (i.e. data was ready). Compared in render() + `updated()`
+   *  to decide which animation class to apply on the block. */
+  _lastForecastType: string | undefined = undefined;
+  /** Flips true after the chart block has been rendered into the DOM
+   *  with data the first time, AND the start animation has had time
+   *  to play out (see _chartMountAnimationTimer). The start animation
+   *  (ws-chart-fadein, slide-up) only plays before this flag flips;
+   *  subsequent mounts (e.g. after a daily↔hourly cache-miss tore the
+   *  block down) get the view-change cross-fade instead, so the user
+   *  doesn't see the start animation replayed on every toggle. */
+  _chartMountAnimationPlayed: boolean = false;
+  /** Pending timer that flips _chartMountAnimationPlayed once the
+   *  start animation has finished. Stored so the scheduling guard
+   *  doesn't run twice and so disconnectedCallback can clear it. */
+  _chartMountAnimationTimer: number | null = null;
   // Tracks whether each configured data source has produced at least
   // one value (either via subscribe callback or by restoring a cached
   // payload on setConfig). Read in _refreshForecasts to hold off the
@@ -1410,6 +1426,7 @@ async updated(changedProperties: Map<PropertyKey, unknown>) {
   // this render (data still loading); a later render once data lands
   // will hit this line synchronously.
   this._maybeApplyInitialScroll(changedProperties);
+  this._maybeRetriggerViewChangeAnimation();
   await this.updateComplete;
 
   // Re-attempt action-handler binding after every render. Lit can swap
@@ -1825,8 +1842,25 @@ _onModeToggleClick(ev?: Event) {
           ${this.renderErrorBanner()}
           ${this.renderMain()}
           ${this.renderAttributes()}
-          ${this._allExpectedDataReady() ? html`
-          <div class="forecast-scroll-block">
+          ${this._allExpectedDataReady() ? (() => {
+          // Pick the animation class for this render. Three cases:
+          //   1. Block has never been rendered → 'first-mount' (slide-up + fade-in)
+          //   2. Block was rendered before AND forecast.type just changed → 'view-changing' (opacity dip)
+          //   3. Otherwise (data refresh, same type) → no animation class
+          // Updated() upgrades the tracking state once the rendered
+          // block lands in DOM. Inline `<div>` open below keeps the
+          // existing nested structure unchanged so the rest of the
+          // template is a 1:1 substitution.
+          const fcType = config.forecast?.type;
+          let animClass = '';
+          if (!this._chartMountAnimationPlayed) {
+            animClass = 'first-mount';
+          } else if (this._lastForecastType !== fcType) {
+            animClass = 'view-changing';
+          }
+          const disableClass = config.forecast?.disable_animation === true ? 'no-animation' : '';
+          return html`
+          <div class="forecast-scroll-block ${animClass} ${disableClass}">
             <div class="forecast-scroll ${scrolling ? 'scrolling' : ''}">
               <div class="forecast-content" style="width: ${contentWidthPct}%">
                 <div class="chart-container">
@@ -1849,7 +1883,8 @@ _onModeToggleClick(ev?: Event) {
               </button>
             ` : ''}
           </div>
-          ` : (() => {
+          `;
+          })() : (() => {
           // Compute which rows the data-ready branch WILL render so
           // the loading state can reserve the same vertical space.
           // Otherwise the swap pushes everything below the card down
@@ -2453,6 +2488,53 @@ _convertWindSpeed(raw: unknown, sourceUnit?: string): number | null {
     (event as Event & { detail?: unknown }).detail = eventDetail;
     node?.dispatchEvent(event);
     return event;
+  }
+
+  // Sync the animation-tracking state once the chart block exists in
+  // the DOM. Runs after every Lit commit, gated on whether the block
+  // is currently mounted (it isn't during the loading branch).
+  //
+  // Two responsibilities, both behind the block-exists check:
+  //   1. Set _chartMountAnimationPlayed=true so the next render
+  //      doesn't reapply the 'first-mount' class. Delayed via
+  //      setTimeout (animation duration + buffer) so HA's hass-state
+  //      ping-pong — which re-renders this component every few 100 ms
+  //      — doesn't strip the class mid-animation. Without the delay,
+  //      Lit re-renders inside the 420 ms slide-up window with the
+  //      flag already true, the template drops 'first-mount', the
+  //      browser cancels the animation, and the user sees nothing.
+  //   2. Detect a forecast.type change on a block that STAYED MOUNTED
+  //      across the render (cached toggle case) and force-restart the
+  //      view-change CSS animation via classList remove → reflow → add.
+  //      Without this, Lit's template diff updates the class attribute
+  //      but the browser collapses same-class-same-name into a no-op
+  //      and the cross-fade doesn't re-fire on consecutive toggles.
+  //      The remount case (cache miss) doesn't need this branch: the
+  //      fresh element already carries 'view-changing' from the
+  //      template, so the animation runs on mount.
+  _maybeRetriggerViewChangeAnimation() {
+    const block = safeQuery<HTMLElement>(this.shadowRoot, '.forecast-scroll-block');
+    if (!block) return;
+    const type = this.config?.forecast?.type;
+    const typeChanged = this._lastForecastType !== undefined && this._lastForecastType !== type;
+    if (typeChanged) {
+      block.classList.remove('view-changing');
+      // Force reflow so the next add re-starts the animation from
+      // its 0% keyframe instead of being collapsed by the browser.
+      void block.offsetWidth;
+      block.classList.add('view-changing');
+    }
+    if (!this._chartMountAnimationPlayed && this._chartMountAnimationTimer === null) {
+      // Defer the flag-flip until the start animation has visibly
+      // finished. Wall-clock delay matches the CSS animation duration
+      // plus a small frame buffer. Stored on the instance so a Lit
+      // disconnect/reconnect cycle doesn't accidentally schedule twice.
+      this._chartMountAnimationTimer = window.setTimeout(() => {
+        this._chartMountAnimationPlayed = true;
+        this._chartMountAnimationTimer = null;
+      }, 500);
+    }
+    this._lastForecastType = type;
   }
 
   // Apply the "scroll to now" position once per render generation.

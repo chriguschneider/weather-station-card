@@ -12,11 +12,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   now. You should notice a quicker first paint when opening the
   dashboard in the HA Companion app or after a fresh browser tab,
   particularly on older devices. No configuration change needed.
-- **The chart no longer plays the brief grow-from-baseline animation
-  when it first appears.** The chart simply paints once at its final
-  state. The look is otherwise unchanged. The `Disable animation`
-  toggle in the editor (and `forecast.disable_animation` in YAML) is
-  kept for backward compatibility but no longer has any effect.
+- **The chart now fades into view when it first appears.** Instead of
+  the per-bar grow-from-baseline that the old charting library played,
+  the whole chart now gently slides in and fades up over a quarter of
+  a second. Smooth on phones, tablets and older devices. The `Disable
+  animation` toggle in the editor (and `forecast.disable_animation`
+  in YAML) skips this animation entirely; the system-wide "reduce
+  motion" setting is also respected automatically.
 - **Precipitation row now shown by default.** If a precipitation sensor
   is wired in the card config, the live panel now shows the current
   precipitation rate automatically — no extra toggle needed. To hide
