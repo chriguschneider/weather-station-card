@@ -17,6 +17,7 @@
 // `forecast.type`. Each branch helper holds its own loop and is
 // independently grep-able.
 
+import { getDateTimeFormat } from '../../utils/intl-cache.js';
 import type { ChartLike, ChartPlugin, CssStyleLike, PluginCardConfig, PluginRenderData } from './_shared.js';
 
 export interface DailyTickLabelsPluginOpts {
@@ -227,19 +228,23 @@ export function createDailyTickLabelsPlugin({
 }: DailyTickLabelsPluginOpts): ChartPlugin {
   const showDateRow = config.forecast.show_date !== false;
 
-  // Pre-instantiate Intl.DateTimeFormat — caching the formatter is
-  // ~3× faster than calling toLocaleTimeString/toLocaleDateString
-  // each time (those instantiate a fresh formatter under the hood).
-  const timeFmt = new Intl.DateTimeFormat(language, {
+  // Pulled from the process-wide intl-cache so re-instantiating the
+  // plugin (mode toggle, theme change) re-uses the same Intl
+  // instances that other parts of the card already paid to build.
+  // Intl.DateTimeFormat construction is ~0.5-2 ms per call;
+  // toLocale*-based alternatives recreate it under the hood per
+  // call, so explicit caching is ~3× faster than the toLocale*
+  // shortcut.
+  const timeFmt = getDateTimeFormat(language, {
     hour12: false, hour: '2-digit', minute: '2-digit',
   });
-  const dateShortFmt = new Intl.DateTimeFormat(language, {
+  const dateShortFmt = getDateTimeFormat(language, {
     day: 'numeric', month: 'short',
   });
-  const date2DigitFmt = new Intl.DateTimeFormat(language, {
+  const date2DigitFmt = getDateTimeFormat(language, {
     day: '2-digit', month: '2-digit',
   });
-  const weekdayFmt = new Intl.DateTimeFormat(language, { weekday: 'short' });
+  const weekdayFmt = getDateTimeFormat(language, { weekday: 'short' });
 
   const tickCache = new Map<number, TickInfo>();
   function getTickInfo(dataIdx: number): TickInfo | null {

@@ -83,6 +83,7 @@ import {
 import { drawChartUnsafe } from './chart/orchestrator.js';
 import { renderChartSkeleton } from './chart/skeleton.js';
 import { cardStyles } from './chart/styles.js';
+import { getDateTimeFormat } from './utils/intl-cache.js';
 // Chart library: uPlot. Imported transitively via ./chart/draw.js —
 // there is no global registration step (uPlot has no plugin registry;
 // per-instance hooks/plugins are passed directly to the constructor).
@@ -1975,9 +1976,11 @@ renderMain({ config, sun, weather, temperature } = this) {
       minute: 'numeric',
       second: showSeconds ? 'numeric' : undefined
     };
-    const currentTime = currentDate.toLocaleTimeString(this.language, timeOptions as Intl.DateTimeFormatOptions);
-    const currentDayOfWeek = currentDate.toLocaleString(this.language, { weekday: 'long' }).toUpperCase();
-    const currentDateFormatted = currentDate.toLocaleDateString(this.language, { month: 'long', day: 'numeric' });
+    // Route through the cached Intl factory so the 1Hz clock tick
+    // doesn't pay a fresh formatter construction every second.
+    const currentTime = getDateTimeFormat(this.language, timeOptions as Intl.DateTimeFormatOptions).format(currentDate);
+    const currentDayOfWeek = getDateTimeFormat(this.language, { weekday: 'long' }).format(currentDate).toUpperCase();
+    const currentDateFormatted = getDateTimeFormat(this.language, { month: 'long', day: 'numeric' }).format(currentDate);
 
     const mainDiv = this.shadowRoot?.querySelector('.main');
     if (mainDiv) {
@@ -2347,11 +2350,12 @@ const timeOptions = {
     minute: 'numeric'
 } as Intl.DateTimeFormatOptions;
 
+  const timeFmt = getDateTimeFormat(language, timeOptions);
   return html`
     <ha-icon icon="mdi:weather-sunset-up"></ha-icon>
-      ${new Date(sun.attributes.next_rising).toLocaleTimeString(language, timeOptions)}<br>
+      ${timeFmt.format(new Date(sun.attributes.next_rising))}<br>
     <ha-icon icon="mdi:weather-sunset-down"></ha-icon>
-      ${new Date(sun.attributes.next_setting).toLocaleTimeString(language, timeOptions)}
+      ${timeFmt.format(new Date(sun.attributes.next_setting))}
   `;
 }
 

@@ -16,6 +16,7 @@
 
 import { safeQuery } from './utils/safe-query.js';
 import { computeInitialScrollLeft } from './format-utils.js';
+import { getDateTimeFormat } from './utils/intl-cache.js';
 import type { ForecastEntry } from './forecast-utils.js';
 
 const DRAG_THRESHOLD = 5;
@@ -317,6 +318,7 @@ export function updateScrollDateStamps(
   const rightCenterX = Math.min(wrapper.clientWidth - TEXT_HALF, rawRightCenterX);
 
   const lang = card.config.locale || card.language || 'en';
+  const dateFmt = getDateTimeFormat(lang, { day: 'numeric', month: 'short' });
   const fmt = (idx: number): DateStampInfo => {
     const item = card.forecasts ? card.forecasts[idx] : undefined;
     if (!item?.datetime) return { date: '', isMidnight: false };
@@ -324,7 +326,7 @@ export function updateScrollDateStamps(
       const d = new Date(item.datetime);
       const isMidnight = d.getHours() === 0 && d.getMinutes() === 0;
       return {
-        date: d.toLocaleDateString(lang, { day: 'numeric', month: 'short' }),
+        date: dateFmt.format(d),
         isMidnight,
       };
     } catch (err) {
