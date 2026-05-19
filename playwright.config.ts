@@ -72,6 +72,28 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         viewport: { width: 1280, height: 720 },
       },
+      // Scope: every spec EXCEPT the mobile lane's. Without this, the
+      // chromium project would also pick up the mobile-* specs and run
+      // them at Desktop DPR=1, which defeats the point of the lane.
+      testIgnore: /mobile-.*\.spec\.ts/,
+    },
+    {
+      // Mobile-emulation lane (Stufe 3a per the perf-pass discussion).
+      // Pixel 7 device profile gives viewport 412x915 + DPR 2.625 +
+      // mobile user-agent + touch events — a realistic Android
+      // Companion App proxy with current-generation hardware. Catches
+      // DPR-class bugs (the canvas overflow + plugin coordinate
+      // mismatch we found in fix(chart) PR #176) that DPR=1
+      // environments hide.
+      // Scope is intentionally narrow: only assertion-based specs
+      // tagged with the `mobile-` filename prefix. Visual baselines
+      // stay on the chromium lane to keep snapshot review tractable
+      // and avoid doubling the baseline matrix.
+      name: 'mobile',
+      use: {
+        ...devices['Pixel 7'],
+      },
+      testMatch: /mobile-.*\.spec\.ts/,
     },
   ],
 
