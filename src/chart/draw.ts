@@ -578,12 +578,32 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
     hooks: {
       draw: (u) => {
         const shim = buildChartLikeShim(u, columnCount, datasets, tempMinForShim, tempMaxForShim);
+        // Plugins draw in CSS pixels (per the shim's divide-by-pxRatio
+        // bbox conversion). uPlot itself draws in device pixels by
+        // multiplying coordinates by pxRatio inline; it does NOT use
+        // ctx.scale(). So on high-DPR devices (most phones, retina
+        // laptops) the plugin's CSS-pixel calls land at 1/pxRatio of
+        // the intended canvas position — labels visually clustered in
+        // a fraction of the chart width.
+        //
+        // Wrap plugin draws with a transient ctx.scale(pxRatio,
+        // pxRatio) so CSS-pixel coords inside plugin code are scaled
+        // to device pixels by the canvas matrix itself. Font sizes,
+        // line widths, and translate calls inside the plugins now
+        // produce display-sized output at any DPR. uPlot's own
+        // drawing already happened before this hook fires, so the
+        // scale doesn't double-count anything.
+        const c = u.ctx;
+        const pr = uPlot.pxRatio;
+        c.save();
+        if (pr !== 1) c.scale(pr, pr);
         for (const p of plugins) {
           if (p.afterDatasetsDraw) p.afterDatasetsDraw(shim);
         }
         for (const p of plugins) {
           if (p.afterDraw) p.afterDraw(shim);
         }
+        c.restore();
       },
     },
   };
