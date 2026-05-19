@@ -79,18 +79,19 @@ export default defineConfig({
     },
     {
       // Mobile-emulation lane (Stufe 3a per the perf-pass discussion).
-      // Pixel 5 device profile gives viewport 393x851 + DPR 2.625 +
+      // Pixel 7 device profile gives viewport 412x915 + DPR 2.625 +
       // mobile user-agent + touch events — a realistic Android
-      // Companion App proxy. Catches DPR-class bugs (the canvas
-      // overflow + plugin coordinate mismatch we found in fix(chart)
-      // PR #176) that DPR=1 environments hide.
+      // Companion App proxy with current-generation hardware. Catches
+      // DPR-class bugs (the canvas overflow + plugin coordinate
+      // mismatch we found in fix(chart) PR #176) that DPR=1
+      // environments hide.
       // Scope is intentionally narrow: only assertion-based specs
       // tagged with the `mobile-` filename prefix. Visual baselines
       // stay on the chromium lane to keep snapshot review tractable
       // and avoid doubling the baseline matrix.
       name: 'mobile',
       use: {
-        ...devices['Pixel 5'],
+        ...devices['Pixel 7'],
       },
       testMatch: /mobile-.*\.spec\.ts/,
     },

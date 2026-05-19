@@ -1,7 +1,7 @@
 // Mobile-emulation layout-invariant spec (Stufe 3a).
 //
-// Runs in the `mobile` Playwright project (Pixel 5 device profile —
-// viewport 393x851, DPR 2.625, mobile user-agent, touch events). The
+// Runs in the `mobile` Playwright project (Pixel 7 device profile —
+// viewport 412x915, DPR 2.625, mobile user-agent, touch events). The
 // chromium project deliberately skips this file (testIgnore in
 // playwright.config.ts) so the mobile-specific invariants stay
 // expressed in one place at the right DPR.
