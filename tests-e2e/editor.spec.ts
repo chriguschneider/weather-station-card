@@ -40,6 +40,15 @@ test.describe('editor', () => {
       window.__wsce = {
         async mount(config: Record<string, unknown>) {
           if (editorEl) editorEl.remove();
+          // The editor is lazy-loaded in a separate bundle chunk.
+          // Trigger its registration via the card's static
+          // getConfigElement (HA's canonical entry point) before
+          // constructing the element directly — otherwise the
+          // custom element isn't defined yet and setConfig is
+          // missing.
+          const CardCls = customElements.get('weather-station-card') as
+            { getConfigElement: () => Promise<HTMLElement> } | undefined;
+          if (CardCls?.getConfigElement) await CardCls.getConfigElement();
           editorEl = document.createElement('weather-station-card-editor');
           // The editor surfaces its mutations via the standard HA
           // `config-changed` event with `event.detail.config`.

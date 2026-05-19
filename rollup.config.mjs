@@ -43,11 +43,36 @@ const serveopts = {
 export default {
   input: 'src/main.ts',
   output: {
-    file: 'dist/weather-station-card.js',
-    format: 'cjs',
-    name: 'WeatherStationCard',
+    dir: 'dist',
+    format: 'es',
+    // Entry filename pinned so HACS' Lovelace-resource registration
+    // (`weather-station-card.js`) keeps working unchanged. Dynamic
+    // imports produce additional chunk files with content-hashed
+    // names so the browser caches them forever (HACS only appends
+    // `?hacstag=` to the registered entry — chunk freshness is the
+    // hash's job).
+    entryFileNames: 'weather-station-card.js',
+    chunkFileNames: '[name]-[hash].js',
     sourcemap: (dev || analyze) ? true : false,
   },
+  // HA registers our entry as `type: module` (verified via
+  // `.storage/lovelace_resources`), so ESM output + dynamic `import()`
+  // both work natively. The single-entry, multi-chunk shape with
+  // hashed chunk names is the same recipe advanced-camera-card uses
+  // in production.
+  //
+  // `preserveEntrySignatures: 'strict'` is load-bearing — without it,
+  // rollup lets the editor chunk re-import shared code from the
+  // entry file (`weather-station-card.js`). HACS appends `?hacstag=`
+  // only to the registered entry URL, not to relative chunk imports,
+  // so the browser ends up with TWO copies of the entry under
+  // different URLs (with and without the query string). The second
+  // copy re-executes the top-level `customElements.define` call and
+  // throws ("already registered"). `strict` forces rollup to extract
+  // the shared code into its own content-hashed chunk and turn the
+  // entry into a thin facade, so chunks never re-import the entry
+  // and the hacstag mismatch never happens.
+  preserveEntrySignatures: 'strict',
   plugins: [
     // Version-string substitution runs before TS so the placeholder
     // disappears before any downstream pass sees it. Idempotent — only

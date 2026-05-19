@@ -33,6 +33,12 @@ for (const theme of THEMES) {
         window.__wsce = {
           async mount(config: Record<string, unknown>) {
             if (editorEl) editorEl.remove();
+            // Editor is lazy-loaded in its own bundle chunk; trigger
+            // registration via the card's static getConfigElement
+            // before createElement (matches the editor.spec.ts harness).
+            const CardCls = customElements.get('weather-station-card') as
+              { getConfigElement: () => Promise<HTMLElement> } | undefined;
+            if (CardCls?.getConfigElement) await CardCls.getConfigElement();
             editorEl = document.createElement('weather-station-card-editor');
             host.appendChild(editorEl);
             (editorEl as unknown as { setConfig: (c: Record<string, unknown>) => void }).setConfig(config);

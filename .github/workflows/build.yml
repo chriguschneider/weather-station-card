@@ -84,26 +84,36 @@ jobs:
         run: npm run rollup
 
       - name: Bundle budget
-        # Hard cap at 800 KB raw / 250 KB gzipped (current ~355 KB raw /
-        # ~114 KB gzip). Tripping either signals a regression in
-        # tree-shaking or an accidental large dep — investigate before
-        # merging. Gzip cap added in v1.10 (#111): bytes-on-the-wire is
-        # what HA's frontend cache pays for, raw size only matters once
-        # the file lands.
+        # Hard cap at 800 KB raw / 250 KB gzipped across all dist/*.js
+        # (current ~220 KB raw / ~65 KB gzip after editor split).
+        # Tripping either signals a regression in tree-shaking or an
+        # accidental large dep — investigate before merging.
+        # The sum-across-files shape (vs. per-file) covers the
+        # post-ESM-split layout: a thin entry + lazy chunks. Bytes-on-
+        # the-wire is what HA's frontend cache pays for; the user only
+        # actually fetches main + whichever lazy chunks their session
+        # exercises, so the sum is the worst-case total.
         run: |
-          raw=$(wc -c < dist/weather-station-card.js)
-          gzip=$(gzip -c dist/weather-station-card.js | wc -c)
+          raw=0
+          gzip=0
+          for f in dist/*.js; do
+            r=$(wc -c < "$f")
+            g=$(gzip -c "$f" | wc -c)
+            echo "$f: $r raw / $g gzipped"
+            raw=$((raw + r))
+            gzip=$((gzip + g))
+          done
           raw_limit=$((800 * 1024))
           gzip_limit=$((250 * 1024))
-          echo "dist/weather-station-card.js: $raw bytes raw (limit: $raw_limit)"
-          echo "                             $gzip bytes gzipped (limit: $gzip_limit)"
+          echo "total: $raw bytes raw (limit: $raw_limit)"
+          echo "       $gzip bytes gzipped (limit: $gzip_limit)"
           fail=0
           if [ "$raw" -gt "$raw_limit" ]; then
-            echo "::error::Bundle exceeds 800 KB raw budget."
+            echo "::error::Bundle total exceeds 800 KB raw budget."
             fail=1
           fi
           if [ "$gzip" -gt "$gzip_limit" ]; then
-            echo "::error::Bundle exceeds 250 KB gzipped budget."
+            echo "::error::Bundle total exceeds 250 KB gzipped budget."
             fail=1
           fi
           [ "$fail" = "0" ]
@@ -156,10 +166,16 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify committed bundle matches source
+        # After ADR-0013 (ESM code-split) `dist/` holds a hashed-chunk
+        # set alongside the entry — verify the whole directory, not
+        # just the entry file. Chunk filenames are content-hashed so
+        # any source change that touches the bundle output produces a
+        # diff here; a clean directory means committed = built.
         run: |
-          if ! git diff --quiet -- dist/weather-station-card.js; then
-            echo "::error::dist/weather-station-card.js is out of sync with source. Run 'npm run build' and commit the result."
-            git --no-pager diff --stat -- dist/weather-station-card.js
+          if ! git diff --quiet -- dist/; then
+            echo "::error::dist/ is out of sync with source. Run 'npm run build' and commit the result."
+            git --no-pager diff --stat -- dist/
+            git --no-pager status --short -- dist/
             exit 1
           fi
 
@@ -193,8 +209,14 @@ jobs:
           cat .release-notes.md
 
       - name: Upload bundle to release
+        # ADR-0013: the dist now contains the registered entry plus
+        # content-hashed lazy chunks. HACS downloads every release
+        # asset for plugin repos (verified against HACS source —
+        # gather_files_to_download), so attach all dist/*.js files.
+        # Without this, lazy chunks would 404 in HACS-installed
+        # cards even though the entry file loads.
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
         with:
-          files: dist/weather-station-card.js
+          files: dist/*.js
           body_path: .release-notes.md

@@ -55,3 +55,5 @@ status line.
 - [0009 — Lookup-table pattern for unit conversions](./0009-lookup-table-pattern-for-unit-conversions.md) (Accepted)
 - [0010 — Group-renderer pattern for conditional template blocks](./0010-group-renderer-pattern.md) (Accepted)
 - [0011 — Track `package-lock.json` for reproducible builds](./0011-track-package-lock.md) (Accepted)
+- [0012 — Chart library: uPlot](./0012-chart-library-uplot.md) (Accepted)
+- [0013 — ESM output with content-hashed chunks for lazy editor](./0013-esm-code-split-for-lazy-editor.md) (Accepted)
