@@ -27,6 +27,7 @@
 import { normalizeForecastMode } from '../forecast-utils.js';
 import { lightenColor } from '../format-utils.js';
 import { resolveCssVar } from '../utils/resolve-css-var.js';
+import { getThemeTokens } from '../utils/theme-tokens.js';
 import { sunshineFractions } from '../sunshine-source.js';
 import { buildChart, type UplotChart } from './draw.js';
 import {
@@ -461,10 +462,32 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
   const precipUnit = lengthUnit === 'km' ? llUnits['mm'] : llUnits['in'];
   const data = card.computeForecastData();
 
-  const style = getComputedStyle(document.body);
-  const backgroundColor = style.getPropertyValue('--card-background-color');
-  const textColor = style.getPropertyValue('--primary-text-color');
-  const dividerColor = style.getPropertyValue('--divider-color');
+  // Theme tokens (background / primary-text / divider / secondary-text)
+  // are stable within a theme session. The cache memoises them across
+  // calls and invalidates on theme switch via a MutationObserver on
+  // <html>. The plugin `style` proxy serves the four known tokens
+  // from the cache; any other CSS var falls back to a live read
+  // (no plugin currently needs that path, but it keeps the
+  // `CssStyleLike` contract honest).
+  const tokens = getThemeTokens(document.body);
+  const backgroundColor = tokens.backgroundColor;
+  const textColor = tokens.textColor;
+  const dividerColor = tokens.dividerColor;
+  let liveStyleCached: CSSStyleDeclaration | null = null;
+  const style: CssStyleLike = {
+    getPropertyValue: (name: string): string => {
+      switch (name) {
+        case '--card-background-color': return tokens.backgroundColor;
+        case '--primary-text-color': return tokens.textColor;
+        case '--divider-color': return tokens.dividerColor;
+        case '--secondary-text-color': return tokens.secondaryTextColor;
+        default: {
+          if (!liveStyleCached) liveStyleCached = getComputedStyle(document.body);
+          return liveStyleCached.getPropertyValue(name);
+        }
+      }
+    },
+  };
 
   // 'today' is hourly granularity (per-hour bars), same precip scale
   // as 'hourly'. 'daily' aggregates over the full day, scale is wider.
