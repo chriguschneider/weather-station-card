@@ -29,7 +29,6 @@ import {
 import { DEFAULTS, DEFAULTS_FORECAST, DEFAULTS_UNITS } from './defaults.js';
 import {LitElement, html} from 'lit';
 import {guard} from 'lit/directives/guard.js';
-import './weather-station-card-editor.js';
 import {
   MeasuredDataSource,
   ForecastDataSource,
@@ -286,7 +285,12 @@ class WeatherStationCard extends LitElement {
   // deno-lint-ignore no-explicit-any
   _teardownRegistry: any;
 
-static getConfigElement() {
+// HA calls getConfigElement when the user clicks the visual editor.
+// Awaiting the dynamic import is supported (HA awaits the return
+// value), and tells rollup to split the editor into its own chunk —
+// users who only view the card never pay the editor's parse cost.
+static async getConfigElement() {
+  await import('./weather-station-card-editor.js');
   return document.createElement("weather-station-card-editor");
 }
 

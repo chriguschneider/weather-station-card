@@ -7,6 +7,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- **First load is a bit lighter.** The card's visual editor (the
+  one you see when clicking the pencil on a card) now loads
+  on-demand instead of on every card display. You save a few
+  kilobytes per fresh dashboard load; the editor still works
+  exactly the same when you do open it.
 - **The chart should appear faster, especially on phones and tablets.**
   The card uses a smaller, lighter charting library under the hood
   now. You should notice a quicker first paint when opening the
