@@ -262,6 +262,24 @@ export function cardStyles({
     #forecastChart .u-axis {
       position: absolute;
     }
+    /* uPlot writes the high-DPR pixel buffer size onto the canvas's
+     * width/height ATTRIBUTES (e.g. 2769x540 on a DPR=3 device for a
+     * logical 923x180 chart) but does not set CSS dimensions. Without
+     * an explicit CSS size, the canvas displays at its attribute size
+     * (pxRatio times the intended size) so the data area renders far
+     * below the chart container's 180 px bound.
+     * The official uPlot.min.css carries this rule; we deliberately
+     * don't import that file (its .uplot width:min-content collapses
+     * our flex container) and were missing the canvas rule until now.
+     * Symptom this fixes: on the Android Companion App (Chromium
+     * WebView, DPR usually 2-3) the temperature lines and precip /
+     * sunshine bars rendered below the wind row instead of inside
+     * the chart area. */
+    #forecastChart canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
     /* Placeholder rendered while the data sources are still firing
      * their first callbacks. Keeps the chart-row height stable so the
      * page doesn't reflow when data lands. Inner <svg> draws a static
