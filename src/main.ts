@@ -392,18 +392,37 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
     return pickRanked(matches);
   };
 
+  // A freshly-added card lands with a fuller, closer-to-finished
+  // layout than bare DEFAULTS — the live panel, current condition, the
+  // full attributes row, clock + date, and a 5-day past/forecast
+  // window. The picker preview also renders this stub before any
+  // recorder data exists; the live now-panel (driven by hass.states,
+  // no recorder dependency) gives the picker an immediate, honest
+  // visual. Sensors and the weather entity are auto-detected — never
+  // hard-coded, they are instance-specific. Keys at their DEFAULTS
+  // value are covered by the spread; only the deltas are listed.
+  const weatherEntity = (allEntities || []).find(
+    (eid: string) => eid.startsWith('weather.'),
+  ) || '';
   return {
     ...DEFAULTS,
-    // Picker preview renders this stub before any recorder data is
-    // available, so the past chart would otherwise come up empty and
-    // HA falls back to a description-only tile. The live now-panel
-    // (driven by hass.states, no recorder dependency) gives the picker
-    // an immediate, honest visual — no synthetic NaN values needed.
-    // New users adding the card via the picker also benefit from a
-    // richer default than just the chart row.
     show_main: true,
     show_current_condition: true,
     show_attributes: true,
+    show_time: true,
+    show_date: true,
+    show_pressure: true,
+    show_sun: true,
+    show_dew_point: true,
+    show_wind_gust_speed: true,
+    show_illuminance: true,
+    days: 5,
+    forecast_days: 5,
+    weather_entity: weatherEntity,
+    forecast: {
+      ...DEFAULTS_FORECAST,
+      show_sunshine: true,
+    },
     sensors: {
       temperature: findByClass('temperature') || '',
       humidity: findByClass('humidity') || '',

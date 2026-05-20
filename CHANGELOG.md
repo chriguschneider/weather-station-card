@@ -8,6 +8,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [2.0.1] — 2026-05-20
 
+### Changed
+- **A freshly-added card starts with a fuller layout.** When you add
+  the card to a dashboard it now arrives with the live panel, the
+  current-condition line, the attributes row, the clock and date, and
+  a 5-day past/forecast window already switched on — closer to a
+  finished card, with less to configure. Sensors and the weather
+  entity are still auto-detected. Existing cards are unaffected.
+
 ### Fixed
 - **The configuration check no longer warns about standard Home
   Assistant settings.** A card placed in a dashboard's grid — which
