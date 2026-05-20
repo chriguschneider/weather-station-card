@@ -217,6 +217,22 @@ export function readCachedAvailability(
   };
 }
 
+/** Resolve the constructor's `fetchImpl` option to a concrete fetch
+ *  function or `null`. An explicit `null` is an opt-out — no network at
+ *  all. `undefined` (the default) falls back to the global `fetch` when
+ *  the runtime provides one. Kept separate from the constructor so the
+ *  three-way resolution stays one simple, branch-isolated unit — and so
+ *  the load-bearing null-vs-undefined distinction has a single home.
+ *
+ *  Why it matters: on modern Node a global `fetch` exists, so a plain
+ *  `fetchImpl ?? globalFetch` coalesces an intended `null` ("no fetch")
+ *  into a real network call. */
+function resolveFetchImpl(fetchImpl: FetchLike | null | undefined): FetchLike | null {
+  if (fetchImpl === null) return null;
+  if (fetchImpl) return fetchImpl;
+  return typeof fetch === 'function' ? (fetch as FetchLike).bind(globalThis) : null;
+}
+
 // ── Source class ────────────────────────────────────────────────────
 
 export class OpenMeteoSunshineSource {
@@ -254,8 +270,9 @@ export class OpenMeteoSunshineSource {
     this.includeHourly = includeHourly === true;
     // Allow overriding the fetch and storage implementations so the
     // tests can run in a Node environment without polluting globals.
-    this._fetch = fetchImpl
-      ?? (typeof fetch === 'function' ? (fetch as FetchLike).bind(globalThis) : null);
+    // See resolveFetchImpl for the load-bearing null-vs-undefined
+    // contract (`null` = no network, `undefined` = global fetch).
+    this._fetch = resolveFetchImpl(fetchImpl);
     const fallbackStorage = typeof window !== 'undefined' && window.localStorage ? window.localStorage : null;
     this._storage = storage !== undefined ? storage : fallbackStorage;
     this._now = now ?? (() => Date.now());

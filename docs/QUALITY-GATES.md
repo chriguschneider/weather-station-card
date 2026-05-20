@@ -83,8 +83,9 @@ in PRs but not required for merge.
 
 A few file-scoped exclusions live in `sonar-project.properties`:
 
-- `src/main.ts` excluded from analysis (HA integration boundary,
-  uses `@ts-nocheck` per ADR-0004).
+- `src/main.ts` excluded from analysis (HA integration boundary;
+  strictly typed under `tsc`, but the `any` confined to undocumented
+  HA-frontend slots per ADR-0004 would otherwise be double-reported).
 - Several modules excluded from coverage scope where Playwright is
   the test harness (mirror `vitest.config.js` `coverage.include`).
 - `src/locale.ts` excluded from CPD (per-language string tables
