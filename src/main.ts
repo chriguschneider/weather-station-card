@@ -1,5 +1,6 @@
 // main.ts — integration boundary file. LitElement + Home Assistant +
-// Chart.js wiring, type-checked under `tsc --strict`. HA-shaped fields
+// uPlot wiring (via chart/orchestrator), type-checked under
+// `tsc --strict`. HA-shaped fields
 // use the `HassMain` extension of the data-source `HassLike` type below
 // — the full HomeAssistant type would pull in too many UI deps.
 // Anything where the HA frontend type-shape isn't documented

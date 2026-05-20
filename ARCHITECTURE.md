@@ -1,10 +1,14 @@
 # Architecture
 
-How the card is wired together. The current shape is the result of two
-big refactor rounds: v1.1 split the original 2,200-line `main.js`
+How the card is wired together. The current shape is the result of
+several refactor rounds: v1.1 split the original 2,200-line `main.js`
 monolith into focused modules, v1.2 migrated everything to TypeScript,
-and v1.9.x reorganized the editor partials around user intent rather
-than technical structure. `main.ts` is now ~2,000 LOC of orchestrator —
+v1.9.x reorganized the editor partials around user intent rather than
+technical structure, and the v2 cycle (May 2026) added a resilience
+layer (config validation, graceful degradation, debug overlay), swapped
+the charting library from Chart.js to uPlot (ADR-0012), moved to an
+ESM code-split bundle with a lazy editor chunk (ADR-0013), and made the
+card theme-token-aware. `main.ts` is now ~3,000 LOC of orchestrator —
 it holds reactive properties, wires the data sources, and delegates
 behaviour to the modules below.
 
@@ -23,7 +27,12 @@ src/
 │                              modules below. The `set hass` setter is
 │                              a 12-line orchestrator that delegates to
 │                              three private phase methods (see
-│                              [Lifecycle](#lifecycle)).
+│                              [Lifecycle](#lifecycle)). This is the
+│                              HA integration boundary — strictly typed
+│                              under `tsc`, with `any` confined to the
+│                              undocumented HA-frontend slots and
+│                              eslint-disable lines limited to those
+│                              exact spots (ADR-0004).
 │
 ├── defaults.ts                (v1.9)  Single source of truth for the
 │                              card's configuration defaults: DEFAULTS,
@@ -31,22 +40,58 @@ src/
 │                              `setConfig` (user YAML merge) and
 │                              `getStubConfig` (visual-editor "first
 │                              add" path) consume this object so the
-│                              two cannot drift.
+│                              two cannot drift (ADR-0008).
+│
+├── config-validation.ts       (v2)  Advisory config validator —
+│                              raw user YAML → list of human-readable
+│                              problems (unknown keys, wrong-typed
+│                              values, "did you mean X?" typo hints).
+│                              Never throws; the allowed key set is
+│                              derived from DEFAULTS so it cannot
+│                              drift (ADR-0008). Surfaced through
+│                              `renderErrorBanner()`.
 │
 ├── data-source.ts             MeasuredDataSource (recorder polling)
 │                              and ForecastDataSource (weather/subscribe_
 │                              forecast). Both expose subscribe(cb) →
 │                              unsubscribe and emit { forecast, error? }.
+│                              Also hosts `fetchPressure3hDelta` +
+│                              `PressureDeltaCache` for the live
+│                              pressure-trend row.
 │
 ├── condition-classifier.ts    Pure decision-tree classifier — feed it
 │                              temp/humidity/wind/lux/precip and it
 │                              returns one of HA's weather condition
-│                              IDs. Day / hour period dispatch.
+│                              IDs. Day / hour period dispatch. Also
+│                              exports `clearSkyLuxAt` (clear-sky lux
+│                              reference used by the live rows).
 │
-├── forecast-utils.ts          Pure helpers: pickHourlyTickIndices,
-│                              hourlyTempSeries, normalizeForecastMode,
-│                              startOfTodayMs + the v1.0.2 midnight-
-│                              transition guards.
+├── precip-rate.ts             (v2)  Live precipitation-rate derivation
+│                              from a cumulative rain counter. Keeps a
+│                              15-min sliding sample buffer and divides
+│                              Δvalue by wall-clock Δtime so the rate
+│                              decays to zero when ticks stop.
+│
+├── pressure-trend.ts          (v2)  Pressure-tendency classifier for
+│                              the live-panel pressure row. 5-class WMO
+│                              3-hour scheme; hard-coded thresholds.
+│
+├── dew-point-comfort.ts       (v2)  Dew-point comfort classifier for
+│                              the live-panel dew-point row. Five
+│                              first-match-wins bands (Raureif > Nebel
+│                              > Schwül > Tau > Komfort).
+│
+├── sun-strength.ts            (v2)  Sun-strength classifier for the
+│                              live-panel sun row — merges UV index +
+│                              illuminance into a cloud-aware sun/moon
+│                              icon; WHO 5-tier UV bands. Pure.
+│
+├── forecast-utils.ts          Pure helpers: hourlyTempSeries,
+│                              normalizeForecastMode, startOfTodayMs,
+│                              filterMidnightStaleForecast,
+│                              aggregateThreeHour, the forecast-fetch
+│                              key/equality helpers + the v1.0.2
+│                              midnight-transition guards.
 │
 ├── format-utils.ts            Pure helpers for color parsing,
 │                              separator-position algebra,
@@ -70,29 +115,77 @@ src/
 │                              perform-action, assist, fire-dom-event).
 │                              setupActionHandler(card) + runAction.
 │
-├── teardown-registry.ts       Lifecycle-cleanup primitive used by
-│                              extracted modules so disconnectedCallback
-│                              drains them in lockstep.
+├── teardown-registry.ts       Lifecycle-cleanup primitive. Test-covered
+│                              and ready for wider use, but currently
+│                              only partially wired — depcruise allow-
+│                              lists it as a documented orphan exception
+│                              pending full re-integration.
+│
+├── const.ts                   weatherIcons / cardinal-direction tables,
+│                              MIN_HA_VERSION + isHaVersionBelow (v2
+│                              HA-version compatibility check).
+│
+├── locale.ts                  Locale registry + on-demand loader. Only
+│                              English is eager (guaranteed fallback);
+│                              every other language is a lazy chunk.
+│
+├── locale-types.ts            Shared locale types, split into their own
+│                              file so per-language tables can import
+│                              them without forming a dependency cycle.
+│
+├── locales/                   23 per-language string tables, one file
+│                              each (de.ts, fr.ts, …). Lazy-loaded
+│                              chunks — only the user's language is
+│                              fetched at runtime.
+│
+├── icons/                     Bundled SVG weather-condition icons,
+│                              copied verbatim to dist/icons/ by the
+│                              build (rollup-plugin-copy).
 │
 ├── utils/
 │   ├── safe-query.ts          shadowRoot?.querySelector helper.
-│   └── numeric.ts             parseNumericSafe — returns null instead
-│                              of NaN on un-parseable input.
+│   ├── numeric.ts             parseNumericSafe — returns null instead
+│   │                          of NaN on un-parseable input.
+│   ├── intl-cache.ts          (v2)  Process-wide cache of
+│   │                          Intl.DateTimeFormat / NumberFormat
+│   │                          instances keyed by (language, options).
+│   ├── resolve-css-var.ts     (v2)  Expands a `var(--token, fallback)`
+│   │                          string against computed style for the
+│   │                          chart colour path; pass-through for
+│   │                          plain colour literals.
+│   ├── theme-tokens.ts        (v2)  Caches the HA theme CSS custom
+│   │                          properties the chart re-reads on every
+│   │                          redraw; a MutationObserver on <html>
+│   │                          invalidates the cache on theme switch.
+│   └── unit-converters.ts     (v2)  Pure wind / pressure unit-
+│                              conversion lookup tables (ADR-0009).
 │
 ├── chart/
 │   ├── orchestrator.ts        drawChartUnsafe(card, args) — assembles
 │   │                          datasets + plugins, calls buildChart.
 │   │
-│   ├── draw.ts                Chart.js instance builder — buildChart(ctx,
-│   │                          opts) returns a configured Chart.
+│   ├── draw.ts                uPlot instance builder — buildChart(ctx,
+│   │                          opts) returns a configured uPlot chart
+│   │                          (replaced the Chart.js builder, ADR-0012).
 │   │
-│   ├── plugins.ts             Barrel re-export of the four Chart.js
-│   │                          plugin factories under plugins/ (split
-│   │                          per #57).
+│   ├── plugins.ts             Barrel re-export of the five chart
+│   │                          plugin factories under plugins/.
 │   │
-│   ├── plugins/               Per-plugin source: _shared.ts, separator.ts,
+│   ├── plugins/               Per-plugin source: _shared.ts (the
+│   │                          ChartLike contract), separator.ts,
 │   │                          daily-tick-labels.ts, precip-label.ts,
-│   │                          sunshine-label.ts.
+│   │                          sunshine-label.ts, temp-labels.ts.
+│   │
+│   ├── sanitize.ts            (v2)  Pure defensive sanitisers for the
+│   │                          chart data path — drop null/malformed
+│   │                          forecast entries before they reach the
+│   │                          chart. Never throws.
+│   │
+│   ├── skeleton.ts            (v2)  Loading placeholder rendered in
+│   │                          place of the chart while data sources
+│   │                          are still firing — a CSS shimmer sweep
+│   │                          that reserves the chart's vertical
+│   │                          space so the swap doesn't reflow.
 │   │
 │   └── styles.ts              cardStyles({...}) — returns the CSS
 │                              string for the card's <style> block.
@@ -102,6 +195,13 @@ src/
 │   │                          than by technical concern — see ADR-0005.
 │   ├── types.ts               Shared types: EditorLike, EditorContext,
 │   │                          TFn, ChangeEvt.
+│   ├── section-header.ts      Shared <h3> section-heading helper that
+│   │                          wires the per-section reset-to-defaults
+│   │                          button.
+│   ├── section-keys.ts        Per-section config-key inventories the
+│   │                          reset buttons delete. A CI drift guard
+│   │                          (editor-schema test) keeps this in sync
+│   │                          with the section schemas.
 │   ├── render-mode.ts         Section 1 — "Karte einrichten" / Card
 │   │                          setup. Mode (station/forecast/combination)
 │   │                          and chart-type radios.
@@ -118,15 +218,14 @@ src/
 │   └── render-tap.ts          Section 7 — "Aktionen" / Actions. Tap /
 │                              hold / double-tap selectors.
 │
-├── weather-station-card-editor.ts   LitElement editor host. Owns
-│                              mutator methods (_valueChanged,
-│                              _sensorsChanged, _conditionMappingChanged,
-│                              _setMode, _renderSunshineAvailabilityHint,
-│                              etc.); render() delegates to the seven
-│                              partials above.
-│
-├── const.ts                   weatherIcons / cardinal-direction tables.
-└── locale.ts                  Per-language string tables.
+└── weather-station-card-editor.ts   LitElement editor host. Owns
+                               mutator methods (_valueChanged,
+                               _sensorsChanged, _conditionMappingChanged,
+                               _setMode, _resetSection,
+                               _renderSunshineAvailabilityHint, etc.);
+                               render() delegates to the seven partials
+                               above. Lazy-loaded as its own chunk
+                               (ADR-0013).
 ```
 
 ### Module dependency graph
@@ -135,6 +234,7 @@ src/
 graph TD
     main[main.ts]
     main --> defaults[defaults.ts]
+    main --> cfgval[config-validation.ts]
     main --> data[data-source.ts]
     main --> classifier[condition-classifier.ts]
     main --> fcutils[forecast-utils.ts]
@@ -143,26 +243,34 @@ graph TD
     main --> openmeteo[openmeteo-source.ts]
     main --> scroll[scroll-ux.ts]
     main --> action[action-handler.ts]
+    main --> liverows[precip-rate / pressure-trend / dew-point-comfort / sun-strength]
     main --> orchestrator[chart/orchestrator.ts]
+    main --> skeleton[chart/skeleton.ts]
     main --> styles[chart/styles.ts]
-    main --> safeq[utils/safe-query.ts]
-    main --> num[utils/numeric.ts]
-    main --> editor[weather-station-card-editor.ts]
+    main --> locale[locale.ts]
+    main --> const[const.ts]
+    main --> utils[utils/*]
+    main -. lazy import .-> editor[weather-station-card-editor.ts]
     editor --> defaults
     editor --> editorTypes[editor/types.ts]
-    editor --> editorParts[editor/render-*.ts]
+    editor --> editorParts[editor/render-*.ts + section-*.ts]
     editorParts --> editorTypes
+    cfgval --> defaults
+    locale -. lazy import .-> locales[locales/*.ts]
+    locale --> localeTypes[locale-types.ts]
     sunshine --> openmeteo
     data --> classifier
+    liverows --> classifier
     orchestrator --> draw[chart/draw.ts]
     orchestrator --> plugins[chart/plugins.ts]
+    orchestrator --> sanitize[chart/sanitize.ts]
     orchestrator --> fcutils
     orchestrator --> fmtutils
     orchestrator --> sunshine
+    orchestrator --> themeUtils[utils/theme-tokens.ts + resolve-css-var.ts]
     plugins --> fmtutils
-    scroll --> safeq
-    scroll --> fmtutils
-    action --> safeq
+    scroll --> utils
+    action --> utils
 ```
 
 ## Lifecycle
@@ -177,11 +285,13 @@ static assertConfig(config)
 
 setConfig(config)
   ├─ defaults applied (DEFAULTS / DEFAULTS_FORECAST / DEFAULTS_UNITS)
+  ├─ validateConfig(config) — advisory; problems queued for the
+  │     error banner, never blocks the render
   ├─ invalidation flags reset
   └─ mode-aware required-key validation
      (station mode → sensors.temperature; forecast → weather_entity)
 
-set hass(hass)               ← v1.9.x: 12-line orchestrator
+set hass(hass)               ← v1.9.x: 12-line orchestrator (ADR-0007)
   ├─ this._hass / language / sun (3 lines)
   ├─ _extractSensorReadings(hass)
   │     Phase 1 — sensor entity reads, source-unit detection,
@@ -201,7 +311,7 @@ connectedCallback()
   └─ schedules attachResizeObserver
 
 firstUpdated()
-  └─ measureCard → drawChart
+  └─ measureCard → drawChart  (skeleton shown until first data lands)
 
 updated(changedProperties)
   ├─ setupActionHandler(this)        ← idempotent on stable ha-card
@@ -226,12 +336,21 @@ disconnectedCallback()
   └─ clearInterval(this._clockTimer)
 ```
 
+`render()` is wrapped so a thrown section never blanks the card: each
+sub-section renders through `_safeSection(...)`, which records the cause
+into `_sectionError` and lets `renderErrorBanner()` surface a degraded
+banner instead of Lit aborting into a white card (v2 graceful-
+degradation slice). With `debug: true` in YAML, `renderDebugPanel()`
+appends a diagnostics panel showing the resolved entities, the chosen
+render mode, and why a column came up empty.
+
 The phase tag (`this._chartPhase`) is set at three points in
 `drawChartUnsafe` (`'compute'`, `'init'`, then cleared on success). When
 something throws, the catch block in `main.ts` `drawChart()` reads it
 to label the error banner — useful when the error message is generic
 and you need to know whether the crash was during data shaping vs.
-Chart.js init vs. plugin draw.
+chart init vs. plugin draw. `_refreshForecasts` follows the same
+safe/unsafe split (`_refreshForecasts` → `_refreshForecastsUnsafe`).
 
 ## Data flow
 
@@ -273,66 +392,96 @@ case where station's "today" bucket is empty (recorder hasn't
 aggregated yet) and forecast's first entry is still labeled "yesterday"
 (weather integration's daily forecast hasn't refreshed).
 
-## Why we have two label-rendering systems
+Before the merged array reaches the chart, `chart/sanitize.ts` drops
+entries that cannot be drawn (null entries, missing `datetime`, NaN
+numerics) so a malformed upstream shape degrades gracefully instead of
+blanking the card.
 
-`chartjs-plugin-datalabels` renders the temperature labels on the line
-points (configurable via `forecast.style: 'style1' | 'style2'`). The
-precipitation labels are rendered by a custom `precipLabelPlugin` because
-the plugin can't render a single label with two different font sizes
-(number at base, "mm" at half size). This is documented inline in
-`chart/orchestrator.ts` — see the comment block above `precipLabelPlugin`.
+## How chart labels are rendered
+
+uPlot has no datalabels-plugin ecosystem, so **every** value label on
+the chart is a custom plugin that draws directly to the canvas:
+
+- `temp-labels.ts` — the temperature numbers above / below the line
+  points (`forecast.style: 'style2'`). Replaces the
+  `chartjs-plugin-datalabels` configuration from the pre-uPlot era.
+- `precip-label.ts` — the precipitation amount, rendered with the
+  number at base font size and the unit suffix at half size (a single
+  datalabels label could never carry two font sizes — that constraint
+  is now moot since all labels are custom anyway).
+- `sunshine-label.ts`, `daily-tick-labels.ts`, `separator.ts` — the
+  sunshine value, the daily tick captions, and the station/forecast
+  boundary line.
+
+All five plugins consume a Chart.js-shaped `ChartLike` object
+(`scales.x.getPixelForTick`, `ctx`, `chartArea`, `getDatasetMeta`).
+uPlot exposes none of that directly — `chart/draw.ts` builds a thin
+shim from the uPlot instance at draw time and runs each plugin against
+it. Keeping that contract stable across the Chart.js → uPlot swap
+(ADR-0012) meant the plugin files and their unit tests carried over
+unchanged; the shim costs about one object per plugin per frame.
 
 ## Build pipeline
 
 ```
 npm run lint       →  eslint src tests-e2e   (ESLint 10 flat-config)
 npm run typecheck  →  tsc --noEmit
-npm run test       →  vitest run             (469 tests across 15 modules)
+npm run test       →  vitest run             (744 tests across 30 files)
 npm run depcheck   →  depcruise src          (architecture rules)
-npm run rollup     →  rollup -c              (single dist/weather-station-card.js)
+npm run rollup     →  rollup -c              (ESM code-split, dist/)
 npm run build      =  lint + typecheck + test + rollup
 ```
 
-Rollup applies a small inline `injectCardVersion` plugin (since v1.9.x —
-see ADR-0006) that replaces the literal `'__CARD_VERSION__'` in
-`src/main.ts` with the version from `package.json`. The console banner
-on card load thus stays in sync with the released version automatically;
-no manual bump at release time.
+Rollup outputs an **ESM code-split bundle** (ADR-0013): a stable
+`dist/weather-station-card.js` facade that re-exports the content-
+hashed `main-<hash>.js` entry chunk, plus a lazily-imported editor
+chunk and 23 lazily-imported per-language locale chunks.
+`preserveEntrySignatures: 'strict'` in `rollup.config.mjs` is load-
+bearing — without it the hashed chunks import the entry directly and
+collide with HACS's `?hacstag=` cache-buster query, breaking
+`customElements.define`.
+
+A small inline `injectCardVersion` plugin (since v1.9.x — see ADR-0006)
+replaces the literal `'__CARD_VERSION__'` in `src/main.ts` with the
+version from `package.json`, so the console banner on card load stays
+in sync with the released version with no manual bump.
 
 CI (`.github/workflows/build.yml`) runs the same chain on every push,
-extended with these gates (since v1.4.2 — issue #19):
+extended with these gates:
 
 - **Security audit**: `npm audit --audit-level=high` blocks the build
   on high/critical advisories. Lower-severity findings come as
   Dependabot PRs (`.github/dependabot.yml`, weekly).
 - **Lint**: ESLint 10 with `typescript-eslint`, `eslint-plugin-lit`,
   `eslint-plugin-sonarjs`. Zero errors required; complexity warnings
-  tracked as backlog (see `eslint.config.mjs`). Each rule starts as
-  `warn` while legacy hot-spots exist and is promoted to `error` once
-  it reaches zero violations — v1.10 locked in seven such rules
-  (`max-depth`, `lit/no-useless-template-literals`,
-  `lit/attribute-value-entities`, `sonarjs/no-identical-functions`,
-  `sonarjs/no-collapsible-if`, `sonarjs/prefer-single-boolean-return`,
-  `sonarjs/no-redundant-jump`).
-- **Coverage gate at ≥ 80 %** (statements, branches, functions, lines).
-  Configured in `vitest.config.js`. Failing the gate fails the build.
-  Note: pre-v1.4.2 the include array listed `.js` paths after the
-  v1.2 TS migration and matched zero files — the gate was silently
-  inert. Paths are `.ts` now.
+  tracked as an accepted refactoring backlog (see `eslint.config.mjs`
+  and `docs/QUALITY-GATES.md`). Each rule starts as `warn` while
+  legacy hot-spots exist and is promoted to `error` once it reaches
+  zero violations.
+- **Coverage gate at ≥ 80 %** (statements, branches, functions, lines)
+  for the leaf modules listed in `vitest.config.js`. `main.ts` and the
+  editor host are out of coverage scope — covered by Playwright.
 - **Architecture rules**: `dependency-cruiser` enforces no-circular,
   no-orphans, and module boundaries (`src/chart/`, `src/editor/`,
   `src/utils/` may not uplevel-import).
-- **Bundle budget at < 800 KB raw / < 250 KB gzipped** (CI-enforced
-  since v1.10, #111). Tripping either signals a regression in
-  tree-shaking or an accidental large dep. Gzip is the bytes-on-the-wire
-  metric HACS download size and HA's frontend cache actually pay for.
+- **Bundle budget** (CI-enforced since v1.10, #111). Tripping it
+  signals a tree-shaking regression or an accidental large dep.
+- **Perf regression gate**: `scripts/perf-gate.cjs` compares the
+  per-scenario median cold-mount timing from
+  `tests-e2e/perf-render-time.spec.ts` against `perf-baseline.json`
+  plus a +25 % tolerance (ADR-0014). While `perf-baseline.json` carries
+  `"placeholder": true` the gate is **warn-only** — it prints the
+  measured medians so the first `master` run can pin real GHA numbers.
 - **CodeQL** (`security-extended` queries) on every PR + weekly
   schedule, covering JS/TS security smells ESLint doesn't catch.
-- **SonarCloud** (`.github/workflows/sonarcloud.yml`) reads the
-  Vitest LCOV output and reports Cognitive Complexity, Code Smells,
-  Security Hotspots, and Coverage trend. Not a required check —
-  advisory only so a Sonar outage doesn't block merges.
-- Verifies `dist/weather-station-card.js` is in sync with source.
+- **SonarCloud** (`.github/workflows/sonarcloud.yml`) reads the Vitest
+  LCOV output and reports Cognitive Complexity, Code Smells, Security
+  Hotspots, and Coverage trend. Advisory only — not a required check.
+- **E2E + visual regression**: Playwright render-mode, editor, mobile-
+  layout and scroll specs, with PNG baselines pinned to the GHA runner
+  (ADR-0003).
+- Verifies `dist/` is in sync with source by re-running the bundler
+  in CI and comparing the output.
 - On tag pushes, verifies `package.json` version matches the tag,
   then uploads the bundle as a release asset.
 
@@ -345,77 +494,75 @@ linear history enforced, force-push and deletion blocked.
 
 ## Distribution
 
-HACS pulls the latest GitHub release. Users get one file
-(`weather-station-card.js`) and Home Assistant serves it precompressed
-(`.js.gz`) when the browser supports gzip. After every local deploy to a
-test HA instance, regenerate the `.gz` or HA will keep serving the stale
-compressed version.
+HACS pulls the latest GitHub release. The card ships as an ESM code-
+split bundle (ADR-0013):
 
-Cache-busting in HA goes through the resource URL's `?hacstag=` query.
-After bumping versions in HA's resources panel, every browser is forced
-to re-fetch.
+- `weather-station-card.js` — the stable filename the Lovelace
+  resource URL points at; a thin facade re-exporting the hashed entry.
+- `main-<hash>.js` — the actual card code.
+- `weather-station-card-editor-<hash>.js` — the visual editor, fetched
+  only when the user opens it.
+- `<lang>-<hash>.js` — 23 per-language locale chunks, fetched on
+  demand; only the user's language is loaded.
+- `icons/` — SVG weather-condition icons.
+
+Home Assistant serves each file precompressed (`.js.gz`) when the
+browser supports gzip. After a local deploy to a test HA instance,
+regenerate the `.gz` or HA keeps serving the stale compressed version.
+Cache-busting goes through the resource URL's `?hacstag=` query — see
+[`LOCAL-TESTING.md`](LOCAL-TESTING.md) and `CLAUDE.md` for the deploy
+recipe.
 
 ## Testing scope
 
-What's tested (Vitest, `tests/*.test.js`, 469 tests across 15 files):
+What's tested (Vitest, `tests/*.test.js`, **744 tests across 30
+files**):
 
 - `condition-classifier.ts` — every decision-tree branch, threshold
   edges, override merging, per-period (daily / hourly) thresholds.
 - `data-source.ts` — `bucketPrecipitation` for all three state-class
-  paths (daily + hourly buckets), `_buildForecast` / `_buildHourlyForecast`
-  chronology / shape / live-fallback, both data-source classes' subscribe
-  / error / dispose for both modes.
-- `format-utils.ts` — colour parsers, separator-position algebra,
-  `computeInitialScrollLeft` positioning.
-- `forecast-utils.ts` — `pickHourlyTickIndices`, `hourlyTempSeries`,
-  `normalizeForecastMode`, `startOfTodayMs`,
-  `filterMidnightStaleForecast`, `dropEmptyStationToday`.
+  paths, `_buildForecast` / `_buildHourlyForecast` chronology / shape /
+  live-fallback, both data-source classes' subscribe / error / dispose,
+  the 3-hour pressure-delta fetch.
+- `config-validation.ts` — unknown key, wrong type, typo suggestion,
+  valid config passes clean.
+- `format-utils.ts`, `forecast-utils.ts` — colour parsers, separator
+  algebra, scroll positioning, tick selection, midnight guards.
 - `sunshine-source.ts`, `openmeteo-source.ts` — attach + URL-build +
   parse paths.
-- `chart/plugins.ts` (and the per-plugin files under `chart/plugins/`)
-  — every plugin factory (separator, dailyTickLabels, precipLabel,
-  sunshineLabel).
-- `scroll-ux.ts` — updateScrollIndicators visibility math,
-  updateScrollDateStamps clamping, setupScrollUx idempotency on stable
-  wrapper.
-- `action-handler.ts` — fake-timer-driven tap / hold / double-tap
-  sequencing, isCardControl filter, drag-suppress, every runAction
-  branch.
-- `teardown-registry.ts` — push / drain / error-isolation / reusability.
-- `utils/safe-query.ts`, `utils/numeric.ts` — defensive null paths.
-- `defaults.ts` — DEFAULTS / DEFAULTS_FORECAST / DEFAULTS_UNITS shape
-  and schema-drift CI test (issue #93).
-- Editor mutator methods (`tests/editor.test.js`) — `_valueChanged` with
-  dotted-key writes, `_sensorPickerChanged` add/replace/delete,
-  `_actionChanged`, `_conditionMappingChanged`, `_setMode`, `_mode`
-  getter.
-- Editor render-partial smoketests
-  (`tests/editor-render-chart.test.js`, `tests/editor-render-live-panel.test.js`) —
-  jsdom + Lit `render()` against mock EditorLike + EditorContext;
-  validates section headings, sub-section structure, gating
-  (`hasSensor` / `hasLiveValue`, master toggles), and that the
-  partial doesn't throw under default config.
+- `chart/plugins/*` — every plugin factory (separator, dailyTickLabels,
+  precipLabel, sunshineLabel, tempLabels).
+- `chart/sanitize.ts` — every malformed-shape drop path.
+- `chart/skeleton.ts` — placeholder shape + space reservation.
+- `scroll-ux.ts`, `action-handler.ts`, `teardown-registry.ts` — the
+  extracted interaction modules.
+- The live-row classifiers — `precip-rate.ts`, `pressure-trend.ts`,
+  `dew-point-comfort.ts`, `sun-strength.ts`.
+- `utils/*` — safe-query, numeric, intl-cache, resolve-css-var,
+  theme-tokens, unit-converters.
+- `defaults.ts` — DEFAULTS shape + schema-drift CI test (issue #93).
+- Editor mutator methods (`tests/editor.test.js`) + per-partial
+  render smoketests + the `section-keys.ts` schema-drift guard
+  (`tests/editor-schema.test.js`).
+- Debug panel (`tests/debug-panel.test.js`).
 
-CI gates branch + line coverage at **80 %** (vitest v8 provider).
+CI gates statement / branch / function / line coverage at **80 %**
+(vitest v8 provider) for the modules in `vitest.config.js`.
 
 What's intentionally **not** unit-tested (covered by Playwright E2E
 since v1.3 — issue #14):
 
-- `main.ts` Lit lifecycle — that's framework contract (LitElement spec).
-- Chart.js render output — it's a canvas, asserting pixels is brittle in
+- `main.ts` Lit lifecycle — framework contract (LitElement spec).
+- uPlot render output — it's a canvas; asserting pixels is brittle in
   unit tests. Playwright visual regression covers it.
-- Editor render() — full-page DOM-render assertions belong in E2E.
-  The mutator methods + per-partial smoketests already cover the
-  config-shape behaviour and the partial-level structure; the editor
-  host's render() integration is a Playwright concern.
-- Pointer / touch gesture sequences (drag-vs-tap, pointercancel) —
-  unit tests can mock pointer events, but the macrotask vs. microtask
+- Editor render() integration — the mutator methods + per-partial
+  smoketests cover the config-shape and structure; the host's full
+  render() is a Playwright concern.
+- Pointer / touch gesture sequences — the macrotask vs. microtask
   ordering only manifests in a real browser.
 
-If you're adding logic that crosses these boundaries (e.g. "does setting
-config X cause data source Y to re-subscribe?"), prefer extracting the
-decision into a pure helper in `data-source.ts` or `format-utils.ts` and
-testing it there.
+If you're adding logic that crosses these boundaries, prefer extracting
+the decision into a pure helper and testing it there.
 
 ## Future-friendly directions
 
@@ -426,22 +573,15 @@ The current design supports several near-term extensions without rework:
   already concatenates arbitrary segments.
 - **New metric on the chart** — add the field to `_buildForecast`, then
   a new dataset assembly in `chart/orchestrator.ts`. The plugins read
-  from `meta.data[i]` generically.
-- **Schema validation** — wrap `_refreshForecasts`'s input with a
-  validator (`zod` or hand-rolled); drop bad entries before they reach
-  Chart.js. Currently we trust the data sources.
+  from the chart-meta generically.
 
 Things that would require structural work:
 
 - **Per-bar widths or non-uniform column spacing.** Tried during v0.5
-  development and reverted. Chart.js category scale doesn't support
-  per-bar widths; linear-scale workarounds redistribute *all* spacing.
-  If revived, it needs a clear UX contract first.
+  development and reverted; revisit only with a clear UX contract.
 - **Sub-hour granularity.** Daily and hourly are both supported as of
-  v0.8. Going finer (15-min, 5-min) would need a new bucket-size
-  primitive in `bucketPrecipitation` and likely a different chart layout
-  — Chart.js category-scale runs out of horizontal pixels around ~200
-  columns even with scrolling.
+  v0.8. Going finer would need a new bucket-size primitive in
+  `bucketPrecipitation` and likely a different chart layout.
 
 ## Architecture decision records
 
@@ -452,12 +592,18 @@ records:
 - **0001** dist committed for HACS distribution
 - **0002** Sunshine-duration tier policy
 - **0003** E2E baselines pinned to GHA runners
-- **0004** TypeScript strict with boundary relaxations
+- **0004** TypeScript strict for leaf modules, `any` at the HA boundary
 - **0005** Editor partial reorg (user-intent clustering, 7 sections)
 - **0006** Build-time `__CARD_VERSION__` injection via Rollup
 - **0007** `set hass` 3-phase decomposition
 - **0008** DEFAULTS as single source of truth (`src/defaults.ts`)
+- **0009** Lookup-table pattern for unit conversions
+- **0010** Group-renderer pattern for conditional template blocks
+- **0011** Track `package-lock.json` for reproducible builds
+- **0012** Chart library — uPlot replaces Chart.js
+- **0013** ESM output with content-hashed chunks for lazy editor
+- **0014** Cold-mount perf regression gate in CI
 
-Add a new ADR when a decision is hard to reverse (boundary contracts,
-distribution model, build-time invariants) or surprising enough that
-a future reader might unwind it without realising the trade-off.
+Add a new ADR when a decision is hard to reverse, surprising without
+context, *and* the result of a real trade-off — see
+[`docs/adr/README.md`](docs/adr/README.md) for the AND-of-three test.
