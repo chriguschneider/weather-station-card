@@ -269,7 +269,15 @@ function buildDailyForecast(days: number): Array<Record<string, unknown>> {
   const conditions = ['sunny', 'partlycloudy', 'cloudy', 'rainy', 'partlycloudy', 'sunny', 'cloudy'];
   const round1 = (v: number): number => Math.round(v * 10) / 10;
   return Array.from({ length: days }, (_v, i) => {
-    const date = new Date(today.getTime() + i * DAY_MS);
+    // Anchor daily-forecast entries at local noon, not midnight. A daily
+    // recorder statistics bucket starts at midnight; a forecast entry
+    // exactly at midnight collides with it, and the de-overlap trim in
+    // _refreshForecastsUnsafe (`t > lastStationMs`) then drops the
+    // forecast's "today" entry — the *predicted* half of combination
+    // mode's doubled-today column. Noon keeps forecast-today strictly
+    // after the station bucket, so the doubled column renders — matching
+    // what real forecast providers produce.
+    const date = new Date(today.getTime() + i * DAY_MS + 12 * HOUR_MS);
     return {
       datetime: date.toISOString(),
       temperature: round1(18 + Math.sin(i * 0.6) * 5),
