@@ -29,7 +29,11 @@ export function cardStyles({
 }: CardStylesOpts): string {
   return `
     ha-icon {
-      color: var(--paper-item-icon-color);
+      /* --paper-item-icon-color is the legacy Polymer icon token; some
+       * modern HA themes drop it. Fall through to the current
+       * --state-icon-color, then to HA's default-theme literal so a
+       * theme that defines neither still renders the original colour. */
+      color: var(--paper-item-icon-color, var(--state-icon-color, #44739e));
     }
     img {
       width: ${iconsSize}px;
@@ -65,7 +69,7 @@ export function cardStyles({
     }
     .main span {
       font-size: 18px;
-      color: var(--secondary-text-color);
+      color: var(--secondary-text-color, #727272);
     }
     .attributes {
       display: flex;
@@ -146,9 +150,9 @@ export function cardStyles({
       width: 30px;
       height: 30px;
       border-radius: 50%;
-      background: var(--card-background-color);
-      border: 1px solid var(--divider-color);
-      color: var(--primary-text-color);
+      background: var(--card-background-color, #fff);
+      border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+      color: var(--primary-text-color, #212121);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -184,9 +188,9 @@ export function cardStyles({
       width: 30px;
       height: 30px;
       border-radius: 50%;
-      background: var(--card-background-color);
-      border: 1px solid var(--divider-color);
-      color: var(--primary-text-color);
+      background: var(--card-background-color, #fff);
+      border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+      color: var(--primary-text-color, #212121);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -214,7 +218,7 @@ export function cardStyles({
       position: absolute;
       top: 2px;
       font-size: ${labelsBaseSize || 11}px;
-      color: var(--secondary-text-color);
+      color: var(--secondary-text-color, #727272);
       z-index: 1;
       pointer-events: none;
       white-space: nowrap;
@@ -299,7 +303,14 @@ export function cardStyles({
      * subtle "something is happening" cue without redrawing anything.
      * Compositor-only (animates only background-position) so it stays
      * smooth on Pi-class GPUs. Honors the system reduced-motion
-     * setting so users with the OS preference don't see the sweep. */
+     * setting so users with the OS preference don't see the sweep.
+     *
+     * The 50%-stop colour is a deliberately theme-AGNOSTIC mid-grey at
+     * 0.04 alpha: it reads as a barely-there lighten on dark themes and
+     * a barely-there darken on light themes, so a single literal works
+     * for every theme. No HA token expresses "near-invisible neutral
+     * tint" — --divider-color is far too opaque — so this stays a
+     * literal on purpose rather than a var() (Slice 6 theme audit). */
     .forecast-skeleton-wrapper::after {
       content: '';
       position: absolute;
@@ -388,7 +399,7 @@ export function cardStyles({
     }
     .date-text {
       font-size: ${dayDateSize}px;
-      color: var(--secondary-text-color);
+      color: var(--secondary-text-color, #727272);
     }
   `;
 }

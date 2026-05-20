@@ -52,4 +52,25 @@ describe('getThemeTokens', () => {
     expect(t.backgroundColor).toBe('');
     expect(t.secondaryTextColor).toBe('');
   });
+
+  it('returns an empty string for a token the active theme does not define', () => {
+    // A custom HA theme that omits, say, --divider-color must not crash
+    // the chart code: readTokens yields '' and the draw path / CSS
+    // fallbacks (Slice 6) then supply the default-theme literal.
+    setVars(document.body, { '--primary-text-color': 'rgb(9, 9, 9)' });
+    const t = getThemeTokens(document.body);
+    expect(t.textColor).toBe('rgb(9, 9, 9)');
+    expect(t.dividerColor).toBe('');
+    expect(t.backgroundColor).toBe('');
+    expect(t.secondaryTextColor).toBe('');
+  });
+
+  it('re-resolves to the new palette after a theme switch', () => {
+    setVars(document.body, { '--primary-text-color': 'rgb(0, 0, 0)' });
+    expect(getThemeTokens(document.body).textColor).toBe('rgb(0, 0, 0)');
+    // Simulate HA-Frontend swapping to a dark/custom theme.
+    setVars(document.body, { '--primary-text-color': 'rgb(255, 255, 255)' });
+    invalidateThemeTokens(document.body);
+    expect(getThemeTokens(document.body).textColor).toBe('rgb(255, 255, 255)');
+  });
 });

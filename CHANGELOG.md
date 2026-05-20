@@ -7,6 +7,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- **The card now follows your custom Home Assistant theme's colours.**
+  If you use a custom theme, the chart frame, the scroll and toggle
+  buttons, the date and time text, and other card details now pick up
+  your theme's colours instead of fixed ones. On the standard light or
+  dark theme nothing changes — the card looks exactly as before. No
+  configuration change needed.
 - **First load is a bit lighter.** The card's visual editor (the
   one you see when clicking the pencil on a card) now loads
   on-demand instead of on every card display. You save a few
