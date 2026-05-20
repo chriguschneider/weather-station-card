@@ -573,6 +573,13 @@ describe('sunshineFractions', () => {
     // a length mismatch shouldn't crash the chart.
     expect(sunshineFractions([5, 6, 7], [12])).toEqual([5 / 12, null, null]);
   });
+
+  it('nulls out malformed sunshine values (NaN, string, object) — no NaN bars', () => {
+    // A malformed value must come out as a gap, not as a NaN bar
+    // height that would poison the SunshineAxis scale.
+    expect(sunshineFractions([NaN, 'unavailable', {}, 6], [12, 12, 12, 12]))
+      .toEqual([null, null, null, 0.5]);
+  });
 });
 
 describe('sunshineFromLuxHistory (#66 Method B2)', () => {

@@ -359,7 +359,10 @@ export function sunshineFractions(
 ): Array<number | null> {
   if (!Array.isArray(sunshineHours)) return [];
   return sunshineHours.map((v, i) => {
-    if (v == null) return null;
+    // A malformed sunshine value (NaN, a non-numeric string, an object)
+    // must come out as a gap, not as a NaN bar height that uPlot would
+    // then fold into the axis scale.
+    if (typeof v !== 'number' || !Number.isFinite(v)) return null;
     const dl = Array.isArray(dayLengthHoursArr) ? dayLengthHoursArr[i] : null;
     if (!Number.isFinite(dl) || (dl as number) <= 0) return null;
     return Math.max(0, Math.min(1, v / (dl as number)));
