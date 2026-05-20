@@ -41,6 +41,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Most noticeable when first opening the HA Companion app or
   refreshing a browser tab. No layout shift when the chart commits —
   the rows below stay put. No configuration change needed.
+- **Smoother scrolling and easier-to-tap controls on the hourly chart.**
+  Swiping the hourly chart sideways on a phone or tablet now feels
+  smoother — the card no longer briefly holds up your finger drag.
+  The little round buttons (switch view, jump back to now, the left
+  and right arrows) now have a larger invisible tap zone, so they are
+  easier to hit accurately on a touchscreen. The buttons look exactly
+  the same; only the area that responds to your finger is bigger. No
+  configuration change needed.
 
 ### Fixed
 - **24-hour view now shows real high and low temperatures from the
