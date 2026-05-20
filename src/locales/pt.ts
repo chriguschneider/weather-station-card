@@ -1,0 +1,42 @@
+// Per-language string table for pt.
+// One file per language so rollup can lazy-load on demand.
+// Shape and fallback resolution rules live in ../locale.ts.
+import type { LocaleEntry } from '../locale-types.js';
+
+const pt: LocaleEntry = {
+  'tempHi': 'Temperatura máxima',
+  'tempLo': 'Temperatura noite',
+  'precip': 'Precipitação',
+  'sunshine': 'Sol',
+  'feelsLike': 'Sensação Térmica',
+  'units': {
+    'km/h': 'km/h',
+    'm/s': 'm/s',
+    'mph': 'mph',
+    'Bft': 'Bft',
+    'hPa': 'hPa',
+    'mmHg': 'mm Hg',
+    'mm': 'mm',
+    'in': 'in'
+  },
+  'cardinalDirections': [
+    'N', 'N-NE', 'NE', 'E-NE', 'E', 'E-SE', 'SE', 'S-SE',
+    'S', 'S-SW', 'SW', 'W-SW', 'W', 'W-NW', 'NW', 'N-NW', 'N'
+  ],
+  'clear-night': 'Noite limpa',
+  'cloudy': 'Nublado',
+  'fog': 'Nevoeiro',
+  'hail': 'Granizo',
+  'lightning': 'Relâmpago ',
+  'lightning-rainy': 'Chuva e relâmpagos',
+  'partlycloudy': 'Parcialmente nublado',
+  'pouring': 'Chuva forte',
+  'rainy': 'Chuva',
+  'snowy': 'Neve',
+  'snowy-rainy': 'Neve e chuva',
+  'sunny': 'Ensolarado',
+  'windy': 'Ventoso',
+  'windy-variant': 'Ventoso'
+};
+
+export default pt;

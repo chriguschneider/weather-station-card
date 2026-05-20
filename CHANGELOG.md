@@ -12,6 +12,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   on-demand instead of on every card display. You save a few
   kilobytes per fresh dashboard load; the editor still works
   exactly the same when you do open it.
+- **The card now ships only the language you actually use.**
+  Previously every install carried the translation strings for
+  all 23 supported languages. Now your browser only fetches your
+  own language; you save roughly 15 kilobytes per fresh load.
+  No configuration change needed.
 - **The chart should appear faster, especially on phones and tablets.**
   The card uses a smaller, lighter charting library under the hood
   now. You should notice a quicker first paint when opening the

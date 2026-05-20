@@ -1,6 +1,6 @@
 import { LitElement, html, type TemplateResult } from 'lit';
 import type { HomeAssistant } from './editor/types.js';
-import locale from './locale.js';
+import locale, { ensureLocaleLoaded } from './locale.js';
 import { readCachedAvailability } from './openmeteo-source.js';
 import { renderModeSection } from './editor/render-mode.js';
 import { renderSensorsSection } from './editor/render-sensors.js';
@@ -47,6 +47,16 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
       throw new Error('Invalid configuration');
     }
     this._config = config;
+    // Per-language locale strings ship in their own rollup chunks
+    // (only English is eager). HA typically wires `hass` onto the
+    // editor before setConfig, so language is already known here;
+    // trigger the chunk fetch and re-render once it lands. The
+    // card itself triggers the same load from set hass — both
+    // sites are idempotent via the shared inflight map.
+    const lang = this.hass?.language || 'en';
+    if (lang !== 'en' && lang.split('-')[0] !== 'en') {
+      void ensureLocaleLoaded(lang).then(() => this.requestUpdate());
+    }
     this.requestUpdate();
   }
 
