@@ -57,3 +57,4 @@ status line.
 - [0011 — Track `package-lock.json` for reproducible builds](./0011-track-package-lock.md) (Accepted)
 - [0012 — Chart library: uPlot](./0012-chart-library-uplot.md) (Accepted)
 - [0013 — ESM output with content-hashed chunks for lazy editor](./0013-esm-code-split-for-lazy-editor.md) (Accepted)
+- [0014 — Cold-mount perf regression gate in CI](./0014-perf-regression-gate.md) (Accepted)

@@ -1,0 +1,11 @@
+{
+  "_comment": "Cold-mount perf regression baseline. See docs/adr/0014-perf-regression-gate.md. The 'placeholder' flag below makes the CI gate warn-only until real GHA-runner numbers are committed: the first 'build' run on master after this file lands prints the measured medians in its step summary -- copy them into 'baselines', set 'placeholder' to false, and open a follow-up PR. Numbers MUST come from the GHA ubuntu-latest runner (ADR-0003 rationale: a local/WSL machine renders at a different speed), never from a dev laptop.",
+  "placeholder": true,
+  "tolerance_pct": 25,
+  "metric": "median_ms",
+  "baselines": {
+    "daily-combination": 0,
+    "today-combination": 0,
+    "hourly-combination": 0
+  }
+}
