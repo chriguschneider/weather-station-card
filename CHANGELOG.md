@@ -15,6 +15,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reported as a problem, and number settings entered through the visual
   editor (which Home Assistant stores as text) are accepted as-is.
   Genuine typos and truly unknown options are still flagged.
+- **Card icons are the right colour again.** v2.0.0 accidentally
+  painted the card's icons a fixed blue on Home Assistant themes that
+  don't define an icon colour of their own. Icons now follow the
+  card's normal text colour again, the same as before v2.0.
 
 ## [2.0.0] — 2026-05-20
 

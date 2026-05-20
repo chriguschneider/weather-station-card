@@ -29,11 +29,13 @@ export function cardStyles({
 }: CardStylesOpts): string {
   return `
     ha-icon {
-      /* --paper-item-icon-color is the legacy Polymer icon token; some
-       * modern HA themes drop it. Fall through to the current
-       * --state-icon-color, then to HA's default-theme literal so a
-       * theme that defines neither still renders the original colour. */
-      color: var(--paper-item-icon-color, var(--state-icon-color, #44739e));
+      /* --paper-item-icon-color is the legacy Polymer icon token; modern
+       * HA themes drop it. Fall through to --state-icon-color, then to
+       * --primary-text-color — the colour ha-icon naturally inherits
+       * when no icon token is defined. A fixed literal here would
+       * override that inherited text colour on every modern theme (the
+       * v2.0.0 regression: icons turned blue). */
+      color: var(--paper-item-icon-color, var(--state-icon-color, var(--primary-text-color, #212121)));
     }
     img {
       width: ${iconsSize}px;
