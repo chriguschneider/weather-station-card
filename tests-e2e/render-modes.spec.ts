@@ -85,6 +85,59 @@ for (const theme of THEMES) {
       });
     }
 
+    // Narrow-column baseline (Slice 7). The card lives inside HA's
+    // grid — in a Companion-app column or the HA 2026.1 mobile-first
+    // summary-card slot its host can be ~300px wide. The card's
+    // @container rules key off its OWN width (container-type on
+    // .card), so this test shrinks the harness slot + ha-card host
+    // and screenshots the reflowed layout: smaller live-panel icon
+    // and clock, wrapped attribute groups, no horizontal overflow.
+    // Light theme + daily-combination only — one baseline is enough
+    // to catch a regression in the responsive rules; the full
+    // matrix stays at the wide 600px width above.
+    {
+      const themeSuffix = theme === 'dark' ? '-dark' : '';
+      const name = `daily-combination-narrow${themeSuffix}`;
+      test(name, async ({ page }) => {
+        const fixture = buildFullFixture();
+        await mount(
+          page,
+          buildBaseConfig({
+            show_station: true,
+            show_forecast: true,
+            forecast: {
+              type: 'daily',
+              disable_animation: true,
+            },
+          }),
+          fixture,
+        );
+        // Squeeze the harness slot + ha-card host to a phone-column
+        // width so the card's @container rules engage. Done after
+        // mount so the chart canvas sizes against the wide layout
+        // first (the harness comment warns a fluid ha-card width can
+        // race the chart sizing); a single fixed resize afterwards
+        // is stable.
+        await page.evaluate(() => {
+          const slot = document.querySelector('[data-slot="a"]') as HTMLElement | null;
+          const host = document.querySelector(
+            '[data-slot="a"] > weather-station-card',
+          ) as HTMLElement | null;
+          if (slot) slot.style.width = '320px';
+          if (host) host.style.width = '320px';
+          const card = host?.shadowRoot?.querySelector('ha-card') as HTMLElement | null;
+          if (card) card.style.width = '320px';
+        });
+        // One rAF tick so the container-query re-layout commits.
+        await page.evaluate(
+          () => new Promise<void>((r) => requestAnimationFrame(() => r())),
+        );
+        await expect(page.locator(cardSelector())).toHaveScreenshot(
+          `${name}.png`,
+        );
+      });
+    }
+
     // 3 × 3 × 2 = 18 systematic baselines per theme.
     for (const mode of Object.keys(MODES) as Mode[]) {
       for (const forecastType of FORECAST_TYPES) {
