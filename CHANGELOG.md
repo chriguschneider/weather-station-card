@@ -6,6 +6,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **A clear message when your Home Assistant is too old for the card.**
+  If the card runs on a Home Assistant version older than it supports,
+  it now shows a short notice asking you to update Home Assistant,
+  instead of possibly showing a blank card. On a current Home Assistant
+  you see nothing new.
+
 ### Changed
 - **First load is a bit lighter.** The card's visual editor (the
   one you see when clicking the pencil on a card) now loads

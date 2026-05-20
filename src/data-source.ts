@@ -102,7 +102,7 @@ interface HassConnection {
  *  comes from custom-card-helpers but importing it here would pull
  *  Lit and a chunk of the editor types. */
 export interface HassLike {
-  config?: { latitude?: number | null; longitude?: number | null };
+  config?: { latitude?: number | null; longitude?: number | null; version?: string };
   states?: Record<string, { state: string; attributes?: Record<string, unknown> } | undefined>;
   connection?: HassConnection;
   callWS<T = unknown>(msg: Record<string, unknown>): Promise<T>;

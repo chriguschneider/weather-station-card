@@ -20,6 +20,7 @@ export default {
       reporter: ['text-summary', 'text', 'lcov'],
       include: [
         'src/condition-classifier.ts',
+        'src/const.ts',
         'src/data-source.ts',
         'src/defaults.ts',
         'src/format-utils.ts',
