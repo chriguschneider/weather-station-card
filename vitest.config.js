@@ -31,6 +31,7 @@ export default {
         // chart/plugins.ts is now a barrel re-export (#57); the
         // actual plugin code lives in chart/plugins/*.ts.
         'src/chart/plugins.ts',
+        'src/chart/sanitize.ts',
         'src/chart/plugins/_shared.ts',
         'src/chart/plugins/separator.ts',
         'src/chart/plugins/daily-tick-labels.ts',

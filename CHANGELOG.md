@@ -97,6 +97,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   example a few mm of rain that fell since midnight) appear
   immediately, and fields that aren't measured yet draw as gaps —
   same look as a sensor that was offline on a historical day.
+- **The card no longer shows a blank box when a sensor sends unexpected
+  data.** If a weather entity or sensor briefly becomes unavailable, or
+  reports a value in an unexpected format, the card used to risk going
+  completely white. It now skips the bad readings, draws everything it
+  still can, and shows a short red message explaining what went wrong
+  instead of disappearing.
 
 ## [1.13.0] — 2026-05-12
 

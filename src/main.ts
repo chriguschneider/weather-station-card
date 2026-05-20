@@ -84,6 +84,7 @@ import {
   formatSunshineHours,
 } from './utils/unit-converters.js';
 import { drawChartUnsafe } from './chart/orchestrator.js';
+import { sanitizeForecastEntries } from './chart/sanitize.js';
 import { renderChartSkeleton } from './chart/skeleton.js';
 import { cardStyles } from './chart/styles.js';
 import { getDateTimeFormat } from './utils/intl-cache.js';
@@ -263,6 +264,17 @@ class WeatherStationCard extends LitElement {
   // --- Chart / scroll lifecycle ---
   _chartError: unknown = null;
   _chartPhase: string | null = null;
+  // Set when a `_refreshForecasts` pass throws on malformed source
+  // data. Surfaced through `renderErrorBanner()`; cleared by the next
+  // clean `_refreshForecasts`.
+  _refreshError: string | null = null;
+  // Set when a synchronous render section (`renderMain`,
+  // `renderAttributes`, the forecast block) throws. Render-pass-scoped:
+  // cleared at the top of every render() so a section that heals stops
+  // reporting, and re-set this pass only if a section still throws.
+  // Both fields feed renderErrorBanner() so the card degrades to the
+  // banner instead of Lit aborting render() into a blank/white card.
+  _sectionError: string | null = null;
   // True when this card instance is mounted inside the card-config
   // dialog's live preview (hui-card-preview / hui-dialog-edit-card /
   // hui-card-element-editor ancestor). Detected once in
@@ -1022,7 +1034,35 @@ async _refreshPressureDelta(): Promise<void> {
     this._teardownRegistry.drain();
   }
 
+  // Public entry point: a try/catch wrapper around the merge pipeline.
+  // _refreshForecasts is called from setHass, the station/forecast
+  // subscription callbacks, the ResizeObserver and the mode toggle.
+  // Malformed source data (a forecast entry of the wrong shape, a NaN
+  // datetime) must degrade to the error banner — never throw uncaught
+  // (the setHass call site at line ~866 has no catch of its own) and
+  // never leave `this.forecasts` undefined (which would blank the
+  // chart block). Mirrors the drawChart → drawChartUnsafe split.
   _refreshForecasts() {
+    try {
+      this._refreshForecastsUnsafe();
+      if (this._refreshError) {
+        this._refreshError = null;
+        this.requestUpdate();
+      }
+    } catch (err) {
+      // Instrument before degrading — never silently swallow.
+      console.error('[weather-station-card] forecast refresh failed', err);
+      // Guarantee a defined, drawable forecasts array so the render
+      // path and the chart fall back cleanly instead of crashing on
+      // `undefined`.
+      if (!Array.isArray(this.forecasts)) this.forecasts = [];
+      const e = err as { message?: string } | null;
+      this._refreshError = `Forecast data malformed: ${String(e?.message ?? err)}`;
+      this.requestUpdate();
+    }
+  }
+
+  _refreshForecastsUnsafe() {
     // normalizeForecastMode validates forecast.type (typo'd values fall
     // back to 'daily'). Station block is now coherent at hourly too —
     // MeasuredDataSource fetches with period:'hour' when the type is
@@ -1715,7 +1755,11 @@ drawChart(args?: any): unknown[] | undefined {
 }
 
 computeForecastData({ config, forecastItems } = this) {
-  const forecast = this.forecasts ? this.forecasts.slice(0, forecastItems) : [];
+  // sanitizeForecastEntries drops null / non-object / datetime-less
+  // entries before any positional .map() below — a single bad entry
+  // would otherwise throw (`null.datetime`) and blank the chart.
+  const sliced = this.forecasts ? this.forecasts.slice(0, forecastItems) : [];
+  const forecast = sanitizeForecastEntries(sliced);
   const dateTime = forecast.map((d) => d.datetime);
   const fcType = config.forecast?.type;
   const { tempHigh, tempLow: rawTempLow } = hourlyTempSeries(forecast, {
@@ -1830,6 +1874,10 @@ _onModeToggleClick(ev?: Event) {
     if (!config || !_hass) {
       return html``;
     }
+    // Render-pass-scoped: cleared here so a section that recovered on
+    // this pass stops reporting; _safeSection re-sets it below only if
+    // a section still throws.
+    this._sectionError = null;
     // Match the mm-unit sizing rule from precipLabelPlugin so the wind unit
     // ("km/h", "m/s", …) renders at the same compact size as the precip unit
     // alongside its number.
@@ -1867,6 +1915,20 @@ _onModeToggleClick(ev?: Event) {
     const scrolling = visibleBars > 0 && totalBars > visibleBars;
     const contentWidthPct = scrolling ? (totalBars / visibleBars) * 100 : 100;
 
+    // Render every card section through _safeSection FIRST so that a
+    // throw on malformed data (e.g. a partial sun entity, an
+    // unexpected attribute shape) degrades that one section to empty
+    // and records the cause — instead of Lit aborting the whole
+    // render() and leaving a blank/white card. renderErrorBanner() is
+    // computed LAST, after the section catches have had a chance to
+    // set this._renderError, so the banner reflects this same pass.
+    const mainSection = this._safeSection('live panel', () => this.renderMain());
+    const attributesSection = this._safeSection('attributes', () => this.renderAttributes());
+    const forecastSection = this._safeSection('forecast', () =>
+      this._renderForecastBlock({ config, scrolling, contentWidthPct, visibleBars }),
+    );
+    const banner = this._safeSection('error banner', () => this.renderErrorBanner());
+
     return html`
       <style>${cardStyles({
         iconsSize: config.icons_size,
@@ -1881,10 +1943,21 @@ _onModeToggleClick(ev?: Event) {
 
       <ha-card header="${config.title}">
         <div class="card">
-          ${this.renderErrorBanner()}
-          ${this.renderMain()}
-          ${this.renderAttributes()}
-          ${this._allExpectedDataReady() ? (() => {
+          ${banner}
+          ${mainSection}
+          ${attributesSection}
+          ${forecastSection}
+        </div>
+      </ha-card>
+    `;
+  }
+
+  // Extracted from render() so the data-ready / loading branch can be
+  // wrapped in a single _safeSection catch. Pure presentation — reads
+  // instance state, returns a TemplateResult.
+  // deno-lint-ignore no-explicit-any
+  _renderForecastBlock({ config, scrolling, contentWidthPct, visibleBars }: any) {
+    return this._allExpectedDataReady() ? (() => {
           // Pick the animation class for this render. Three cases:
           //   1. Block has never been rendered → 'first-mount' (slide-up + fade-in)
           //   2. Block was rendered before AND forecast.type just changed → 'view-changing' (opacity dip)
@@ -1965,10 +2038,24 @@ _onModeToggleClick(ev?: Event) {
               : ''}
           </div>
           `;
-          })()}
-        </div>
-      </ha-card>
-    `;
+          })();
+  }
+
+  // Run a render section under a try/catch. On a throw, log with
+  // context, record the cause into _sectionError (so renderErrorBanner
+  // surfaces it on the SAME pass — the three section calls are
+  // evaluated before the banner) and return an empty fragment. This is
+  // graceful degradation, not masking: the failure is visible in the
+  // banner and the console, only the one broken section collapses.
+  _safeSection(label: string, fn: () => unknown): unknown {
+    try {
+      return fn();
+    } catch (err) {
+      console.error(`[weather-station-card] ${label} render failed`, err);
+      const e = err as { message?: string } | null;
+      this._sectionError = `Card section failed (${label}): ${String(e?.message ?? err)}`;
+      return html``;
+    }
   }
 
 renderErrorBanner() {
@@ -1988,6 +2075,12 @@ renderErrorBanner() {
   }
   if (this._chartError) {
     errors.push(`Chart render failed: ${this._chartError}`);
+  }
+  if (this._refreshError) {
+    errors.push(this._refreshError);
+  }
+  if (this._sectionError) {
+    errors.push(this._sectionError);
   }
   if (this._missingSensors?.length) {
     errors.push(`Sensors unavailable: ${this._missingSensors.join(', ')}`);
@@ -2430,18 +2523,27 @@ const timeOptions = {
 }
 
 renderForecastConditionIcons({ config, forecastItems, sun } = this) {
-  const forecast = this.forecasts ? this.forecasts.slice(0, forecastItems) : [];
-
   if (config.forecast.condition_icons === false) {
     return html``;
   }
+
+  // Drop malformed entries (null, missing datetime) before the
+  // per-item map below dereferences `item.datetime`.
+  const forecast = sanitizeForecastEntries(
+    this.forecasts ? this.forecasts.slice(0, forecastItems) : [],
+  );
+  // The day/night decision needs sun rise/set times. When the sun
+  // entity is missing or partial, fall back to "always day" rather
+  // than throwing on `sun.attributes.next_rising`.
+  const sunRising = sun?.attributes?.next_rising;
+  const sunSetting = sun?.attributes?.next_setting;
 
   return html`
     <div class="conditions">
       ${forecast.map((item) => {
         const forecastTime = new Date(item.datetime);
-        const sunriseTime = new Date(sun.attributes.next_rising);
-        const sunsetTime = new Date(sun.attributes.next_setting);
+        const sunriseTime = new Date(sunRising);
+        const sunsetTime = new Date(sunSetting);
 
         // Adjust sunrise and sunset times to match the date of forecastTime
         const adjustedSunriseTime = new Date(forecastTime);
@@ -2456,8 +2558,14 @@ renderForecastConditionIcons({ config, forecastItems, sun } = this) {
 
         let isDayTime;
 
-        if (config.forecast.type === 'daily') {
-          // For daily forecast, assume it's day time
+        // A daily forecast, an Invalid Date from a partial sun entity,
+        // or an unparseable item.datetime all collapse to "day time" —
+        // the icon row stays drawn rather than throwing on a NaN
+        // comparison.
+        const sunTimesUsable = Number.isFinite(sunriseTime.getTime())
+          && Number.isFinite(sunsetTime.getTime())
+          && Number.isFinite(forecastTime.getTime());
+        if (config.forecast.type === 'daily' || !sunTimesUsable) {
           isDayTime = true;
         } else {
           // For other forecast types, determine based on sunrise and sunset times
@@ -2469,7 +2577,7 @@ renderForecastConditionIcons({ config, forecastItems, sun } = this) {
         // resolution. For now both day and night use the canonical
         // weatherIcons mapping.
         void isDayTime;
-        const iconHtml = html`<ha-icon icon="${this.getWeatherIcon(item.condition, sun.state)}"></ha-icon>`;
+        const iconHtml = html`<ha-icon icon="${this.getWeatherIcon(item.condition, sun?.state)}"></ha-icon>`;
 
         return html`
           <div class="forecast-item">
@@ -2498,7 +2606,9 @@ renderWind({ config, forecastItems } = this) {
   const showSpeed = config.forecast.show_wind_speed !== false;
   if (!showArrow && !showSpeed) return html``;
 
-  const forecast = this.forecasts ? this.forecasts.slice(0, forecastItems) : [];
+  const forecast = sanitizeForecastEntries(
+    this.forecasts ? this.forecasts.slice(0, forecastItems) : [],
+  );
   const unit = this.unitSpeed ? this.ll('units')[this.unitSpeed] : '';
 
   return html`
