@@ -280,6 +280,12 @@ class WeatherStationCard extends LitElement {
   // Both fields feed renderErrorBanner() so the card degrades to the
   // banner instead of Lit aborting render() into a blank/white card.
   _sectionError: string | null = null;
+  // Set when setConfig sees an incomplete config (a block is enabled
+  // but its required key is missing). NOT thrown — a thrown setConfig
+  // kills the whole card and breaks a freshly-added card before its
+  // editor can load. Surfaced through renderErrorBanner() so the card
+  // stays alive and the visual editor remains usable.
+  _configError: string | null = null;
   // True when this card instance is mounted inside the card-config
   // dialog's live preview (hui-card-preview / hui-dialog-edit-card /
   // hui-card-element-editor ancestor). Detected once in
@@ -475,17 +481,27 @@ setConfig(config: any) {
   // still caught by the mode-aware throws below and `assertConfig`.
   this._configWarnings = validateConfig(config);
 
-  // Mode-aware validation. Each enabled block has its own required key:
-  //   show_station    → needs sensors.temperature (the past-data chart)
-  //   show_forecast   → needs weather_entity      (the future-data chart)
-  // A pure forecast-only card needs no station sensors; a pure station
-  // card needs no weather entity. Combination needs both.
+  // Mode-aware completeness check. Each enabled block has a required
+  // key: show_station → sensors.temperature, show_forecast →
+  // weather_entity. A missing one used to throw here — but a thrown
+  // setConfig kills the whole card, and a freshly-added card whose
+  // getStubConfig auto-detect found no temperature sensor would be dead
+  // before its editor could load. Record it as a non-fatal error
+  // instead: renderErrorBanner() surfaces it, the card still renders
+  // what it can, and the visual editor stays usable so the user can
+  // pick the missing entity.
+  const configErrors: string[] = [];
   if (cardConfig.show_station && !cardConfig.sensors?.temperature) {
-    throw new Error('Station mode needs at least sensors.temperature in the card config');
+    configErrors.push(
+      'Station mode needs a temperature sensor — set `sensors.temperature` in the card config.',
+    );
   }
   if (cardConfig.show_forecast && !cardConfig.weather_entity) {
-    throw new Error('Forecast mode needs a weather.* entity in weather_entity');
+    configErrors.push(
+      'Forecast mode needs a weather entity — set `weather_entity` in the card config.',
+    );
   }
+  this._configError = configErrors.length ? configErrors.join(' ') : null;
 }
 
 // Reactivity entry-point — HA fires this 2–5x/second whenever any
@@ -2188,6 +2204,9 @@ renderErrorBanner() {
   // never false-fires on a current or unreadable version.
   if (isHaVersionBelow(this._hass?.config?.version, MIN_HA_VERSION)) {
     errors.push(`This card expects Home Assistant ${MIN_HA_VERSION} or newer.`);
+  }
+  if (this._configError) {
+    errors.push(this._configError);
   }
   if (this._stationError) {
     errors.push(`Statistics fetch failed: ${this._stationError}`);

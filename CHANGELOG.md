@@ -19,6 +19,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   painted the card's icons a fixed blue on Home Assistant themes that
   don't define an icon colour of their own. Icons now follow the
   card's normal text colour again, the same as before v2.0.
+- **Adding a new card no longer fails outright.** When a freshly-added
+  card's automatic sensor detection didn't turn up a temperature
+  sensor, the card used to error out completely — before its editor
+  could even open. It now stays usable and shows a clear hint to pick
+  a sensor, so you can finish setting it up.
 
 ## [2.0.0] — 2026-05-20
 
