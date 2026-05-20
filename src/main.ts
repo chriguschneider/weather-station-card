@@ -95,6 +95,10 @@ import { getDateTimeFormat } from './utils/intl-cache.js';
 interface HassMain extends HassLike {
   language?: string;
   selectedLanguage?: string;
+  // HA frontend exposes the running Home Assistant version here; read
+  // only by the `debug: true` diagnostics panel. HassLike narrows
+  // `config` to lat/lon, so widen it for the main-card boundary.
+  config?: HassLike['config'] & { version?: string };
 }
 
 /** Sub-shapes used inside `set hass`: a single HA entity state from
@@ -1952,10 +1956,124 @@ _onModeToggleClick(ev?: Event) {
           </div>
           `;
           })()}
+          ${config.debug === true ? this.renderDebugPanel() : ''}
         </div>
       </ha-card>
     `;
   }
+
+// Diagnostic panel — rendered only when `debug: true` is set in YAML.
+// Surfaces the card's detected internal state so a misconfigured
+// dashboard can be troubleshot without a debugger: resolved sensor
+// entity IDs, the chosen render mode, each data source's subscription
+// status, and the reason a chart column may be empty. Off by default;
+// no editor row (YAML-only, deliberate restraint).
+renderDebugPanel() {
+  const cfg = this.config || {};
+  const sensors = cfg.sensors || {};
+
+  // Render mode — the same gates render() / the chart pipeline use.
+  const wantStation = cfg.show_station !== false;
+  const wantForecast = cfg.show_forecast === true && !!cfg.weather_entity;
+  let renderMode = 'none (both blocks disabled)';
+  if (wantStation && wantForecast) renderMode = 'combination (station + forecast)';
+  else if (wantStation) renderMode = 'station-only';
+  else if (wantForecast) renderMode = 'forecast-only';
+  const forecastType = cfg.forecast?.type ?? 'daily';
+
+  // Per-source status string. "subscribed" once a source object exists;
+  // "error" carries the message; "no data yet" before the first event.
+  const sourceStatus = (
+    want: boolean,
+    source: unknown,
+    error: string | null,
+    ready: boolean,
+    count: number,
+  ): string => {
+    if (!want) return 'not requested (block disabled)';
+    if (error) return `error — ${error}`;
+    if (!source) return 'not subscribed';
+    if (!ready) return 'subscribed, no data yet';
+    return `subscribed, ${count} point(s)`;
+  };
+
+  const stationStatus = sourceStatus(
+    wantStation, this._dataSource, this._stationError,
+    this._stationDataReady, this._stationData?.length ?? 0,
+  );
+  const forecastStatus = sourceStatus(
+    wantForecast, this._forecastSource, this._forecastError,
+    this._forecastDataReady, this._forecastData?.length ?? 0,
+  );
+
+  // Why a chart column might be empty — the most common support
+  // question. Walk the known causes in priority order.
+  const emptyReasons: string[] = [];
+  if (wantStation && !sensors.temperature) {
+    emptyReasons.push('Station block on, but sensors.temperature is unset — past chart has no data.');
+  }
+  if (cfg.show_forecast === true && !cfg.weather_entity) {
+    emptyReasons.push('show_forecast is true, but weather_entity is unset — forecast block cannot load.');
+  }
+  if (wantStation && this._stationDataReady && (this._stationData?.length ?? 0) === 0 && !this._stationError) {
+    emptyReasons.push('Station source returned 0 points — the recorder has no history for the configured window.');
+  }
+  if (wantForecast && this._forecastDataReady && (this._forecastData?.length ?? 0) === 0 && !this._forecastError) {
+    emptyReasons.push('Forecast source returned 0 points — the weather entity published an empty forecast.');
+  }
+  if (this._missingSensors?.length) {
+    emptyReasons.push(`Sensors unavailable in HA: ${this._missingSensors.join(', ')}.`);
+  }
+
+  // Resolved sensor entities — only the slots the user actually set.
+  const sensorRows = Object.entries(sensors)
+    .filter(([, eid]) => typeof eid === 'string' && eid)
+    .map(([key, eid]) => {
+      const exists = !!this._hass?.states?.[eid as string];
+      return html`<div>
+        <code>${key}</code>: <code>${eid}</code>
+        ${exists ? '✓ in HA' : '✗ not found in HA'}
+      </div>`;
+    });
+
+  const row = (label: string, value: unknown) => html`
+    <div><strong>${label}:</strong> ${String(value)}</div>
+  `;
+
+  return html`
+    <details class="ws-debug-panel" style="
+      margin: 8px;
+      padding: 6px 10px;
+      border: 1px solid var(--divider-color, #ccc);
+      border-radius: 4px;
+      font-size: 12px;
+      line-height: 1.5;
+      font-family: var(--code-font-family, monospace);
+      color: var(--secondary-text-color, #888);
+    ">
+      <summary style="cursor: pointer; font-weight: bold;">
+        weather-station-card diagnostics (debug: true)
+      </summary>
+      <div style="margin-top: 6px;">
+        ${row('Card version', CARD_VERSION)}
+        ${row('HA version', this._hass?.config?.version ?? 'unknown')}
+        ${row('Render mode', renderMode)}
+        ${row('Forecast type', forecastType)}
+        ${row('Weather entity', cfg.weather_entity || '(unset)')}
+        ${row('Station source', stationStatus)}
+        ${row('Forecast source', forecastStatus)}
+        ${row('All expected data ready', this._allExpectedDataReady())}
+        ${row('Chart built', this._initialChartBuilt)}
+        <div style="margin-top: 4px;"><strong>Resolved sensors:</strong></div>
+        ${sensorRows.length ? sensorRows : html`<div>(none configured)</div>`}
+        <div style="margin-top: 4px;"><strong>Empty-column diagnostics:</strong></div>
+        ${emptyReasons.length
+          ? emptyReasons.map((r) => html`<div>• ${r}</div>`)
+          : html`<div>No empty-column issues detected.</div>`}
+      </div>
+    </details>
+  `;
+}
 
 renderErrorBanner() {
   const errors = [];
