@@ -6,7 +6,38 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **A typo in your card settings is now pointed out instead of being
+  silently ignored.** If you misspell an option or use one that
+  doesn't exist, the card shows a short amber message naming the
+  problem — for example "did you mean `forecast_days`?" — and, where
+  it can, suggests the correct spelling. It also flags a value of the
+  wrong kind, like text where a number is expected. The card still
+  works normally with its defaults; the message is just a heads-up so
+  a forgotten setting no longer goes unnoticed.
+- **A clear message when your Home Assistant is too old for the card.**
+  If the card runs on a Home Assistant version older than it supports,
+  it now shows a short notice asking you to update Home Assistant,
+  instead of possibly showing a blank card. On a current Home Assistant
+  you see nothing new.
+- **New optional `debug` setting for troubleshooting.** Add `debug: true`
+  to the card's YAML and a small foldable diagnostics panel appears at
+  the bottom of the card. It shows what the card actually detected — the
+  weather and sensor entities it resolved, whether each one was found in
+  Home Assistant, the display mode it chose, and a plain-language reason
+  if a part of the chart came up empty. Handy when the card isn't
+  showing what you expect. It is off by default and invisible unless you
+  switch it on, so leave `debug` out entirely once you are done. There is
+  no toggle for it in the visual editor — it is YAML-only on purpose, to
+  keep the editor uncluttered.
+
 ### Changed
+- **The card now follows your custom Home Assistant theme's colours.**
+  If you use a custom theme, the chart frame, the scroll and toggle
+  buttons, the date and time text, and other card details now pick up
+  your theme's colours instead of fixed ones. On the standard light or
+  dark theme nothing changes — the card looks exactly as before. No
+  configuration change needed.
 - **First load is a bit lighter.** The card's visual editor (the
   one you see when clicking the pencil on a card) now loads
   on-demand instead of on every card display. You save a few
@@ -41,6 +72,23 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Most noticeable when first opening the HA Companion app or
   refreshing a browser tab. No layout shift when the chart commits —
   the rows below stay put. No configuration change needed.
+- **The card now lays out cleanly in narrow dashboard columns and on
+  phones.** When the card sits in a slim column — for example in the
+  Home Assistant Companion app, or a multi-column phone dashboard —
+  the live panel, the readings row and the chart now shrink and
+  rearrange to fit instead of being clipped or spilling off the edge.
+  The weather icon and clock scale down, the readings wrap onto a
+  second line when space is tight, and in very narrow slots the clock
+  moves below the temperature. On a normal-width dashboard the card
+  looks exactly as before. No configuration change needed.
+- **Smoother scrolling and easier-to-tap controls on the hourly chart.**
+  Swiping the hourly chart sideways on a phone or tablet now feels
+  smoother — the card no longer briefly holds up your finger drag.
+  The little round buttons (switch view, jump back to now, the left
+  and right arrows) now have a larger invisible tap zone, so they are
+  easier to hit accurately on a touchscreen. The buttons look exactly
+  the same; only the area that responds to your finger is bigger. No
+  configuration change needed.
 
 ### Fixed
 - **24-hour view now shows real high and low temperatures from the
@@ -82,6 +130,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   example a few mm of rain that fell since midnight) appear
   immediately, and fields that aren't measured yet draw as gaps —
   same look as a sensor that was offline on a historical day.
+- **The card no longer shows a blank box when a sensor sends unexpected
+  data.** If a weather entity or sensor briefly becomes unavailable, or
+  reports a value in an unexpected format, the card used to risk going
+  completely white. It now skips the bad readings, draws everything it
+  still can, and shows a short red message explaining what went wrong
+  instead of disappearing.
 
 ## [1.13.0] — 2026-05-12
 

@@ -60,6 +60,7 @@ visual editor against a config that can't be edited safely.
 | `tap_action` | object | `{ action: none }` | Action triggered by a single click on the card. See [Actions](#actions) below. |
 | `hold_action` | object | `{ action: none }` | Action triggered by holding the card for ≥ 500 ms. |
 | `double_tap_action` | object | `{ action: none }` | Action triggered by a double click within 250 ms. |
+| `debug` | bool | `false` | When `true`, appends a collapsible diagnostics panel below the card content showing what the card detected — resolved sensor entities, the chosen render mode, each data source's subscription status, and the reason a chart column may be empty. Use it to troubleshoot a misconfigured card, then remove the key. YAML-only — there is no editor toggle. |
 
 ### Actions
 

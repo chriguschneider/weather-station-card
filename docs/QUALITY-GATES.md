@@ -133,6 +133,25 @@ target master directly. The current workflow dispatches on a
 feature branch and the bot pushes to that branch; a follow-up PR
 moves the baselines onto master.
 
+## Perf regression gate
+
+The `Render-time perf gate` step in `build` runs `scripts/perf-gate.cjs`,
+which compares the per-scenario median mount → chart-rendered timing from
+`tests-e2e/perf-render-time.spec.ts` against the committed
+`perf-baseline.json` plus a generous **+25 %** tolerance. A PR that
+measurably slows cold mount fails the build.
+
+The tolerance is deliberately wide — GHA-runner CPU variability is high
+(the same reason ADR-0003 pins visual baselines to the runner) and the
+spec already averages 5 iterations. The goal is to catch real
+regressions, not runner noise.
+
+Baseline numbers must be measured on the GHA runner, never locally.
+While `perf-baseline.json` carries `"placeholder": true` the gate is
+**warn-only**: it prints the measured medians to the step summary so the
+first `master` run can be used to pin real numbers. The full rationale
+is in [ADR-0014](adr/0014-perf-regression-gate.md).
+
 ## dist/ in sync
 
 The `verify dist matches HEAD` step in `build` re-runs the bundler in

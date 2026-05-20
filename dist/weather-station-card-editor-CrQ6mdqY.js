@@ -1,4 +1,4 @@
-import{b as e,i as t,e as s,r as o,l as n}from"./main-BhzsKJHc.js";function i(t){const{editor:s,title:o,sectionKey:n,resetLabel:i}=t;return e`
+import{b as e,i as t,e as s,r as o,l as n}from"./main-yInfaYZ2.js";function i(t){const{editor:s,title:o,sectionKey:n,resetLabel:i}=t;return e`
     <h3 class="section section-header-with-reset">
       <span class="section-title">${o}</span>
       <ha-icon-button
@@ -22,10 +22,10 @@ import{b as e,i as t,e as s,r as o,l as n}from"./main-BhzsKJHc.js";function i(t)
         h3.section {
           font-size: 1rem;
           font-weight: 500;
-          color: var(--primary-text-color);
+          color: var(--primary-text-color, #212121);
           margin: 24px 0 12px;
           padding-bottom: 4px;
-          border-bottom: 1px solid var(--divider-color);
+          border-bottom: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
         }
         h3.section:first-of-type { margin-top: 0; }
         /* Section headers with the reset-to-defaults icon button.
@@ -44,28 +44,28 @@ import{b as e,i as t,e as s,r as o,l as n}from"./main-BhzsKJHc.js";function i(t)
         h3.section.section-header-with-reset .section-reset {
           --mdc-icon-button-size: 32px;
           --mdc-icon-size: 18px;
-          color: var(--secondary-text-color);
+          color: var(--secondary-text-color, #727272);
           opacity: 0.7;
         }
         h3.section.section-header-with-reset .section-reset:hover {
           opacity: 1;
-          color: var(--primary-text-color);
+          color: var(--primary-text-color, #212121);
         }
         h4.subsection {
           font-size: 0.9rem;
           font-weight: 500;
-          color: var(--secondary-text-color);
+          color: var(--secondary-text-color, #727272);
           margin: 18px 0 8px;
         }
         details.advanced {
           margin-top: 8px;
-          border: 1px solid var(--divider-color);
+          border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
           border-radius: 4px;
           padding: 8px 12px;
         }
         details.advanced > summary {
           cursor: pointer;
-          color: var(--primary-text-color);
+          color: var(--primary-text-color, #212121);
           font-weight: 500;
         }
         details.advanced[open] > summary {
@@ -103,17 +103,17 @@ import{b as e,i as t,e as s,r as o,l as n}from"./main-BhzsKJHc.js";function i(t)
         .radio-item label { margin-left: 4px; }
         .hint {
           font-size: 0.85rem;
-          color: var(--secondary-text-color);
+          color: var(--secondary-text-color, #727272);
           margin: 4px 0 12px;
         }
         .editor-footer {
           margin-top: 24px;
           padding-top: 12px;
-          border-top: 1px solid var(--divider-color);
+          border-top: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
           text-align: right;
         }
         .editor-footer a {
-          color: var(--primary-color);
+          color: var(--primary-color, #03a9f4);
           text-decoration: none;
           font-size: 0.9rem;
         }

@@ -29,13 +29,29 @@ export function cardStyles({
 }: CardStylesOpts): string {
   return `
     ha-icon {
-      color: var(--paper-item-icon-color);
+      /* --paper-item-icon-color is the legacy Polymer icon token; some
+       * modern HA themes drop it. Fall through to the current
+       * --state-icon-color, then to HA's default-theme literal so a
+       * theme that defines neither still renders the original colour. */
+      color: var(--paper-item-icon-color, var(--state-icon-color, #44739e));
     }
     img {
       width: ${iconsSize}px;
       height: ${iconsSize}px;
     }
+    /* container-type: inline-size makes .card itself the query
+     * container for the @container rules at the end of this sheet.
+     * The card lives inside HA's grid — in a Companion-app column or
+     * the 2026.1 mobile summary-card slot its host can be ~280-360px
+     * wide while the viewport is a wide desktop, so the responsive
+     * rules must key off the card's OWN width, not the viewport.
+     * inline-size containment only contains the inline (width) axis;
+     * height is untouched, and a block-level element filling its
+     * parent already takes its width from that parent — so this has
+     * no standalone visual effect on the wide layout. */
     .card {
+      container-type: inline-size;
+      container-name: wsc-card;
       padding-top: ${titlePresent ? '0px' : '16px'};
       padding-right: 16px;
       padding-bottom: 16px;
@@ -65,7 +81,7 @@ export function cardStyles({
     }
     .main span {
       font-size: 18px;
-      color: var(--secondary-text-color);
+      color: var(--secondary-text-color, #727272);
     }
     .attributes {
       display: flex;
@@ -146,9 +162,9 @@ export function cardStyles({
       width: 30px;
       height: 30px;
       border-radius: 50%;
-      background: var(--card-background-color);
-      border: 1px solid var(--divider-color);
-      color: var(--primary-text-color);
+      background: var(--card-background-color, #fff);
+      border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+      color: var(--primary-text-color, #212121);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -160,6 +176,23 @@ export function cardStyles({
     }
     .scroll-indicator:hover {
       opacity: 1;
+    }
+    /* Touch-target expansion. The visible control stays a 30 px circle
+     * (unchanged design language), but a transparent ::before stretches
+     * the clickable area to ~44 px square — the platform-recommended
+     * minimum for a comfortable finger tap. Centred on the button,
+     * non-painting, so it adds hit area without shifting any pixel of
+     * the rendered card. */
+    .scroll-indicator::before,
+    .mode-toggle::before,
+    .jump-to-now::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 44px;
+      height: 44px;
+      transform: translate(-50%, -50%);
     }
     .scroll-indicator[hidden] {
       display: none;
@@ -184,9 +217,9 @@ export function cardStyles({
       width: 30px;
       height: 30px;
       border-radius: 50%;
-      background: var(--card-background-color);
-      border: 1px solid var(--divider-color);
-      color: var(--primary-text-color);
+      background: var(--card-background-color, #fff);
+      border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+      color: var(--primary-text-color, #212121);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -214,7 +247,7 @@ export function cardStyles({
       position: absolute;
       top: 2px;
       font-size: ${labelsBaseSize || 11}px;
-      color: var(--secondary-text-color);
+      color: var(--secondary-text-color, #727272);
       z-index: 1;
       pointer-events: none;
       white-space: nowrap;
@@ -299,7 +332,14 @@ export function cardStyles({
      * subtle "something is happening" cue without redrawing anything.
      * Compositor-only (animates only background-position) so it stays
      * smooth on Pi-class GPUs. Honors the system reduced-motion
-     * setting so users with the OS preference don't see the sweep. */
+     * setting so users with the OS preference don't see the sweep.
+     *
+     * The 50%-stop colour is a deliberately theme-AGNOSTIC mid-grey at
+     * 0.04 alpha: it reads as a barely-there lighten on dark themes and
+     * a barely-there darken on light themes, so a single literal works
+     * for every theme. No HA token expresses "near-invisible neutral
+     * tint" — --divider-color is far too opaque — so this stays a
+     * literal on purpose rather than a var() (Slice 6 theme audit). */
     .forecast-skeleton-wrapper::after {
       content: '';
       position: absolute;
@@ -388,7 +428,102 @@ export function cardStyles({
     }
     .date-text {
       font-size: ${dayDateSize}px;
-      color: var(--secondary-text-color);
+      color: var(--secondary-text-color, #727272);
+    }
+
+    /* ----------------------------------------------------------------
+     * Narrow-width reflow (Slice 7).
+     *
+     * Everything below is ADDITIVE: it only takes effect when the
+     * card's own container (.card, established above via
+     * container-type) is narrower than the breakpoint. The wide-view
+     * layout — the dominant case on a desktop dashboard — is left
+     * exactly as the rules above define it.
+     *
+     * Two tiers:
+     *   <=360px — a phone-width Companion-app column or the HA 2026.1
+     *             mobile-first summary-card slot. Pull in the card
+     *             padding, shrink the heavy live-panel icon + clock,
+     *             and let the attribute groups wrap instead of being
+     *             crushed by justify-content:space-between.
+     *   <=280px — a very tight slot (two cards side-by-side on a
+     *             phone). Same direction, more aggressive: the live
+     *             panel stacks the clock under the temperature so the
+     *             absolutely-positioned clock can never overlap it.
+     * ---------------------------------------------------------------- */
+    @container wsc-card (max-width: 360px) {
+      /* Reclaim ~16px of width by halving the side padding. The
+       * scroll-indicator / mode-toggle negative insets are -14px, so
+       * 8px of padding still leaves them inside the card edge. */
+      .card {
+        padding-right: 8px;
+        padding-left: 8px;
+      }
+      /* The 50px weather glyph + 14px margin eats a third of a 320px
+       * row. Scale icon + temperature down ~15% so the temperature
+       * keeps its space; fixed values (not fluid clamp) so the
+       * layout stays predictable and easy to baseline-review. */
+      .main {
+        font-size: ${Math.round(currentTempSize * 0.85)}px;
+      }
+      .main ha-icon {
+        --mdc-icon-size: 38px;
+        margin-inline-end: 10px;
+      }
+      .main img {
+        width: ${Math.round(iconsSize * 1.5)}px;
+        height: ${Math.round(iconsSize * 1.5)}px;
+        margin-inline-end: 10px;
+      }
+      .main span {
+        font-size: 15px;
+      }
+      /* Clock is position:absolute — at this width keep it pinned but
+       * tighten the inset and shrink it so it clears the condition
+       * text. The full stacking happens in the <=280px tier. */
+      .current-time {
+        right: 8px;
+        inset-inline-end: 8px;
+        font-size: ${Math.round(timeSize * 0.8)}px;
+      }
+      .date-text {
+        font-size: ${Math.max(10, Math.round(dayDateSize * 0.85))}px;
+      }
+      /* Let the three attribute groups wrap onto a second line rather
+       * than being squeezed past readability. space-between still
+       * spreads whatever fits on each line. */
+      .attributes {
+        flex-wrap: wrap;
+        gap: 4px 12px;
+        font-size: 13px;
+      }
+      /* Tighten the chart-chrome typography so edge date stamps and
+       * wind units don't overflow their narrow columns. */
+      .scroll-date {
+        font-size: ${Math.max(9, (labelsBaseSize || 11) - 1)}px;
+      }
+      .wind-speed {
+        font-size: 10px;
+      }
+    }
+
+    @container wsc-card (max-width: 280px) {
+      /* Stack the clock under the temperature. Below ~280px the
+       * absolutely-positioned clock cannot share the top row with
+       * the temperature + condition without overlapping, so drop it
+       * into normal flow beneath them. .current-time is a block
+       * inside .main's inner text <div>, so static positioning lets
+       * it flow directly under the temperature/condition. */
+      .current-time {
+        position: static;
+        margin-top: 4px;
+        text-align: left;
+      }
+      .attributes {
+        /* One group per line keeps each icon+value pair on its own
+         * row — no mid-value wrap, no horizontal overflow. */
+        justify-content: flex-start;
+      }
     }
   `;
 }

@@ -25,8 +25,11 @@ import locale, { ensureLocaleLoaded } from './locale.js';
 import {
   cardinalDirectionsIcon,
   weatherIcons,
+  MIN_HA_VERSION,
+  isHaVersionBelow,
 } from './const.js';
 import { DEFAULTS, DEFAULTS_FORECAST, DEFAULTS_UNITS } from './defaults.js';
+import { validateConfig } from './config-validation.js';
 import {LitElement, html} from 'lit';
 import {guard} from 'lit/directives/guard.js';
 import {
@@ -81,6 +84,7 @@ import {
   formatSunshineHours,
 } from './utils/unit-converters.js';
 import { drawChartUnsafe } from './chart/orchestrator.js';
+import { sanitizeForecastEntries } from './chart/sanitize.js';
 import { renderChartSkeleton } from './chart/skeleton.js';
 import { cardStyles } from './chart/styles.js';
 import { getDateTimeFormat } from './utils/intl-cache.js';
@@ -95,6 +99,10 @@ import { getDateTimeFormat } from './utils/intl-cache.js';
 interface HassMain extends HassLike {
   language?: string;
   selectedLanguage?: string;
+  // HA frontend exposes the running Home Assistant version here; read
+  // only by the `debug: true` diagnostics panel. HassLike narrows
+  // `config` to lat/lon, so widen it for the main-card boundary.
+  config?: HassLike['config'] & { version?: string };
 }
 
 /** Sub-shapes used inside `set hass`: a single HA entity state from
@@ -209,6 +217,10 @@ class WeatherStationCard extends LitElement {
   _stationCount: number = 0;
   _forecastCount: number = 0;
   _missingSensors: string[] = [];
+  /** Advisory config-schema warnings from `validateConfig` (Slice 2) —
+   *  unknown YAML keys / wrong-typed values. Surfaced through
+   *  `renderErrorBanner()`; never blocks the render. */
+  _configWarnings: string[] = [];
   /** Last forecast.type that the chart block was actually rendered
    *  with (i.e. data was ready). Compared in render() + `updated()`
    *  to decide which animation class to apply on the block. */
@@ -256,6 +268,17 @@ class WeatherStationCard extends LitElement {
   // --- Chart / scroll lifecycle ---
   _chartError: unknown = null;
   _chartPhase: string | null = null;
+  // Set when a `_refreshForecasts` pass throws on malformed source
+  // data. Surfaced through `renderErrorBanner()`; cleared by the next
+  // clean `_refreshForecasts`.
+  _refreshError: string | null = null;
+  // Set when a synchronous render section (`renderMain`,
+  // `renderAttributes`, the forecast block) throws. Render-pass-scoped:
+  // cleared at the top of every render() so a section that heals stops
+  // reporting, and re-set this pass only if a section still throws.
+  // Both fields feed renderErrorBanner() so the card degrades to the
+  // banner instead of Lit aborting render() into a blank/white card.
+  _sectionError: string | null = null;
   // True when this card instance is mounted inside the card-config
   // dialog's live preview (hui-card-preview / hui-dialog-edit-card /
   // hui-card-element-editor ancestor). Detected once in
@@ -443,6 +466,13 @@ setConfig(config: any) {
   this._liveCondition = undefined;
 
   this.config = cardConfig;
+
+  // Advisory config-schema check (Slice 2). Unknown keys and wrong-typed
+  // values are silently swallowed by the DEFAULTS spread above — this
+  // surfaces them as a banner instead. Advisory only: it NEVER throws,
+  // the card still renders with defaults. Genuine structural errors are
+  // still caught by the mode-aware throws below and `assertConfig`.
+  this._configWarnings = validateConfig(config);
 
   // Mode-aware validation. Each enabled block has its own required key:
   //   show_station    → needs sensors.temperature (the past-data chart)
@@ -1008,7 +1038,35 @@ async _refreshPressureDelta(): Promise<void> {
     this._teardownRegistry.drain();
   }
 
+  // Public entry point: a try/catch wrapper around the merge pipeline.
+  // _refreshForecasts is called from setHass, the station/forecast
+  // subscription callbacks, the ResizeObserver and the mode toggle.
+  // Malformed source data (a forecast entry of the wrong shape, a NaN
+  // datetime) must degrade to the error banner — never throw uncaught
+  // (the setHass call site at line ~866 has no catch of its own) and
+  // never leave `this.forecasts` undefined (which would blank the
+  // chart block). Mirrors the drawChart → drawChartUnsafe split.
   _refreshForecasts() {
+    try {
+      this._refreshForecastsUnsafe();
+      if (this._refreshError) {
+        this._refreshError = null;
+        this.requestUpdate();
+      }
+    } catch (err) {
+      // Instrument before degrading — never silently swallow.
+      console.error('[weather-station-card] forecast refresh failed', err);
+      // Guarantee a defined, drawable forecasts array so the render
+      // path and the chart fall back cleanly instead of crashing on
+      // `undefined`.
+      if (!Array.isArray(this.forecasts)) this.forecasts = [];
+      const e = err as { message?: string } | null;
+      this._refreshError = `Forecast data malformed: ${String(e?.message ?? err)}`;
+      this.requestUpdate();
+    }
+  }
+
+  _refreshForecastsUnsafe() {
     // normalizeForecastMode validates forecast.type (typo'd values fall
     // back to 'daily'). Station block is now coherent at hourly too —
     // MeasuredDataSource fetches with period:'hour' when the type is
@@ -1701,7 +1759,11 @@ drawChart(args?: any): unknown[] | undefined {
 }
 
 computeForecastData({ config, forecastItems } = this) {
-  const forecast = this.forecasts ? this.forecasts.slice(0, forecastItems) : [];
+  // sanitizeForecastEntries drops null / non-object / datetime-less
+  // entries before any positional .map() below — a single bad entry
+  // would otherwise throw (`null.datetime`) and blank the chart.
+  const sliced = this.forecasts ? this.forecasts.slice(0, forecastItems) : [];
+  const forecast = sanitizeForecastEntries(sliced);
   const dateTime = forecast.map((d) => d.datetime);
   const fcType = config.forecast?.type;
   const { tempHigh, tempLow: rawTempLow } = hourlyTempSeries(forecast, {
@@ -1816,6 +1878,10 @@ _onModeToggleClick(ev?: Event) {
     if (!config || !_hass) {
       return html``;
     }
+    // Render-pass-scoped: cleared here so a section that recovered on
+    // this pass stops reporting; _safeSection re-sets it below only if
+    // a section still throws.
+    this._sectionError = null;
     // Match the mm-unit sizing rule from precipLabelPlugin so the wind unit
     // ("km/h", "m/s", …) renders at the same compact size as the precip unit
     // alongside its number.
@@ -1853,6 +1919,23 @@ _onModeToggleClick(ev?: Event) {
     const scrolling = visibleBars > 0 && totalBars > visibleBars;
     const contentWidthPct = scrolling ? (totalBars / visibleBars) * 100 : 100;
 
+    // Render every card section through _safeSection FIRST so that a
+    // throw on malformed data (e.g. a partial sun entity, an
+    // unexpected attribute shape) degrades that one section to empty
+    // and records the cause — instead of Lit aborting the whole
+    // render() and leaving a blank/white card. renderErrorBanner() is
+    // computed LAST, after the section catches have had a chance to
+    // set this._renderError, so the banner reflects this same pass.
+    const mainSection = this._safeSection('live panel', () => this.renderMain());
+    const attributesSection = this._safeSection('attributes', () => this.renderAttributes());
+    const forecastSection = this._safeSection('forecast', () =>
+      this._renderForecastBlock({ config, scrolling, contentWidthPct, visibleBars }),
+    );
+    const banner = this._safeSection('error banner', () => this.renderErrorBanner());
+    const debugSection = config.debug === true
+      ? this._safeSection('debug', () => this.renderDebugPanel())
+      : '';
+
     return html`
       <style>${cardStyles({
         iconsSize: config.icons_size,
@@ -1867,10 +1950,22 @@ _onModeToggleClick(ev?: Event) {
 
       <ha-card header="${config.title}">
         <div class="card">
-          ${this.renderErrorBanner()}
-          ${this.renderMain()}
-          ${this.renderAttributes()}
-          ${this._allExpectedDataReady() ? (() => {
+          ${banner}
+          ${mainSection}
+          ${attributesSection}
+          ${forecastSection}
+          ${debugSection}
+        </div>
+      </ha-card>
+    `;
+  }
+
+  // Extracted from render() so the data-ready / loading branch can be
+  // wrapped in a single _safeSection catch. Pure presentation — reads
+  // instance state, returns a TemplateResult.
+  // deno-lint-ignore no-explicit-any
+  _renderForecastBlock({ config, scrolling, contentWidthPct, visibleBars }: any) {
+    return this._allExpectedDataReady() ? (() => {
           // Pick the animation class for this render. Three cases:
           //   1. Block has never been rendered → 'first-mount' (slide-up + fade-in)
           //   2. Block was rendered before AND forecast.type just changed → 'view-changing' (opacity dip)
@@ -1951,14 +2046,148 @@ _onModeToggleClick(ev?: Event) {
               : ''}
           </div>
           `;
-          })()}
-        </div>
-      </ha-card>
-    `;
+          })();
   }
+
+  // Run a render section under a try/catch. On a throw, log with
+  // context, record the cause into _sectionError (so renderErrorBanner
+  // surfaces it on the SAME pass — the three section calls are
+  // evaluated before the banner) and return an empty fragment. This is
+  // graceful degradation, not masking: the failure is visible in the
+  // banner and the console, only the one broken section collapses.
+  _safeSection(label: string, fn: () => unknown): unknown {
+    try {
+      return fn();
+    } catch (err) {
+      console.error(`[weather-station-card] ${label} render failed`, err);
+      const e = err as { message?: string } | null;
+      this._sectionError = `Card section failed (${label}): ${String(e?.message ?? err)}`;
+      return html``;
+    }
+  }
+
+// Diagnostic panel — rendered only when `debug: true` is set in YAML.
+// Surfaces the card's detected internal state so a misconfigured
+// dashboard can be troubleshot without a debugger: resolved sensor
+// entity IDs, the chosen render mode, each data source's subscription
+// status, and the reason a chart column may be empty. Off by default;
+// no editor row (YAML-only, deliberate restraint).
+renderDebugPanel() {
+  const cfg = this.config || {};
+  const sensors = cfg.sensors || {};
+
+  // Render mode — the same gates render() / the chart pipeline use.
+  const wantStation = cfg.show_station !== false;
+  const wantForecast = cfg.show_forecast === true && !!cfg.weather_entity;
+  let renderMode = 'none (both blocks disabled)';
+  if (wantStation && wantForecast) renderMode = 'combination (station + forecast)';
+  else if (wantStation) renderMode = 'station-only';
+  else if (wantForecast) renderMode = 'forecast-only';
+  const forecastType = cfg.forecast?.type ?? 'daily';
+
+  // Per-source status string. "subscribed" once a source object exists;
+  // "error" carries the message; "no data yet" before the first event.
+  const sourceStatus = (
+    want: boolean,
+    source: unknown,
+    error: string | null,
+    ready: boolean,
+    count: number,
+  ): string => {
+    if (!want) return 'not requested (block disabled)';
+    if (error) return `error — ${error}`;
+    if (!source) return 'not subscribed';
+    if (!ready) return 'subscribed, no data yet';
+    return `subscribed, ${count} point(s)`;
+  };
+
+  const stationStatus = sourceStatus(
+    wantStation, this._dataSource, this._stationError,
+    this._stationDataReady, this._stationData?.length ?? 0,
+  );
+  const forecastStatus = sourceStatus(
+    wantForecast, this._forecastSource, this._forecastError,
+    this._forecastDataReady, this._forecastData?.length ?? 0,
+  );
+
+  // Why a chart column might be empty — the most common support
+  // question. Walk the known causes in priority order.
+  const emptyReasons: string[] = [];
+  if (wantStation && !sensors.temperature) {
+    emptyReasons.push('Station block on, but sensors.temperature is unset — past chart has no data.');
+  }
+  if (cfg.show_forecast === true && !cfg.weather_entity) {
+    emptyReasons.push('show_forecast is true, but weather_entity is unset — forecast block cannot load.');
+  }
+  if (wantStation && this._stationDataReady && (this._stationData?.length ?? 0) === 0 && !this._stationError) {
+    emptyReasons.push('Station source returned 0 points — the recorder has no history for the configured window.');
+  }
+  if (wantForecast && this._forecastDataReady && (this._forecastData?.length ?? 0) === 0 && !this._forecastError) {
+    emptyReasons.push('Forecast source returned 0 points — the weather entity published an empty forecast.');
+  }
+  if (this._missingSensors?.length) {
+    emptyReasons.push(`Sensors unavailable in HA: ${this._missingSensors.join(', ')}.`);
+  }
+
+  // Resolved sensor entities — only the slots the user actually set.
+  const sensorRows = Object.entries(sensors)
+    .filter(([, eid]) => typeof eid === 'string' && eid)
+    .map(([key, eid]) => {
+      const exists = !!this._hass?.states?.[eid as string];
+      return html`<div>
+        <code>${key}</code>: <code>${eid}</code>
+        ${exists ? '✓ in HA' : '✗ not found in HA'}
+      </div>`;
+    });
+
+  const row = (label: string, value: unknown) => html`
+    <div><strong>${label}:</strong> ${String(value)}</div>
+  `;
+
+  return html`
+    <details class="ws-debug-panel" style="
+      margin: 8px;
+      padding: 6px 10px;
+      border: 1px solid var(--divider-color, #ccc);
+      border-radius: 4px;
+      font-size: 12px;
+      line-height: 1.5;
+      font-family: var(--code-font-family, monospace);
+      color: var(--secondary-text-color, #888);
+    ">
+      <summary style="cursor: pointer; font-weight: bold;">
+        weather-station-card diagnostics (debug: true)
+      </summary>
+      <div style="margin-top: 6px;">
+        ${row('Card version', CARD_VERSION)}
+        ${row('HA version', this._hass?.config?.version ?? 'unknown')}
+        ${row('Render mode', renderMode)}
+        ${row('Forecast type', forecastType)}
+        ${row('Weather entity', cfg.weather_entity || '(unset)')}
+        ${row('Station source', stationStatus)}
+        ${row('Forecast source', forecastStatus)}
+        ${row('All expected data ready', this._allExpectedDataReady())}
+        ${row('Chart built', this._initialChartBuilt)}
+        <div style="margin-top: 4px;"><strong>Resolved sensors:</strong></div>
+        ${sensorRows.length ? sensorRows : html`<div>(none configured)</div>`}
+        <div style="margin-top: 4px;"><strong>Empty-column diagnostics:</strong></div>
+        ${emptyReasons.length
+          ? emptyReasons.map((r) => html`<div>• ${r}</div>`)
+          : html`<div>No empty-column issues detected.</div>`}
+      </div>
+    </details>
+  `;
+}
 
 renderErrorBanner() {
   const errors = [];
+  // Compatibility warning first: a too-old HA frontend may have changed
+  // the APIs this card relies on, so flag it before the data-fetch
+  // errors (which can be a downstream symptom of that). isHaVersionBelow
+  // never false-fires on a current or unreadable version.
+  if (isHaVersionBelow(this._hass?.config?.version, MIN_HA_VERSION)) {
+    errors.push(`This card expects Home Assistant ${MIN_HA_VERSION} or newer.`);
+  }
   if (this._stationError) {
     errors.push(`Statistics fetch failed: ${this._stationError}`);
   }
@@ -1968,15 +2197,37 @@ renderErrorBanner() {
   if (this._chartError) {
     errors.push(`Chart render failed: ${this._chartError}`);
   }
+  if (this._refreshError) {
+    errors.push(this._refreshError);
+  }
+  if (this._sectionError) {
+    errors.push(this._sectionError);
+  }
   if (this._missingSensors?.length) {
     errors.push(`Sensors unavailable: ${this._missingSensors.join(', ')}`);
   }
-  if (!errors.length) return html``;
-  return html`
-    <div style="background: var(--error-color, #b71c1c); color: white; padding: 8px 12px; margin: 8px; border-radius: 4px; font-size: 13px;">
+
+  // Advisory config-schema warnings (Slice 2). Rendered in a separate,
+  // amber band below the red error band — they don't stop the card
+  // rendering, they just flag a YAML mistake the user can fix.
+  const configWarnings = this._configWarnings ?? [];
+
+  const errorBanner = errors.length
+    ? html`
+    <div style="background: var(--error-color, #b71c1c); color: var(--text-primary-color, #fff); padding: 8px 12px; margin: 8px; border-radius: 4px; font-size: 13px;">
       ${errors.map((e) => html`<div>${e}</div>`)}
     </div>
-  `;
+  `
+    : html``;
+  const warningBanner = configWarnings.length
+    ? html`
+    <div style="background: var(--warning-color, #ffa600); color: var(--text-primary-color, #fff); padding: 8px 12px; margin: 8px; border-radius: 4px; font-size: 13px;">
+      <div style="font-weight: 600;">Card configuration</div>
+      ${configWarnings.map((w) => html`<div>${w}</div>`)}
+    </div>
+  `
+    : html``;
+  return html`${errorBanner}${warningBanner}`;
 }
 
 renderMain({ config, sun, weather, temperature } = this) {
@@ -2393,18 +2644,27 @@ const timeOptions = {
 }
 
 renderForecastConditionIcons({ config, forecastItems, sun } = this) {
-  const forecast = this.forecasts ? this.forecasts.slice(0, forecastItems) : [];
-
   if (config.forecast.condition_icons === false) {
     return html``;
   }
+
+  // Drop malformed entries (null, missing datetime) before the
+  // per-item map below dereferences `item.datetime`.
+  const forecast = sanitizeForecastEntries(
+    this.forecasts ? this.forecasts.slice(0, forecastItems) : [],
+  );
+  // The day/night decision needs sun rise/set times. When the sun
+  // entity is missing or partial, fall back to "always day" rather
+  // than throwing on `sun.attributes.next_rising`.
+  const sunRising = sun?.attributes?.next_rising;
+  const sunSetting = sun?.attributes?.next_setting;
 
   return html`
     <div class="conditions">
       ${forecast.map((item) => {
         const forecastTime = new Date(item.datetime);
-        const sunriseTime = new Date(sun.attributes.next_rising);
-        const sunsetTime = new Date(sun.attributes.next_setting);
+        const sunriseTime = new Date(sunRising);
+        const sunsetTime = new Date(sunSetting);
 
         // Adjust sunrise and sunset times to match the date of forecastTime
         const adjustedSunriseTime = new Date(forecastTime);
@@ -2419,8 +2679,14 @@ renderForecastConditionIcons({ config, forecastItems, sun } = this) {
 
         let isDayTime;
 
-        if (config.forecast.type === 'daily') {
-          // For daily forecast, assume it's day time
+        // A daily forecast, an Invalid Date from a partial sun entity,
+        // or an unparseable item.datetime all collapse to "day time" —
+        // the icon row stays drawn rather than throwing on a NaN
+        // comparison.
+        const sunTimesUsable = Number.isFinite(sunriseTime.getTime())
+          && Number.isFinite(sunsetTime.getTime())
+          && Number.isFinite(forecastTime.getTime());
+        if (config.forecast.type === 'daily' || !sunTimesUsable) {
           isDayTime = true;
         } else {
           // For other forecast types, determine based on sunrise and sunset times
@@ -2432,7 +2698,7 @@ renderForecastConditionIcons({ config, forecastItems, sun } = this) {
         // resolution. For now both day and night use the canonical
         // weatherIcons mapping.
         void isDayTime;
-        const iconHtml = html`<ha-icon icon="${this.getWeatherIcon(item.condition, sun.state)}"></ha-icon>`;
+        const iconHtml = html`<ha-icon icon="${this.getWeatherIcon(item.condition, sun?.state)}"></ha-icon>`;
 
         return html`
           <div class="forecast-item">
@@ -2461,7 +2727,9 @@ renderWind({ config, forecastItems } = this) {
   const showSpeed = config.forecast.show_wind_speed !== false;
   if (!showArrow && !showSpeed) return html``;
 
-  const forecast = this.forecasts ? this.forecasts.slice(0, forecastItems) : [];
+  const forecast = sanitizeForecastEntries(
+    this.forecasts ? this.forecasts.slice(0, forecastItems) : [],
+  );
   const unit = this.unitSpeed ? this.ll('units')[this.unitSpeed] : '';
 
   return html`

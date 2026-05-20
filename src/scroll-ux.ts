@@ -108,7 +108,10 @@ export function setupScrollUx(card: ScrollUxCard): void {
       wrapper.classList.add('dragging');
     }
     if (dragMoved && ev.pointerType === 'mouse') {
-      wrapper.scrollLeft = startScrollLeft - dx;
+      // Round to whole pixels — sub-pixel scrollLeft values produced
+      // by a fractional cursor delta make the chart shimmer during a
+      // slow drag. Integer scroll positions keep the drag crisp.
+      wrapper.scrollLeft = Math.round(startScrollLeft - dx);
       ev.preventDefault();
     }
   };
@@ -138,10 +141,18 @@ export function setupScrollUx(card: ScrollUxCard): void {
     }
   };
 
-  wrapper.addEventListener('pointerdown', onPointerDown);
-  wrapper.addEventListener('pointermove', onPointerMove);
-  wrapper.addEventListener('pointerup', onPointerEnd);
-  wrapper.addEventListener('pointercancel', onPointerEnd);
+  // Listener passiveness is chosen per handler so a touch swipe never
+  // blocks on the main thread waiting to see if we'll preventDefault:
+  //   - pointerdown / pointerup / pointercancel never call
+  //     preventDefault → { passive: true } lets the browser start the
+  //     native momentum scroll immediately.
+  //   - pointermove DOES call preventDefault (mouse drag-to-scroll
+  //     path) → it must stay non-passive, marked explicitly so a
+  //     future edit doesn't silently flip it and break mouse drag.
+  wrapper.addEventListener('pointerdown', onPointerDown, { passive: true });
+  wrapper.addEventListener('pointermove', onPointerMove, { passive: false });
+  wrapper.addEventListener('pointerup', onPointerEnd, { passive: true });
+  wrapper.addEventListener('pointercancel', onPointerEnd, { passive: true });
 
   // ── Indicator + jump-to-now click ─────────────────────────────────
   // stopPropagation prevents the action handler (bound on ha-card)
@@ -165,17 +176,21 @@ export function setupScrollUx(card: ScrollUxCard): void {
     });
     wrapper.scrollTo({ left: target, behavior: 'smooth' });
   };
+  // The control pointerdown handlers only stopPropagation (never
+  // preventDefault) so they're safe to mark passive — a tap on a
+  // chevron then never adds main-thread latency to a scroll gesture
+  // that started on the control.
   if (leftBtn) {
     leftBtn.addEventListener('click', onLeftClick);
-    leftBtn.addEventListener('pointerdown', stopDown);
+    leftBtn.addEventListener('pointerdown', stopDown, { passive: true });
   }
   if (rightBtn) {
     rightBtn.addEventListener('click', onRightClick);
-    rightBtn.addEventListener('pointerdown', stopDown);
+    rightBtn.addEventListener('pointerdown', stopDown, { passive: true });
   }
   if (jumpBtn) {
     jumpBtn.addEventListener('click', onJumpClick);
-    jumpBtn.addEventListener('pointerdown', stopDown);
+    jumpBtn.addEventListener('pointerdown', stopDown, { passive: true });
   }
 
   // ── Indicator visibility on scroll ───────────────────────────────

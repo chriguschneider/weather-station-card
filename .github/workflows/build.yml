@@ -135,35 +135,24 @@ jobs:
             test-results/
           retention-days: 14
 
-      - name: Render-time advisory summary
-        # Pulls test-results/perf-render-time.json (written by the
-        # tests-e2e/perf-render-time.spec.ts E2E spec) and renders it
-        # in the build summary. Advisory only — never fails the build,
-        # GHA-runner CPU variability would create false positives.
-        # Sustained regressions become visible as a trend in the
-        # summary line over multiple PRs.
-        if: ${{ always() }}
-        run: |
-          if [ ! -f test-results/perf-render-time.json ]; then
-            echo "perf-render-time.json missing (E2E may have failed before the spec ran)" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          {
-            echo "## Render-time advisory"
-            echo ""
-            echo "End-to-end mount → chart-rendered timing for three representative configs (5 iterations each)."
-            echo ""
-            echo "| Scenario | Median (ms) | p95 (ms) |"
-            echo "|---|---:|---:|"
-            node -e "
-              const r = require('./test-results/perf-render-time.json');
-              for (const s of r.samples) {
-                console.log(\`| \${s.scenario} | \${s.median_ms} | \${s.p95_ms} |\`);
-              }
-            "
-            echo ""
-            echo "_Advisory only — not a CI gate. GHA-runner variability is high; track trends across PRs, not single-PR diffs._"
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Render-time perf gate
+        # Compares the per-scenario median mount → chart-rendered timing
+        # (written by tests-e2e/perf-render-time.spec.ts) against the
+        # committed perf-baseline.json + a generous +25% tolerance.
+        # A PR that measurably slows cold mount fails this step.
+        #
+        # Promoted from the former advisory-only summary in v2.0 slice 1
+        # (ADR-0014). The tolerance is deliberately generous: GHA-runner
+        # CPU variability is high (ADR-0003) and the spec already
+        # averages 5 iterations — the gate must catch real regressions,
+        # not noise. While perf-baseline.json carries `"placeholder":
+        # true` the gate is warn-only and prints the measured medians so
+        # the first master run can be used to pin real numbers.
+        #
+        # Not guarded by `if: always()` — when an earlier step fails the
+        # perf JSON is unreliable, and the gate's own exit code is what
+        # makes a regression fail the build.
+        run: node scripts/perf-gate.cjs
 
       - name: Verify committed bundle matches source
         # After ADR-0013 (ESM code-split) `dist/` holds a hashed-chunk

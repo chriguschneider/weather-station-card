@@ -30,6 +30,7 @@ import { resolveCssVar } from '../utils/resolve-css-var.js';
 import { getThemeTokens } from '../utils/theme-tokens.js';
 import { sunshineFractions } from '../sunshine-source.js';
 import { buildChart, type UplotChart } from './draw.js';
+import { coerceNumericSeries } from './sanitize.js';
 import {
   createSeparatorPlugin,
   createDailyTickLabelsPlugin,
@@ -240,11 +241,21 @@ function buildDatasets(args: BuildDatasetsArgs): Array<Record<string, unknown>> 
     chartTextColor,
   } = args;
 
+  // Coerce every plotted series to (number | null)[] before it reaches
+  // the chart. A malformed cell — a temperature that arrived as the
+  // string "unavailable", a NaN from an upstream divide-by-zero —
+  // would otherwise poison the whole axis scale (uPlot derives min/max
+  // across the array) or draw a phantom point at a coerced 0. coerce →
+  // null makes Chart/uPlot draw a clean gap instead.
+  const tempHighSeries = coerceNumericSeries(data.tempHigh);
+  const tempLowSeries = coerceNumericSeries(data.tempLow);
+  const precipSeries = coerceNumericSeries(data.precip);
+
   const datasets: Array<Record<string, unknown>> = [
     {
       label: card.ll('tempHi'),
       type: 'line',
-      data: data.tempHigh,
+      data: tempHighSeries,
       yAxisID: 'TempAxis',
       borderColor: temp1Color,
       backgroundColor: temp1Color,
@@ -253,7 +264,7 @@ function buildDatasets(args: BuildDatasetsArgs): Array<Record<string, unknown>> 
     {
       label: card.ll('tempLo'),
       type: 'line',
-      data: data.tempLow,
+      data: tempLowSeries,
       yAxisID: 'TempAxis',
       borderColor: temp2Color,
       backgroundColor: temp2Color,
@@ -263,7 +274,7 @@ function buildDatasets(args: BuildDatasetsArgs): Array<Record<string, unknown>> 
     {
       label: card.ll('precip'),
       type: 'bar',
-      data: data.precip,
+      data: precipSeries,
       yAxisID: 'PrecipAxis',
       borderColor: precipPerBarColor,
       backgroundColor: precipPerBarColor,
