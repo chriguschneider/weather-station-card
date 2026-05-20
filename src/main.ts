@@ -2214,7 +2214,7 @@ renderErrorBanner() {
 
   const errorBanner = errors.length
     ? html`
-    <div style="background: var(--error-color, #b71c1c); color: white; padding: 8px 12px; margin: 8px; border-radius: 4px; font-size: 13px;">
+    <div style="background: var(--error-color, #b71c1c); color: var(--text-primary-color, #fff); padding: 8px 12px; margin: 8px; border-radius: 4px; font-size: 13px;">
       ${errors.map((e) => html`<div>${e}</div>`)}
     </div>
   `
