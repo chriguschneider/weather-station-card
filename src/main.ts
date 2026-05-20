@@ -21,7 +21,7 @@
 // editor/*) ARE all strictly typed — anyone importing from this card
 // gets typed exports.
 
-import locale from './locale.js';
+import locale, { ensureLocaleLoaded } from './locale.js';
 import {
   cardinalDirectionsIcon,
   weatherIcons,
@@ -467,7 +467,19 @@ setConfig(config: any) {
 // subscription churn in phase 3.
 set hass(hass: HassMain) {
   this._hass = hass;
-  this.language = this.config.locale || hass.selectedLanguage || hass.language || 'en';
+  const lang = this.config.locale || hass.selectedLanguage || hass.language || 'en';
+  if (lang !== this.language) {
+    this.language = lang;
+    // English ships eagerly as the fallback; every other language is
+    // in its own rollup chunk, lazy-loaded on first hass-set. Once
+    // the chunk lands the locale registry is populated and we ask
+    // Lit to re-render so the correct strings replace the en
+    // fallback. The await is a microtask if the chunk is already in
+    // the browser cache.
+    if (lang !== 'en' && lang.split('-')[0] !== 'en') {
+      void ensureLocaleLoaded(lang).then(() => this.requestUpdate());
+    }
+  }
   this.sun = (hass.states && 'sun.sun' in hass.states) ? hass.states['sun.sun'] : null;
 
   this._extractSensorReadings(hass);
