@@ -426,6 +426,84 @@ describe('setupScrollUx pointer flow', () => {
   });
 });
 
+// ── passive-listener wiring (Slice 8 interaction polish) ────────────
+// Touch scrolling must never block on the main thread waiting for a
+// possible preventDefault. Every listener that does NOT call
+// preventDefault is registered { passive: true }; pointermove (the one
+// that DOES call preventDefault on the mouse drag path) stays
+// non-passive. These tests read the opts recorded by the mock's
+// addEventListener stub.
+
+describe('setupScrollUx passive listeners', () => {
+  function optsFor(listeners, type) {
+    const entry = listeners.find((l) => l.type === type);
+    return entry ? entry.opts : undefined;
+  }
+
+  it('registers pointerdown / pointerup / pointercancel as passive', () => {
+    const { block, wrapper } = mockBlock();
+    const card = mockCard({ block });
+    setupScrollUx(card);
+    expect(optsFor(wrapper._listeners, 'pointerdown')).toEqual({ passive: true });
+    expect(optsFor(wrapper._listeners, 'pointerup')).toEqual({ passive: true });
+    expect(optsFor(wrapper._listeners, 'pointercancel')).toEqual({ passive: true });
+  });
+
+  it('registers pointermove as explicitly non-passive (it calls preventDefault)', () => {
+    const { block, wrapper } = mockBlock();
+    const card = mockCard({ block });
+    setupScrollUx(card);
+    expect(optsFor(wrapper._listeners, 'pointermove')).toEqual({ passive: false });
+  });
+
+  it('keeps the scroll listener passive', () => {
+    const { block, wrapper } = mockBlock();
+    const card = mockCard({ block });
+    setupScrollUx(card);
+    expect(optsFor(wrapper._listeners, 'scroll')).toEqual({ passive: true });
+  });
+
+  it('registers the indicator pointerdown guards as passive', () => {
+    const { block, left, right, jump } = mockBlock();
+    const card = mockCard({ block });
+    setupScrollUx(card);
+    expect(optsFor(left._listeners, 'pointerdown')).toEqual({ passive: true });
+    expect(optsFor(right._listeners, 'pointerdown')).toEqual({ passive: true });
+    expect(optsFor(jump._listeners, 'pointerdown')).toEqual({ passive: true });
+  });
+});
+
+// ── drag tuning (Slice 8 interaction polish) ────────────────────────
+
+describe('setupScrollUx drag tuning', () => {
+  function fire(wrapper, type, props = {}) {
+    const ev = {
+      type,
+      pointerId: props.pointerId ?? 1,
+      pointerType: props.pointerType ?? 'mouse',
+      clientX: props.clientX ?? 0,
+      stopPropagation: () => {},
+      preventDefault: () => {},
+      ...props,
+    };
+    wrapper.dispatchEvent(ev);
+    return ev;
+  }
+
+  it('rounds scrollLeft to whole pixels during a fractional mouse drag', () => {
+    const { block, wrapper } = mockBlock({ scrollLeft: 100 });
+    const card = mockCard({ block });
+    setupScrollUx(card);
+    fire(wrapper, 'pointerdown', { pointerType: 'mouse', clientX: 0 });
+    // Fractional cursor delta — 7.4 px past the start. Raw scrollLeft
+    // would be 100 - 7.4 = 92.6; the handler must round it.
+    fire(wrapper, 'pointermove', { pointerType: 'mouse', clientX: 7.4 });
+    expect(card._dragMoved).toBe(true);
+    expect(Number.isInteger(wrapper.scrollLeft)).toBe(true);
+    expect(wrapper.scrollLeft).toBe(93);
+  });
+});
+
 // ── click + scroll-event handlers (#32 coverage gap) ────────────────
 
 describe('setupScrollUx click handlers', () => {

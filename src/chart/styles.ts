@@ -177,6 +177,23 @@ export function cardStyles({
     .scroll-indicator:hover {
       opacity: 1;
     }
+    /* Touch-target expansion. The visible control stays a 30 px circle
+     * (unchanged design language), but a transparent ::before stretches
+     * the clickable area to ~44 px square — the platform-recommended
+     * minimum for a comfortable finger tap. Centred on the button,
+     * non-painting, so it adds hit area without shifting any pixel of
+     * the rendered card. */
+    .scroll-indicator::before,
+    .mode-toggle::before,
+    .jump-to-now::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 44px;
+      height: 44px;
+      transform: translate(-50%, -50%);
+    }
     .scroll-indicator[hidden] {
       display: none;
     }
