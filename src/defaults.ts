@@ -107,4 +107,10 @@ export const DEFAULTS = {
   tap_action: { action: 'none' },
   hold_action: { action: 'none' },
   double_tap_action: { action: 'none' },
+
+  // Diagnostics — opt-in. When true, render() appends a collapsible
+  // debug panel exposing the card's detected internal state (resolved
+  // sensors, render mode, data-source status). YAML-only by design:
+  // no editor row, so the visual editor stays uncluttered.
+  debug: false,
 } as const;

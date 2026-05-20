@@ -20,6 +20,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it now shows a short notice asking you to update Home Assistant,
   instead of possibly showing a blank card. On a current Home Assistant
   you see nothing new.
+- **New optional `debug` setting for troubleshooting.** Add `debug: true`
+  to the card's YAML and a small foldable diagnostics panel appears at
+  the bottom of the card. It shows what the card actually detected — the
+  weather and sensor entities it resolved, whether each one was found in
+  Home Assistant, the display mode it chose, and a plain-language reason
+  if a part of the chart came up empty. Handy when the card isn't
+  showing what you expect. It is off by default and invisible unless you
+  switch it on, so leave `debug` out entirely once you are done. There is
+  no toggle for it in the visual editor — it is YAML-only on purpose, to
+  keep the editor uncluttered.
 
 ### Changed
 - **First load is a bit lighter.** The card's visual editor (the
