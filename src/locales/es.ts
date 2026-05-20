@@ -1,7 +1,7 @@
 // Per-language string table for es.
 // One file per language so rollup can lazy-load on demand.
 // Shape and fallback resolution rules live in ../locale.ts.
-import type { LocaleEntry } from '../locale.js';
+import type { LocaleEntry } from '../locale-types.js';
 
 const es: LocaleEntry = {
   'tempHi': 'Temperatura máxima',

@@ -10,11 +10,12 @@
 // adding a language to fill in every editor key, and the fallback
 // resolvers in `ll()` / `tEditor()` already tolerate missing keys
 // at runtime.
-export interface LocaleEntry {
-  [key: string]: string | readonly string[] | { [key: string]: string | undefined } | undefined;
-}
-
-export type Locale = Record<string, LocaleEntry>;
+// Types live in `./locale-types.ts` so per-language tables can
+// import them without creating a cycle. Re-exported here so
+// existing `import { LocaleEntry } from '../locale.js'` callers
+// keep working.
+export type { LocaleEntry, Locale } from './locale-types.js';
+import type { LocaleEntry, Locale } from './locale-types.js';
 
 // English is the eager fallback every other language falls back to.
 // Imported statically so the registry always has a usable entry
