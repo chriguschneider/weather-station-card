@@ -173,10 +173,19 @@ describe('validateConfig — wrong value types', () => {
     expect(problems[0]).toContain('boolean');
   });
 
-  it('flags a string where a number is expected', () => {
+  it('accepts a numeric string where a number is expected', () => {
+    // The card coerces every numeric field (parseInt / CSS
+    // interpolation) and HA's visual editor stores number inputs as
+    // strings — "7" is valid input, not a mistake.
+    expect(
+      validateConfig({ ...validBaseConfig(), forecast_days: '7' }),
+    ).toEqual([]);
+  });
+
+  it('flags a non-numeric string where a number is expected', () => {
     const problems = validateConfig({
       ...validBaseConfig(),
-      forecast_days: '7',
+      forecast_days: 'seven',
     });
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain('Wrong type');
@@ -250,5 +259,54 @@ describe('validateConfig — multiple problems', () => {
       forecast: { totally_bogus: 1 }, // unknown nested
     });
     expect(problems).toHaveLength(3);
+  });
+});
+
+describe('validateConfig — HA wrapper keys and numeric strings (v2.0.1)', () => {
+  it('does not flag grid_options (HA grid-layout sizing)', () => {
+    const cfg = {
+      ...validBaseConfig(),
+      grid_options: { columns: 'full', rows: 2 },
+    };
+    expect(validateConfig(cfg)).toEqual([]);
+  });
+
+  it('does not flag view_layout or visibility (HA card-level keys)', () => {
+    const cfg = {
+      ...validBaseConfig(),
+      view_layout: { position: 'sidebar' },
+      visibility: [
+        { condition: 'state', entity: 'sun.sun', state: 'above_horizon' },
+      ],
+    };
+    expect(validateConfig(cfg)).toEqual([]);
+  });
+
+  it('accepts numeric strings for nested number fields', () => {
+    const cfg = {
+      ...validBaseConfig(),
+      forecast: {
+        labels_font_size: '11',
+        precip_bar_size: '100',
+        number_of_forecasts: '8',
+      },
+    };
+    expect(validateConfig(cfg)).toEqual([]);
+  });
+
+  it('accepts an empty string for a number field (clears to default)', () => {
+    expect(
+      validateConfig({ ...validBaseConfig(), forecast_days: '' }),
+    ).toEqual([]);
+  });
+
+  it('still flags a non-numeric string for a nested number field', () => {
+    const problems = validateConfig({
+      ...validBaseConfig(),
+      forecast: { labels_font_size: 'big' },
+    });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('Wrong type');
+    expect(problems[0]).toContain('forecast.labels_font_size');
   });
 });

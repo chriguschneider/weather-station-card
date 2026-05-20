@@ -6,6 +6,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.1] — 2026-05-20
+
+### Fixed
+- **The configuration check no longer warns about standard Home
+  Assistant settings.** A card placed in a dashboard's grid — which
+  Home Assistant tags with its own sizing options — is no longer
+  reported as a problem, and number settings entered through the visual
+  editor (which Home Assistant stores as text) are accepted as-is.
+  Genuine typos and truly unknown options are still flagged.
+
 ## [2.0.0] — 2026-05-20
 
 A stability-and-polish milestone. The card no longer shows a blank box
