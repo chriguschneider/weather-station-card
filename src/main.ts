@@ -1918,6 +1918,54 @@ _onModeToggleClick(ev?: Event) {
     // this pass stops reporting; _safeSection re-sets it below only if
     // a section still throws.
     this._sectionError = null;
+
+    // A freshly-added / unconfigured card has neither a temperature
+    // sensor nor a weather entity — nothing real to draw. Render a calm
+    // onboarding placeholder instead of the full layout full of NaN
+    // values plus a red error banner.
+    const hasTemp = !!config.sensors?.temperature;
+    const hasWeather = !!config.weather_entity;
+    if (!hasTemp && !hasWeather) {
+      return html`
+        <style>
+          .wsc-empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            gap: 8px;
+            padding: 32px 24px;
+          }
+          .wsc-empty ha-icon {
+            --mdc-icon-size: 48px;
+            color: var(--secondary-text-color, #727272);
+            opacity: 0.7;
+          }
+          .wsc-empty-title {
+            font-weight: 600;
+            font-size: 15px;
+            color: var(--primary-text-color, #212121);
+          }
+          .wsc-empty-hint {
+            font-size: 13px;
+            line-height: 1.4;
+            color: var(--secondary-text-color, #727272);
+            max-width: 260px;
+          }
+        </style>
+        <ha-card header="${config.title}">
+          <div class="wsc-empty">
+            <ha-icon icon="mdi:weather-partly-cloudy"></ha-icon>
+            <div class="wsc-empty-title">Weather Station Card</div>
+            <div class="wsc-empty-hint">
+              Open the card editor and choose your weather sensors to
+              get started.
+            </div>
+          </div>
+        </ha-card>
+      `;
+    }
+
     // Match the mm-unit sizing rule from precipLabelPlugin so the wind unit
     // ("km/h", "m/s", …) renders at the same compact size as the precip unit
     // alongside its number.
