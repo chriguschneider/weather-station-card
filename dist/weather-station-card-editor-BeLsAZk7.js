@@ -1,4 +1,4 @@
-import{b as e,i as t,e as s,r as o,l as n}from"./main-skKez0Az.js";function i(t){const{editor:s,title:o,sectionKey:n,resetLabel:i}=t;return e`
+import{b as e,i as t,e as s,r as o,l as n}from"./main-DFAn6S89.js";function i(t){const{editor:s,title:o,sectionKey:n,resetLabel:i}=t;return e`
     <h3 class="section section-header-with-reset">
       <span class="section-title">${o}</span>
       <ha-icon-button

@@ -6,6 +6,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-05-20
+
+A stability-and-polish milestone. The card no longer shows a blank box
+when a sensor sends bad data, points out typos in your YAML settings,
+follows your custom Home Assistant theme's colours, lays out cleanly on
+phones and narrow dashboard columns, and starts up a little faster. No
+configuration change is needed — your existing card keeps working
+exactly as before.
+
 ### Added
 - **A typo in your card settings is now pointed out instead of being
   silently ignored.** If you misspell an option or use one that
