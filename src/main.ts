@@ -25,6 +25,8 @@ import locale, { ensureLocaleLoaded } from './locale.js';
 import {
   cardinalDirectionsIcon,
   weatherIcons,
+  MIN_HA_VERSION,
+  isHaVersionBelow,
 } from './const.js';
 import { DEFAULTS, DEFAULTS_FORECAST, DEFAULTS_UNITS } from './defaults.js';
 import { validateConfig } from './config-validation.js';
@@ -1971,6 +1973,13 @@ _onModeToggleClick(ev?: Event) {
 
 renderErrorBanner() {
   const errors = [];
+  // Compatibility warning first: a too-old HA frontend may have changed
+  // the APIs this card relies on, so flag it before the data-fetch
+  // errors (which can be a downstream symptom of that). isHaVersionBelow
+  // never false-fires on a current or unreadable version.
+  if (isHaVersionBelow(this._hass?.config?.version, MIN_HA_VERSION)) {
+    errors.push(`This card expects Home Assistant ${MIN_HA_VERSION} or newer.`);
+  }
   if (this._stationError) {
     errors.push(`Statistics fetch failed: ${this._stationError}`);
   }

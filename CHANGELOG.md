@@ -15,6 +15,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   wrong kind, like text where a number is expected. The card still
   works normally with its defaults; the message is just a heads-up so
   a forgotten setting no longer goes unnoticed.
+- **A clear message when your Home Assistant is too old for the card.**
+  If the card runs on a Home Assistant version older than it supports,
+  it now shows a short notice asking you to update Home Assistant,
+  instead of possibly showing a blank card. On a current Home Assistant
+  you see nothing new.
 
 ### Changed
 - **First load is a bit lighter.** The card's visual editor (the

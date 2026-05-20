@@ -21,6 +21,7 @@ export default {
       include: [
         'src/condition-classifier.ts',
         'src/config-validation.ts',
+        'src/const.ts',
         'src/data-source.ts',
         'src/defaults.ts',
         'src/format-utils.ts',
