@@ -6,6 +6,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **A typo in your card settings is now pointed out instead of being
+  silently ignored.** If you misspell an option or use one that
+  doesn't exist, the card shows a short amber message naming the
+  problem — for example "did you mean `forecast_days`?" — and, where
+  it can, suggests the correct spelling. It also flags a value of the
+  wrong kind, like text where a number is expected. The card still
+  works normally with its defaults; the message is just a heads-up so
+  a forgotten setting no longer goes unnoticed.
+
 ### Changed
 - **First load is a bit lighter.** The card's visual editor (the
   one you see when clicking the pencil on a card) now loads

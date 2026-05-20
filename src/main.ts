@@ -27,6 +27,7 @@ import {
   weatherIcons,
 } from './const.js';
 import { DEFAULTS, DEFAULTS_FORECAST, DEFAULTS_UNITS } from './defaults.js';
+import { validateConfig } from './config-validation.js';
 import {LitElement, html} from 'lit';
 import {guard} from 'lit/directives/guard.js';
 import {
@@ -209,6 +210,10 @@ class WeatherStationCard extends LitElement {
   _stationCount: number = 0;
   _forecastCount: number = 0;
   _missingSensors: string[] = [];
+  /** Advisory config-schema warnings from `validateConfig` (Slice 2) —
+   *  unknown YAML keys / wrong-typed values. Surfaced through
+   *  `renderErrorBanner()`; never blocks the render. */
+  _configWarnings: string[] = [];
   /** Last forecast.type that the chart block was actually rendered
    *  with (i.e. data was ready). Compared in render() + `updated()`
    *  to decide which animation class to apply on the block. */
@@ -443,6 +448,13 @@ setConfig(config: any) {
   this._liveCondition = undefined;
 
   this.config = cardConfig;
+
+  // Advisory config-schema check (Slice 2). Unknown keys and wrong-typed
+  // values are silently swallowed by the DEFAULTS spread above — this
+  // surfaces them as a banner instead. Advisory only: it NEVER throws,
+  // the card still renders with defaults. Genuine structural errors are
+  // still caught by the mode-aware throws below and `assertConfig`.
+  this._configWarnings = validateConfig(config);
 
   // Mode-aware validation. Each enabled block has its own required key:
   //   show_station    → needs sensors.temperature (the past-data chart)
@@ -1971,12 +1983,28 @@ renderErrorBanner() {
   if (this._missingSensors?.length) {
     errors.push(`Sensors unavailable: ${this._missingSensors.join(', ')}`);
   }
-  if (!errors.length) return html``;
-  return html`
+
+  // Advisory config-schema warnings (Slice 2). Rendered in a separate,
+  // amber band below the red error band — they don't stop the card
+  // rendering, they just flag a YAML mistake the user can fix.
+  const configWarnings = this._configWarnings ?? [];
+
+  const errorBanner = errors.length
+    ? html`
     <div style="background: var(--error-color, #b71c1c); color: white; padding: 8px 12px; margin: 8px; border-radius: 4px; font-size: 13px;">
       ${errors.map((e) => html`<div>${e}</div>`)}
     </div>
-  `;
+  `
+    : html``;
+  const warningBanner = configWarnings.length
+    ? html`
+    <div style="background: var(--warning-color, #ffa600); color: var(--text-primary-color, #fff); padding: 8px 12px; margin: 8px; border-radius: 4px; font-size: 13px;">
+      <div style="font-weight: 600;">Card configuration</div>
+      ${configWarnings.map((w) => html`<div>${w}</div>`)}
+    </div>
+  `
+    : html``;
+  return html`${errorBanner}${warningBanner}`;
 }
 
 renderMain({ config, sun, weather, temperature } = this) {
