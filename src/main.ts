@@ -280,6 +280,12 @@ class WeatherStationCard extends LitElement {
   // Both fields feed renderErrorBanner() so the card degrades to the
   // banner instead of Lit aborting render() into a blank/white card.
   _sectionError: string | null = null;
+  // Set when setConfig sees an incomplete config (a block is enabled
+  // but its required key is missing). NOT thrown — a thrown setConfig
+  // kills the whole card and breaks a freshly-added card before its
+  // editor can load. Surfaced through renderErrorBanner() so the card
+  // stays alive and the visual editor remains usable.
+  _configError: string | null = null;
   // True when this card instance is mounted inside the card-config
   // dialog's live preview (hui-card-preview / hui-dialog-edit-card /
   // hui-card-element-editor ancestor). Detected once in
@@ -386,18 +392,37 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
     return pickRanked(matches);
   };
 
+  // A freshly-added card lands with a fuller, closer-to-finished
+  // layout than bare DEFAULTS — the live panel, current condition, the
+  // full attributes row, clock + date, and a 5-day past/forecast
+  // window. The picker preview also renders this stub before any
+  // recorder data exists; the live now-panel (driven by hass.states,
+  // no recorder dependency) gives the picker an immediate, honest
+  // visual. Sensors and the weather entity are auto-detected — never
+  // hard-coded, they are instance-specific. Keys at their DEFAULTS
+  // value are covered by the spread; only the deltas are listed.
+  const weatherEntity = (allEntities || []).find(
+    (eid: string) => eid.startsWith('weather.'),
+  ) || '';
   return {
     ...DEFAULTS,
-    // Picker preview renders this stub before any recorder data is
-    // available, so the past chart would otherwise come up empty and
-    // HA falls back to a description-only tile. The live now-panel
-    // (driven by hass.states, no recorder dependency) gives the picker
-    // an immediate, honest visual — no synthetic NaN values needed.
-    // New users adding the card via the picker also benefit from a
-    // richer default than just the chart row.
     show_main: true,
     show_current_condition: true,
     show_attributes: true,
+    show_time: true,
+    show_date: true,
+    show_pressure: true,
+    show_sun: true,
+    show_dew_point: true,
+    show_wind_gust_speed: true,
+    show_illuminance: true,
+    days: 5,
+    forecast_days: 5,
+    weather_entity: weatherEntity,
+    forecast: {
+      ...DEFAULTS_FORECAST,
+      show_sunshine: true,
+    },
     sensors: {
       temperature: findByClass('temperature') || '',
       humidity: findByClass('humidity') || '',
@@ -475,17 +500,27 @@ setConfig(config: any) {
   // still caught by the mode-aware throws below and `assertConfig`.
   this._configWarnings = validateConfig(config);
 
-  // Mode-aware validation. Each enabled block has its own required key:
-  //   show_station    → needs sensors.temperature (the past-data chart)
-  //   show_forecast   → needs weather_entity      (the future-data chart)
-  // A pure forecast-only card needs no station sensors; a pure station
-  // card needs no weather entity. Combination needs both.
+  // Mode-aware completeness check. Each enabled block has a required
+  // key: show_station → sensors.temperature, show_forecast →
+  // weather_entity. A missing one used to throw here — but a thrown
+  // setConfig kills the whole card, and a freshly-added card whose
+  // getStubConfig auto-detect found no temperature sensor would be dead
+  // before its editor could load. Record it as a non-fatal error
+  // instead: renderErrorBanner() surfaces it, the card still renders
+  // what it can, and the visual editor stays usable so the user can
+  // pick the missing entity.
+  const configErrors: string[] = [];
   if (cardConfig.show_station && !cardConfig.sensors?.temperature) {
-    throw new Error('Station mode needs at least sensors.temperature in the card config');
+    configErrors.push(
+      'Station mode needs a temperature sensor — set `sensors.temperature` in the card config.',
+    );
   }
   if (cardConfig.show_forecast && !cardConfig.weather_entity) {
-    throw new Error('Forecast mode needs a weather.* entity in weather_entity');
+    configErrors.push(
+      'Forecast mode needs a weather entity — set `weather_entity` in the card config.',
+    );
   }
+  this._configError = configErrors.length ? configErrors.join(' ') : null;
 }
 
 // Reactivity entry-point — HA fires this 2–5x/second whenever any
@@ -1883,6 +1918,54 @@ _onModeToggleClick(ev?: Event) {
     // this pass stops reporting; _safeSection re-sets it below only if
     // a section still throws.
     this._sectionError = null;
+
+    // A freshly-added / unconfigured card has neither a temperature
+    // sensor nor a weather entity — nothing real to draw. Render a calm
+    // onboarding placeholder instead of the full layout full of NaN
+    // values plus a red error banner.
+    const hasTemp = !!config.sensors?.temperature;
+    const hasWeather = !!config.weather_entity;
+    if (!hasTemp && !hasWeather) {
+      return html`
+        <style>
+          .wsc-empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            gap: 8px;
+            padding: 32px 24px;
+          }
+          .wsc-empty ha-icon {
+            --mdc-icon-size: 48px;
+            color: var(--secondary-text-color, #727272);
+            opacity: 0.7;
+          }
+          .wsc-empty-title {
+            font-weight: 600;
+            font-size: 15px;
+            color: var(--primary-text-color, #212121);
+          }
+          .wsc-empty-hint {
+            font-size: 13px;
+            line-height: 1.4;
+            color: var(--secondary-text-color, #727272);
+            max-width: 260px;
+          }
+        </style>
+        <ha-card header="${config.title}">
+          <div class="wsc-empty">
+            <ha-icon icon="mdi:weather-partly-cloudy"></ha-icon>
+            <div class="wsc-empty-title">Weather Station Card</div>
+            <div class="wsc-empty-hint">
+              Open the card editor and choose your weather sensors to
+              get started.
+            </div>
+          </div>
+        </ha-card>
+      `;
+    }
+
     // Match the mm-unit sizing rule from precipLabelPlugin so the wind unit
     // ("km/h", "m/s", …) renders at the same compact size as the precip unit
     // alongside its number.
@@ -2188,6 +2271,9 @@ renderErrorBanner() {
   // never false-fires on a current or unreadable version.
   if (isHaVersionBelow(this._hass?.config?.version, MIN_HA_VERSION)) {
     errors.push(`This card expects Home Assistant ${MIN_HA_VERSION} or newer.`);
+  }
+  if (this._configError) {
+    errors.push(this._configError);
   }
   if (this._stationError) {
     errors.push(`Statistics fetch failed: ${this._stationError}`);

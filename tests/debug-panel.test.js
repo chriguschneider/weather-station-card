@@ -107,8 +107,9 @@ describe('renderDebugPanel — content', () => {
 
   it('explains an empty past chart when temperature sensor is unset', () => {
     const card = document.createElement('weather-station-card');
-    // Station mode on with no temperature sensor — setConfig hard-throws
-    // on this, so set config directly to exercise the diagnostic path.
+    // Station mode on with no temperature sensor. Assign config
+    // directly to keep the test isolated to the debug panel's
+    // diagnostic output.
     card.config = {
       ...DEFAULTS, debug: true, show_station: true, show_forecast: false,
       sensors: {},

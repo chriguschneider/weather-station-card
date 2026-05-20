@@ -25,6 +25,13 @@ const EXTRA_TOP_LEVEL_KEYS = [
   'locale', // language override, read in `set hass`
   'speed', // legacy top-level speed unit, merged into units.speed in setConfig
   'condition_mapping', // classifier threshold overrides — free-form object
+  // Standard Home Assistant card-level keys, written by HA itself (the
+  // grid/layout editor, conditional visibility) and never read by this
+  // card. Flagging them is a false positive — every card in a
+  // sections-view dashboard carries `grid_options`.
+  'grid_options',
+  'view_layout',
+  'visibility',
 ] as const;
 
 // Keys whose VALUES are free-form objects we deliberately do not
@@ -122,9 +129,10 @@ function typeName(value: unknown): string {
 
 // Type-check one leaf value against the type implied by its default.
 // Only flags a genuine mismatch; `null`/`undefined` are left alone
-// (an empty YAML value is the user's way of clearing a key). Numbers
-// and strings are not cross-flagged loosely — a string where a number
-// is expected IS worth a warning because the renderer will misbehave.
+// (an empty YAML value is the user's way of clearing a key). A numeric
+// string ("8") where a number is expected is accepted — this card
+// coerces every numeric field (parseInt / CSS interpolation) and HA's
+// visual editor commonly stores number inputs as strings.
 function checkValueType(
   label: string,
   value: unknown,
@@ -143,6 +151,14 @@ function checkValueType(
   }
   const actualType = typeof value;
   if (actualType === expectedType) return;
+  // A numeric string passed where a number is expected is valid input:
+  // the renderer coerces it, and HA's visual editor stores number
+  // fields as strings. An empty string clears the field (default
+  // applies). Only a non-numeric string is a genuine mismatch.
+  if (expectedType === 'number' && actualType === 'string') {
+    const trimmed = (value as string).trim();
+    if (trimmed === '' || Number.isFinite(Number(trimmed))) return;
+  }
   problems.push(
     `Wrong type for \`${label}\`: expected ${expectedType}, got ${typeName(value)}`,
   );

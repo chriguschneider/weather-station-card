@@ -6,6 +6,34 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.1] — 2026-05-20
+
+### Changed
+- **A freshly-added card starts with a fuller layout.** When you add
+  the card to a dashboard it now arrives with the live panel, the
+  current-condition line, the attributes row, the clock and date, and
+  a 5-day past/forecast window already switched on — closer to a
+  finished card, with less to configure. Sensors and the weather
+  entity are still auto-detected. Existing cards are unaffected.
+
+### Fixed
+- **The configuration check no longer warns about standard Home
+  Assistant settings.** A card placed in a dashboard's grid — which
+  Home Assistant tags with its own sizing options — is no longer
+  reported as a problem, and number settings entered through the visual
+  editor (which Home Assistant stores as text) are accepted as-is.
+  Genuine typos and truly unknown options are still flagged.
+- **Card icons are the right colour again.** v2.0.0 accidentally
+  painted the card's icons a fixed blue on Home Assistant themes that
+  don't define an icon colour of their own. Icons now follow the
+  card's normal text colour again, the same as before v2.0.
+- **Adding a new card no longer fails outright.** A freshly-added card
+  whose automatic sensor detection found nothing used to error out
+  completely — before its editor could even open. It now shows a calm
+  placeholder inviting you to pick your sensors in the editor, instead
+  of a wall of `NaN` values and a red error box, and stays fully
+  usable.
+
 ## [2.0.0] — 2026-05-20
 
 A stability-and-polish milestone. The card no longer shows a blank box
