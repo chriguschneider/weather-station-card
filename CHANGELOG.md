@@ -41,6 +41,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Most noticeable when first opening the HA Companion app or
   refreshing a browser tab. No layout shift when the chart commits —
   the rows below stay put. No configuration change needed.
+- **The card now lays out cleanly in narrow dashboard columns and on
+  phones.** When the card sits in a slim column — for example in the
+  Home Assistant Companion app, or a multi-column phone dashboard —
+  the live panel, the readings row and the chart now shrink and
+  rearrange to fit instead of being clipped or spilling off the edge.
+  The weather icon and clock scale down, the readings wrap onto a
+  second line when space is tight, and in very narrow slots the clock
+  moves below the temperature. On a normal-width dashboard the card
+  looks exactly as before. No configuration change needed.
 
 ### Fixed
 - **24-hour view now shows real high and low temperatures from the
