@@ -512,7 +512,14 @@ setConfig(config: any) {
   // what it can, and the visual editor stays usable so the user can
   // pick the missing entity.
   const configErrors: string[] = [];
-  if (cardConfig.show_station && !cardConfig.sensors?.temperature) {
+  // The temperature-sensor requirement is waived when the Open-Meteo
+  // no-station fallback is active (ADR-0015): the past block is filled
+  // from Open-Meteo, so there is no missing-data problem to warn about.
+  if (
+    cardConfig.show_station
+    && !cardConfig.sensors?.temperature
+    && !this._openMeteoStationFallbackActive(cardConfig)
+  ) {
     configErrors.push(
       'Station mode needs a temperature sensor — set `sensors.temperature` in the card config.',
     );
