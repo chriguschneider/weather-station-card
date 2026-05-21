@@ -274,3 +274,60 @@ describe('editor._mode getter', () => {
     expect(makeEditor({})._mode).toBe('station');
   });
 });
+
+describe('editor._pastDataAvailable', () => {
+  it('true when a station sensor is configured', () => {
+    expect(makeEditor({ sensors: { temperature: 'sensor.t' } })._pastDataAvailable()).toBe(true);
+  });
+
+  it('true when the Open-Meteo past opt-in is on', () => {
+    expect(makeEditor({ forecast: { openmeteo_history: true } })._pastDataAvailable()).toBe(true);
+  });
+
+  it('false with no sensors and the opt-in off', () => {
+    expect(makeEditor({ sensors: {}, forecast: {} })._pastDataAvailable()).toBe(false);
+    expect(makeEditor({})._pastDataAvailable()).toBe(false);
+  });
+
+  it('ignores empty-string sensor slots', () => {
+    expect(makeEditor({ sensors: { temperature: '' } })._pastDataAvailable()).toBe(false);
+  });
+});
+
+describe('editor auto-flip to forecast-only (no past data)', () => {
+  it('forces forecast-only when no past data and mode is combination', () => {
+    const editor = makeEditor({ show_station: true, show_forecast: true });
+    editor.updated(new Map([['_config', {}]]));
+    const cfg = editor.configChanged.mock.calls[0][0];
+    expect(cfg.show_station).toBe(false);
+    expect(cfg.show_forecast).toBe(true);
+  });
+
+  it('does not flip when a sensor makes past data available', () => {
+    const editor = makeEditor({
+      show_station: true, show_forecast: true, sensors: { temperature: 'sensor.t' },
+    });
+    editor.updated(new Map([['_config', {}]]));
+    expect(editor.configChanged).not.toHaveBeenCalled();
+  });
+
+  it('does not flip when the opt-in makes past data available', () => {
+    const editor = makeEditor({
+      show_station: true, show_forecast: true, forecast: { openmeteo_history: true },
+    });
+    editor.updated(new Map([['_config', {}]]));
+    expect(editor.configChanged).not.toHaveBeenCalled();
+  });
+
+  it('does not flip when already forecast-only', () => {
+    const editor = makeEditor({ show_station: false, show_forecast: true });
+    editor.updated(new Map([['_config', {}]]));
+    expect(editor.configChanged).not.toHaveBeenCalled();
+  });
+
+  it('ignores updates that did not change _config', () => {
+    const editor = makeEditor({ show_station: true, show_forecast: true });
+    editor.updated(new Map([['hass', {}]]));
+    expect(editor.configChanged).not.toHaveBeenCalled();
+  });
+});

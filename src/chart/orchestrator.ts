@@ -525,7 +525,7 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
   );
 
   // Sunshine row toggle. Works in both daily and hourly modes — the
-  // OpenMeteoSunshineSource fetches `daily=…` and (when in hourly mode)
+  // OpenMeteoSource fetches `daily=…` and (when in hourly mode)
   // also `hourly=…` from Open-Meteo in a single call, and
   // attachSunshine matches each entry's datetime against the right
   // array. The chart adds a second bar dataset; Chart.js auto-groups

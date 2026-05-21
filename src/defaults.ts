@@ -30,6 +30,14 @@ export const DEFAULTS_FORECAST = {
   precipitation_color: 'rgba(132, 209, 253, 1.0)',
   show_sunshine: false,
   sunshine_color: 'rgba(255, 215, 0, 1.0)',
+  // Opt-in: when the card has a weather entity but NO station sensors,
+  // backfill the past/station chart block from Open-Meteo's historical
+  // model data (temperature, precipitation, wind, condition) instead of
+  // leaving it empty (ADR-0015). Off by default — it adds a network
+  // call and sends the HA location to Open-Meteo. No effect when any
+  // station sensor is configured (the recorder wins) or when there is
+  // no weather entity.
+  openmeteo_history: false,
   condition_icons: true,
   // Deprecated — see renderWind in main.ts. Kept as a hard master-off
   // shim for YAML configs that explicitly set show_wind_forecast:

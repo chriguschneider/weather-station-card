@@ -67,7 +67,14 @@ export interface SensorMap {
  *  more fields (display, layout, …) but those don't reach this layer. */
 export interface DataSourceConfig {
   days?: number | string;
-  forecast?: { type?: 'daily' | 'hourly' | 'today' } | null;
+  forecast?: {
+    type?: 'daily' | 'hourly' | 'today';
+    /** Opt-in: backfill the past block from Open-Meteo when no station
+     *  sensors are configured (ADR-0015). Read in main.ts, not by the
+     *  data sources themselves — listed here so config typing stays
+     *  accurate. */
+    openmeteo_history?: boolean;
+  } | null;
   sensors?: SensorMap;
   condition_mapping?: ConditionThresholdOverrides & {
     /** Threshold for the Method-B2 lux-derivation: a sample counts

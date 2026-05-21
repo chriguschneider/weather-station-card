@@ -18,7 +18,7 @@ import type { EditorLike, EditorContext } from './types.js';
 import { renderSectionHeader } from './section-header.js';
 
 export function renderModeSection(editor: EditorLike, ctx: EditorContext): TemplateResult {
-  const { t, fcfg, mode } = ctx;
+  const { t, fcfg, mode, pastDataAvailable } = ctx;
 
   // Build schemas at render time so option labels reflect the current
   // locale. ha-form's select selector accepts {value, label} options
@@ -71,6 +71,7 @@ export function renderModeSection(editor: EditorLike, ctx: EditorContext): Templ
         .data=${{ mode }}
         .schema=${modeSchema}
         .hass=${editor.hass}
+        .disabled=${!pastDataAvailable}
         .computeLabel=${() => t('mode_label')}
         @value-changed=${handleModeChanged}
       ></ha-form>

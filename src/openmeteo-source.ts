@@ -1,10 +1,18 @@
-// Open-Meteo daily-sunshine fetcher.
+// Open-Meteo daily / hourly fetcher.
 //
-// The card calls Open-Meteo's Forecast endpoint with `past_days` covering
-// the visible station window plus `forecast_days` for the upcoming
-// columns — one HTTP round-trip per refresh, no Archive call needed
-// (Forecast supports up to past_days=92, well beyond the card's
+// The card calls Open-Meteo's Forecast endpoint with `past_days`
+// covering the visible station window plus `forecast_days` for the
+// upcoming columns — one HTTP round-trip per refresh, no Archive call
+// needed (Forecast supports up to past_days=92, well beyond the card's
 // typical days=7..14 window).
+//
+// The source backs two features off the same fetch:
+//   - the in-chart sunshine overlay (`forecast.show_sunshine`);
+//   - the past/station chart block itself when the card has a weather
+//     entity but no station sensors (`forecast.openmeteo_history` —
+//     see ADR-0015). `buildDailyForecast` reshapes the response into
+//     the exact `ForecastEntry[]` shape `MeasuredDataSource` emits, so
+//     it drops into the station slot with no special-casing downstream.
 //
 // All fetch logic lives behind a class so the lifecycle (lazy load on
 // first use, in-flight de-dup, abortable on disconnect, opaque retry)
@@ -13,8 +21,39 @@
 // Unit-tested against a mocked fetch — see tests/openmeteo-source.test.js.
 
 import type { DailySunshineEntry, HourlySunshineEntry } from './sunshine-source.js';
+import type { ForecastEntry } from './forecast-utils.js';
+import { wmoToCondition } from './weather-code-map.js';
 
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
+
+// Daily variables requested in one call. `sunshine_duration` feeds the
+// sunshine overlay; the rest feed the no-station past block (ADR-0015).
+// Always requested together — Open-Meteo does not charge per field and
+// keeping the request shape constant keeps one cache entry valid for
+// both features.
+const DAILY_FIELDS = [
+  'sunshine_duration',
+  'temperature_2m_max',
+  'temperature_2m_min',
+  'precipitation_sum',
+  'weather_code',
+  'wind_speed_10m_max',
+  'wind_gusts_10m_max',
+  'wind_direction_10m_dominant',
+].join(',');
+
+// Hourly variables requested when `includeHourly` is on (hourly / today
+// chart modes). `sunshine_duration` feeds the sunshine overlay; the
+// rest feed the no-station past block at hourly resolution (ADR-0015).
+const HOURLY_FIELDS = [
+  'sunshine_duration',
+  'temperature_2m',
+  'precipitation',
+  'weather_code',
+  'wind_speed_10m',
+  'wind_gusts_10m',
+  'wind_direction_10m',
+].join(',');
 
 // Refresh once per hour. Open-Meteo's free tier is 10 000 calls/day per
 // IP — at most 24 calls/day per active dashboard tab, which is far
@@ -42,15 +81,31 @@ export type FetchLike = (url: string, init?: { signal?: AbortSignal }) => Promis
 /** Listener payload — `ok: false` carries an error string. */
 export type SunshineListener = (event: { ok: boolean; error?: string }) => void;
 
-/** Open-Meteo Forecast API JSON response (sunshine_duration parts only). */
+/** Open-Meteo Forecast API JSON response. Daily carries the sunshine
+ *  overlay value plus the fields that feed the no-station past block;
+ *  hourly carries the per-hour sunshine value. All arrays are parallel
+ *  to `time`. */
 export interface OpenMeteoResponse {
   daily?: {
     time?: string[];
     sunshine_duration?: Array<number | null>;
+    temperature_2m_max?: Array<number | null>;
+    temperature_2m_min?: Array<number | null>;
+    precipitation_sum?: Array<number | null>;
+    weather_code?: Array<number | null>;
+    wind_speed_10m_max?: Array<number | null>;
+    wind_gusts_10m_max?: Array<number | null>;
+    wind_direction_10m_dominant?: Array<number | null>;
   };
   hourly?: {
     time?: string[];
     sunshine_duration?: Array<number | null>;
+    temperature_2m?: Array<number | null>;
+    precipitation?: Array<number | null>;
+    weather_code?: Array<number | null>;
+    wind_speed_10m?: Array<number | null>;
+    wind_gusts_10m?: Array<number | null>;
+    wind_direction_10m?: Array<number | null>;
   };
 }
 
@@ -58,6 +113,11 @@ export interface OpenMeteoResponse {
 interface CachedPayload {
   daily?: DailySunshineEntry[];
   hourly?: HourlySunshineEntry[];
+  /** Daily / hourly station-block entries (ADR-0015). Absent in caches
+   *  written by versions before the no-station past block landed — a
+   *  missing field just forces one refetch via `isStale`. */
+  dailyForecast?: ForecastEntry[];
+  hourlyForecast?: ForecastEntry[];
   lastFetchMs?: number;
 }
 
@@ -69,7 +129,7 @@ export interface CachedAvailability {
   lastFetchMs: number;
 }
 
-/** Constructor options for `OpenMeteoSunshineSource`. */
+/** Constructor options for `OpenMeteoSource`. */
 export interface OpenMeteoSourceOpts {
   latitude?: number | null;
   longitude?: number | null;
@@ -86,7 +146,13 @@ export interface OpenMeteoSourceOpts {
 /** Builds the Forecast-endpoint URL. `includeHourly` adds the
  *  `hourly=sunshine_duration` parameter alongside `daily=…`, so a
  *  single call returns both granularities — used in hourly chart mode
- *  where the card renders one bar per hour. */
+ *  where the card renders one bar per hour.
+ *
+ *  Units are pinned explicitly (°C / mm / m·s⁻¹): with no station
+ *  sensor the card has no source unit to derive from, so the response
+ *  is locked to the card's canonical metric units. `buildDailyForecast`
+ *  tags each entry's `wind_speed_unit` so the renderer still converts
+ *  wind to the user's display unit. */
 export function buildOpenMeteoUrl(
   latitude: number,
   longitude: number,
@@ -97,12 +163,15 @@ export function buildOpenMeteoUrl(
   const p = new URLSearchParams({
     latitude: String(latitude),
     longitude: String(longitude),
-    daily: 'sunshine_duration',
+    daily: DAILY_FIELDS,
     timezone: 'auto',
     past_days: String(pastDays),
     forecast_days: String(forecastDays),
+    temperature_unit: 'celsius',
+    precipitation_unit: 'mm',
+    wind_speed_unit: 'ms',
   });
-  if (includeHourly) p.set('hourly', 'sunshine_duration');
+  if (includeHourly) p.set('hourly', HOURLY_FIELDS);
   return `${FORECAST_URL}?${p.toString()}`;
 }
 
@@ -137,6 +206,137 @@ export function parseHourlySunshine(response: OpenMeteoResponse | null | undefin
   const out: HourlySunshineEntry[] = [];
   for (let i = 0; i < t.length; i++) {
     if (v[i] != null) out.push({ datetime: t[i], value: v[i] });
+  }
+  return out;
+}
+
+/** Parse Open-Meteo's "YYYY-MM-DD" civil date (timezone=auto → the
+ *  user's local timezone) into a local-midnight ISO string. This
+ *  matches `MeasuredDataSource`'s daily `datetime` convention, so the
+ *  Open-Meteo past block's columns align with recorder-backed ones. */
+function localMidnightIso(civilDate: string | undefined): string | null {
+  if (!civilDate) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(civilDate);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/** Parse Open-Meteo's "YYYY-MM-DDTHH:MM" hourly timestamp (local, since
+ *  the request uses timezone=auto) into an on-the-hour ISO string,
+ *  matching `MeasuredDataSource`'s hourly `datetime` convention. */
+function localHourIso(hourString: string | undefined): string | null {
+  if (!hourString) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(hourString);
+  if (!m) return null;
+  const d = new Date(
+    Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]),
+  );
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/** Coerce a possibly-null Open-Meteo array cell to `number | null`. */
+function numOrNull(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+/** Reshape Open-Meteo's daily parallel arrays into the card's
+ *  `ForecastEntry[]` — one entry per civil date, in the exact shape
+ *  `MeasuredDataSource` emits for recorder-backed station columns. That
+ *  shape match is what lets the Open-Meteo past block drop into the
+ *  station slot with no special-casing downstream (ADR-0015).
+ *
+ *  Conventions, matching `MeasuredDataSource._buildForecast`:
+ *    - `datetime` is the local-midnight ISO of each civil date.
+ *    - `temperature` is the daily HIGH, `templow` the daily LOW.
+ *    - `wind_speed` is the daily MAX (Open-Meteo daily has no mean).
+ *    - `humidity` / `pressure` / `uv_index` have no Open-Meteo daily
+ *      field and stay null — the chart renders those rows as gaps.
+ *    - `sunshine` is left undefined on purpose: the existing sunshine
+ *      overlay fills it from the same response, keeping one code path.
+ *    - `condition` comes from the WMO `weather_code` via `wmoToCondition`.
+ *
+ *  Emits every dated row (past, today, and future). Callers slice the
+ *  window they need — the no-station station block takes only past +
+ *  today; the future rows are the weather entity's job. */
+export function buildDailyForecast(
+  response: OpenMeteoResponse | null | undefined,
+): ForecastEntry[] {
+  const daily = response?.daily;
+  if (!daily) return [];
+  const t = daily.time ?? [];
+  const tMax = daily.temperature_2m_max ?? [];
+  const tMin = daily.temperature_2m_min ?? [];
+  const precip = daily.precipitation_sum ?? [];
+  const code = daily.weather_code ?? [];
+  const windMax = daily.wind_speed_10m_max ?? [];
+  const gustMax = daily.wind_gusts_10m_max ?? [];
+  const windDir = daily.wind_direction_10m_dominant ?? [];
+
+  const out: ForecastEntry[] = [];
+  for (let i = 0; i < t.length; i++) {
+    const iso = localMidnightIso(t[i]);
+    if (!iso) continue;
+    out.push({
+      datetime: iso,
+      temperature: numOrNull(tMax[i]),
+      templow: numOrNull(tMin[i]),
+      precipitation: numOrNull(precip[i]),
+      wind_speed: numOrNull(windMax[i]),
+      wind_gust_speed: numOrNull(gustMax[i]),
+      wind_bearing: numOrNull(windDir[i]),
+      // The request pins wind_speed_unit=ms — tag each entry so the
+      // renderer converts to the user's display unit (no station
+      // sensor exists to derive the source unit from).
+      wind_speed_unit: 'm/s',
+      pressure: null,
+      humidity: null,
+      uv_index: null,
+      condition: wmoToCondition(numOrNull(code[i])),
+    });
+  }
+  return out;
+}
+
+/** Hourly counterpart to `buildDailyForecast`. One `ForecastEntry` per
+ *  hour, shaped like `MeasuredDataSource`'s hourly output: a single
+ *  mean `temperature` (no `templow` — hourly is a single-line series),
+ *  precipitation, wind, and a WMO-derived condition. Feeds the
+ *  no-station past block in hourly / today chart modes.
+ *
+ *  `datetime` is the on-the-hour ISO of each timestamp. Emits every
+ *  hour Open-Meteo returned — past, current, and future; the card
+ *  slices the past window it needs. */
+export function buildHourlyForecast(
+  response: OpenMeteoResponse | null | undefined,
+): ForecastEntry[] {
+  const hourly = response?.hourly;
+  if (!hourly) return [];
+  const t = hourly.time ?? [];
+  const temp = hourly.temperature_2m ?? [];
+  const precip = hourly.precipitation ?? [];
+  const code = hourly.weather_code ?? [];
+  const wind = hourly.wind_speed_10m ?? [];
+  const gust = hourly.wind_gusts_10m ?? [];
+  const dir = hourly.wind_direction_10m ?? [];
+
+  const out: ForecastEntry[] = [];
+  for (let i = 0; i < t.length; i++) {
+    const iso = localHourIso(t[i]);
+    if (!iso) continue;
+    out.push({
+      datetime: iso,
+      temperature: numOrNull(temp[i]),
+      precipitation: numOrNull(precip[i]),
+      wind_speed: numOrNull(wind[i]),
+      wind_gust_speed: numOrNull(gust[i]),
+      wind_bearing: numOrNull(dir[i]),
+      wind_speed_unit: 'm/s',
+      pressure: null,
+      humidity: null,
+      uv_index: null,
+      condition: wmoToCondition(numOrNull(code[i])),
+    });
   }
   return out;
 }
@@ -235,7 +435,7 @@ function resolveFetchImpl(fetchImpl: FetchLike | null | undefined): FetchLike | 
 
 // ── Source class ────────────────────────────────────────────────────
 
-export class OpenMeteoSunshineSource {
+export class OpenMeteoSource {
   latitude: number | null;
   longitude: number | null;
   pastDays: number;
@@ -248,6 +448,8 @@ export class OpenMeteoSunshineSource {
 
   private _daily: DailySunshineEntry[] = [];
   private _hourly: HourlySunshineEntry[] = [];
+  private _dailyForecast: ForecastEntry[] = [];
+  private _hourlyForecast: ForecastEntry[] = [];
   private _lastFetchMs = 0;
   private _inFlight: Promise<void> | null = null;
   private _abort: AbortController | null = null;
@@ -282,6 +484,8 @@ export class OpenMeteoSunshineSource {
       if (cached) {
         if (Array.isArray(cached.daily)) this._daily = cached.daily;
         if (Array.isArray(cached.hourly)) this._hourly = cached.hourly;
+        if (Array.isArray(cached.dailyForecast)) this._dailyForecast = cached.dailyForecast;
+        if (Array.isArray(cached.hourlyForecast)) this._hourlyForecast = cached.hourlyForecast;
         this._lastFetchMs = Number(cached.lastFetchMs) || 0;
       }
     }
@@ -297,11 +501,28 @@ export class OpenMeteoSunshineSource {
     return this._hourly;
   }
 
+  /** Daily station-block entries (ADR-0015). One `ForecastEntry` per
+   *  civil date Open-Meteo returned — past, today, and future. The card
+   *  slices the past + today window it needs for the station block. */
+  getDailyStationForecast(): ForecastEntry[] {
+    return this._dailyForecast;
+  }
+
+  /** Hourly station-block entries (ADR-0015) — one `ForecastEntry` per
+   *  hour Open-Meteo returned. Empty unless `includeHourly` was set. */
+  getHourlyStationForecast(): ForecastEntry[] {
+    return this._hourlyForecast;
+  }
+
   /** True when we should kick off a refresh (cache empty for the
    *  currently-requested granularity, or stale). */
   isStale(now: number = this._now()): boolean {
     if (!this._daily.length) return true;
+    // A cache written before the no-station past block landed (ADR-0015)
+    // has no dailyForecast — refetch once so the station block can fill.
+    if (!this._dailyForecast.length) return true;
     if (this.includeHourly && !this._hourly.length) return true;
+    if (this.includeHourly && !this._hourlyForecast.length) return true;
     return now - this._lastFetchMs >= REFRESH_TTL_MS;
   }
 
@@ -356,10 +577,14 @@ export class OpenMeteoSunshineSource {
         const json = await res.json() as OpenMeteoResponse;
         this._daily = parseDailySunshine(json);
         this._hourly = this.includeHourly ? parseHourlySunshine(json) : [];
+        this._dailyForecast = buildDailyForecast(json);
+        this._hourlyForecast = this.includeHourly ? buildHourlyForecast(json) : [];
         this._lastFetchMs = this._now();
         saveToStorage(this._storage, this.latitude as number, this.longitude as number, {
           daily: this._daily,
           hourly: this._hourly,
+          dailyForecast: this._dailyForecast,
+          hourlyForecast: this._hourlyForecast,
           lastFetchMs: this._lastFetchMs,
         });
         if (this._listener) this._listener({ ok: true });
@@ -370,7 +595,7 @@ export class OpenMeteoSunshineSource {
         const e = err as { name?: string; code?: number } | null;
         const isAbort = e != null && (e.name === 'AbortError' || e.code === 20);
         if (!isAbort) {
-           
+
           console.warn('[weather-station-card] Open-Meteo fetch failed:', err);
           if (this._listener) this._listener({ ok: false, error: String(err) });
         }

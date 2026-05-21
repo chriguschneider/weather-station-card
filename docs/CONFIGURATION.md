@@ -42,6 +42,19 @@ values (`humidity`, `pressure`, `dew_point`, `uv_index`, `wind_speed`,
 panel only surfaces toggles for keys that have a backing value — a
 sensor under `sensors.*` or an attribute on the weather entity.
 
+**Past block without station sensors.** A card needs *something* to
+draw the past (station) half of the chart: either a station sensor, or
+the `forecast.openmeteo_history` opt-in (Open-Meteo backfill — see the
+chart-rows table below and [SENSORS.md](SENSORS.md#open-meteo-past-block-no-station-sensors)).
+When neither is set, the visual editor disables the Station and
+Combination mode options, switches the card to forecast-only, and
+shows a hint in the Sensors section explaining how to get the past
+block back — turn the opt-in on, or wire a station sensor. Enabling
+either re-enables the mode options. (A hand-written YAML config that
+sets `show_station: true` with no sensors and the opt-in off keeps the
+old behaviour — an empty past area; only the editor steers you away
+from it.)
+
 **Invalid YAML safety net (since v1.9.0)**: structural errors in the
 config (wrong types, malformed `condition_mapping`, non-`sensor.*`
 entity IDs under `sensors.*`, non-`weather.*` under `weather_entity`)
@@ -167,6 +180,7 @@ matching attribute on `weather_entity`)
 | `forecast.show_wind_forecast` | bool | `true` | ⚠️ **Deprecated in v1.9.x, removal v2.0.** Legacy master toggle that hides the entire wind row when set to `false`. The editor doesn't expose it. New configs should use the independent `show_wind_arrow` and `show_wind_speed` toggles instead — set both to `false` for the same effect. |
 | `forecast.show_date` | bool | `true` | `dd/mm` date row in the X-axis. When off, only the weekday is rendered. |
 | `forecast.show_sunshine` | bool | `false` | Sunshine-duration column inside the chart — half-bar in yellow on the right of every column (precipitation keeps the left half), with the day's hours rendered as a small "Xh" label at the top of the column. Off by default; turning it on without configuring at least one of the sunshine sensors below renders empty bars and labels (no warning, no banner). See [SENSORS.md → Sunshine duration](SENSORS.md#sunshine-duration) for setup. |
+| `forecast.openmeteo_history` | bool | `false` | Fills the **past** (left) half of the chart from Open-Meteo's historical model data — temperature, precipitation, wind and condition icons — for cards that have a `weather_entity` but no station `sensors.*`. Works in daily, today and hourly modes. Off by default. Has no effect once any station sensor is configured (the recorder is always preferred) or when there is no weather entity. Sends your Home Assistant location to Open-Meteo — see [SENSORS.md → Open-Meteo past block](SENSORS.md#open-meteo-past-block-no-station-sensors). |
 
 ## Chart appearance
 

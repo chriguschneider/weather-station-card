@@ -86,8 +86,21 @@ function buildSensorsSchema(hass: HassWithStates | null): Array<{ name: string; 
   }));
 }
 
+// forecast.* boolean: the Open-Meteo no-station past-block opt-in
+// (ADR-0015). Lives in the sensors section because it is the
+// recorder-free alternative to wiring station sensors.
+const OPENMETEO_HISTORY_SCHEMA = [
+  { name: 'openmeteo_history', selector: { boolean: {} } },
+];
+
 export function renderSensorsSection(editor: EditorLike, ctx: EditorContext): TemplateResult {
-  const { t, sensorsConfig } = ctx;
+  const { t, sensorsConfig, fcfg, pastDataAvailable, showsStation } = ctx;
+
+  // The section shows whenever a past block is — or should become —
+  // configurable: in station / combination mode, or (regardless of
+  // mode) when there is no past data yet, so the recovery controls
+  // (the Open-Meteo opt-in, the sensor pickers) stay reachable.
+  if (!showsStation && pastDataAvailable) return html``;
 
   // Append "(required)" to required-field labels. ha-form also draws a
   // Material asterisk via the schema's `required: true` flag; the
@@ -100,6 +113,22 @@ export function renderSensorsSection(editor: EditorLike, ctx: EditorContext): Te
 
   return html`
     ${renderSectionHeader({ editor, title: t('station_sensors_heading'), sectionKey: 'sensors', resetLabel: t('reset_section') })}
+
+    ${!pastDataAvailable ? html`
+      <div class="hint">${t('openmeteo_history_unavailable')}</div>
+    ` : ''}
+
+    <div class="textfield-container">
+      <ha-form
+        .data=${{ openmeteo_history: fcfg.openmeteo_history === true }}
+        .schema=${OPENMETEO_HISTORY_SCHEMA}
+        .hass=${editor.hass}
+        .computeLabel=${() => t('openmeteo_history')}
+        @value-changed=${editor._chartForecastChanged}
+      ></ha-form>
+      <div class="hint" style="padding-left:20px;">${t('openmeteo_history_hint')}</div>
+    </div>
+
     <div class="textfield-container">
       <ha-form
         .data=${sensorsConfig}
