@@ -58,3 +58,4 @@ status line.
 - [0012 — Chart library: uPlot](./0012-chart-library-uplot.md) (Accepted)
 - [0013 — ESM output with content-hashed chunks for lazy editor](./0013-esm-code-split-for-lazy-editor.md) (Accepted)
 - [0014 — Cold-mount perf regression gate in CI](./0014-perf-regression-gate.md) (Accepted)
+- [0015 — Open-Meteo as a no-station data source](./0015-openmeteo-no-station-data-source.md) (Accepted)

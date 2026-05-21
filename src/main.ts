@@ -63,7 +63,7 @@ import {
   forecastsEqual,
 } from './forecast-utils.js';
 import { overlayFromOpenMeteo, sunshineFractions } from './sunshine-source.js';
-import { OpenMeteoSunshineSource } from './openmeteo-source.js';
+import { OpenMeteoSource } from './openmeteo-source.js';
 import { safeQuery } from './utils/safe-query.js';
 import { parseNumericSafe } from './utils/numeric.js';
 import { setupScrollUx } from './scroll-ux.js';
@@ -257,8 +257,10 @@ class WeatherStationCard extends LitElement {
   _stationCache: Record<string, any[]> = {};
   // deno-lint-ignore no-explicit-any
   _forecastCache: Record<string, any[]> = {};
+  // Open-Meteo source — backs the sunshine overlay and (ADR-0015) the
+  // no-station past block. Lazy-created by `_ensureOpenMeteoSource`.
   // deno-lint-ignore no-explicit-any
-  _sunshineSource: any = null;
+  _openMeteoSource: any = null;
 
   // 3-h pressure tendency (hPa-normalized), populated by the station
   // refresh callback. `null` until the first fetch resolves or when
@@ -510,7 +512,14 @@ setConfig(config: any) {
   // what it can, and the visual editor stays usable so the user can
   // pick the missing entity.
   const configErrors: string[] = [];
-  if (cardConfig.show_station && !cardConfig.sensors?.temperature) {
+  // The temperature-sensor requirement is waived when the Open-Meteo
+  // no-station fallback is active (ADR-0015): the past block is filled
+  // from Open-Meteo, so there is no missing-data problem to warn about.
+  if (
+    cardConfig.show_station
+    && !cardConfig.sensors?.temperature
+    && !this._openMeteoStationFallbackActive(cardConfig)
+  ) {
     configErrors.push(
       'Station mode needs a temperature sensor — set `sensors.temperature` in the card config.',
     );
@@ -854,8 +863,14 @@ _syncDataSources(hass: HassMain): void {
 
   const wantStation = this.config.show_station !== false;
   const wantForecast = this.config.show_forecast === true && !!this.config.weather_entity;
+  // When the Open-Meteo fallback feeds the station block (no sensors +
+  // weather entity + opt-in, ADR-0015), the recorder-backed
+  // MeasuredDataSource is NOT created — `_ensureOpenMeteoSource` owns
+  // `_stationData` instead. Creating both would let the recorder's
+  // empty result overwrite the Open-Meteo past block on every poll.
+  const wantMeasured = wantStation && !this._openMeteoStationFallbackActive(this.config);
 
-  if (wantStation) {
+  if (wantMeasured) {
     if (!this._dataSource) {
       this._dataSource = new MeasuredDataSource(hass, this.config);
       this._dataUnsubscribe = this._dataSource.subscribe((event) => {
@@ -1031,9 +1046,9 @@ async _refreshPressureDelta(): Promise<void> {
     r.add(() => this._teardownForecast());
     r.add(() => this._teardownInitialScrollObserver());
     r.add(() => {
-      if (this._sunshineSource) {
-        this._sunshineSource.abort();
-        this._sunshineSource = null;
+      if (this._openMeteoSource) {
+        this._openMeteoSource.abort();
+        this._openMeteoSource = null;
       }
     });
     r.add(() => {
@@ -1108,6 +1123,11 @@ async _refreshPressureDelta(): Promise<void> {
     // MeasuredDataSource fetches with period:'hour' when the type is
     // hourly — so the previous show_station-override at hourly is gone.
     const { config: effectiveCfg } = normalizeForecastMode(this.config);
+    // Ensure the Open-Meteo source up front. When it feeds the station
+    // block (no sensors + weather entity + opt-in, ADR-0015) a warm
+    // cache populates `_stationData` synchronously here, so the
+    // `station` capture below sees it on the same render.
+    this._ensureOpenMeteoSource(effectiveCfg);
     const todayStartMs = startOfTodayMs();
     const fcType = effectiveCfg.forecast.type;
     const isToday = fcType === 'today';
@@ -1141,7 +1161,6 @@ async _refreshPressureDelta(): Promise<void> {
     // precip since midnight) are visible immediately, and missing fields
     // render as gaps — same convention as an offline sensor on a
     // historical day.
-    this._ensureSunshineSource(effectiveCfg);
 
     if (isToday) {
       this._buildTodayForecasts(station, forecast);
@@ -1203,7 +1222,7 @@ async _refreshPressureDelta(): Promise<void> {
     const merged = overlayFromOpenMeteo(
       [...station, ...forecast],
       this._hass,
-      this._sunshineSource,
+      this._openMeteoSource,
       'hourly',
     );
     const stationLen = station.length;
@@ -1238,7 +1257,7 @@ async _refreshPressureDelta(): Promise<void> {
     this.forecasts = overlayFromOpenMeteo(
       [...station, ...forecast],
       this._hass,
-      this._sunshineSource,
+      this._openMeteoSource,
       granularity,
       granularity === 'daily' ? cloudExp : null,
     );
@@ -1271,76 +1290,191 @@ async _refreshPressureDelta(): Promise<void> {
       // deno-lint-ignore no-explicit-any
       [...this.forecasts] as any,
       this._hass,
-      this._sunshineSource,
+      this._openMeteoSource,
       granularity,
       granularity === 'daily' ? cloudExp : null,
     );
     this.updateChart();
   }
 
-  // Lazy-init the Open-Meteo source on first use, tear it down when the
-  // user toggles sunshine off, and trigger a fetch when the cache is
-  // stale (no-op if a fetch is already in flight). On data arrival, the
-  // listener routes through _overlaySunshineOnExisting to avoid a
-  // chart rebuild (which caused a bar-width flicker).
+  // True when the Open-Meteo source should drive the past/station chart
+  // block instead of the recorder (ADR-0015). All must hold:
+  //   - no station sensors configured (any one sensor → recorder wins,
+  //     all-or-nothing — no per-channel top-up);
+  //   - a weather_entity is set (it supplies the forecast half);
+  //   - the station block is enabled (show_station);
+  //   - the forecast.openmeteo_history opt-in is on.
+  // Applies in all three chart resolutions (daily / hourly / today).
   // deno-lint-ignore no-explicit-any
-  _ensureSunshineSource(effectiveCfg: any) {
-    const enabled = effectiveCfg?.forecast?.show_sunshine === true;
+  _openMeteoStationFallbackActive(cfg: any): boolean {
+    if (!cfg || cfg.show_station === false) return false;
+    if (cfg.forecast?.openmeteo_history !== true) return false;
+    if (!cfg.weather_entity) return false;
+    const sensors = cfg.sensors || {};
+    const hasSensor = Object.values(sensors).some(
+      (v) => typeof v === 'string' && v.trim() !== '',
+    );
+    return !hasSensor;
+  }
+
+  // The past-window slice of the Open-Meteo forecast, shaped like
+  // MeasuredDataSource's output for the current chart mode:
+  //   - daily: the last `days` daily entries up to and including today;
+  //   - hourly: the last `days * 24` hourly entries up to the current
+  //     hour;
+  //   - today: the last 12 hourly entries (combination) or 24
+  //     (station-only) — matching MeasuredDataSource's today windowing.
+  // Future entries are filtered out — they belong to the weather
+  // entity's forecast block, and keeping them here would make the
+  // forecast-trim in _refreshForecastsUnsafe drop the real forecast.
+  // deno-lint-ignore no-explicit-any
+  _openMeteoStationWindow(): any[] {
+    const src = this._openMeteoSource;
+    if (!src) return [];
+    const rawType = this.config?.forecast?.type;
+    const type = (rawType === 'hourly' || rawType === 'today') ? rawType : 'daily';
+
+    if (type === 'daily') {
+      if (typeof src.getDailyStationForecast !== 'function') return [];
+      const all = src.getDailyStationForecast() || [];
+      const tomorrow = new Date();
+      tomorrow.setHours(0, 0, 0, 0);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowMs = tomorrow.getTime();
+      const past = all.filter((e: { datetime?: string }) => {
+        const t = new Date(e.datetime ?? '').getTime();
+        return Number.isFinite(t) && t < tomorrowMs;
+      });
+      const days = parseInt(String(this.config?.days), 10) || 7;
+      return past.slice(-days);
+    }
+
+    // hourly / today — slice the hourly entries up to the current hour.
+    if (typeof src.getHourlyStationForecast !== 'function') return [];
+    const all = src.getHourlyStationForecast() || [];
+    const nowHour = new Date();
+    nowHour.setMinutes(0, 0, 0);
+    const nowHourMs = nowHour.getTime();
+    const past = all.filter((e: { datetime?: string }) => {
+      const t = new Date(e.datetime ?? '').getTime();
+      return Number.isFinite(t) && t <= nowHourMs;
+    });
+    let count: number;
+    if (type === 'today') {
+      // Combination splits the day 12 h past / 12 h forecast; a
+      // station-only today view expands the past to the full 24 h.
+      // Mirrors MeasuredDataSource's todayHours logic.
+      const isStationOnly = this.config?.show_forecast !== true;
+      count = isStationOnly ? 24 : 12;
+    } else {
+      count = (parseInt(String(this.config?.days), 10) || 7) * 24;
+    }
+    return past.slice(-count);
+  }
+
+  // Lazy-init the Open-Meteo source and trigger a fetch when the cache
+  // is stale (no-op if a fetch is already in flight). The source backs
+  // two features off one call: the in-chart sunshine overlay
+  // (forecast.show_sunshine) and — when the card has a weather entity
+  // but no station sensors — the past/station block itself
+  // (forecast.openmeteo_history, ADR-0015). It is created when either
+  // is active, torn down when neither is.
+  // deno-lint-ignore no-explicit-any
+  _ensureOpenMeteoSource(effectiveCfg: any) {
+    const feedsStation = this._openMeteoStationFallbackActive(this.config);
+    const enabled = effectiveCfg?.forecast?.show_sunshine === true || feedsStation;
     if (!enabled) {
-      if (this._sunshineSource) {
-        this._sunshineSource.abort();
-        this._sunshineSource = null;
+      if (this._openMeteoSource) {
+        this._openMeteoSource.abort();
+        this._openMeteoSource = null;
       }
       return;
     }
     const cfg = this._hass?.config;
     const lat = cfg && Number.isFinite(cfg.latitude) ? cfg.latitude : null;
     const lon = cfg && Number.isFinite(cfg.longitude) ? cfg.longitude : null;
-    if (lat == null || lon == null) return;
+    if (lat == null || lon == null) {
+      // No HA location → no Open-Meteo fetch is possible. When the
+      // source is the station block's only data provider, mark the
+      // station "ready but empty" so the card settles into a
+      // forecast-only render instead of waiting on the loading skeleton.
+      if (feedsStation) {
+        this._stationData = [];
+        this._stationDataReady = true;
+      }
+      return;
+    }
 
     // 'today' uses hourly Open-Meteo data (per-hour bars), same as
     // 'hourly' mode. Daily-only modes don't need the hourly fetch.
     const includeHourly = effectiveCfg.forecast.type === 'hourly'
       || effectiveCfg.forecast.type === 'today';
 
-    // Re-create when location or hourly-mode flag changes — the
-    // includeHourly flag determines whether the request URL carries
-    // `hourly=…`, so flipping it requires a fresh fetch.
-    const same = this._sunshineSource?.latitude === lat
-      && this._sunshineSource?.longitude === lon
-      && this._sunshineSource?.includeHourly === includeHourly;
+    const days = parseInt(effectiveCfg.days, 10) || 7;
+    const fcDays = parseInt(effectiveCfg.forecast_days, 10) || days;
+    // +1 covers today's column when the station block ends at today's
+    // local midnight (the entry has datetime today 00:00).
+    const pastDays = Math.min(92, days + 1);
+    const forecastDays = Math.min(16, fcDays + 1);
+
+    // Re-create when location, hourly-mode flag, or the fetch window
+    // changes — each is baked into the request URL, so a change needs a
+    // fresh fetch (a wider `days` must widen the past block).
+    const same = this._openMeteoSource?.latitude === lat
+      && this._openMeteoSource?.longitude === lon
+      && this._openMeteoSource?.includeHourly === includeHourly
+      && this._openMeteoSource?.pastDays === pastDays
+      && this._openMeteoSource?.forecastDays === forecastDays;
     if (!same) {
-      if (this._sunshineSource) this._sunshineSource.abort();
-      const days = parseInt(effectiveCfg.days, 10) || 7;
-      const fcDays = parseInt(effectiveCfg.forecast_days, 10) || days;
-      this._sunshineSource = new OpenMeteoSunshineSource({
+      if (this._openMeteoSource) this._openMeteoSource.abort();
+      this._openMeteoSource = new OpenMeteoSource({
         latitude: lat,
         longitude: lon,
-        // +1 covers today's column when station block ends at today's
-        // local midnight (the entry has datetime today 00:00).
-        pastDays: Math.min(92, days + 1),
-        forecastDays: Math.min(16, fcDays + 1),
+        pastDays,
+        forecastDays,
         includeHourly,
       });
-      this._sunshineSource.setListener((event: { ok: boolean; error?: string } | null) => {
-        // On a successful refresh, re-overlay sunshine on the existing
-        // forecasts and push the new values into the live chart via
-        // updateChart — NOT _refreshForecasts. Going through the
-        // _refreshForecasts → measureCard → drawChart path destroys and
-        // rebuilds the chart, which between the first build (sunshine
-        // values still null) and the rebuild (sunshine values populated)
-        // caused chart.js's bar ruler to recompute the per-column slot
-        // allocation. The visible result was precip bars rendering wide
-        // for a moment and then snapping to their final half-column
-        // width once sunshine landed — read by the user as a "the bars
-        // start twice as wide and then narrow" artefact. Keeping the
-        // same Chart instance and only mutating dataset data sidesteps
-        // the ruler recompute entirely; widths stay correct from frame 1.
+      this._openMeteoSource.setListener((event: { ok: boolean; error?: string } | null) => {
+        // When the source feeds the station block, every completed
+        // fetch — success OR failure — resolves the station's loading
+        // state: on success the past columns populate, on failure the
+        // block stays empty but the card still renders. Re-evaluate the
+        // predicate against the CURRENT config: it may have changed
+        // since the source was created.
+        if (this._openMeteoStationFallbackActive(this.config)) {
+          this._stationData = this._openMeteoStationWindow();
+          this._stationDataReady = true;
+          this._refreshForecasts();
+          return;
+        }
+        // Sunshine-only path. On a successful refresh, re-overlay
+        // sunshine on the existing forecasts and push the new values
+        // into the live chart via updateChart — NOT _refreshForecasts.
+        // Going through the _refreshForecasts → measureCard → drawChart
+        // path destroys and rebuilds the chart, which between the first
+        // build (sunshine values still null) and the rebuild (sunshine
+        // values populated) caused the bar ruler to recompute the
+        // per-column slot allocation. The visible result was precip
+        // bars rendering wide for a moment and then snapping to their
+        // final half-column width once sunshine landed — read by the
+        // user as a "the bars start twice as wide and then narrow"
+        // artefact. Keeping the same chart instance and only mutating
+        // dataset data sidesteps the ruler recompute entirely.
         if (event?.ok) this._overlaySunshineOnExisting();
       });
     }
+    // Surface cached station data immediately — the source rehydrates
+    // from localStorage in its constructor, so a warm cache fills the
+    // past block on the very first render with no fetch wait.
+    if (feedsStation) {
+      const win = this._openMeteoStationWindow();
+      if (win.length) {
+        this._stationData = win;
+        this._stationDataReady = true;
+      }
+    }
     // Fire-and-forget — the listener handles the redraw on completion.
-    this._sunshineSource.ensureFresh();
+    this._openMeteoSource.ensureFresh();
   }
 
   attachResizeObserver() {
@@ -1610,7 +1744,9 @@ _invalidateStaleSources(oldConfig: any) {
   // forecast.type also drives MeasuredDataSource (hourly station
   // aggregates use period:'hour'), so toggling it can rebuild both
   // sources; lazy-cache below decides whether the rebuild is needed.
-  const STATION_KEYS = ['sensors', 'days', 'show_station', 'forecast.type'];
+  // forecast.openmeteo_history toggles the no-station past block on/off
+  // (ADR-0015) — a station-source rebuild, so it belongs here.
+  const STATION_KEYS = ['sensors', 'days', 'show_station', 'forecast.type', 'forecast.openmeteo_history'];
   const FORECAST_KEYS = ['show_forecast', 'weather_entity', 'forecast.type'];
 
   const stationStale = STATION_KEYS.some(stale);
@@ -2163,6 +2299,9 @@ renderDebugPanel() {
   // Render mode — the same gates render() / the chart pipeline use.
   const wantStation = cfg.show_station !== false;
   const wantForecast = cfg.show_forecast === true && !!cfg.weather_entity;
+  // True when the past block is backfilled from Open-Meteo rather than
+  // the recorder (no station sensors + weather entity + opt-in, ADR-0015).
+  const stationFromOpenMeteo = this._openMeteoStationFallbackActive(cfg);
   let renderMode = 'none (both blocks disabled)';
   if (wantStation && wantForecast) renderMode = 'combination (station + forecast)';
   else if (wantStation) renderMode = 'station-only';
@@ -2186,7 +2325,9 @@ renderDebugPanel() {
   };
 
   const stationStatus = sourceStatus(
-    wantStation, this._dataSource, this._stationError,
+    wantStation,
+    stationFromOpenMeteo ? this._openMeteoSource : this._dataSource,
+    this._stationError,
     this._stationDataReady, this._stationData?.length ?? 0,
   );
   const forecastStatus = sourceStatus(
@@ -2197,14 +2338,16 @@ renderDebugPanel() {
   // Why a chart column might be empty — the most common support
   // question. Walk the known causes in priority order.
   const emptyReasons: string[] = [];
-  if (wantStation && !sensors.temperature) {
+  if (wantStation && !stationFromOpenMeteo && !sensors.temperature) {
     emptyReasons.push('Station block on, but sensors.temperature is unset — past chart has no data.');
   }
   if (cfg.show_forecast === true && !cfg.weather_entity) {
     emptyReasons.push('show_forecast is true, but weather_entity is unset — forecast block cannot load.');
   }
   if (wantStation && this._stationDataReady && (this._stationData?.length ?? 0) === 0 && !this._stationError) {
-    emptyReasons.push('Station source returned 0 points — the recorder has no history for the configured window.');
+    emptyReasons.push(stationFromOpenMeteo
+      ? 'Open-Meteo returned no past data — check the browser network connection and the HA location.'
+      : 'Station source returned 0 points — the recorder has no history for the configured window.');
   }
   if (wantForecast && this._forecastDataReady && (this._forecastData?.length ?? 0) === 0 && !this._forecastError) {
     emptyReasons.push('Forecast source returned 0 points — the weather entity published an empty forecast.');

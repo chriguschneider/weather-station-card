@@ -6,6 +6,31 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.0] — 2026-05-21
+
+### Added
+
+- **The chart can now show a past section without a weather station.**
+  If your card uses a weather entity for the forecast but you own no
+  sensors, the left (past) half of the chart used to stay empty. Switch
+  on **"Open-Meteo past data"** in the visual editor and the card fills
+  it with recent temperature, rain, wind and weather-condition data
+  from the free Open-Meteo service, right beside your forecast. It
+  works in the daily, today and hourly chart views.
+
+  It is off by default, and only used when you have no sensors of your
+  own — add even one sensor and your own measurements take over.
+  Switching it on sends your Home Assistant location to Open-Meteo, the
+  same as the existing sunshine feature. Existing cards are unaffected.
+
+### Changed
+
+- **The editor explains an empty past section instead of leaving you
+  guessing.** When a card has no sensors and Open-Meteo past data is
+  off, the editor now switches it to forecast-only and tells you how to
+  bring the past section back — wire up a sensor, or turn on Open-Meteo
+  past data.
+
 ## [2.0.1] — 2026-05-20
 
 ### Changed

@@ -98,6 +98,35 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     this.requestUpdate();
   }
 
+  // True when the card can render a past chart block: a station sensor
+  // is configured, or the Open-Meteo past opt-in is on (ADR-0015).
+  _pastDataAvailable(): boolean {
+    if (!this._config) return true;
+    const sensors = (this._config.sensors as Record<string, unknown>) || {};
+    const hasSensor = Object.values(sensors).some(
+      (v) => typeof v === 'string' && v.trim() !== '',
+    );
+    const fc = this._config.forecast as { openmeteo_history?: boolean } | undefined;
+    return hasSensor || fc?.openmeteo_history === true;
+  }
+
+  // When the card has no way to show past data (no station sensors AND
+  // the Open-Meteo past opt-in off), force forecast-only mode — the
+  // station / combination views would only render an empty past block
+  // (ADR-0015). One-directional: turning the opt-in on or wiring a
+  // sensor re-enables the mode options but does NOT auto-switch back,
+  // so the editor never fights a user who deliberately picked a mode.
+  updated(changedProperties: Map<PropertyKey, unknown>): void {
+    if (
+      changedProperties.has('_config')
+      && this._config
+      && !this._pastDataAvailable()
+      && this._mode !== 'forecast'
+    ) {
+      this._setMode('forecast');
+    }
+  }
+
   // ── Event plumbing ────────────────────────────────────────────────────
   configChanged(newConfig: Record<string, unknown>): void {
     const event = new Event('config-changed', { bubbles: true, composed: true }) as Event & { detail?: unknown };
@@ -386,10 +415,12 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
       return v !== undefined && v !== null;
     };
 
+    const pastDataAvailable = this._pastDataAvailable();
+
     const ctx: EditorContext = {
       t, cfg, fcfg, sensorsConfig, unitsConfig,
       mode, showsStation, showsForecast,
-      hasSensor, hasLiveValue,
+      hasSensor, hasLiveValue, pastDataAvailable,
     };
 
     return html`
@@ -498,7 +529,7 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
       <div>
         ${renderModeSection(this, ctx)}
         ${showsForecast ? renderForecastSection(this, ctx) : ''}
-        ${showsStation ? renderSensorsSection(this, ctx) : ''}
+        ${renderSensorsSection(this, ctx)}
         ${renderChartSection(this, ctx)}
         ${renderLivePanelSection(this, ctx)}
         ${renderUnitsSection(this, ctx)}

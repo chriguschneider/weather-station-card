@@ -101,3 +101,39 @@ can't fit a label per bar — the bar height alone encodes the value.
 - **PV-output-derived sunshine** for users with a solar inverter — same
   issue.
 - **Local-network-only operation** — the Open-Meteo path needs internet.
+
+## Open-Meteo past block (no station sensors)
+
+If you have a `weather_entity` but no weather station of your own, the
+past (left) half of the chart is normally empty — there are no
+`sensors.*` to draw history from. Set `forecast.openmeteo_history: true`
+and the card fills that half from [Open-Meteo](https://open-meteo.com/)
+instead: daily high/low temperature, precipitation, wind and condition
+icons for the past days, sitting next to your weather entity's forecast.
+
+```yaml
+weather_entity: weather.home
+forecast:
+  type: daily
+  openmeteo_history: true
+```
+
+What to know:
+
+- It only kicks in when the card has **no** `sensors.*` configured.
+  Wire even a single station sensor and the card uses that instead —
+  the recorder is always preferred over the Open-Meteo model.
+- It needs a `weather_entity` (which supplies the forecast half) and
+  the station block left on (`show_station`, on by default).
+- The values are Open-Meteo's model data for your location, not your
+  own measurements. Humidity and pressure are not fetched, so those
+  rows stay empty; the wind row shows the period's peak wind.
+- Works in all three chart modes — daily, today and hourly.
+
+**Privacy note**: same as the sunshine overlay — turning this on sends
+your latitude / longitude to `api.open-meteo.com` from every browser
+that renders the dashboard. The call is client-side, so nothing is
+centralised on your Home Assistant server. If you would rather no
+browser call out, leave `openmeteo_history` off (default). Open-Meteo's
+privacy policy is at
+[open-meteo.com/en/terms](https://open-meteo.com/en/terms).

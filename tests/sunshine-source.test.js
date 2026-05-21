@@ -456,7 +456,7 @@ describe('overlayFromOpenMeteo', () => {
   };
   const iso = (d) => d.toISOString();
 
-  // Stand-in for OpenMeteoSunshineSource — only getDailyValues is
+  // Stand-in for OpenMeteoSource — only getDailyValues is
   // exercised, so we don't need the full lifecycle for these tests.
   const makeSource = (values) => ({ getDailyValues: () => values });
 

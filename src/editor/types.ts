@@ -85,4 +85,9 @@ export interface EditorContext {
   showsForecast: boolean;
   hasSensor: (key: string) => boolean;
   hasLiveValue: (key: string) => boolean;
+  /** True when the card can show a past chart block — either a station
+   *  sensor is configured, or the Open-Meteo past opt-in is on
+   *  (ADR-0015). When false, station / combination modes are disabled
+   *  in the editor and the card is forced to forecast-only. */
+  pastDataAvailable: boolean;
 }

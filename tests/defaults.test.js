@@ -199,6 +199,7 @@ function defaultCtx() {
     showsForecast: true,
     hasSensor: () => true,
     hasLiveValue: () => true,
+    pastDataAvailable: true,
   };
 }
 

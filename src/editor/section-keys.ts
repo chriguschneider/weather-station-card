@@ -34,6 +34,9 @@ export const SECTION_KEYS: Record<SectionKey, ReadonlyArray<string>> = {
   ],
   sensors: [
     'sensors',
+    // The Open-Meteo no-station past-block opt-in (ADR-0015) is shown
+    // as a toggle in this section, so resetting the section clears it.
+    'forecast.openmeteo_history',
   ],
   chart: [
     'title',

@@ -369,7 +369,7 @@ export function sunshineFractions(
   });
 }
 
-/** Source instance interface — typically an `OpenMeteoSunshineSource`,
+/** Source instance interface — typically an `OpenMeteoSource`,
  *  but any object with these two methods works. */
 export interface SunshineSource {
   getDailyValues(): DailySunshineInput | null;
@@ -389,7 +389,7 @@ interface HassLatLon {
  *      already has `datetime`).
  *    - hass: { config: { latitude } }.
  *    - source: an object exposing `getDailyValues()` /
- *      `getHourlyValues()`. Typically an `OpenMeteoSunshineSource`.
+ *      `getHourlyValues()`. Typically an `OpenMeteoSource`.
  *    - granularity: 'daily' (default) or 'hourly'. Picks which array
  *      `attachSunshine` matches against.
  *
