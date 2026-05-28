@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.2] — 2026-05-28
+
 ### Fixed
 
 - **Weather-condition icons no longer misread sensors that report in
