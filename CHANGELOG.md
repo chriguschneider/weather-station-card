@@ -6,6 +6,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Temperatures now show one decimal everywhere when rounding is off.**
+  With **"Round temperatures"** turned off, every temperature on the
+  chart — in the daily, today and hourly views — now shows one digit
+  after the decimal point (for example `28.0°`). Before, some views
+  showed whole numbers while others showed a decimal, depending on where
+  the weather data came from. Turning **"Round temperatures"** on still
+  shows whole numbers, exactly as before. Nothing to change in your
+  configuration.
+
 ## [2.1.0] — 2026-05-21
 
 ### Added

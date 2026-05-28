@@ -1,8 +1,7 @@
 // Temperature value labels — renders "16°" "4°" etc. above (tempHigh)
 // and below (tempLow) each line point when `forecast.style === 'style2'`.
 // Replaces the chartjs-plugin-datalabels per-temp-line configuration
-// from the pre-uPlot era (see orchestrator.applyStyle2DataLabels for
-// the original Chart.js block).
+// from the pre-uPlot era.
 //
 // Today's column gets bold font; everything else stays normal weight.
 // Colour: chart_text_color override if set, otherwise per-line colour
@@ -19,10 +18,16 @@ export interface TempLabelsPluginOpts {
   tempHighColor: string;
   tempLowColor: string;
   chartTextColor?: string;
+  /** When false, labels keep one decimal place regardless of the source's
+   *  own precision so daily/today/hourly read consistently (e.g. "28.0°"
+   *  next to "16.2°"); when true the value is already integer-rounded
+   *  upstream and renders as a whole number. */
+  roundTemp: boolean;
 }
 
 export function createTempLabelsPlugin(opts: TempLabelsPluginOpts): ChartPlugin {
-  const { config, data, tempHighColor, tempLowColor, chartTextColor } = opts;
+  const { config, data, tempHighColor, tempLowColor, chartTextColor, roundTemp } = opts;
+  const decimals = roundTemp ? 0 : 1;
   const baseSize = parseInt(String(config.forecast.labels_font_size)) || 11;
   // style2 label is one size larger than the base axis-label size
   // (matches the +1 in applyStyle2DataLabels) so it reads cleanly
@@ -72,7 +77,7 @@ export function createTempLabelsPlugin(opts: TempLabelsPluginOpts): ChartPlugin 
       const x = xScale.getPixelForTick(i);
       const y = tempScale.getPixelForValue(v) + offsetY;
       c.font = `${isTodayAt(i) ? 'bold ' : ''}${fontSize}px ${fontFamily}`;
-      c.fillText(`${v}°`, x, y);
+      c.fillText(`${v.toFixed(decimals)}°`, x, y);
     }
     c.restore();
   }
