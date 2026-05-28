@@ -83,6 +83,9 @@ import {
   convertWindSpeed,
   convertPressure,
   formatSunshineHours,
+  toMetersPerSecond,
+  toCelsius,
+  toMillimeters,
 } from './utils/unit-converters.js';
 import { drawChartUnsafe } from './chart/orchestrator.js';
 import { sanitizeForecastEntries } from './chart/sanitize.js';
@@ -758,9 +761,11 @@ _resolveLiveClassifierInputs(hass: HassMain): any {
   const wxEntity = this.config.weather_entity ? hass.states?.[this.config.weather_entity] : null;
   const precipState = sensors.precipitation ? hass.states?.[sensors.precipitation] : null;
   const illuminanceState = sensors.illuminance ? hass.states?.[sensors.illuminance] : null;
+  const dewState = sensors.dew_point ? hass.states?.[sensors.dew_point] : null;
   const precipUnitRaw = precipState?.attributes?.unit_of_measurement;
   const precipUnit = typeof precipUnitRaw === 'string' ? precipUnitRaw : '';
   const precipIsRate = /\/(h|hr|hour)$/i.test(precipUnit);
+  const dewUnitRaw = dewState?.attributes?.unit_of_measurement;
 
   return {
     sensors,
@@ -768,6 +773,12 @@ _resolveLiveClassifierInputs(hass: HassMain): any {
     nowTemp: parseNumericSafe(this.temperature),
     luxNow: parseNumericSafe(illuminanceState?.state),
     precipRateNow: precipIsRate ? parseNumericSafe(precipState?.state) : null,
+    // Source units so the classifier can normalise to its canonical
+    // °C / mm before comparing against thresholds. Dew point falls back
+    // to the temperature unit (same station, same scale in practice).
+    tempUnit: this._sourceTempUnit,
+    dewUnit: typeof dewUnitRaw === 'string' ? dewUnitRaw : this._sourceTempUnit,
+    precipUnit,
     lat: hass.config?.latitude,
     lon: hass.config?.longitude,
   };
@@ -783,7 +794,7 @@ _resolveLiveClassifierInputs(hass: HassMain): any {
 // setConfig (condition_mapping changes) — see setConfig.
 // deno-lint-ignore no-explicit-any
 _pickLiveCondition(inputs: any): string | undefined {
-  const { sensors, wxState, nowTemp, luxNow, precipRateNow, lat, lon } = inputs;
+  const { sensors, wxState, nowTemp, luxNow, precipRateNow, tempUnit, dewUnit, precipUnit, lat, lon } = inputs;
   const minuteKey = Math.floor(Date.now() / 60_000);
   const conditionKey =
     nowTemp + '|' + luxNow + '|' + precipRateNow + '|' +
@@ -805,15 +816,19 @@ _pickLiveCondition(inputs: any): string | undefined {
   // precip_total here is precipRateNow — an instantaneous rate (mm/h)
   // when the sensor reports a /h unit. Use period: 'hour' so the
   // precipitation thresholds match the rate semantics, not 24 h totals.
+  // classifyDay is unit-blind — its thresholds are °C / mm / m/s. The
+  // live sensor values are raw in their native units (km/h, °F, in/h for
+  // many users), so normalise each before comparing against thresholds.
+  const nowTempC = toCelsius(nowTemp, tempUnit);
   const condition = classifyDay({
-    temp_max: nowTemp,
-    temp_min: nowTemp,
+    temp_max: nowTempC,
+    temp_min: nowTempC,
     humidity: parseNumericSafe(this.humidity),
     lux_max: luxNow,
-    precip_total: precipRateNow,
-    wind_mean: parseNumericSafe(this.windSpeed),
-    gust_max: parseNumericSafe(this.wind_gust_speed),
-    dew_point_mean: parseNumericSafe(this.dew_point),
+    precip_total: toMillimeters(precipRateNow, precipUnit),
+    wind_mean: toMetersPerSecond(parseNumericSafe(this.windSpeed), this._sourceWindUnit),
+    gust_max: toMetersPerSecond(parseNumericSafe(this.wind_gust_speed), this._sourceWindUnit),
+    dew_point_mean: toCelsius(parseNumericSafe(this.dew_point), dewUnit),
     clearsky_lux: clearskyNow,
   }, this.config.condition_mapping || {}, 'hour');
   this._liveConditionKey = conditionKey;

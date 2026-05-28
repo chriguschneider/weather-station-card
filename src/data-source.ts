@@ -21,7 +21,12 @@ import {
 import { WeatherEntityFeature, type ConditionId } from './const.js';
 import type { ForecastEntry } from './forecast-utils.js';
 import { sunshineFromLuxHistory, type LuxSample } from './sunshine-source.js';
-import { PRESSURE_CONVERSION } from './utils/unit-converters.js';
+import {
+  PRESSURE_CONVERSION,
+  toMetersPerSecond,
+  toCelsius,
+  toMillimeters,
+} from './utils/unit-converters.js';
 
 const POLL_INTERVAL_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -474,6 +479,10 @@ export class MeasuredDataSource {
       return d.getTime();
     };
 
+    const windUnit = this._sensorUnit(sensors.wind_speed) || this._sensorUnit(sensors.gust_speed);
+    const tempUnit = this._sensorUnit(sensors.temperature);
+    const dewUnit = this._sensorUnit(sensors.dew_point) || tempUnit;
+    const precipUnit = this._sensorUnit(sensors.precipitation);
     const out: ForecastEntry[] = [];
     for (let i = 1; i <= days; i++) {
       const dayStart = new Date(start);
@@ -557,18 +566,29 @@ export class MeasuredDataSource {
         uv_index: at(sensors.uv_index, 'max'),
         sunshine: sunshineRaw,
         condition: this._mapCondition({
-          temp_max: tempMax,
-          temp_min: tempMin,
+          temp_max: toCelsius(tempMax, tempUnit),
+          temp_min: toCelsius(tempMin, tempUnit),
           humidity: humidityMean,
           lux_max: luxMax,
-          precip_total: precipitation,
-          wind_mean: windMean,
-          gust_max: gustMax,
-          dew_point_mean: dewPointMean,
+          precip_total: toMillimeters(precipitation, precipUnit),
+          wind_mean: toMetersPerSecond(windMean, windUnit),
+          gust_max: toMetersPerSecond(gustMax, windUnit),
+          dew_point_mean: toCelsius(dewPointMean, dewUnit),
         }, dayOfYearFromDate(dayStart)),
       });
     }
     return out;
+  }
+
+  /** Native unit_of_measurement of a sensor entity, or undefined.
+   *  classifyDay is unit-blind (°C / mm / m/s), so the builders use this
+   *  to normalise each input to the classifier's canonical unit before
+   *  feeding it — otherwise km/h wind, °F temp, or inch precip
+   *  misclassify against the m/s / °C / mm thresholds. */
+  private _sensorUnit(eid?: string): string | undefined {
+    return eid
+      ? (this.hass?.states?.[eid]?.attributes?.unit_of_measurement as string | undefined)
+      : undefined;
   }
 
   private _mapCondition(day: ClassifyInputs, dayOfYear: number): ConditionId {
@@ -635,6 +655,10 @@ export class MeasuredDataSource {
       return Number.isFinite(v) ? v : null;
     };
 
+    const windUnit = this._sensorUnit(sensors.wind_speed) || this._sensorUnit(sensors.gust_speed);
+    const tempUnit = this._sensorUnit(sensors.temperature);
+    const dewUnit = this._sensorUnit(sensors.dew_point) || tempUnit;
+    const precipUnit = this._sensorUnit(sensors.precipitation);
     const out: ForecastEntry[] = [];
     for (let i = 1; i <= hours; i++) {
       const hourStart = new Date(start.getTime() + i * HOUR_MS);
@@ -707,14 +731,14 @@ export class MeasuredDataSource {
         humidity: humidityMean,
         uv_index: atOrLive(sensors.uv_index, 'max'),
         condition: this._mapHourCondition({
-          temp_max: tempMax,
-          temp_min: tempMin,
+          temp_max: toCelsius(tempMax, tempUnit),
+          temp_min: toCelsius(tempMin, tempUnit),
           humidity: humidityMean,
           lux_max: luxMax,
-          precip_total: precipitation,
-          wind_mean: windMean,
-          gust_max: gustMax,
-          dew_point_mean: dewPointMean,
+          precip_total: toMillimeters(precipitation, precipUnit),
+          wind_mean: toMetersPerSecond(windMean, windUnit),
+          gust_max: toMetersPerSecond(gustMax, windUnit),
+          dew_point_mean: toCelsius(dewPointMean, dewUnit),
           hourStart,
           clearsky_lux: luxFor(hourStart),
         }),

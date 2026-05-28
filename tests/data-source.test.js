@@ -148,6 +148,104 @@ describe('MeasuredDataSource._buildForecast', () => {
     expect('humidity' in entry).toBe(true);
   });
 
+  // ── #197: wind-unit normalisation before classification ───────────
+  // classifyDay's thresholds are m/s; the recorder stat is in the
+  // sensor's native unit. For km/h users (most of Europe) a moderate
+  // breeze sailed past the 24.5 m/s exceptional-gust threshold and the
+  // day misclassified as `exceptional` — whose icon is a circle with an
+  // exclamation mark, which a user reported as a "broken" icon.
+  const kmhHass = {
+    config: { latitude: 47.4 },
+    callWS: vi.fn(),
+    states: {
+      'sensor.wind': { attributes: { unit_of_measurement: 'km/h' } },
+      'sensor.gust': { attributes: { unit_of_measurement: 'km/h' } },
+    },
+  };
+
+  it('normalises a km/h breeze to m/s so it is not flagged exceptional (#197)', () => {
+    const ds = new MeasuredDataSource(kmhHass, { sensors, days: 1 });
+    const stats = {
+      'sensor.temp': [{ start: dayMs(1).date.toISOString(), max: 20, min: 10, mean: 15 }],
+      'sensor.wind': [{ start: dayMs(1).date.toISOString(), mean: 15 }], // ≈ 4.2 m/s
+      'sensor.gust': [{ start: dayMs(1).date.toISOString(), max: 31 }], // ≈ 8.6 m/s
+    };
+    const [entry] = ds._buildForecast(stats, sensors, startDay, 1);
+    expect(entry.condition).not.toBe('exceptional');
+  });
+
+  it('still flags a genuine storm-force km/h gust as exceptional (#197)', () => {
+    const ds = new MeasuredDataSource(kmhHass, { sensors, days: 1 });
+    const stats = {
+      'sensor.temp': [{ start: dayMs(1).date.toISOString(), max: 20, min: 10, mean: 15 }],
+      'sensor.gust': [{ start: dayMs(1).date.toISOString(), max: 95 }], // ≈ 26.4 m/s
+    };
+    const [entry] = ds._buildForecast(stats, sensors, startDay, 1);
+    expect(entry.condition).toBe('exceptional');
+  });
+
+  it('treats a raw gust as m/s when the sensor reports no unit (back-compat)', () => {
+    // No states → unit undefined → identity. 31 (m/s) is a real storm.
+    const ds = new MeasuredDataSource(fakeHass, { sensors, days: 1 });
+    const stats = {
+      'sensor.temp': [{ start: dayMs(1).date.toISOString(), max: 20, min: 10, mean: 15 }],
+      'sensor.gust': [{ start: dayMs(1).date.toISOString(), max: 31 }],
+    };
+    const [entry] = ds._buildForecast(stats, sensors, startDay, 1);
+    expect(entry.condition).toBe('exceptional');
+  });
+
+  it('normalises a freezing °F day to °C so precip classifies as snow (#197)', () => {
+    // 30 °F = −1.1 °C with 5 mm precip → snowy. Left raw, 30 reads as
+    // "warm" (> 3 °C ceiling) and the day misclassifies as rainy.
+    const fHass = {
+      config: { latitude: 47.4 },
+      callWS: vi.fn(),
+      states: {
+        'sensor.temp': { attributes: { unit_of_measurement: '°F' } },
+        'sensor.rain': { attributes: { unit_of_measurement: 'mm' } },
+      },
+    };
+    const ds = new MeasuredDataSource(fHass, { sensors, days: 1 });
+    const stats = {
+      'sensor.temp': [{ start: dayMs(1).date.toISOString(), max: 30, min: 25, mean: 27 }],
+      'sensor.rain': [{ start: dayMs(1).date.toISOString(), change: 5, max: 30 }],
+    };
+    const [entry] = ds._buildForecast(stats, sensors, startDay, 1);
+    expect(entry.condition).toBe('snowy');
+  });
+
+  it('the same fixture without a °F unit misclassifies as rainy (guards the conversion)', () => {
+    // No temp unit → treated as °C. 30 °C + 5 mm → rainy, not snowy.
+    const ds = new MeasuredDataSource(fakeHass, { sensors, days: 1 });
+    const stats = {
+      'sensor.temp': [{ start: dayMs(1).date.toISOString(), max: 30, min: 25, mean: 27 }],
+      'sensor.rain': [{ start: dayMs(1).date.toISOString(), change: 5, max: 30 }],
+    };
+    const [entry] = ds._buildForecast(stats, sensors, startDay, 1);
+    expect(entry.condition).toBe('rainy');
+  });
+
+  it('normalises an inch precip total to mm so heavy rain is pouring (#197)', () => {
+    // 0.5 in = 12.7 mm → pouring (≥ 10 mm). Left raw, 0.5 reads as a
+    // trace and the day misclassifies as light rainy.
+    const inHass = {
+      config: { latitude: 47.4 },
+      callWS: vi.fn(),
+      states: {
+        'sensor.temp': { attributes: { unit_of_measurement: '°C' } },
+        'sensor.rain': { attributes: { unit_of_measurement: 'in' } },
+      },
+    };
+    const ds = new MeasuredDataSource(inHass, { sensors, days: 1 });
+    const stats = {
+      'sensor.temp': [{ start: dayMs(1).date.toISOString(), max: 15, min: 10, mean: 12 }],
+      'sensor.rain': [{ start: dayMs(1).date.toISOString(), change: 0.5, max: 5 }],
+    };
+    const [entry] = ds._buildForecast(stats, sensors, startDay, 1);
+    expect(entry.condition).toBe('pouring');
+  });
+
   it("emits the recorder daily-max for today's sunshine bucket (#37 reverts the #16 substitution)", () => {
     const sensorsWithSunshine = { ...sensors, sunshine_duration: 'sensor.sun' };
     const ds = new MeasuredDataSource(fakeHass, { sensors: sensorsWithSunshine, days: 3 });
