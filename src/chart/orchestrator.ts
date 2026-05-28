@@ -129,11 +129,6 @@ export function boundaryIsSameDay(
   return da.getTime() === db.getTime();
 }
 
-interface DataLabelsCtx {
-  dataset: { data: ReadonlyArray<unknown> };
-  dataIndex: number;
-}
-
 /** Picks the lightened bar colour for forecast columns (or for forecast-only
  *  mode where every column is a forecast). The two ternary arms used to be
  *  inlined per dataset; extracting kills the nested-ternary smell and shares
@@ -227,18 +222,16 @@ interface BuildDatasetsArgs {
   showSunshine: boolean;
   sunshineFractionData: Array<number | null>;
   sunshinePerBarColor: string[];
-  chartTextColor: string | undefined;
 }
 
 /** Build the chart's datasets array. Two temperature lines + one precip
- *  bar always; an optional sunshine bar; style2 layers per-bar
- *  datalabels with today-bold font on top of the temperature lines. */
+ *  bar always; an optional sunshine bar. style2's per-point temperature
+ *  value labels are drawn by createTempLabelsPlugin, not here. */
 function buildDatasets(args: BuildDatasetsArgs): Array<Record<string, unknown>> {
   const {
     card, config, data, tempSegmentOpts,
     temp1Color, temp2Color, precipPerBarColor,
     showSunshine, sunshineFractionData, sunshinePerBarColor,
-    chartTextColor,
   } = args;
 
   // Coerce every plotted series to (number | null)[] before it reaches
@@ -280,14 +273,6 @@ function buildDatasets(args: BuildDatasetsArgs): Array<Record<string, unknown>> 
       backgroundColor: precipPerBarColor,
       barPercentage: (config.forecast.precip_bar_size as number) / 100,
       categoryPercentage: 1.0,
-      datalabels: {
-        display: () => false,
-        textAlign: 'center',
-        textBaseline: 'middle',
-        align: 'top',
-        anchor: 'start',
-        offset: -10,
-      },
     },
   ];
 
@@ -301,53 +286,10 @@ function buildDatasets(args: BuildDatasetsArgs): Array<Record<string, unknown>> 
       backgroundColor: sunshinePerBarColor,
       barPercentage: 1.0,
       categoryPercentage: 1.0,
-      datalabels: { display: () => false },
     });
   }
 
-  if (config.forecast.style === 'style2') {
-    applyStyle2DataLabels(datasets, data, config, chartTextColor, temp1Color, temp2Color);
-  }
-
   return datasets;
-}
-
-/** style2 overlays today-bold per-bar datalabels on the two temperature
- *  lines so the user reads each day's high/low directly from the line. */
-function applyStyle2DataLabels(
-  datasets: Array<Record<string, unknown>>,
-  // deno-lint-ignore no-explicit-any
-  data: any,
-  // deno-lint-ignore no-explicit-any
-  config: any,
-  chartTextColor: string | undefined,
-  temp1Color: string,
-  temp2Color: string,
-): void {
-  const todayBoldFont = (context: DataLabelsCtx) => {
-    const dt = data.dateTime[context.dataIndex];
-    const k = dt ? new Date(dt) : null;
-    if (k) k.setHours(0, 0, 0, 0);
-    const t = new Date(); t.setHours(0, 0, 0, 0);
-    const isToday = k?.getTime() === t.getTime();
-    return {
-      size: parseInt(String(config.forecast.labels_font_size)) + 1,
-      lineHeight: 0.7,
-      weight: isToday ? 'bold' : 'normal',
-    };
-  };
-  const labelFor = (color: string, align: 'top' | 'bottom') => ({
-    display: () => true,
-    formatter: (_v: unknown, context: DataLabelsCtx) => context.dataset.data[context.dataIndex] + '°',
-    align,
-    anchor: 'center',
-    backgroundColor: 'transparent',
-    borderColor: 'transparent',
-    color: chartTextColor || color,
-    font: todayBoldFont,
-  });
-  datasets[0].datalabels = labelFor(temp1Color, 'top');
-  datasets[1].datalabels = labelFor(temp2Color, 'bottom');
 }
 
 // deno-lint-ignore no-explicit-any
@@ -428,6 +370,7 @@ function buildPlugins(args: BuildPluginsArgs): ChartPlugin[] {
     tempHighColor: temp1Color,
     tempLowColor: temp2Color,
     chartTextColor,
+    roundTemp: config.forecast.round_temp === true,
   }));
 
   return plugins;
@@ -558,7 +501,6 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
     temp1Color, temp2Color,
     precipPerBarColor,
     showSunshine, sunshineFractionData, sunshinePerBarColor,
-    chartTextColor: chart_text_color,
   });
 
   const stationCount = card._stationCount || 0;
