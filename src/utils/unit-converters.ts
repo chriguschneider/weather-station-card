@@ -25,6 +25,66 @@ export const PRESSURE_CONVERSION: Record<string, number> = {
   'inHg->hPa': 1 / 33.8639,
 };
 
+/** Normalise a wind speed to metres per second for the condition
+ *  classifier, whose thresholds (`exceptional_gust_ms`,
+ *  `windy_threshold_ms`, …) are defined in m/s. The classifier itself is
+ *  unit-blind, so a source value in km/h or mph MUST be converted here
+ *  before it reaches `classifyDay` — otherwise a moderate breeze read in
+ *  km/h (e.g. 31 km/h ≈ 8.6 m/s) trips the 24.5 m/s exceptional-gust
+ *  threshold and the period misclassifies as `exceptional`.
+ *
+ *  Null / non-finite input returns null. An unknown or already-m/s unit
+ *  (including undefined, as when no source unit was resolved) passes the
+ *  value through unchanged — the m/s identity case. */
+export function toMetersPerSecond(
+  windSpeed: number | null | undefined,
+  fromUnit: string | undefined,
+): number | null {
+  if (windSpeed == null || !Number.isFinite(windSpeed)) return null;
+  if (!fromUnit || fromUnit === 'm/s') return windSpeed;
+  const factor = WIND_CONVERSION[`m/s->${fromUnit}`];
+  return factor !== undefined ? windSpeed * factor : windSpeed;
+}
+
+/** Normalise a temperature to °C for the condition classifier, whose
+ *  snow (`snow_max_c`, `snow_rain_max_c`) and fog-spread thresholds are
+ *  in °C. A °F reading left unconverted is always a larger number than
+ *  its °C value, so e.g. a freezing 30 °F (−1 °C) reads as 30 → above
+ *  the 3 °C snow ceiling → snow misclassifies as rain.
+ *
+ *  Only °F is converted; °C / undefined / unknown units pass through
+ *  unchanged. Null / non-finite input returns null. */
+export function toCelsius(
+  temp: number | null | undefined,
+  fromUnit: string | undefined,
+): number | null {
+  if (temp == null || !Number.isFinite(temp)) return null;
+  return (fromUnit === '°F' || fromUnit === 'F') ? (temp - 32) * 5 / 9 : temp;
+}
+
+/** Normalise a precipitation length — a total in mm or a mm/h rate — to
+ *  millimetres for the condition classifier, whose rain thresholds
+ *  (`rainy_threshold_mm`, `pouring_threshold_mm`, …) are in mm. Inches
+ *  left unconverted under-read by 25.4×, so heavy rain reads as drizzle
+ *  and `pouring` / `exceptional` never fire. The trailing rate suffix
+ *  (`/h`, `/hr`) is stripped before the unit check, so `in/h` converts
+ *  the same as `in`.
+ *
+ *  Only inch units (`in`, `inch`, `inches`, `"`) are converted; mm /
+ *  undefined / unknown units pass through. Null / non-finite returns
+ *  null. */
+export function toMillimeters(
+  precip: number | null | undefined,
+  fromUnit: string | undefined,
+): number | null {
+  if (precip == null || !Number.isFinite(precip)) return null;
+  if (!fromUnit) return precip;
+  const base = fromUnit.toLowerCase().split('/')[0].trim();
+  return (base === 'in' || base === 'inch' || base === 'inches' || base === '"')
+    ? precip * 25.4
+    : precip;
+}
+
 /** Beaufort scale converter — passed in by the caller because the
  *  classifier lives on the card class. Decoupling here keeps the
  *  utils module pure and dependency-free. */

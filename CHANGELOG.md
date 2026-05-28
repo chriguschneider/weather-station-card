@@ -6,6 +6,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.2] — 2026-05-28
+
+### Fixed
+
+- **Weather-condition icons no longer misread sensors that report in
+  km/h, °F or inches.** If your station reports wind in km/h,
+  temperature in °F, or rain in inches, the card could choose the wrong
+  condition icon — most visibly a warning symbol (a circle with an
+  exclamation mark) next to the temperature and on the past days, even
+  in perfectly calm, mild weather. Snowy days could also show up as
+  rain. The card now reads those units correctly, so the "now" icon and
+  the past-day icons match the real weather. Cards already using m/s, °C
+  and mm are unaffected, and there is nothing to change in your
+  configuration.
+
 ## [2.1.1] — 2026-05-28
 
 ### Fixed
