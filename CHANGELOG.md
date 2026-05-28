@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.1] — 2026-05-28
+
 ### Fixed
 
 - **Temperatures now show one decimal everywhere when rounding is off.**
