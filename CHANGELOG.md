@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.3] — 2026-05-29
+
 ### Added
 
 - **Rain can now be shown in inches.** If your rain sensor measures in
