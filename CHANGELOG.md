@@ -14,8 +14,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   millimetres. This happens automatically — nothing to set up. You can
   also force a unit either way: in the visual editor open **Units** and
   pick **Convert precipitation to** → millimetres or inches (in YAML:
-  `units: { precipitation: in }` or `mm`). Cards that already show
-  millimetres look exactly the same as before.
+  `units: { precipitation: in }` or `mm`). When you set this, the
+  precipitation amounts on the chart bars switch to the same unit too.
+  Cards that already show millimetres look exactly the same as before.
 
 ## [2.1.2] — 2026-05-28
 

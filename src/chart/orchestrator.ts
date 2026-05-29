@@ -70,6 +70,7 @@ interface OrchestratorConfig extends PluginCardConfig {
     temperature2_color?: string;
     disable_animation?: boolean;
   };
+  units?: { precipitation?: string };
   use_12hour_format?: boolean;
 }
 
@@ -308,6 +309,8 @@ interface BuildPluginsArgs {
   doubledToday: boolean;
   sunshineLabelBand: number;
   precipUnit: string;
+  precipSourceBase: string;
+  precipTargetBase: string;
   precipPerBarColor: string[];
   precipColor: string;
   showSunshineLabels: boolean;
@@ -327,7 +330,7 @@ function buildPlugins(args: BuildPluginsArgs): ChartPlugin[] {
     stationCount, forecastCount, style, dividerColor,
     textColor, backgroundColor, chartTextColor,
     isHourly, doubledToday, sunshineLabelBand,
-    precipUnit, precipPerBarColor, precipColor,
+    precipUnit, precipSourceBase, precipTargetBase, precipPerBarColor, precipColor,
     showSunshineLabels, sunshineColor, sunshinePerBarColor,
     temp1Color, temp2Color,
   } = args;
@@ -337,7 +340,8 @@ function buildPlugins(args: BuildPluginsArgs): ChartPlugin[] {
     sunshineLabelBand,
   });
   const precipLabelPlugin = createPrecipLabelPlugin({
-    config, data, precipUnit, precipPerBarColor, precipColor, textColor, backgroundColor,
+    config, data, precipUnit, precipSourceBase, precipTargetBase,
+    precipPerBarColor, precipColor, textColor, backgroundColor,
     chartTextColor,
   });
 
@@ -413,7 +417,16 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
   const tempUnit = card._hass.config.unit_system.temperature;
   const lengthUnit = card._hass.config.unit_system.length;
   const llUnits = card.ll('units') as Record<string, string>;
-  const precipUnit = lengthUnit === 'km' ? llUnits['mm'] : llUnits['in'];
+  // Chart precip values arrive in HA's system length unit (mm for
+  // metric, in for imperial). An explicit `units.precipitation` overrides
+  // the DISPLAY unit (label + per-bar value); without it the chart keeps
+  // the system unit so existing dashboards are unchanged. The bar HEIGHTS
+  // stay in the source unit (a relative visual) — only the label text is
+  // converted, in the precip-label plugin.
+  const precipSourceBase = lengthUnit === 'km' ? 'mm' : 'in';
+  const cfgPrecip = config.units?.precipitation;
+  const precipTargetBase = (cfgPrecip === 'mm' || cfgPrecip === 'in') ? cfgPrecip : precipSourceBase;
+  const precipUnit = llUnits[precipTargetBase] ?? precipTargetBase;
   const data = card.computeForecastData();
 
   // Theme tokens (background / primary-text / divider / secondary-text)
@@ -533,7 +546,7 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
     stationCount, forecastCount, style, dividerColor,
     textColor, backgroundColor, chartTextColor: chart_text_color,
     isHourly, doubledToday, sunshineLabelBand,
-    precipUnit, precipPerBarColor, precipColor,
+    precipUnit, precipSourceBase, precipTargetBase, precipPerBarColor, precipColor,
     showSunshineLabels, sunshineColor, sunshinePerBarColor,
     temp1Color, temp2Color,
   });

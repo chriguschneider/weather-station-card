@@ -16,11 +16,16 @@
 // reimplementing every chartjs-datalabels feature for temperature too.
 
 import type { ChartBarLike, ChartLike, ChartPlugin, PluginCardConfig, PluginRenderData } from './_shared.js';
+import { convertPrecipLength } from '../../utils/unit-converters.js';
 
 export interface PrecipLabelPluginOpts {
   config: PluginCardConfig;
   data: PluginRenderData;
   precipUnit: string;
+  /** Length base the chart's precip VALUES are in ('mm' | 'in'). */
+  precipSourceBase: string;
+  /** Length base to DISPLAY values in ('mm' | 'in'). */
+  precipTargetBase: string;
   precipPerBarColor: ReadonlyArray<string>;
   precipColor: string;
   textColor: string;
@@ -32,6 +37,8 @@ export function createPrecipLabelPlugin({
   config,
   data,
   precipUnit,
+  precipSourceBase,
+  precipTargetBase,
   precipPerBarColor,
   precipColor,
   textColor,
@@ -66,9 +73,16 @@ export function createPrecipLabelPlugin({
       // x-scale isn't ready.
       const xScale = chart.scales.x;
       meta.data.forEach((bar: ChartBarLike, i: number) => {
-        const value = data.precip ? data.precip[i] : null;
-        if (value == null || value <= 0) return;
-        const number = value > 9 ? `${Math.round(value)}` : value.toFixed(1);
+        const rawValue = data.precip ? data.precip[i] : null;
+        if (rawValue == null || rawValue <= 0) return;
+        // Convert the per-bar amount into the display unit. Bar heights
+        // stay in the source unit (handled by the axis); only this label
+        // text is converted. Inches need two decimals (values are ~25×
+        // smaller); mm keeps the legacy whole-number-above-9 rule.
+        const value = convertPrecipLength(rawValue, precipSourceBase, precipTargetBase);
+        let number: string;
+        if (precipTargetBase === 'in') number = value.toFixed(2);
+        else number = value > 9 ? `${Math.round(value)}` : value.toFixed(1);
 
         c.font = `${baseSize}px ${fontFamily}`;
         const numberW = c.measureText(number).width;
