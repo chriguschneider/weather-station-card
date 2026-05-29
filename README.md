@@ -203,7 +203,7 @@ user intent:
 3. **Sensoren** / Sensors — your station's sensors + past-data window
 4. **Diagramm** / Chart — time range, chart rows, appearance
 5. **Live-Anzeige** / Live panel — "now" panel + attributes row
-6. **Einheiten** / Units — pressure / wind-speed display units
+6. **Einheiten** / Units — pressure / wind-speed / precipitation display units
 7. **Aktionen** / Actions — tap, hold, and double-tap behaviour
 
 Every YAML key is documented in **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**

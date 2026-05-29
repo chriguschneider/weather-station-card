@@ -6,6 +6,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Rain can now be shown in inches.** If your rain sensor measures in
+  inches, the precipitation reading in the attributes row now shows
+  inches (for example `0.10 in/h`) instead of being labelled with
+  millimetres. This happens automatically — nothing to set up. You can
+  also force a unit either way: in the visual editor open **Units** and
+  pick **Convert precipitation to** → millimetres or inches (in YAML:
+  `units: { precipitation: in }` or `mm`). Cards that already show
+  millimetres look exactly the same as before.
+
 ## [2.1.2] — 2026-05-28
 
 ### Fixed

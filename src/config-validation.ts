@@ -48,8 +48,10 @@ const OPAQUE_OBJECT_KEYS = new Set([
 ]);
 
 // Nested units keys that are valid but absent from DEFAULTS_UNITS
-// (`speed` is merged in at runtime from the legacy top-level `speed`).
-const EXTRA_UNITS_KEYS = ['speed'] as const;
+// (`speed` is merged in at runtime from the legacy top-level `speed`;
+// `precipitation` defaults to the sensor's own unit, so it has no
+// static DEFAULTS_UNITS entry either).
+const EXTRA_UNITS_KEYS = ['speed', 'precipitation'] as const;
 
 const TOP_LEVEL_KEYS = new Set<string>([
   ...Object.keys(DEFAULTS),

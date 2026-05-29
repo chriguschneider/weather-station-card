@@ -86,6 +86,9 @@ import {
   toMetersPerSecond,
   toCelsius,
   toMillimeters,
+  isPrecipRateUnit,
+  precipBaseUnit,
+  formatPrecipDisplay,
 } from './utils/unit-converters.js';
 import { drawChartUnsafe } from './chart/orchestrator.js';
 import { sanitizeForecastEntries } from './chart/sanitize.js';
@@ -197,11 +200,16 @@ class WeatherStationCard extends LitElement {
   sunshine_duration_unit: string | undefined;
   unitSpeed: string | undefined;
   unitPressure: string | undefined;
+  unitPrecip: string | undefined;
   // Source units captured during phase 1 (sensor extraction) so phase 2
   // can build the synthesized weather stand-in without re-deriving them.
   _sourceWindUnit: string = 'm/s';
   _sourcePressureUnit: string = 'hPa';
   _sourceTempUnit: string = '°C';
+  // Precip source base unit ('mm' | 'in'), stripped of any /h suffix.
+  // The derived-rate path and the wall-clock tick read it to label and
+  // convert the rate without re-reading the sensor attribute.
+  _sourcePrecipUnit: string = 'mm';
 
   // --- Caching / live-condition memo ---
   _liveConditionKey: string | undefined;
@@ -591,14 +599,22 @@ _extractSensorReadings(hass: HassMain): void {
     || 'm/s';
   const sourcePressureUnit = attrOf(sensors.pressure, 'unit_of_measurement') || 'hPa';
   const sourceTempUnit = attrOf(sensors.temperature, 'unit_of_measurement') || '°C';
+  const sourcePrecipBase = precipBaseUnit(
+    attrOf(sensors.precipitation, 'unit_of_measurement') as string | undefined,
+  );
 
   this.unitSpeed = this.config.units.speed || sourceWindUnit;
   this.unitPressure = this.config.units.pressure || sourcePressureUnit;
+  // Default the precip display unit to the sensor's own base unit, so an
+  // inch sensor reads in/h with no YAML; an explicit units.precipitation
+  // overrides. Mirrors the source-default behaviour of unitSpeed.
+  this.unitPrecip = this.config.units.precipitation || sourcePrecipBase;
   // Stash the source units so phase 2 can build the weather stand-in
   // without re-deriving them from the sensor attributes.
   this._sourceWindUnit = sourceWindUnit as string;
   this._sourcePressureUnit = sourcePressureUnit as string;
   this._sourceTempUnit = sourceTempUnit as string;
+  this._sourcePrecipUnit = sourcePrecipBase;
 
   // Forecast-only fallback: in pure forecast mode users typically don't
   // wire station sensors, but HA's weather.* entity already exposes
@@ -626,17 +642,31 @@ _extractSensorReadings(hass: HassMain): void {
   this.wind_gust_speed = fromWxIfMissing(valueOf(sensors.gust_speed), 'wind_gust_speed');
   this.illuminance = valueOf(sensors.illuminance);
   this.precipitation = valueOf(sensors.precipitation);
-  this.precipitation_unit = (attrOf(sensors.precipitation, 'unit_of_measurement') as string | undefined) || undefined;
-  // Gate the cumulative-counter → mm/h derivation on whether the
-  // precipitation row is actually rendered. When show_precipitation
-  // is false, the row never appears, but the derivation still cost
-  // per set hass: a buffer-prune + localStorage saveBuffer write +
-  // a 30-second wall-clock recompute interval. Skipping it for a
-  // disabled row drops those costs entirely. The raw sensor state
-  // is still written above, so re-enabling the row hot-loads from
-  // the existing localStorage buffer on the next set hass.
+  const rawPrecipUnit = (attrOf(sensors.precipitation, 'unit_of_measurement') as string | undefined) || undefined;
+  this.precipitation_unit = rawPrecipUnit;
+  // Two precip shapes, both gated on whether the row is actually
+  // rendered (show_precipitation). When the row is hidden the
+  // derivation alone would still cost a buffer-prune + localStorage
+  // write + a 30-second recompute interval per set hass, so skipping
+  // it entirely matters; the raw state is written above either way, so
+  // re-enabling hot-loads from the existing localStorage buffer.
+  //
+  //   - Native rate sensor (unit ends in /h): convert the live value to
+  //     the configured display unit (mm ↔ in) and relabel.
+  //   - Cumulative counter (everything else): derive a rate from the
+  //     sliding-anchor buffer; the derivation handles display
+  //     conversion internally.
   if (this.config.show_precipitation !== false) {
-    this._maybeDerivePrecipRate(hass);
+    if (isPrecipRateUnit(rawPrecipUnit)) {
+      const num = parseNumericSafe(this.precipitation);
+      if (num != null) {
+        const { value, unit } = formatPrecipDisplay(num, rawPrecipUnit, this.unitPrecip);
+        this.precipitation = value;
+        this.precipitation_unit = unit;
+      }
+    } else {
+      this._maybeDerivePrecipRate(hass);
+    }
   }
   this.sunshine_duration = valueOf(sensors.sunshine_duration);
   this.sunshine_duration_unit = (attrOf(sensors.sunshine_duration, 'unit_of_measurement') as string | undefined) || undefined;
@@ -711,14 +741,16 @@ _recomputePrecipDisplay(entityId: string): boolean {
   this._precipBuffer = pruneOlderThan(this._precipBuffer, DEFAULT_MAX_AGE_MS);
   saveBuffer(entityId, this._precipBuffer);
 
+  // The buffer holds raw sensor values, so the rate is in the source
+  // base unit per hour (in/h for an inch counter). Convert + label it
+  // for the configured display unit; precision is unit-aware.
   const { rate } = computeRate(this._precipBuffer, Date.now());
-  // Drop the decimal once we're above 10 mm/h — a cell showing
-  // `339 mm/h` reads cleaner than `339.0`, and at that intensity
-  // the tenths digit is noise anyway.
-  const nextValue = rate >= 10 ? rate.toFixed(0) : rate.toFixed(1);
-  const changed = this.precipitation !== nextValue || this.precipitation_unit !== 'mm/h';
-  this.precipitation = nextValue;
-  this.precipitation_unit = 'mm/h';
+  const { value, unit } = formatPrecipDisplay(
+    rate, `${this._sourcePrecipUnit}/h`, this.unitPrecip,
+  );
+  const changed = this.precipitation !== value || this.precipitation_unit !== unit;
+  this.precipitation = value;
+  this.precipitation_unit = unit;
   return changed;
 }
 
@@ -2674,13 +2706,15 @@ _climateRow_dewpoint(show: boolean, dew_point: unknown) {
 _climateRow_precip(show: boolean, hasValue: boolean, precipitation: unknown, precipitation_unit: unknown) {
   if (!show || !hasValue) return html``;
   const unitSuffix = precipitation_unit ? ' ' + precipitation_unit : '';
-  // When the value is a mm/h rate (either a native rate sensor or the
-  // cumulative→rate derivation in precip-rate.ts), map intensity to a
-  // matching icon. Other units (probability `%`, raw `mm`, …) keep the
-  // legacy rainy icon since their numeric magnitude isn't a rate.
-  const isRate = precipitation_unit === 'mm/h';
-  const rate = isRate ? parseFloat(String(precipitation)) : NaN;
-  const icon = isRate && Number.isFinite(rate) ? precipIcon(rate) : 'hass:weather-rainy';
+  // When the value is a rate (a native rate sensor or the cumulative→
+  // rate derivation in precip-rate.ts, in either mm/h or in/h), map
+  // intensity to a matching icon. precipIcon's thresholds are in mm/h,
+  // so normalise an in/h rate first. Other units (probability `%`, raw
+  // `mm`, …) keep the legacy rainy icon — their magnitude isn't a rate.
+  const unitStr = precipitation_unit as string | undefined;
+  const isRate = isPrecipRateUnit(unitStr);
+  const rateMm = isRate ? toMillimeters(parseFloat(String(precipitation)), unitStr) : null;
+  const icon = rateMm != null && Number.isFinite(rateMm) ? precipIcon(rateMm) : 'hass:weather-rainy';
   return html`<ha-icon icon="${icon}"></ha-icon> ${precipitation}${unitSuffix}<br>`;
 }
 
@@ -2823,11 +2857,11 @@ renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, la
   // All live-block sub-toggles default to ON (opt-out): once the
   // master show_attributes is enabled, every available data point
   // appears unless explicitly turned off in YAML / editor.
-  // Display the configured precipitation sensor's value as-is with
-  // its native unit. For users who want a live mm/h rate from a
-  // cumulative sensor: configure a Derivative helper in HA (see
-  // GitHub issue) and wire its output sensor here. Card-side
-  // auto-derivation was tried and removed — fragile, see issue.
+  // Precipitation display: a native rate sensor is converted to the
+  // configured display unit in `set hass`; a cumulative counter is
+  // turned into a live rate by `_maybeDerivePrecipRate`. The display
+  // unit (mm | in) defaults to the sensor's own unit and can be
+  // overridden via `units.precipitation`.
   // Site lat/lon for the sun-strength row's clear-sky reference. Pulled
   // from `hass.config` (Home Assistant's configured location) rather
   // than the card config — chrigu's setup wires it once and the live

@@ -85,6 +85,63 @@ export function toMillimeters(
     : precip;
 }
 
+/** True when the unit denotes a precipitation RATE (ends in `/h`,
+ *  `/hr`, `/hour`) rather than an accumulated total. */
+export function isPrecipRateUnit(unit: string | undefined): boolean {
+  return !!unit && /\/(h|hr|hour)$/i.test(unit);
+}
+
+/** Reduce a precipitation unit to its canonical length base. Strips a
+ *  trailing rate suffix and normalises every inch spelling to `in`;
+ *  `mm/h` → `mm`, `IN/H` → `in`, `inch` → `in`, `"` → `in`. Unknown
+ *  units (e.g. `%`) pass through lower-cased so the caller can detect
+ *  the non-mm/in case and skip conversion. Undefined → `mm`. */
+export function precipBaseUnit(unit: string | undefined): string {
+  if (!unit) return 'mm';
+  const base = unit.toLowerCase().split('/')[0].trim();
+  return (base === 'in' || base === 'inch' || base === 'inches' || base === '"')
+    ? 'in'
+    : base;
+}
+
+/** Convert a precipitation length (total or rate — the factor is the
+ *  same, the caller owns the `/h` label) between mm and in. Same base
+ *  or any non-mm/in base passes through unchanged. */
+export function convertPrecipLength(value: number, fromBase: string, toBase: string): number {
+  if (!Number.isFinite(value) || fromBase === toBase) return value;
+  if (fromBase === 'in' && toBase === 'mm') return value * 25.4;
+  if (fromBase === 'mm' && toBase === 'in') return value / 25.4;
+  return value;
+}
+
+/** Format a precipitation value for the live attributes row in the
+ *  configured display unit. `sourceUnit` is the sensor's native unit
+ *  (or the derived-rate's source unit, e.g. `mm/h` / `in/h`);
+ *  `targetBase` is the user's chosen display base (`mm` | `in`) and
+ *  falls back to the source base when unset or not mm/in.
+ *
+ *  Inch values are ~25× smaller than their mm equivalent, so they get
+ *  two decimals; mm keeps the legacy precision (drop the decimal above
+ *  10, so a `339 mm/h` cell reads cleaner than `339.0`). The `/h`
+ *  suffix is preserved for rates. */
+export function formatPrecipDisplay(
+  rawValue: number,
+  sourceUnit: string | undefined,
+  targetBase: string | undefined,
+): { value: string; unit: string } {
+  const isRate = isPrecipRateUnit(sourceUnit);
+  const sourceBase = precipBaseUnit(sourceUnit);
+  const target = (targetBase === 'mm' || targetBase === 'in') ? targetBase : sourceBase;
+  const converted = convertPrecipLength(rawValue, sourceBase, target);
+  let decimals: number;
+  if (target === 'in') decimals = 2;
+  else decimals = converted >= 10 ? 0 : 1;
+  return {
+    value: converted.toFixed(decimals),
+    unit: isRate ? `${target}/h` : target,
+  };
+}
+
 /** Beaufort scale converter — passed in by the caller because the
  *  classifier lives on the card class. Decoupling here keeps the
  *  utils module pure and dependency-free. */
