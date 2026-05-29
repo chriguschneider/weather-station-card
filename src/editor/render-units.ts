@@ -11,11 +11,14 @@ const UNITS_SCHEMA = [
     selector: { select: { mode: 'dropdown', options: ['hPa', 'mmHg', 'inHg'] } } },
   { name: 'speed',
     selector: { select: { mode: 'dropdown', options: ['km/h', 'm/s', 'mph', 'Bft'] } } },
+  { name: 'precipitation',
+    selector: { select: { mode: 'dropdown', options: ['mm', 'in'] } } },
 ];
 
 const UNIT_LABELS: Record<string, string> = {
   pressure: 'Convert pressure to',
   speed: 'Convert wind speed to',
+  precipitation: 'Convert precipitation to',
 };
 
 export function renderUnitsSection(editor: EditorLike, ctx: EditorContext): TemplateResult {

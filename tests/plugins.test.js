@@ -561,6 +561,21 @@ describe('createPrecipLabelPlugin', () => {
     expect(chart.ctx.fillText).toHaveBeenCalledWith('0.5', expect.any(Number), expect.any(Number));
   });
 
+  it('converts mm values to inches (2 decimals) and labels "in" for an inch target', () => {
+    const p = createPrecipLabelPlugin({
+      config: baseConfig, data: { precip: [25.4, 2.54] },
+      precipUnit: 'in', precipSourceBase: 'mm', precipTargetBase: 'in',
+      precipPerBarColor: ['#0066cc', '#0066cc'],
+      precipColor: '#0066cc', textColor: '#000', backgroundColor: '#fff',
+    });
+    const chart = precipMockChart({ barCount: 2 });
+    p.afterDatasetsDraw(chart);
+    // 25.4 mm = 1.00 in, 2.54 mm = 0.10 in.
+    expect(chart.ctx.fillText).toHaveBeenCalledWith('1.00', expect.any(Number), expect.any(Number));
+    expect(chart.ctx.fillText).toHaveBeenCalledWith('0.10', expect.any(Number), expect.any(Number));
+    expect(chart.ctx.fillText).toHaveBeenCalledWith('in', expect.any(Number), expect.any(Number));
+  });
+
   it('falls back to bar.x when xScale.getPixelForTick is missing', () => {
     const p = createPrecipLabelPlugin({
       config: baseConfig, data: { precip: [1.5] },

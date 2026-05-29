@@ -18,6 +18,10 @@ import {
   toMetersPerSecond,
   toCelsius,
   toMillimeters,
+  isPrecipRateUnit,
+  precipBaseUnit,
+  convertPrecipLength,
+  formatPrecipDisplay,
 } from '../src/utils/unit-converters.js';
 
 // ── WIND_CONVERSION / PRESSURE_CONVERSION tables ────────────────────
@@ -293,5 +297,110 @@ describe('formatSunshineHours', () => {
 
   it('treats undefined unit as hours', () => {
     expect(formatSunshineHours(2.5, undefined)).toBe(2.5);
+  });
+});
+
+// ── isPrecipRateUnit ────────────────────────────────────────────────
+
+describe('isPrecipRateUnit', () => {
+  it('detects /h, /hr, /hour suffixes (case-insensitive)', () => {
+    expect(isPrecipRateUnit('mm/h')).toBe(true);
+    expect(isPrecipRateUnit('in/h')).toBe(true);
+    expect(isPrecipRateUnit('mm/hr')).toBe(true);
+    expect(isPrecipRateUnit('IN/HOUR')).toBe(true);
+  });
+
+  it('returns false for totals and missing units', () => {
+    expect(isPrecipRateUnit('mm')).toBe(false);
+    expect(isPrecipRateUnit('in')).toBe(false);
+    expect(isPrecipRateUnit('%')).toBe(false);
+    expect(isPrecipRateUnit(undefined)).toBe(false);
+    expect(isPrecipRateUnit('')).toBe(false);
+  });
+});
+
+// ── precipBaseUnit ──────────────────────────────────────────────────
+
+describe('precipBaseUnit', () => {
+  it('strips the rate suffix', () => {
+    expect(precipBaseUnit('mm/h')).toBe('mm');
+    expect(precipBaseUnit('in/h')).toBe('in');
+  });
+
+  it('normalises every inch spelling to "in"', () => {
+    expect(precipBaseUnit('in')).toBe('in');
+    expect(precipBaseUnit('inch')).toBe('in');
+    expect(precipBaseUnit('inches')).toBe('in');
+    expect(precipBaseUnit('"')).toBe('in');
+    expect(precipBaseUnit('IN')).toBe('in');
+  });
+
+  it('defaults undefined to mm and passes unknown units through', () => {
+    expect(precipBaseUnit(undefined)).toBe('mm');
+    expect(precipBaseUnit('mm')).toBe('mm');
+    expect(precipBaseUnit('%')).toBe('%');
+  });
+});
+
+// ── convertPrecipLength ─────────────────────────────────────────────
+
+describe('convertPrecipLength', () => {
+  it('converts in → mm with the 25.4 factor', () => {
+    expect(convertPrecipLength(1, 'in', 'mm')).toBeCloseTo(25.4, 6);
+  });
+
+  it('converts mm → in', () => {
+    expect(convertPrecipLength(25.4, 'mm', 'in')).toBeCloseTo(1, 6);
+  });
+
+  it('round-trips mm → in → mm', () => {
+    const back = convertPrecipLength(convertPrecipLength(12.7, 'mm', 'in'), 'in', 'mm');
+    expect(back).toBeCloseTo(12.7, 6);
+  });
+
+  it('passes same-base and unknown-base values through unchanged', () => {
+    expect(convertPrecipLength(5, 'mm', 'mm')).toBe(5);
+    expect(convertPrecipLength(5, '%', 'mm')).toBe(5);
+  });
+
+  it('returns non-finite input unchanged', () => {
+    expect(convertPrecipLength(NaN, 'in', 'mm')).toBeNaN();
+  });
+});
+
+// ── formatPrecipDisplay ─────────────────────────────────────────────
+
+describe('formatPrecipDisplay', () => {
+  it('keeps a mm rate in mm with legacy precision (1 decimal under 10)', () => {
+    expect(formatPrecipDisplay(2.5, 'mm/h', 'mm')).toEqual({ value: '2.5', unit: 'mm/h' });
+  });
+
+  it('drops the decimal for a mm rate of 10 or more', () => {
+    expect(formatPrecipDisplay(339.2, 'mm/h', 'mm')).toEqual({ value: '339', unit: 'mm/h' });
+  });
+
+  it('keeps an inch rate in in/h with two decimals', () => {
+    // 0.1 in/h light rain stays meaningful at 2 decimals.
+    expect(formatPrecipDisplay(0.1, 'in/h', 'in')).toEqual({ value: '0.10', unit: 'in/h' });
+  });
+
+  it('converts an inch rate to mm/h when mm is the target', () => {
+    // 0.1 in/h = 2.54 mm/h.
+    expect(formatPrecipDisplay(0.1, 'in/h', 'mm')).toEqual({ value: '2.5', unit: 'mm/h' });
+  });
+
+  it('converts a mm rate to in/h when in is the target', () => {
+    // 25.4 mm/h = 1.00 in/h.
+    expect(formatPrecipDisplay(25.4, 'mm/h', 'in')).toEqual({ value: '1.00', unit: 'in/h' });
+  });
+
+  it('falls back to the source base when target is unset or not mm/in', () => {
+    expect(formatPrecipDisplay(0.1, 'in/h', undefined)).toEqual({ value: '0.10', unit: 'in/h' });
+    expect(formatPrecipDisplay(2.5, 'mm/h', 'parsec')).toEqual({ value: '2.5', unit: 'mm/h' });
+  });
+
+  it('labels a total (non-rate) without the /h suffix', () => {
+    expect(formatPrecipDisplay(12.7, 'mm', 'mm')).toEqual({ value: '13', unit: 'mm' });
+    expect(formatPrecipDisplay(0.5, 'in', 'in')).toEqual({ value: '0.50', unit: 'in' });
   });
 });

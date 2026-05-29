@@ -163,7 +163,7 @@ matching attribute on `weather_entity`)
 | `show_dew_point` | bool | `false` | Dew-point attribute (opt-in). |
 | `show_uv_index` | bool | opt-out (`true` when value present) | UV index attribute. |
 | `show_illuminance` | bool | `false` | Illuminance attribute (opt-in, requires `sensors.illuminance`). |
-| `show_precipitation` | bool | `false` | Precipitation attribute (opt-in, requires `sensors.precipitation`). Shows the sensor's raw value with its native unit (cumulative `mm` or rate `mm/h`); see [SENSORS.md → Setting up a precipitation sensor](SENSORS.md#setting-up-a-precipitation-sensor) for live-rate guidance. |
+| `show_precipitation` | bool | `false` | Precipitation attribute (opt-in, requires `sensors.precipitation`). A rate sensor shows its live rate; a cumulative counter is turned into a live rate. The display unit follows the sensor's own unit (`mm`/`mm/h` or `in`/`in/h`) and can be overridden via [`units.precipitation`](#units). See [SENSORS.md → Setting up a precipitation sensor](SENSORS.md#setting-up-a-precipitation-sensor) for live-rate guidance. |
 | `show_sunshine_duration` | bool | `false` | Sunshine-duration attribute (opt-in, requires `sensors.sunshine_duration`). |
 | `show_wind_direction` | bool | opt-out (`true` when value present) | Wind-direction arrow. |
 | `show_wind_speed` | bool | opt-out (`true` when value present) | Wind-speed value. |
@@ -229,6 +229,7 @@ expands user-supplied `var(...)` exactly as before.
 | --- | --- | --- |
 | `units.pressure` | `'hPa' \| 'mmHg' \| 'inHg'` | Display unit; auto-converts from the sensor's native unit. |
 | `units.speed` | `'m/s' \| 'km/h' \| 'mph' \| 'Bft'` | Display unit; auto-converts. |
+| `units.precipitation` | `'mm' \| 'in'` | Display unit for the precipitation attribute; auto-converts (mm ↔ in) for both rate sensors and cumulative-counter-derived rates. Defaults to the sensor's own unit, so an inch sensor reads `in` / `in/h` with no config. |
 
 ## Advanced
 

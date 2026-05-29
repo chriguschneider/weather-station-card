@@ -62,6 +62,11 @@ describe('validateConfig — clean configs pass', () => {
     expect(validateConfig(cfg)).toEqual([]);
   });
 
+  it('accepts units.precipitation (no static DEFAULTS_UNITS entry)', () => {
+    expect(validateConfig({ ...validBaseConfig(), units: { precipitation: 'in' } })).toEqual([]);
+    expect(validateConfig({ ...validBaseConfig(), units: { precipitation: 'mm' } })).toEqual([]);
+  });
+
   it('accepts station-only mode config', () => {
     const cfg = {
       show_station: true,
