@@ -6,6 +6,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Rain bars now show how much rain is forecast.** On the "today" view,
+  once heavier rain was expected the bars stopped growing past a certain
+  point — so a downpour and a moderate shower could end up the same
+  height, and the bars no longer told you which hours were the wettest.
+  The bars now scale to the rainiest period on screen, so a taller bar
+  always means more rain. Light-rain days look the same as before — a
+  drizzle still shows as a small bar.
+
 ## [2.1.3] — 2026-05-29
 
 ### Added
