@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.4] — 2026-05-31
+
 ### Fixed
 
 - **Rain bars now show how much rain is forecast.** On the "today" view,
