@@ -81,7 +81,17 @@ jobs:
             exit 0
           fi
           git commit -m "chore: update e2e baselines from CI ($REF_NAME run $RUN_ID)"
-          # Race-resistant push: master may have advanced while the
+          # The "Build bundle" and "Install dependencies" steps rebuild
+          # dist/ and can re-touch package-lock.json, leaving tracked
+          # working-tree modifications that are NOT part of the baseline
+          # commit. `git pull --rebase` refuses to run with a dirty tree
+          # ("cannot pull with rebase: You have unstaged changes"), so
+          # discard everything except the just-committed snapshots first.
+          # We intentionally do NOT commit the CI-rebuilt dist here — the
+          # branch already carries the canonical bundle from the release
+          # commit; this workflow only needs dist to render screenshots.
+          git checkout -- .
+          # Race-resistant push: the branch may have advanced while the
           # workflow was running (it ran for ~2 min, plenty of room).
           # Rebase onto remote first; the only changes we have are the
           # baseline PNGs which never conflict with code changes.

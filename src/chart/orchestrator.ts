@@ -160,12 +160,34 @@ interface SegmentHelpers {
   };
 }
 
-/** Precipitation y-axis ceiling. Hourly bars rarely exceed a few mm/h,
- *  daily totals up to ~20 mm. Imperial units use a fixed 1 inch ceiling
- *  for both. */
-function computePrecipMax(isHourlyish: boolean, lengthUnit: string): number {
-  if (isHourlyish) return lengthUnit === 'km' ? 4 : 1;
-  return lengthUnit === 'km' ? 20 : 1;
+/** Precipitation y-axis ceiling.
+ *
+ *  The fixed per-mode value acts as a FLOOR, not a hard cap: it keeps a
+ *  light-drizzle day from blowing the axis up so a 0.3 mm bar looks like
+ *  a downpour. But the ceiling rises to the tallest actual bucket when
+ *  that exceeds the floor, so heavy precipitation scales proportionally
+ *  instead of clipping flat at the top.
+ *
+ *  Why a floor at all: 'today' sums precip into 3-hour buckets
+ *  (aggregateThreeHour), so a wet afternoon easily clears the old fixed
+ *  4 mm cap — two heavy buckets (e.g. 10 mm and 4.7 mm) both pinned to
+ *  full height and read as equally tall, which is exactly the bug this
+ *  fixes. Daily totals likewise overrun the 20 mm floor on a stormy day.
+ *
+ *  Floors: hourly/today 4 mm (metric) / 1 in; daily 20 mm / 1 in. */
+export function computePrecipMax(
+  isHourlyish: boolean,
+  lengthUnit: string,
+  precip: ReadonlyArray<number | null | undefined> = [],
+): number {
+  const floor = isHourlyish
+    ? (lengthUnit === 'km' ? 4 : 1)
+    : (lengthUnit === 'km' ? 20 : 1);
+  let dataMax = 0;
+  for (const v of precip) {
+    if (typeof v === 'number' && Number.isFinite(v) && v > dataMax) dataMax = v;
+  }
+  return Math.max(floor, dataMax);
 }
 
 /** uPlot has no equivalent of Chart.js's global defaults — series
@@ -459,7 +481,7 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
   // 'today' is hourly granularity (per-hour bars), same precip scale
   // as 'hourly'. 'daily' aggregates over the full day, scale is wider.
   const isHourlyish = config.forecast.type === 'hourly' || config.forecast.type === 'today';
-  const precipMax = computePrecipMax(isHourlyish, lengthUnit);
+  const precipMax = computePrecipMax(isHourlyish, lengthUnit, data.precip);
 
   applyChartDefaults(textColor, dividerColor);
 
