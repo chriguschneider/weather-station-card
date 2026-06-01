@@ -6,6 +6,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.5] — 2026-06-01
+
+### Fixed
+
+- **The current day no longer goes missing from the daily forecast right
+  after midnight.** In the first hour or so of a new day — before your
+  weather station has recorded a full hour for it — today's column could
+  end up with no temperature, leaving a gap between the past days and the
+  forecast. The card now uses your station's live temperature reading for
+  today, so the current day always shows a measured temperature and the
+  chart line stays connected. As the day goes on and more is recorded,
+  today's high and low fill in as usual. Nothing to change in your
+  configuration.
+
 ## [2.1.4] — 2026-05-31
 
 ### Fixed

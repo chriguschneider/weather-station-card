@@ -489,6 +489,9 @@ export class MeasuredDataSource {
       dayStart.setDate(start.getDate() + i);
       const dayKey = dayMs(dayStart);
       const prevKey = dayKey - DAY_MS;
+      // Today is always the LAST bucket in the daily window (the caller
+      // sizes start so start+days lands on today).
+      const isToday = i === days;
 
       const at = (eid: string | undefined, field: keyof StatBucket): number | null => {
         if (!eid) return null;
@@ -500,8 +503,25 @@ export class MeasuredDataSource {
         return v === undefined ? null : (v as number | null);
       };
 
-      const tempMax = at(sensors.temperature, 'max');
-      const tempMin = at(sensors.temperature, 'min');
+      let tempMax = at(sensors.temperature, 'max');
+      let tempMin = at(sensors.temperature, 'min');
+      // Fold the live reading into today's running high/low so the
+      // current day always carries a measured temperature point. Today's
+      // daily statistic is rolled up from COMPLETED hourly statistics, so
+      // it lags real-time by up to an hour and is empty entirely in the
+      // first hour after local midnight. When the bucket is still empty
+      // both collapse to the live value (a single anchor); once completed
+      // hours exist, max()/min() keep the recorded extremes and only
+      // stretch the range to the live value. Without this the today column
+      // goes null, the solid line stops at yesterday, and the de-overlap
+      // in main.ts strands today on the forecast side — the visible gap.
+      if (isToday) {
+        const live = this._liveNumber(sensors.temperature);
+        if (live != null) {
+          tempMax = tempMax == null ? live : Math.max(tempMax, live);
+          tempMin = tempMin == null ? live : Math.min(tempMin, live);
+        }
+      }
       const humidityMean = at(sensors.humidity, 'mean');
       const pressureMean = at(sensors.pressure, 'mean');
       const windMean = at(sensors.wind_speed, 'mean');
@@ -591,6 +611,19 @@ export class MeasuredDataSource {
       : undefined;
   }
 
+  /** Entity's current numeric state, or null when missing / non-finite.
+   *  Used to live-fill the in-progress bucket the recorder hasn't
+   *  finalized yet — today's daily column and the current hourly bucket.
+   *  It's the same value the dashboard's "now" panel shows, so the
+   *  fallback is both correct and consistent UX. */
+  private _liveNumber(eid?: string): number | null {
+    if (!eid || !this.hass?.states) return null;
+    const s = this.hass.states[eid];
+    if (!s) return null;
+    const v = parseFloat(s.state);
+    return Number.isFinite(v) ? v : null;
+  }
+
   private _mapCondition(day: ClassifyInputs, dayOfYear: number): ConditionId {
     const lat = this.hass?.config ? this.hass.config.latitude : null;
     const clearsky_lux = lat != null
@@ -642,19 +675,6 @@ export class MeasuredDataSource {
       return d.getTime();
     };
 
-    // Recorder hourly buckets are only finalized after the hour ends, so
-    // the current (in-progress) hour typically has null fields. For the
-    // last entry we fall back to the entity's live state — which is what
-    // the dashboard's "now" panel shows anyway, so it's both correct and
-    // consistent UX.
-    const liveOf = (eid: string | undefined): number | null => {
-      if (!eid || !this.hass?.states) return null;
-      const s = this.hass.states[eid];
-      if (!s) return null;
-      const v = parseFloat(s.state);
-      return Number.isFinite(v) ? v : null;
-    };
-
     const windUnit = this._sensorUnit(sensors.wind_speed) || this._sensorUnit(sensors.gust_speed);
     const tempUnit = this._sensorUnit(sensors.temperature);
     const dewUnit = this._sensorUnit(sensors.dew_point) || tempUnit;
@@ -682,7 +702,7 @@ export class MeasuredDataSource {
       const atOrLive = (eid: string | undefined, field: keyof StatBucket): number | null => {
         const v = at(eid, field);
         if (v != null || !isLastHour) return v;
-        return liveOf(eid);
+        return this._liveNumber(eid);
       };
 
       const tempMean = atOrLive(sensors.temperature, 'mean');
@@ -711,7 +731,7 @@ export class MeasuredDataSource {
         // bucketPrecipitation semantics: treat the entity's live state
         // as a synthetic "current.max" for the in-progress hour and
         // diff against the previous hour's recorded max.
-        const live = liveOf(sensors.precipitation);
+        const live = this._liveNumber(sensors.precipitation);
         const map = byHour[sensors.precipitation];
         const prev = map ? map.get(prevKey) : null;
         if (live != null && prev?.max != null) {
