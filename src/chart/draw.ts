@@ -83,6 +83,20 @@ export interface UplotChart {
       hidden?: boolean;
     }>;
   };
+  /** The render-data object the label plugins close over — the SAME
+   *  reference drawChartUnsafe hands to both buildPlugins() and this
+   *  builder. The value-printing plugins (precip / temp / sunshine /
+   *  daily-tick) read their numbers from it LAZILY at draw time, so
+   *  refreshing its fields in place re-prints fresh values on the next
+   *  draw. updateChart() in main.ts mutates this during an in-place
+   *  data update; without it the bars and lines move (uPlot owns those)
+   *  but the printed numbers stay frozen — the "bar grew but the mm
+   *  didn't" bug on always-on tablets that only ever hit updateChart()
+   *  and never a full destroy+rebuild. */
+  renderData: PluginRenderData & {
+    tempHigh: ReadonlyArray<number | null | undefined>;
+    tempLow: ReadonlyArray<number | null | undefined>;
+  };
   update(): void;
   reset(): void;
   destroy(): void;
@@ -645,6 +659,9 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
   const instance: UplotChart = {
     uplot,
     data: dataBag,
+    // Share the plugins' render-data object by reference (see the
+    // interface doc) so main.ts can refresh its fields in place.
+    renderData: data,
     update(): void {
       // dataBag.datasets is the original chart.js-shaped dataset list
       // (one entry per logical dataset). toAlignedData re-splits line
