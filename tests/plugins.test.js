@@ -482,6 +482,22 @@ describe('createSunshineLabelPlugin', () => {
     p.afterDraw(chart);
     expect(chart.ctx.strokeStyle).toBe('rgba(1, 2, 3, 1.0)');
   });
+
+  it('re-reads the shared data object on each draw (in-place update contract)', () => {
+    // Same lazy-read contract as precip: updateChart refreshes the
+    // shared render-data in place, and a draw afterwards must print the
+    // new hours. Guards against a factory-time snapshot of data.sunshine.
+    const data = { sunshine: [7], dayLength: [13] };
+    const p = createSunshineLabelPlugin({
+      config: baseConfig, data,
+      textColor: '#000', backgroundColor: '#fff', bandHeight: 18,
+    });
+    p.afterDraw(sunshineMockChart({ tickCount: 1 }));
+    data.sunshine = [2.5];
+    const chart2 = sunshineMockChart({ tickCount: 1 });
+    p.afterDraw(chart2);
+    expect(chart2.ctx.fillText).toHaveBeenCalledWith('2.5h', expect.any(Number), expect.any(Number));
+  });
 });
 
 describe('createPrecipLabelPlugin', () => {
@@ -621,5 +637,25 @@ describe('createPrecipLabelPlugin', () => {
     const chart = precipMockChart({ barCount: 1 });
     p.afterDatasetsDraw(chart);
     expect(chart.ctx.fillStyle).toBe('#custom');
+  });
+
+  it('re-reads the shared data object on each draw (in-place update contract)', () => {
+    // The whole "bar grew but the mm didn't" fix relies on the plugin
+    // reading data.precip LAZILY at draw time, not snapshotting it at
+    // creation. updateChart refreshes that shared object's fields in
+    // place; a draw afterwards must print the new value. If someone
+    // ever destructures `precip` at factory time, this guard fails.
+    const data = { precip: [1.2] };
+    const p = createPrecipLabelPlugin({
+      config: baseConfig, data,
+      precipUnit: 'mm', precipPerBarColor: ['#0066cc'], precipColor: '#0066cc',
+      textColor: '#000', backgroundColor: '#fff',
+    });
+    p.afterDatasetsDraw(precipMockChart({ barCount: 1 }));
+    // Simulate updateChart mutating the shared render-data in place.
+    data.precip = [4.7];
+    const chart2 = precipMockChart({ barCount: 1 });
+    p.afterDatasetsDraw(chart2);
+    expect(chart2.ctx.fillText).toHaveBeenCalledWith('4.7', expect.any(Number), expect.any(Number));
   });
 });

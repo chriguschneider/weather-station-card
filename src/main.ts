@@ -2039,6 +2039,23 @@ updateChart({ forecasts, forecastChart } = this) {
     if (forecastChart.data.datasets[3]) {
       forecastChart.data.datasets[3].data = sunshineFractions(data.sunshine, data.dayLength);
     }
+    // The value-printing label plugins (precip / temp / sunshine /
+    // daily-tick) read their numbers from a render-data object captured
+    // by reference at chart-build time, NOT from the datasets above.
+    // Updating only the datasets redraws the bar heights and line
+    // positions but leaves the printed numbers frozen — on always-on
+    // tablets that only ever hit this in-place path (never a full
+    // rebuild) the rain bar grows while the mm label stays stuck.
+    // Refresh that shared object's fields in place so the plugins
+    // re-print fresh values on the redraw triggered below.
+    const rd = forecastChart.renderData;
+    if (rd) {
+      rd.dateTime = data.dateTime;
+      rd.precip = data.precip;
+      rd.tempHigh = data.tempHigh;
+      rd.tempLow = data.tempLow;
+      rd.sunshine = data.sunshine;
+    }
     forecastChart.update();
   }
 }

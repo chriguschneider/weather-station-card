@@ -6,6 +6,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.6] — 2026-06-04
+
+### Fixed
+
+- **Forecast numbers now keep up with the bars on always-on dashboards.**
+  On wall-mounted tablets and other screens that stay on the card for a
+  long time, a rain bar could grow taller while the millimetre figure
+  printed on it stayed stuck at an older, smaller value — and the same
+  could happen to the temperature and sunshine figures. The numbers now
+  refresh together with the bars on every update, so the value you read
+  always matches the bar you see. Nothing to change in your
+  configuration.
+
 ## [2.1.5] — 2026-06-01
 
 ### Fixed
