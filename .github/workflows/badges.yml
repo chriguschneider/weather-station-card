@@ -1,13 +1,14 @@
 name: Badge metrics
 
-# Self-hosts the "downloads" and "stars" numbers so the README badges
-# don't depend on shields.io's shared GitHub-API token pool. That pool
-# is regularly exhausted ("Unable to select next GitHub token from
-# pool"), and GitHub's Camo image proxy then caches the broken SVG, so
-# the badges stay broken long after shields recovers.
+# Self-hosts the README's GitHub-metric badges (downloads, stars,
+# release, last-commit) so they don't depend on shields.io's shared
+# GitHub-API token pool. That pool is regularly exhausted ("Unable to
+# select next GitHub token from pool"), and GitHub's Camo image proxy
+# then caches the broken SVG, so the badges stay broken long after
+# shields recovers.
 #
-# Instead we compute the numbers here with this repo's own GITHUB_TOKEN,
-# write two shields "endpoint" JSON files, and push them to a dedicated
+# Instead we compute the values here with this repo's own GITHUB_TOKEN,
+# write shields "endpoint" JSON files, and push them to a dedicated
 # orphan branch `badges`. The README points shields.io/endpoint at the
 # raw JSON, so shields only reads a static file and never calls the
 # GitHub API live — the token-pool error can't happen.
@@ -42,6 +43,9 @@ jobs:
           stars=$(gh api "repos/${REPO}" --jq '.stargazers_count')
           downloads=$(gh api --paginate "repos/${REPO}/releases" \
             --jq '[.[].assets[].download_count] | add // 0')
+          release=$(gh api "repos/${REPO}/releases/latest" --jq '.tag_name')
+          commit_date=$(gh api "repos/${REPO}/commits?per_page=1" \
+            --jq '.[0].commit.committer.date')
 
           # Match shields' metric formatting: 1356 -> "1.4k", 2_300_000 -> "2.3M".
           humanize() {
@@ -52,14 +56,33 @@ jobs:
             }'
           }
 
+          # last-commit is relative ("today" / "3 days ago"). The daily cron
+          # recomputes it from the real commit timestamp, so it self-corrects
+          # to within a day even with no new commits.
+          days=$(( ( $(date +%s) - $(date -d "$commit_date" +%s) ) / 86400 ))
+          if   [ "$days" -le 0 ]; then last_commit="today"
+          elif [ "$days" -eq 1 ]; then last_commit="yesterday"
+          else                         last_commit="${days} days ago"
+          fi
+          # Mirror shields' recency colouring: fresh = green, stale = amber.
+          if   [ "$days" -le 7 ];  then commit_color="brightgreen"
+          elif [ "$days" -le 30 ]; then commit_color="green"
+          elif [ "$days" -le 90 ]; then commit_color="yellow"
+          else                          commit_color="orange"
+          fi
+
           mkdir -p out
           printf '{"schemaVersion":1,"label":"downloads","message":"%s","color":"brightgreen"}\n' \
             "$(humanize "$downloads")" > out/downloads.json
           printf '{"schemaVersion":1,"label":"stars","message":"%s","color":"blue"}\n' \
             "$(humanize "$stars")" > out/stars.json
+          printf '{"schemaVersion":1,"label":"release","message":"%s","color":"blue"}\n' \
+            "$release" > out/release.json
+          printf '{"schemaVersion":1,"label":"last commit","message":"%s","color":"%s"}\n' \
+            "$last_commit" "$commit_color" > out/lastcommit.json
 
-          echo "stars=$stars downloads=$downloads"
-          cat out/downloads.json out/stars.json
+          echo "stars=$stars downloads=$downloads release=$release last_commit=$last_commit"
+          cat out/downloads.json out/stars.json out/release.json out/lastcommit.json
 
       - name: Publish to badges branch
         env:
@@ -72,8 +95,8 @@ jobs:
           git checkout -q -b badges
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add downloads.json stars.json
+          git add downloads.json stars.json release.json lastcommit.json
           git commit -q -m "chore(badges): update metrics [skip ci]"
           # Force-push a single-commit orphan: the branch only ever holds
-          # the two generated files, so no history is worth keeping.
+          # the generated badge files, so no history is worth keeping.
           git push -f "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" badges
