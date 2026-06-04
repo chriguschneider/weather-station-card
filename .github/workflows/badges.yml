@@ -1,0 +1,79 @@
+name: Badge metrics
+
+# Self-hosts the "downloads" and "stars" numbers so the README badges
+# don't depend on shields.io's shared GitHub-API token pool. That pool
+# is regularly exhausted ("Unable to select next GitHub token from
+# pool"), and GitHub's Camo image proxy then caches the broken SVG, so
+# the badges stay broken long after shields recovers.
+#
+# Instead we compute the numbers here with this repo's own GITHUB_TOKEN,
+# write two shields "endpoint" JSON files, and push them to a dedicated
+# orphan branch `badges`. The README points shields.io/endpoint at the
+# raw JSON, so shields only reads a static file and never calls the
+# GitHub API live — the token-pool error can't happen.
+
+on:
+  schedule:
+    # Daily at 04:17 UTC. Stars/downloads move slowly; once a day is plenty.
+    - cron: '17 4 * * *'
+  release:
+    # Refresh downloads right after a release ships new assets.
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: badge-metrics
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute metrics and write badge JSON
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          stars=$(gh api "repos/${REPO}" --jq '.stargazers_count')
+          downloads=$(gh api --paginate "repos/${REPO}/releases" \
+            --jq '[.[].assets[].download_count] | add // 0')
+
+          # Match shields' metric formatting: 1356 -> "1.4k", 2_300_000 -> "2.3M".
+          humanize() {
+            awk -v n="$1" 'BEGIN {
+              if (n >= 1000000) printf "%.1fM", n / 1000000;
+              else if (n >= 1000) printf "%.1fk", n / 1000;
+              else printf "%d", n;
+            }'
+          }
+
+          mkdir -p out
+          printf '{"schemaVersion":1,"label":"downloads","message":"%s","color":"brightgreen"}\n' \
+            "$(humanize "$downloads")" > out/downloads.json
+          printf '{"schemaVersion":1,"label":"stars","message":"%s","color":"blue"}\n' \
+            "$(humanize "$stars")" > out/stars.json
+
+          echo "stars=$stars downloads=$downloads"
+          cat out/downloads.json out/stars.json
+
+      - name: Publish to badges branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cd out
+          git init -q
+          git checkout -q -b badges
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add downloads.json stars.json
+          git commit -q -m "chore(badges): update metrics [skip ci]"
+          # Force-push a single-commit orphan: the branch only ever holds
+          # the two generated files, so no history is worth keeping.
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" badges
