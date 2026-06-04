@@ -326,6 +326,85 @@ describe('MeasuredDataSource._buildForecast', () => {
     const out = ds._buildForecast({}, sensorsNoSun, startDay, 3, null);
     expect(out[0].sunshine).toBeNull();
   });
+
+  // ── today's measured temperature anchor ───────────────────────────
+  // Today's daily-statistics bucket is rolled up from COMPLETED hourly
+  // statistics, so in the first hour after local midnight it is empty —
+  // and today is always the LAST bucket in the daily window. Without a
+  // fallback the today column goes null, the solid line stops at
+  // yesterday, and the de-overlap in main.ts strands today on the
+  // forecast side (the visible gap). The live sensor state is folded
+  // into today's high/low so the current day always carries a measured
+  // temperature point. Mirrors the hourly last-hour live-fill.
+  const liveHass = {
+    config: { latitude: 47.4 },
+    callWS: vi.fn(),
+    states: { 'sensor.temp': { state: '16.4' } },
+  };
+
+  it("anchors today's empty bucket to the live temperature state", () => {
+    const ds = new MeasuredDataSource(liveHass, { sensors, days: 3 });
+    // Recorder has the two prior days but today's bucket (offset 3, the
+    // last) is missing — the just-started, in-progress day.
+    const stats = {
+      'sensor.temp': [
+        { start: dayMs(1).date.toISOString(), max: 20, min: 10, mean: 15 },
+        { start: dayMs(2).date.toISOString(), max: 22, min: 12, mean: 17 },
+        // no offset-3 bucket
+      ],
+    };
+    const out = ds._buildForecast(stats, sensors, startDay, 3);
+    expect(out[2].temperature).toBe(16.4);
+    expect(out[2].templow).toBe(16.4);
+  });
+
+  it("folds a warmer live reading into today's running high, keeps the recorded low", () => {
+    const ds = new MeasuredDataSource(liveHass, { sensors, days: 3 });
+    // Today's bucket exists from completed hours (max 14, min 9) but the
+    // live reading (16.4) is warmer than any completed hour → the high
+    // rises to the live value; the low stays the recorded 9.
+    const stats = {
+      'sensor.temp': [
+        { start: dayMs(3).date.toISOString(), max: 14, min: 9, mean: 11 },
+      ],
+    };
+    const out = ds._buildForecast(stats, sensors, startDay, 3);
+    expect(out[2].temperature).toBe(16.4); // max(14, 16.4)
+    expect(out[2].templow).toBe(9);        // min(9, 16.4)
+  });
+
+  it("a colder live reading lowers today's running low, not the high", () => {
+    const coldHass = {
+      config: { latitude: 47.4 },
+      callWS: vi.fn(),
+      states: { 'sensor.temp': { state: '7.5' } },
+    };
+    const ds = new MeasuredDataSource(coldHass, { sensors, days: 3 });
+    const stats = {
+      'sensor.temp': [
+        { start: dayMs(3).date.toISOString(), max: 14, min: 9, mean: 11 },
+      ],
+    };
+    const out = ds._buildForecast(stats, sensors, startDay, 3);
+    expect(out[2].temperature).toBe(14);  // max(14, 7.5)
+    expect(out[2].templow).toBe(7.5);     // min(9, 7.5)
+  });
+
+  it('does not live-fill a historic day’s missing bucket (today only)', () => {
+    const ds = new MeasuredDataSource(liveHass, { sensors, days: 3 });
+    // Offset 1 (a past day) is missing; today (offset 3) is present.
+    // The past gap must stay null — live-fill is for today only.
+    const stats = {
+      'sensor.temp': [
+        { start: dayMs(2).date.toISOString(), max: 22, min: 12, mean: 17 },
+        { start: dayMs(3).date.toISOString(), max: 18, min: 8, mean: 13 },
+      ],
+    };
+    const out = ds._buildForecast(stats, sensors, startDay, 3);
+    expect(out[0].temperature).toBe(null); // historic gap stays null
+    expect(out[0].templow).toBe(null);
+    expect(out[2].temperature).toBe(18);   // today's recorded high wins over live
+  });
 });
 
 describe('MeasuredDataSource._fetchLuxSunshine (#56 + #66)', () => {
