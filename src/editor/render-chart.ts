@@ -53,6 +53,7 @@ const CHART_ROWS_SCHEMA: SchemaField[] = [
   { name: 'show_wind_speed', selector: { boolean: {} } },
   { name: 'show_date', selector: { boolean: {} } },
   { name: 'show_sunshine', selector: { boolean: {} } },
+  { name: 'show_mode_toggle', selector: { boolean: {} } },
 ];
 
 // forecast.* style + appearance toggles.
@@ -92,6 +93,7 @@ export function renderChartSection(editor: EditorLike, ctx: EditorContext): Temp
     show_wind_speed: fcfg.show_wind_speed !== false,
     show_date: fcfg.show_date !== false,
     show_sunshine: fcfg.show_sunshine === true,
+    show_mode_toggle: fcfg.show_mode_toggle !== false,
   };
   const chartStyleData = {
     style: fcfg.style || 'style2',
@@ -116,6 +118,7 @@ export function renderChartSection(editor: EditorLike, ctx: EditorContext): Temp
       show_wind_speed: t('show_chart_wind_speed'),
       show_date: t('show_chart_date'),
       show_sunshine: t('show_chart_sunshine'),
+      show_mode_toggle: t('show_chart_mode_toggle'),
     };
     return map[schema.name] || labelFor(schema);
   };

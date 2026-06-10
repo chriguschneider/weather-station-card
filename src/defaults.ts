@@ -50,6 +50,9 @@ export const DEFAULTS_FORECAST = {
   type: 'daily',
   number_of_forecasts: 8,
   disable_animation: false,
+  // In-card daily/today/hourly view-switch button. On by default; set
+  // to false to lock the card to its configured forecast.type.
+  show_mode_toggle: true,
   '12hourformat': false,
 } as const;
 

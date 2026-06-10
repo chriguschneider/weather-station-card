@@ -149,6 +149,7 @@ const de: LocaleEntry = {
     'show_chart_date': 'Datum in der x-Achse',
     'show_chart_sunshine': 'Sonnenschein-Balken',
     'show_chart_sunshine_hint': 'Holt Sonnenscheindauer direkt von Open-Meteo (Standort aus Home Assistant). Keine zusätzlichen Sensoren nötig. In der Tagesansicht mit "Xh"-Beschriftung, im Stundenmodus nur als Balken (volle Höhe = volle Stunde Sonne).',
+    'show_chart_mode_toggle': 'Ansicht-Umschalt-Button',
     'sunshine_availability': 'Sonnenstunden-Daten verfügbar: {past} Tage Vergangenheit, {future} Tage Vorhersage (Open-Meteo).',
     'sunshine_availability_pending': 'Sonnenstunden: Daten werden geladen — speichere und öffne den Editor erneut.',
     'sunshine_availability_warning': 'Konfigurierte Vorhersage-Tage ({req}) übersteigen Open-Meteo-Verfügbarkeit — die letzten {gap} Spalten zeigen leere Sonnenstunden-Balken.',

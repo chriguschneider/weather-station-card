@@ -318,6 +318,16 @@ class WeatherStationCard extends LitElement {
   _pendingScrollFrame: number | null = null;
   _lastScrollGeneration: string | undefined;
   _scrollUxTeardown: (() => void) | null = null;
+  // Two-phase forecast render (ADR-0016). The condition-icons and wind
+  // rows are wide DOM (one element per column); at hourly that's ~168
+  // each and they — not the chart canvas — dominate cold-mount (~140 ms
+  // of a ~235 ms hourly mount). We render placeholder-height rows on the
+  // first paint of a new chart generation, then fill the real rows in a
+  // post-paint idle callback. `_forecastRowsReadyGen` holds the
+  // generation key (forecast.type + column count) whose rows are fully
+  // rendered; while it differs from the current key the rows defer.
+  _forecastRowsReadyGen: string = '';
+  _forecastRowsRevealHandle: number | null = null;
   _actionHandlerTeardown: (() => void) | null = null;
   _clockTimer: ReturnType<typeof setInterval> | null = null;
   // Cross-module shared flag (scroll-ux ↔ action-handler): a swipe /
@@ -1134,6 +1144,12 @@ async _refreshPressureDelta(): Promise<void> {
   disconnectedCallback() {
     super.disconnectedCallback();
     this._teardownRegistry.drain();
+    // Cancel any pending two-phase row reveal (ADR-0016) so it can't
+    // fire against a torn-down card.
+    if (this._forecastRowsRevealHandle !== null) {
+      cancelAnimationFrame(this._forecastRowsRevealHandle);
+      this._forecastRowsRevealHandle = null;
+    }
   }
 
   // Public entry point: a try/catch wrapper around the merge pipeline.
@@ -1585,7 +1601,18 @@ measureCard() {
   // for us; the only reason to drawChart() here is when forecastItems
   // changed (different dataset length needs a fresh chart) or no
   // chart exists yet.
-  if (this.forecastChart && this.forecastItems === prevForecastItems) {
+  //
+  // BUT only skip when the existing chart is still LIVE in the DOM. On
+  // an HA view switch the card is detached and re-attached; the forecast
+  // block then re-renders through its loading→ready cycle, which Lit
+  // rebuilds as a FRESH `#forecastChart` div. The old uPlot instance
+  // survives on `this.forecastChart` but its canvas is now detached, so
+  // skipping here would leave the new div empty (chart blank while the
+  // condition-icon row still renders). Gate the skip on the chart root
+  // still being connected; otherwise fall through and rebuild into the
+  // fresh div.
+  const chartAlive = this.forecastChart?.uplot?.root?.isConnected === true;
+  if (chartAlive && this.forecastItems === prevForecastItems) {
     return;
   }
   this.drawChart();
@@ -1892,6 +1919,12 @@ drawChart(args?: any): unknown[] | undefined {
     const result = drawChartUnsafe(this as unknown as Parameters<typeof drawChartUnsafe>[0], args);
     if (this.forecastChart) {
       this._initialChartBuilt = true;
+      // Two-phase render (ADR-0016): the chart just painted with
+      // placeholder rows (when scrolling). Fill the real condition-icon /
+      // wind rows in a post-paint idle callback so their per-column DOM
+      // cost stays off the cold-mount critical path. No-op for
+      // non-scrolling views (rows weren't deferred there).
+      this._scheduleForecastRowsReveal();
       // Re-arm initial-scroll application on every fresh chart build.
       // _maybeApplyInitialScroll sets _initialScrollApplied=true once
       // the scroll has been applied; a subsequent rebuild (e.g.
@@ -2068,6 +2101,10 @@ updateChart({ forecasts, forecastChart } = this) {
 // whenever any block renders, including station-only).
 renderModeToggle() {
   const cfg = this.config || {};
+  // Opt-out: hide the in-card view-switch button entirely so the card
+  // stays pinned to the configured forecast.type. Default (unset / true)
+  // keeps the button — existing cards are unchanged.
+  if (cfg.forecast?.show_mode_toggle === false) return html``;
   const showsStation = cfg.show_station !== false;
   const showsForecast = cfg.show_forecast === true && !!cfg.weather_entity;
   if (!showsStation && !showsForecast) return html``;
@@ -2108,6 +2145,40 @@ _onModeToggleClick(ev?: Event) {
   const cfg = this.config || {};
   const fcfg = cfg.forecast || {};
   this.setConfig({ ...cfg, forecast: { ...fcfg, type: nextForecastType(fcfg.type) } });
+}
+
+// Generation key for the two-phase forecast-row render (ADR-0016).
+// Changes when the forecast mode or the column count changes — i.e. on
+// cold mount, mode toggle, or a data-shape change — so each fresh chart
+// re-defers its rows. A routine same-shape data refresh keeps the same
+// key, so the rows are NOT blanked on every hourly update.
+_forecastRowsGenKey(): string {
+  return `${this.config?.forecast?.type ?? 'daily'}|${this.forecasts?.length ?? 0}`;
+}
+
+// After the chart's first paint, fill in the real condition-icon / wind
+// rows that were deferred. Double requestAnimationFrame: the FIRST frame
+// paints the chart with placeholder rows (so the chart is on screen with
+// the heavy per-column DOM excluded), and the reveal runs before the
+// SECOND frame's paint — building the real rows once the chart is
+// already visible. Setting _forecastRowsReadyGen to the current key
+// flips the render branch from placeholder to real rows on that update.
+//
+// Why double-rAF and not requestIdleCallback: a single rAF callback runs
+// BEFORE the next paint, which would build the rows before the chart is
+// ever shown (no deferral). rIC defers correctly but its fire time is
+// unbounded, which would let the e2e settle (two rAFs) screenshot empty
+// rows. Double-rAF defers past exactly one paint and lands within the
+// next frame — deterministic and inside the e2e settle window.
+_scheduleForecastRowsReveal(): void {
+  if (this._forecastRowsRevealHandle !== null) return;
+  this._forecastRowsRevealHandle = requestAnimationFrame(() => {
+    this._forecastRowsRevealHandle = requestAnimationFrame(() => {
+      this._forecastRowsRevealHandle = null;
+      this._forecastRowsReadyGen = this._forecastRowsGenKey();
+      this.requestUpdate();
+    });
+  });
 }
 
   render({config, _hass, weather} = this) {
@@ -2266,6 +2337,21 @@ _onModeToggleClick(ev?: Event) {
             animClass = 'view-changing';
           }
           const disableClass = config.forecast?.disable_animation === true ? 'no-animation' : '';
+          // Two-phase render (ADR-0016): when the chart scrolls (hourly,
+          // combination daily) the per-column condition-icon / wind rows
+          // are the cold-mount bottleneck — ~140 ms of a ~235 ms hourly
+          // mount, vs ~94 ms for the chart alone. On the first paint of a
+          // new chart generation render placeholder-height rows (so no
+          // layout shift), then `_scheduleForecastRowsReveal` fills the
+          // real rows in a post-paint idle callback. Non-scrolling views
+          // (today, single-block daily) never defer — the rows are cheap
+          // and already on screen.
+          const rowsDeferred = scrolling
+            && this._forecastRowsReadyGen !== this._forecastRowsGenKey();
+          const conditionsEnabled = config.forecast.condition_icons !== false;
+          const windEnabled = config.forecast.show_wind_forecast !== false
+            && (config.forecast.show_wind_arrow !== false
+              || config.forecast.show_wind_speed !== false);
           return html`
           <div class="forecast-scroll-block ${animClass} ${disableClass}">
             <div class="forecast-scroll ${scrolling ? 'scrolling' : ''}">
@@ -2273,14 +2359,21 @@ _onModeToggleClick(ev?: Event) {
                 <div class="chart-container">
                   <div id="forecastChart"></div>
                 </div>
-                ${guard(
-                  [this.forecasts, this.forecastItems, this.sun, config],
-                  () => this.renderForecastConditionIcons(),
-                )}
-                ${guard(
-                  [this.forecasts, this.forecastItems, this.unitSpeed, config],
-                  () => this.renderWind(),
-                )}
+                ${rowsDeferred
+                  ? html`
+                    ${conditionsEnabled ? html`<div class="conditions" style="height: 26px"></div>` : ''}
+                    ${windEnabled ? html`<div class="wind-details" style="height: 26px"></div>` : ''}
+                  `
+                  : html`
+                    ${guard(
+                      [this.forecasts, this.forecastItems, this.sun, config],
+                      () => this.renderForecastConditionIcons(),
+                    )}
+                    ${guard(
+                      [this.forecasts, this.forecastItems, this.unitSpeed, config],
+                      () => this.renderWind(),
+                    )}
+                  `}
               </div>
             </div>
             ${this.renderModeToggle()}

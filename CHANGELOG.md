@@ -6,6 +6,30 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.7] — 2026-06-10
+
+### Added
+
+- **You can now hide the daily / today / hourly switch button.** If you
+  only ever use one forecast view, the small button that toggles between
+  them is just clutter — you can now turn it off. In the visual editor
+  open the **Chart** section and switch off **View-switch button** (in
+  YAML: `forecast: { show_mode_toggle: false }`). The button stays on by
+  default, so existing cards are unchanged.
+
+### Fixed
+
+- **The hourly temperature line is no longer blurry.** On the scrolling
+  hourly view the temperature line could look pixelated or fuzzy, because
+  the chart was drawn before its full width was known and then stretched
+  to fit. The chart now waits until its real width is settled before
+  drawing, so the line is sharp. Nothing to change in your configuration.
+- **The forecast no longer goes blank after switching dashboard views.**
+  Navigating away to another dashboard view and back could leave the
+  forecast chart empty — the condition icons were there but the chart
+  area stayed blank until a reload. The card now rebuilds the chart when
+  it comes back, so the forecast is always drawn.
+
 ## [2.1.6] — 2026-06-04
 
 ### Fixed

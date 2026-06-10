@@ -158,6 +158,7 @@ const en: LocaleEntry = {
     'show_chart_date': 'Date in chart x-axis',
     'show_chart_sunshine': 'Sunshine Bar',
     'show_chart_sunshine_hint': 'Fetches sunshine duration directly from Open-Meteo (using Home Assistant\'s configured location). No additional sensors required. Daily mode shows "Xh" labels per column; hourly mode shows bars only (full bar = full hour of sun).',
+    'show_chart_mode_toggle': 'View-switch button',
     'sunshine_availability': 'Sunshine data available: {past} past days, {future} forecast days (Open-Meteo).',
     'sunshine_availability_pending': 'Sunshine: data still loading — save and reopen the editor.',
     'sunshine_availability_warning': 'Configured forecast_days ({req}) exceeds Open-Meteo availability — the last {gap} columns will show empty sunshine bars.',
