@@ -17,7 +17,30 @@ export interface CardStylesOpts {
   labelsBaseSize: number;
 }
 
-export function cardStyles({
+// The generated sheet is ~10 KB of string concatenation and render()
+// calls this on every pass, while the eight inputs only change on a
+// config edit. Memoize per input-combination; the map stays tiny (one
+// entry per distinct card config on the dashboard) but is capped as a
+// leak guard for pathological editor sessions.
+const styleCache = new Map<string, string>();
+const STYLE_CACHE_MAX = 8;
+
+export function cardStyles(opts: CardStylesOpts): string {
+  const key = [
+    opts.iconsSize, opts.currentTempSize, opts.timeSize, opts.dayDateSize,
+    opts.chartHeight, opts.titlePresent, opts.labelsSmallSize, opts.labelsBaseSize,
+  ].join('|');
+  const hit = styleCache.get(key);
+  if (hit !== undefined) return hit;
+  const css = buildCardStyles(opts);
+  if (styleCache.size >= STYLE_CACHE_MAX) {
+    styleCache.delete(styleCache.keys().next().value as string);
+  }
+  styleCache.set(key, css);
+  return css;
+}
+
+function buildCardStyles({
   iconsSize,
   currentTempSize,
   timeSize,
@@ -365,6 +388,26 @@ export function cardStyles({
     @media (prefers-reduced-motion: reduce) {
       .forecast-skeleton-wrapper::after { animation: none; }
     }
+    /* In-bundle icon sprite (ADR-0018). The hidden <svg> holds one
+     * <symbol> per icon the per-column rows can emit; each column
+     * renders a cheap <use> reference instead of an <ha-icon>
+     * custom-element upgrade. .wsc-icon mirrors ha-icon's box
+     * (--mdc-icon-size driven, 24px default) and colour rule so the
+     * sprite icons sit pixel-compatible next to remaining ha-icons. */
+    .wsc-sprite {
+      position: absolute;
+      width: 0;
+      height: 0;
+      overflow: hidden;
+    }
+    .wsc-icon {
+      display: inline-flex;
+      width: var(--mdc-icon-size, 24px);
+      height: var(--mdc-icon-size, 24px);
+      vertical-align: middle;
+      fill: currentColor;
+      color: var(--primary-text-color, #212121);
+    }
     .conditions {
       display: flex;
       justify-content: space-around;
@@ -399,7 +442,8 @@ export function cardStyles({
       gap: 2px;
       margin: 1px;
     }
-    .wind-detail ha-icon {
+    .wind-detail ha-icon,
+    .wind-detail .wsc-icon {
       --mdc-icon-size: 15px;
     }
     .wind-icon {
