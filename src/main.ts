@@ -31,7 +31,8 @@ import {
 } from './const.js';
 import { DEFAULTS, DEFAULTS_FORECAST, DEFAULTS_UNITS } from './defaults.js';
 import { validateConfig } from './config-validation.js';
-import {LitElement, html} from 'lit';
+import {LitElement, html, svg} from 'lit';
+import {MDI_PATHS} from './icons/mdi-paths.js';
 import {guard} from 'lit/directives/guard.js';
 import {
   MeasuredDataSource,
@@ -214,6 +215,15 @@ class WeatherStationCard extends LitElement {
   // --- Caching / live-condition memo ---
   _liveConditionKey: string | undefined;
   _liveCondition: string | undefined;
+
+  // --- Entity-delta gate (ADR-0017) ---
+  // eid → hass.states[eid] reference at the end of the last full
+  // `set hass` pass. HA state objects are immutable, so reference
+  // equality across hass objects means "this entity did not change"
+  // and the three phases can be skipped wholesale. null forces the
+  // next tick down the full path (after setConfig or a data-source
+  // teardown).
+  _watchedStatesSnapshot: Record<string, unknown> | null = null;
 
   // --- Data-source state ---
   _dataSource: MeasuredDataSource | null = null;
@@ -469,7 +479,13 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
 
   static get properties() {
     return {
-      _hass: {},
+      // Deliberately NON-reactive: HA replaces the hass object 2–5×/s
+      // on ANY entity change in the instance, and a reactive `_hass`
+      // would schedule a full Lit render pass per tick. Everything the
+      // templates read live sits in the value-compared reactive props
+      // below, so a tick only renders when a displayed value actually
+      // changed. See ADR-0017.
+      _hass: { attribute: false, hasChanged: () => false },
       config: {},
       language: {},
       sun: {type: Object},
@@ -481,7 +497,27 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
       windDirection: {type: Number},
       forecastChart: {type: Object},
       forecastItems: {type: Number},
-      forecasts: { type: Array }
+      forecasts: { type: Array },
+      // renderAttributes reads these straight off `this`. They must be
+      // reactive in their own right now that _hass ticks no longer
+      // re-render the card (ADR-0017). All hold strings / undefined,
+      // so Lit's default !== check is a value comparison — assigning
+      // an unchanged reading schedules nothing.
+      uv_index: { attribute: false },
+      dew_point: { attribute: false },
+      wind_gust_speed: { attribute: false },
+      illuminance: { attribute: false },
+      precipitation: { attribute: false },
+      precipitation_unit: { attribute: false },
+      sunshine_duration: { attribute: false },
+      sunshine_duration_unit: { attribute: false },
+      unitSpeed: { attribute: false },
+      unitPressure: { attribute: false },
+      unitPrecip: { attribute: false },
+      // Reassigned only when the joined list actually differs (see
+      // _syncDataSources) — a fresh array every pass would defeat the
+      // reference check and re-render on every full hass pass.
+      _missingSensors: { attribute: false },
     };
   }
 
@@ -513,6 +549,10 @@ setConfig(config: any) {
   // mapping instead of returning a stale label.
   this._liveConditionKey = undefined;
   this._liveCondition = undefined;
+  // The watched-entity set derives from sensors/weather_entity — a new
+  // config may watch different entities, so the next hass tick must
+  // run the full path and rebuild the snapshot (ADR-0017).
+  this._watchedStatesSnapshot = null;
 
   this.config = cardConfig;
 
@@ -576,11 +616,73 @@ set hass(hass: HassMain) {
       void ensureLocaleLoaded(lang).then(() => this.requestUpdate());
     }
   }
+
+  // Entity-delta gate (ADR-0017): when none of the entities this card
+  // watches changed since the last full pass, skip all three phases.
+  // The data sources still get the fresh hass handle — they need it
+  // for their next WS call — but no reading extraction, classification
+  // or subscription churn runs, and (since nothing reactive is
+  // assigned) no Lit update is scheduled.
+  if (this._watchedStatesUnchanged(hass)) {
+    this._dataSource?.setHass(hass);
+    this._forecastSource?.setHass(hass);
+    return;
+  }
+
   this.sun = (hass.states && 'sun.sun' in hass.states) ? hass.states['sun.sun'] : null;
 
   this._extractSensorReadings(hass);
   this._classifyLiveCondition(hass);
   this._syncDataSources(hass);
+  this._watchedStatesSnapshot = this._captureWatchedStates(hass);
+}
+
+// All entity ids this card reads live values from: every configured
+// sensor, the weather entity, and sun.sun (day/night + sunrise row).
+// Anything NOT in this list never feeds the live panel — its state
+// changes are irrelevant to this card and safe to ignore.
+_watchedEntityIds(): string[] {
+  const ids: string[] = [];
+  const sensors = this.config?.sensors || {};
+  for (const eid of Object.values(sensors)) {
+    if (typeof eid === 'string' && eid) ids.push(eid);
+  }
+  if (this.config?.weather_entity) ids.push(this.config.weather_entity);
+  ids.push('sun.sun');
+  return ids;
+}
+
+_captureWatchedStates(hass: HassMain): Record<string, unknown> {
+  const snapshot: Record<string, unknown> = {};
+  for (const eid of this._watchedEntityIds()) {
+    snapshot[eid] = hass.states?.[eid];
+  }
+  return snapshot;
+}
+
+_watchedStatesUnchanged(hass: HassMain): boolean {
+  const snapshot = this._watchedStatesSnapshot;
+  if (!snapshot) return false;
+  // First full pass must have completed — _syncDataSources seeds
+  // `forecasts` with at least an empty merge.
+  if (!this.forecasts) return false;
+  // Never skip data-source (re)creation: _invalidateStaleSources tears
+  // a source down and re-enters via `this.hass = this._hass` with the
+  // SAME hass object — phase 3 must run then to rebuild the source.
+  // (The teardowns also null the snapshot; this guard is the backstop
+  // for any future path that drops a source without doing that.)
+  const wantMeasured = this.config?.show_station !== false
+    && !this._openMeteoStationFallbackActive(this.config);
+  const wantForecast = this.config?.show_forecast === true && !!this.config.weather_entity;
+  if (wantMeasured !== !!this._dataSource || wantForecast !== !!this._forecastSource) return false;
+  // HA state objects are immutable — an entity that didn't change
+  // keeps its object reference across hass objects, so reference
+  // equality is an exact "unchanged" test (the same check
+  // hasConfigOrEntityChanged in custom-card-helpers relies on).
+  for (const eid of Object.keys(snapshot)) {
+    if (hass.states?.[eid] !== snapshot[eid]) return false;
+  }
+  return true;
 }
 
 // Phase 1: read sensor entity states, detect source units, populate
@@ -732,8 +834,13 @@ _maybeDerivePrecipRate(hass: HassMain): void {
     this._precipBufferEntity = precipEid;
   }
 
+  const beforeAppend = this._precipBuffer;
   this._precipBuffer = appendSample(this._precipBuffer, { t, v });
-  this._recomputePrecipDisplay(precipEid);
+  // appendSample returns the SAME reference when the sample is a
+  // duplicate (same t+v) — only a genuinely new sample needs to reach
+  // localStorage. Without this gate every full hass pass paid a
+  // synchronous JSON.stringify + setItem.
+  this._recomputePrecipDisplay(precipEid, this._precipBuffer !== beforeAppend);
   this._schedulePrecipRecomputeTick();
 }
 
@@ -747,9 +854,16 @@ _maybeDerivePrecipRate(hass: HassMain): void {
 // Idempotent: walks prune → save → computeRate → format → assign.
 // Returns true when the displayed value changed (so the interval
 // caller can `requestUpdate()` only when the DOM would actually differ).
-_recomputePrecipDisplay(entityId: string): boolean {
+_recomputePrecipDisplay(entityId: string, bufferDirty: boolean = false): boolean {
+  const beforePrune = this._precipBuffer;
   this._precipBuffer = pruneOlderThan(this._precipBuffer, DEFAULT_MAX_AGE_MS);
-  saveBuffer(entityId, this._precipBuffer);
+  // Persist only when the buffer content changed (new sample appended
+  // by the caller, or samples aged out here). localStorage.setItem is
+  // synchronous and this runs on the hass path AND the 30-s interval —
+  // a no-change write is pure blocking I/O.
+  if (bufferDirty || this._precipBuffer !== beforePrune) {
+    saveBuffer(entityId, this._precipBuffer);
+  }
 
   // The buffer holds raw sensor values, so the rate is in the source
   // base unit per hour (in/h for an inch counter). Convert + label it
@@ -789,7 +903,30 @@ _schedulePrecipRecomputeTick(): void {
 _classifyLiveCondition(hass: HassMain): void {
   const inputs = this._resolveLiveClassifierInputs(hass);
   const currentCondition = this._pickLiveCondition(inputs);
-  this.weather = this._synthesizeWeatherEntity(currentCondition);
+  const candidate = this._synthesizeWeatherEntity(currentCondition);
+  // Keep the previous object identity when nothing changed: `weather`
+  // is reference-compared by Lit, and updated() runs a full uPlot
+  // redraw via updateChart() whenever it flips. A fresh object per
+  // pass would mean a canvas redraw per pass (ADR-0017).
+  if (!this._weatherSynthesisEquals(this.weather, candidate)) {
+    this.weather = candidate;
+  }
+}
+
+// Field-wise equality of two synthesized weather stand-ins. Both come
+// out of _synthesizeWeatherEntity, so the attribute key set is fixed
+// and all values are scalars — comparing the candidate's keys covers
+// the full shape.
+// deno-lint-ignore no-explicit-any
+_weatherSynthesisEquals(a: any, b: any): boolean {
+  if (!a || !b) return false;
+  if (a.state !== b.state) return false;
+  const prevAttrs = a.attributes ?? {};
+  const nextAttrs = b.attributes ?? {};
+  for (const key of Object.keys(nextAttrs)) {
+    if (prevAttrs[key] !== nextAttrs[key]) return false;
+  }
+  return true;
 }
 
 // Pull the numeric inputs the live-condition classifier needs out of
@@ -1004,13 +1141,19 @@ _syncDataSources(hass: HassMain): void {
   if (!this.forecasts) this._refreshForecasts();
 
   // Detect missing/unavailable sensor entities for the render-time banner.
-  this._missingSensors = [];
+  // _missingSensors is reactive (the banner must appear/disappear without
+  // another trigger now that _hass ticks don't render, ADR-0017) — only
+  // reassign when the content differs so an unchanged scan stays inert.
+  const missing: string[] = [];
   for (const [key, eid] of Object.entries(sensors)) {
     if (!eid || typeof eid !== 'string') continue;
     const s = hass.states?.[eid];
     if (!s || s.state === 'unavailable' || s.state === 'unknown') {
-      this._missingSensors.push(`${key} (${eid})`);
+      missing.push(`${key} (${eid})`);
     }
+  }
+  if (missing.join('|') !== this._missingSensors.join('|')) {
+    this._missingSensors = missing;
   }
 }
 
@@ -1889,6 +2032,9 @@ _teardownStation() {
   this._dataSource = null;
   this._stationData = [];
   this._stationDataReady = false;
+  // Force the next hass tick down the full path so phase 3 rebuilds
+  // the source (ADR-0017 fast path would otherwise skip it).
+  this._watchedStatesSnapshot = null;
 }
 
 _teardownForecast() {
@@ -1896,6 +2042,7 @@ _teardownForecast() {
   this._forecastSource = null;
   this._forecastDataReady = false;
   this._forecastData = [];
+  this._watchedStatesSnapshot = null;
 }
 
 // deno-lint-ignore no-explicit-any
@@ -2305,6 +2452,7 @@ _scheduleForecastRowsReveal(): void {
 
       <ha-card header="${config.title}">
         <div class="card">
+          ${this.renderIconSpriteDefs()}
           ${banner}
           ${mainSection}
           ${attributesSection}
@@ -3032,6 +3180,30 @@ const timeOptions = {
   `;
 }
 
+// ADR-0018: the wide per-column rows render up to 168 condition icons
+// plus 168 wind arrows in hourly mode. As <ha-icon> each one costs a
+// custom-element upgrade + async icon resolution — measured at ~140 ms
+// of the hourly cold mount (ADR-0016 could only REORDER that work past
+// the first paint, not remove it). The rows therefore render plain
+// inline-SVG <use> references against a single hidden sprite emitted
+// once per card (renderIconSpriteDefs in render()). Icon names outside
+// the shipped sprite fall back to a regular <ha-icon>, so an upstream
+// mapping addition degrades to the slow path instead of a blank cell.
+renderIconSpriteDefs() {
+  return html`<svg class="wsc-sprite" aria-hidden="true">${
+    Object.entries(MDI_PATHS).map(([name, path]) =>
+      svg`<symbol id="wsc-i-${name}" viewBox="0 0 24 24"><path d="${path}"></path></symbol>`)
+  }</svg>`;
+}
+
+_spriteIcon(fullName: string | undefined, cls: string = '') {
+  const name = (fullName ?? '').replace(/^.*:/, '');
+  if (MDI_PATHS[name]) {
+    return html`<svg class="wsc-icon${cls ? ' ' + cls : ''}" viewBox="0 0 24 24" aria-hidden="true"><use href="#wsc-i-${name}"></use></svg>`;
+  }
+  return html`<ha-icon class="${cls}" icon="${fullName}"></ha-icon>`;
+}
+
 renderForecastConditionIcons({ config, forecastItems, sun } = this) {
   if (config.forecast.condition_icons === false) {
     return html``;
@@ -3042,59 +3214,22 @@ renderForecastConditionIcons({ config, forecastItems, sun } = this) {
   const forecast = sanitizeForecastEntries(
     this.forecasts ? this.forecasts.slice(0, forecastItems) : [],
   );
-  // The day/night decision needs sun rise/set times. When the sun
-  // entity is missing or partial, fall back to "always day" rather
-  // than throwing on `sun.attributes.next_rising`.
-  const sunRising = sun?.attributes?.next_rising;
-  const sunSetting = sun?.attributes?.next_setting;
 
+  // Per-time day/night icon resolution was removed with the move to
+  // the canonical weatherIcons mapping — both variants render the
+  // same glyph, so the per-column sunrise/sunset Date math that used
+  // to live here (≈6 Date allocations + mutations per column, ~1 000
+  // ops at 168 hourly columns) was dead work in the ADR-0016 reveal
+  // frame. If per-time resolution comes back, reintroduce the
+  // computation INSIDE the icon-name decision so it only runs when it
+  // changes the output.
   return html`
     <div class="conditions">
-      ${forecast.map((item) => {
-        const forecastTime = new Date(item.datetime);
-        const sunriseTime = new Date(sunRising);
-        const sunsetTime = new Date(sunSetting);
-
-        // Adjust sunrise and sunset times to match the date of forecastTime
-        const adjustedSunriseTime = new Date(forecastTime);
-        adjustedSunriseTime.setHours(sunriseTime.getHours());
-        adjustedSunriseTime.setMinutes(sunriseTime.getMinutes());
-        adjustedSunriseTime.setSeconds(sunriseTime.getSeconds());
-
-        const adjustedSunsetTime = new Date(forecastTime);
-        adjustedSunsetTime.setHours(sunsetTime.getHours());
-        adjustedSunsetTime.setMinutes(sunsetTime.getMinutes());
-        adjustedSunsetTime.setSeconds(sunsetTime.getSeconds());
-
-        let isDayTime;
-
-        // A daily forecast, an Invalid Date from a partial sun entity,
-        // or an unparseable item.datetime all collapse to "day time" —
-        // the icon row stays drawn rather than throwing on a NaN
-        // comparison.
-        const sunTimesUsable = Number.isFinite(sunriseTime.getTime())
-          && Number.isFinite(sunsetTime.getTime())
-          && Number.isFinite(forecastTime.getTime());
-        if (config.forecast.type === 'daily' || !sunTimesUsable) {
-          isDayTime = true;
-        } else {
-          // For other forecast types, determine based on sunrise and sunset times
-          isDayTime = forecastTime >= adjustedSunriseTime && forecastTime <= adjustedSunsetTime;
-        }
-
-        // isDayTime stays referenced so the var is used; the day/night
-        // icon swap moves into ha-icon naming when we re-add per-time
-        // resolution. For now both day and night use the canonical
-        // weatherIcons mapping.
-        void isDayTime;
-        const iconHtml = html`<ha-icon icon="${this.getWeatherIcon(item.condition, sun?.state)}"></ha-icon>`;
-
-        return html`
-          <div class="forecast-item">
-            ${iconHtml}
-          </div>
-        `;
-      })}
+      ${forecast.map((item) => html`
+        <div class="forecast-item">
+          ${this._spriteIcon(this.getWeatherIcon(item.condition, sun?.state))}
+        </div>
+      `)}
     </div>
   `;
 }
@@ -3137,9 +3272,7 @@ renderWind({ config, forecastItems } = this) {
         // partial-data integrations also display cleanly.
         return html`
           <div class="wind-detail">
-            ${showArrow && hasBearing ? html`
-              <ha-icon class="wind-icon" icon="hass:${this.getWindDirIcon(item.wind_bearing)}"></ha-icon>
-            ` : ''}
+            ${showArrow && hasBearing ? this._spriteIcon(`hass:${this.getWindDirIcon(item.wind_bearing)}`, 'wind-icon') : ''}
             ${showSpeed && hasSpeed ? html`
               <span class="wind-value">
                 <span class="wind-speed">${dWindSpeed}</span>

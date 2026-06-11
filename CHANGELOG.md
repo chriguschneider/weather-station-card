@@ -6,6 +6,46 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.8] — 2026-06-11
+
+A pure performance release: the card now sits idle between weather
+updates instead of redrawing continuously, which noticeably lowers CPU
+use and battery drain on wall tablets, Raspberry Pi dashboards and the
+Companion app. Nothing to change in your configuration.
+
+### Changed
+
+- **The card no longer redraws on every Home Assistant state change.**
+  Home Assistant notifies every card a few times per second whenever
+  *anything* in your home updates — a light, a motion sensor, a media
+  player. The card used to re-render and redraw its chart on each of
+  those notifications even though its own weather data hadn't moved.
+  It now checks first whether one of *its* sensors actually changed
+  and otherwise does nothing, so on a busy installation the card's
+  continuous background CPU load drops to near zero. Updates from your
+  weather sensors still appear immediately.
+- **The icon rows below the chart appear faster.** The per-hour
+  condition icons and wind arrows (up to 168 of each in hourly view)
+  now render as lightweight built-in graphics instead of one Home
+  Assistant icon element per column, which removes most of the delay
+  before the rows fill in after the chart appears. They look the same
+  as before.
+
+### Under the hood
+
+- Entity-delta gate in `set hass` with reference-compared snapshots
+  (ADR-0017); `weather` synthesis keeps a stable object identity and
+  `_hass` is no longer a reactive property.
+- Per-column `<ha-icon>` replaced by an in-bundle MDI SVG sprite with
+  `<ha-icon>` fallback for unknown names (ADR-0018).
+- Cumulative-precipitation buffer persists to localStorage only when
+  its content changed; CSS sheet generation memoized; dead per-column
+  day/night Date math removed.
+- New advisory steady-state perf spec
+  (`tests-e2e/perf-steady-state.spec.ts`) asserts zero renders / zero
+  chart redraws on unrelated hass ticks (50 ticks: ~547 ms → ~1 ms on
+  the dev machine).
+
 ## [2.1.7] — 2026-06-10
 
 ### Added

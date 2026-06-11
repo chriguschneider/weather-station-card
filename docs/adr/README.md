@@ -59,3 +59,6 @@ status line.
 - [0013 — ESM output with content-hashed chunks for lazy editor](./0013-esm-code-split-for-lazy-editor.md) (Accepted)
 - [0014 — Cold-mount perf regression gate in CI](./0014-perf-regression-gate.md) (Accepted)
 - [0015 — Open-Meteo as a no-station data source](./0015-openmeteo-no-station-data-source.md) (Accepted)
+- [0016 — Two-phase forecast render — defer the per-column DOM rows past first paint](./0016-progressive-chart-render.md) (Accepted)
+- [0017 — Entity-delta gate in `set hass` + non-reactive `_hass`](./0017-entity-delta-gate-in-set-hass.md) (Accepted)
+- [0018 — In-bundle SVG sprite for the per-column forecast rows](./0018-inline-svg-sprite-for-forecast-rows.md) (Accepted)

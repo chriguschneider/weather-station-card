@@ -98,7 +98,10 @@ export default {
     dev && serve(serveopts),
     copy({
       targets: [
-        { src: 'src/icons/*', dest: 'dist/icons' },
+        // Only the SVG assets — src/icons also hosts the TS sprite
+        // module (mdi-paths.ts, ADR-0018), which compiles into the
+        // bundle and must not be copied verbatim into dist.
+        { src: 'src/icons/*.svg', dest: 'dist/icons' },
       ]
     }),
     // Production minification (skipped in dev/watch so source maps stay

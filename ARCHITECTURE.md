@@ -472,6 +472,11 @@ extended with these gates:
   plus a +25 % tolerance (ADR-0014). While `perf-baseline.json` carries
   `"placeholder": true` the gate is **warn-only** — it prints the
   measured medians so the first `master` run can pin real GHA numbers.
+- **Steady-state perf spec**: `tests-e2e/perf-steady-state.spec.ts`
+  asserts the entity-delta gate (ADR-0017) — zero Lit update passes and
+  zero uPlot redraws across 50 hass ticks where no watched entity
+  changed, plus the inverse guard that a watched-entity tick still
+  updates. Counter assertions gate; timing output is advisory only.
 - **CodeQL** (`security-extended` queries) on every PR + weekly
   schedule, covering JS/TS security smells ESLint doesn't catch.
 - **SonarCloud** (`.github/workflows/sonarcloud.yml`) reads the Vitest

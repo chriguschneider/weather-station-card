@@ -23,7 +23,9 @@ async function chartCanvas(page: import('@playwright/test').Page) {
     return {
       hasCanvas: !!canvas,
       width: canvas?.width ?? 0,
-      icons: sr ? sr.querySelectorAll('.conditions ha-icon').length : -1,
+      // Condition columns render as sprite <svg> icons since ADR-0018,
+      // with <ha-icon> only as the unknown-name fallback — count both.
+      icons: sr ? sr.querySelectorAll('.conditions ha-icon, .conditions .wsc-icon').length : -1,
     };
   });
 }
