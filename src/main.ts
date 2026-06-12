@@ -322,6 +322,11 @@ class WeatherStationCard extends LitElement {
   resizeObserver: any = null;
   resizeInitialized: boolean = false;
   _resizeRaf: number | null = null;
+  // The ha-card element the ResizeObserver is currently observing.
+  // Tracked because Lit can SWAP the <ha-card> element when the render
+  // branch changes (see updated()'s action-handler note) — the observer
+  // must follow the live element or it silently watches a detached one.
+  _resizeObservedCard: Element | null = null;
   // deno-lint-ignore no-explicit-any
   _initialScrollObserver: any = null;
   _initialScrollApplied: boolean = false;
@@ -1689,6 +1694,9 @@ async _refreshPressureDelta(): Promise<void> {
     // and doing that synchronously dozens of times confuses both Chart.js
     // and HA's grid layout — the card briefly drops out of the render tree
     // and only reappears after a hard reload. Coalesce into one rAF tick.
+    // Drop any prior instance (fast reconnects can schedule two
+    // delayed attaches) so we never leak a connected observer.
+    if (this.resizeObserver) this.resizeObserver.disconnect();
     this.resizeObserver = new ResizeObserver(() => {
       if (this._resizeRaf) return;
       this._resizeRaf = requestAnimationFrame(() => {
@@ -1696,10 +1704,30 @@ async _refreshPressureDelta(): Promise<void> {
         this.measureCard();
       });
     });
+    this._observeResizeTarget();
+  }
+
+  // (Re-)point the ResizeObserver at the CURRENT <ha-card>. Two ways
+  // the naive observe-once-at-attach approach goes silently dead:
+  //   1. attachResizeObserver runs from a setTimeout(0) after
+  //      connectedCallback — ha-card may not be rendered yet, so the
+  //      observer ends up observing nothing, forever. No resize ever
+  //      reaches measureCard, and the canvas gets CSS-stretched on a
+  //      later width change (pixelated temperature line).
+  //   2. Lit swaps the <ha-card> element when the render branch
+  //      changes; the observer keeps watching the detached old one.
+  // Called from attachResizeObserver AND from updated() after every
+  // render — idempotent (no-op while the observed element is still the
+  // live one), one querySelector per render.
+  _observeResizeTarget() {
+    if (!this.resizeObserver) return;
     const card = this.shadowRoot?.querySelector('ha-card');
-    if (card) {
-      this.resizeObserver.observe(card);
+    if (!card || card === this._resizeObservedCard) return;
+    if (this._resizeObservedCard) {
+      this.resizeObserver.unobserve(this._resizeObservedCard);
     }
+    this.resizeObserver.observe(card);
+    this._resizeObservedCard = card;
   }
 
   detachResizeObserver() {
@@ -1707,6 +1735,12 @@ async _refreshPressureDelta(): Promise<void> {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
     }
+    this._resizeObservedCard = null;
+    // Allow connectedCallback to re-attach on a reconnect. Without the
+    // reset, the first disconnect (teardown drain) killed the observer
+    // for the rest of the element's life — after an HA view switch the
+    // card never saw width changes again.
+    this.resizeInitialized = false;
     if (this._resizeRaf) {
       cancelAnimationFrame(this._resizeRaf);
       this._resizeRaf = null;
@@ -1736,14 +1770,12 @@ measureCard() {
   // Skip the destroy-and-rebuild dance when the chart is already live
   // and the visible-bar count hasn't changed. ResizeObserver fires
   // repeatedly as HA's section-grid settles its layout; each tick
-  // used to rebuild the Chart.js instance with a slightly different
+  // used to rebuild the chart instance with a slightly different
   // canvas size, and the bar ruler re-allocated per-column slot
   // widths each time — visible to the user as bars starting wide
-  // then narrowing once HA's layout settled. Chart.js's own
-  // responsive:true ResizeObserver handles the canvas-size change
-  // for us; the only reason to drawChart() here is when forecastItems
-  // changed (different dataset length needs a fresh chart) or no
-  // chart exists yet.
+  // then narrowing once HA's layout settled. The only reason to
+  // drawChart() here is when forecastItems changed (different dataset
+  // length needs a fresh chart) or no chart exists yet.
   //
   // BUT only skip when the existing chart is still LIVE in the DOM. On
   // an HA view switch the card is detached and re-attached; the forecast
@@ -1756,9 +1788,34 @@ measureCard() {
   // fresh div.
   const chartAlive = this.forecastChart?.uplot?.root?.isConnected === true;
   if (chartAlive && this.forecastItems === prevForecastItems) {
+    // uPlot does NOT auto-resize: Chart.js's responsive:true observer
+    // (which this skip path used to rely on) died with the library swap
+    // (ADR-0012). buildChart measures the container once; afterwards
+    // `#forecastChart canvas { width:100% }` CSS-stretches the fixed
+    // pixel buffer to whatever the container's CURRENT width is. So a
+    // later width change (sidebar toggle, window resize, section-grid
+    // settling) leaves a stretched bitmap — the user-visible symptom is
+    // a pixelated/blurry temperature line, worst at hourly where the
+    // canvas is widest. Snap the buffer to the new width without the
+    // full destroy+rebuild; resize() re-measures the container and
+    // calls uplot.setSize(), which redraws sharp.
+    this._resizeChartIfWidthChanged();
     return;
   }
   this.drawChart();
+}
+
+_resizeChartIfWidthChanged() {
+  const chart = this.forecastChart;
+  const container = chart?.uplot?.root?.closest('.chart-container') as HTMLElement | null;
+  if (!chart || !container) return;
+  // Same rounding as draw.ts's measureContainer so equal layouts
+  // compare equal — otherwise sub-pixel drift would trigger a redraw
+  // on every ResizeObserver tick.
+  const width = Math.round(container.getBoundingClientRect().width);
+  if (width > 0 && width !== chart.uplot.width) {
+    try { chart.resize(); } catch { /* chart torn down mid-tick */ }
+  }
 }
 
 // deno-lint-ignore no-explicit-any
@@ -1913,6 +1970,11 @@ async updated(changedProperties: Map<PropertyKey, unknown>) {
   // `unknown` to keep tsc happy while preserving the runtime assumption.
   setupActionHandler(this as unknown as Parameters<typeof setupActionHandler>[0]);
   setupScrollUx(this as unknown as Parameters<typeof setupScrollUx>[0]);
+  // Keep the ResizeObserver pinned to the live <ha-card> — same
+  // element-swap reasoning as the action-handler re-bind above, plus
+  // the first-render race (ha-card not yet rendered when the delayed
+  // attach fires). See _observeResizeTarget.
+  this._observeResizeTarget();
 
   if (changedProperties.has('config')) {
     const oldConfig = changedProperties.get('config');

@@ -6,6 +6,42 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.9] — 2026-06-12
+
+### Fixed
+
+- **The temperature line stays sharp when the card changes width.** When
+  the card got wider or narrower after the chart was first drawn — for
+  example when opening or closing the Home Assistant sidebar, resizing
+  the browser window, or while the dashboard grid was still settling —
+  the chart canvas was stretched to the new width instead of being
+  redrawn, leaving the temperature line pixelated and blurry (most
+  visibly in the hourly view). The card now redraws the chart at the
+  new width, so the line stays crisp. Nothing to change in your
+  configuration.
+- **The card reliably notices width changes again.** Two related gaps
+  meant the card could stop reacting to size changes entirely: the
+  size observer could attach before the card's frame existed (and then
+  watched nothing forever), and after switching dashboard views it was
+  never re-attached. Both paths are fixed, so the sharp-line fix above
+  also holds across view switches and slow first renders.
+
+### Under the hood
+
+- `measureCard()`'s skip-rebuild guard now calls `chart.resize()`
+  (→ `uplot.setSize()`) when the `.chart-container` width changed while
+  the bar count did not. The guard previously assumed Chart.js's
+  `responsive: true` observer would handle this — that observer died
+  with the uPlot swap (ADR-0012). Regression spec:
+  `tests-e2e/chart-resize-sharpness.spec.ts`.
+- ResizeObserver wiring made self-healing: `_observeResizeTarget()`
+  re-pins the observer to the live `<ha-card>` on every render (Lit can
+  swap the element between render branches; the delayed attach could
+  fire before the first render committed), and `detachResizeObserver()`
+  resets `resizeInitialized` so a reconnect re-attaches instead of
+  staying observer-less for the rest of the element's life.
+- Removed the v2.0 feedback call-out from the README.
+
 ## [2.1.8] — 2026-06-11
 
 A pure performance release: the card now sits idle between weather

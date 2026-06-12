@@ -36,21 +36,6 @@
 A Lovelace card that charts your own weather station's history alongside any
 forecast — driven by sensor data, not a `weather.*` entity.
 
-> **📣 v2.0 — and now I'd love to hear from you.**
->
-> With v2.0 this card has reached the shape I set out to build: the
-> past-vs-forecast chart, the live "now" panel, a resilient render path
-> that degrades gracefully, custom-theme support, and a layout that
-> holds up on phones. For me, this is the milestone — feature-complete
-> for what I wanted it to be.
->
-> Where it goes next is up to the people who actually run it. **If this
-> card is on your dashboard, tell me how it's going** — what works, what
-> feels off, what your weather station needs that the card can't do yet.
-> Start a [Discussion](https://github.com/chriguschneider/weather-station-card/discussions)
-> or [open an issue](https://github.com/chriguschneider/weather-station-card/issues/new/choose).
-> Community feedback is what will shape v2.x from here. — *Chrigu*
-
 <details>
 <summary><b>Table of contents</b></summary>
 
