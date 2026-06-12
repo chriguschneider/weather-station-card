@@ -41,6 +41,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   resets `resizeInitialized` so a reconnect re-attaches instead of
   staying observer-less for the rest of the element's life.
 - Removed the v2.0 feedback call-out from the README.
+- The README's release badge refreshes right after a release instead of
+  lagging up to a day: `build.yml` now dispatches `badges.yml` after the
+  release-asset upload. The workflow's `release: published` trigger had
+  never fired — the release is created with `GITHUB_TOKEN`, whose events
+  never trigger other workflows (GitHub's recursion guard); an explicit
+  `gh workflow run` is exempt from that guard.
 
 ## [2.1.8] — 2026-06-11
 
