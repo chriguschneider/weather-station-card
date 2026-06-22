@@ -30,7 +30,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           # Fetch the full ref so the bot's push goes to the same
           # branch the workflow was dispatched on.
