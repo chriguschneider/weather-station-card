@@ -25,8 +25,12 @@ import { openHarness, mount, settle } from './_helpers.js';
 import { buildFullFixture, buildBaseConfig } from './fixtures/generate.js';
 
 /** Canvas geometry: the pixel-buffer width (attribute) vs the CSS
- *  layout width × devicePixelRatio. Sharp rendering means the two
- *  match (±1 px for rounding); a stretched canvas diverges. */
+ *  layout width × devicePixelRatio × supersample factor. Sharp
+ *  rendering means the two match (±1 px for rounding); a stretched
+ *  canvas diverges. The supersample factor mirrors draw.ts
+ *  (ADR-0019): at DPR < 1.5 the buffer is allocated at 2× and
+ *  downscaled by CSS for smoother strokes — headless Chromium runs
+ *  at DPR 1, so this project always sees factor 2. */
 async function canvasGeometry(page: import('@playwright/test').Page) {
   return page.evaluate(() => {
     const card = document.querySelector('[data-slot="x"] > weather-station-card') as
@@ -34,9 +38,10 @@ async function canvasGeometry(page: import('@playwright/test').Page) {
     const canvas = card?.shadowRoot?.querySelector('#forecastChart canvas') as
       HTMLCanvasElement | null;
     if (!canvas) return null;
+    const superSample = devicePixelRatio < 1.5 ? 2 : 1;
     return {
       bufferWidth: canvas.width,
-      displayWidth: canvas.getBoundingClientRect().width * devicePixelRatio,
+      displayWidth: canvas.getBoundingClientRect().width * devicePixelRatio * superSample,
     };
   });
 }
