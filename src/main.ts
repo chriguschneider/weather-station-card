@@ -59,8 +59,9 @@ import {
   filterMidnightStaleForecast,
   aggregateThreeHourCalendar,
   trimLeadingEmptyBlocks,
+  trimTrailingEmptyBlocks,
   effectiveVisibleBars,
-  computeDayPageScrollLeft,
+  computeTodayPagerScrollLeft,
   nextForecastType,
   stationFetchKey,
   forecastFetchKey,
@@ -1549,7 +1550,10 @@ async _refreshPressureDelta(): Promise<void> {
     // first forecast block (rolling next-24-h windows); the
     // day-page-scroll helper falls back to the boundary-centred
     // position since no block sits at today's local midnight.
-    const blocks = trimLeadingEmptyBlocks(allBlocks, station.length === 0);
+    const blocks = trimTrailingEmptyBlocks(
+      trimLeadingEmptyBlocks(allBlocks, station.length === 0),
+      forecast.length === 0,
+    );
     for (const e of blocks) e.day_length = 3;
 
     // Anchor of the block containing the last STATION hour — every
@@ -3829,12 +3833,19 @@ _convertWindSpeed(raw: unknown, sourceUnit?: string): number | null {
           return false;
         }
       }
-      // Day pager: the initial position is the CURRENT day's page
-      // (today's midnight block at the left edge), not the
-      // station/forecast boundary. Falls back to the boundary-centred
-      // position when no midnight block matches (e.g. clock skew).
+      // Day pager: never open on a half-empty page. Station-only
+      // anchors at the series END (rolling last-24-h window),
+      // forecast-only at the START, combination on the current
+      // calendar day's page. Falls back to the boundary-centred
+      // position when no anchor matches (e.g. clock skew).
       const dayPage = fcfg.type === 'today'
-        ? computeDayPageScrollLeft(this.forecasts, wrapper.scrollWidth)
+        ? computeTodayPagerScrollLeft({
+            forecasts: this.forecasts,
+            stationCount: this._stationCount || 0,
+            forecastCount: this._forecastCount || 0,
+            contentWidth: wrapper.scrollWidth,
+            viewportWidth: wrapper.clientWidth,
+          })
         : null;
       const scrollLeft = dayPage ?? computeInitialScrollLeft({
         stationCount: this._stationCount || 0,
