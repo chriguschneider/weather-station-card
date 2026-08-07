@@ -47,6 +47,8 @@ export default {
         'src/utils/numeric.ts',
         'src/utils/theme-tokens.ts',
         'src/utils/unit-converters.ts',
+        'src/utils/series-cache.ts',
+        'src/utils/shared-requests.ts',
         'src/precip-rate.ts',
         'src/pressure-trend.ts',
         'src/dew-point-comfort.ts',

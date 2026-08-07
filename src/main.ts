@@ -58,6 +58,7 @@ import {
   startOfTodayMs,
   filterMidnightStaleForecast,
   aggregateThreeHourCalendar,
+  trimLeadingEmptyBlocks,
   effectiveVisibleBars,
   computeDayPageScrollLeft,
   nextForecastType,
@@ -1539,7 +1540,16 @@ async _refreshPressureDelta(): Promise<void> {
       this._openMeteoSource,
       'hourly',
     );
-    const blocks = aggregateThreeHourCalendar(merged);
+    const allBlocks = aggregateThreeHourCalendar(merged);
+    // Drop data-less leading blocks: whole empty days always (short
+    // recorder history), and in FORECAST-ONLY mode the empty start of
+    // the first day too — otherwise an evening mount shows a
+    // near-blank current-day page with the forecast squeezed into the
+    // last columns. Without a station side the pages anchor at the
+    // first forecast block (rolling next-24-h windows); the
+    // day-page-scroll helper falls back to the boundary-centred
+    // position since no block sits at today's local midnight.
+    const blocks = trimLeadingEmptyBlocks(allBlocks, station.length === 0);
     for (const e of blocks) e.day_length = 3;
 
     // Anchor of the block containing the last STATION hour — every
