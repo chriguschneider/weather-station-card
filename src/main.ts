@@ -57,7 +57,9 @@ import {
   normalizeForecastMode,
   startOfTodayMs,
   filterMidnightStaleForecast,
-  aggregateThreeHour,
+  aggregateThreeHourCalendar,
+  effectiveVisibleBars,
+  computeDayPageScrollLeft,
   nextForecastType,
   stationFetchKey,
   forecastFetchKey,
@@ -92,6 +94,7 @@ import {
   formatPrecipDisplay,
 } from './utils/unit-converters.js';
 import { drawChartUnsafe } from './chart/orchestrator.js';
+import { seriesCacheKey, loadSeriesCache, saveSeriesCache } from './utils/series-cache.js';
 import { sanitizeForecastEntries } from './chart/sanitize.js';
 import { renderChartSkeleton } from './chart/skeleton.js';
 import { cardStyles } from './chart/styles.js';
@@ -129,6 +132,26 @@ declare global {
     customCards?: any[];
   }
 }
+
+// Moon-phase enum (HA's official Moon integration) → MDI icon.
+const MOON_PHASE_ICONS: Record<string, string> = {
+  new_moon: 'mdi:moon-new',
+  waxing_crescent: 'mdi:moon-waxing-crescent',
+  first_quarter: 'mdi:moon-first-quarter',
+  waxing_gibbous: 'mdi:moon-waxing-gibbous',
+  full_moon: 'mdi:moon-full',
+  waning_gibbous: 'mdi:moon-waning-gibbous',
+  last_quarter: 'mdi:moon-last-quarter',
+  waning_crescent: 'mdi:moon-waning-crescent',
+};
+
+// In-bundle icon sprite (ADR-0018), built ONCE at module load. MDI_PATHS
+// is a static import, so the symbol list can never change at runtime —
+// rebuilding the template array per render() pass was pure waste.
+const ICON_SPRITE_TEMPLATE = html`<svg class="wsc-sprite" aria-hidden="true">${
+  Object.entries(MDI_PATHS).map(([name, path]) =>
+    svg`<symbol id="wsc-i-${name}" viewBox="0 0 24 24"><path d="${path}"></path></symbol>`)
+}</svg>`;
 
 // Field-declaration block for the WeatherStationCard class. HA-shaped
 // fields are typed as `any` (or HassMain where threaded) — the full
@@ -273,6 +296,14 @@ class WeatherStationCard extends LitElement {
   _stationDataReady: boolean = false;
   _forecastDataReady: boolean = false;
   _initialChartBuilt: boolean = false;
+  // Set by _refreshForecastsUnsafe whenever `this.forecasts` was rebuilt
+  // from source data. measureCard's skip-path (chart alive, same column
+  // count) consumes it via updateChart() so a same-shape data refresh
+  // still reaches the canvas. This replaces the former updated()-hook
+  // on `weather`, which pushed a full setData+redraw on EVERY sensor
+  // tick (temperature 0.1° change → full canvas repaint) even though
+  // the chart reads only `forecasts` — see the perf pass 2026-08.
+  _forecastsDirty: boolean = false;
   // Lazy-cache for #10 mode-toggle.
   // deno-lint-ignore no-explicit-any
   _stationCache: Record<string, any[]> = {};
@@ -322,6 +353,11 @@ class WeatherStationCard extends LitElement {
   resizeObserver: any = null;
   resizeInitialized: boolean = false;
   _resizeRaf: number | null = null;
+  // The ha-card element the ResizeObserver is currently observing.
+  // Tracked because Lit can SWAP the <ha-card> element when the render
+  // branch changes (see updated()'s action-handler note) — the observer
+  // must follow the live element or it silently watches a detached one.
+  _resizeObservedCard: Element | null = null;
   // deno-lint-ignore no-explicit-any
   _initialScrollObserver: any = null;
   _initialScrollApplied: boolean = false;
@@ -649,6 +685,10 @@ _watchedEntityIds(): string[] {
   }
   if (this.config?.weather_entity) ids.push(this.config.weather_entity);
   ids.push('sun.sun');
+  // Moon-phase line (auto-detected entity included, so a phase change
+  // passes the entity-delta gate even without explicit config).
+  const moon = this._moonEntityId();
+  if (moon) ids.push(moon);
   return ids;
 }
 
@@ -1066,6 +1106,19 @@ _syncDataSources(hass: HassMain): void {
 
   if (wantMeasured) {
     if (!this._dataSource) {
+      // Stale-while-revalidate (perf pass 2026-08): hydrate the station
+      // block from the last persisted payload for this fetch signature
+      // so the first paint shows real data instead of the skeleton
+      // while the recorder roundtrip (0.5–3 s on a Pi) is in flight.
+      // The live result overwrites it; identical payloads are absorbed
+      // by the forecastsEqual gate below.
+      if (!this._stationDataReady) {
+        const cached = loadSeriesCache(this._stationSeriesKey());
+        if (cached?.length) {
+          this._stationData = cached;
+          this._stationDataReady = true;
+        }
+      }
       this._dataSource = new MeasuredDataSource(hass, this.config);
       this._dataUnsubscribe = this._dataSource.subscribe((event) => {
         try {
@@ -1083,6 +1136,7 @@ _syncDataSources(hass: HassMain): void {
           this._stationData = newData;
           this._stationDataReady = true;
           this._stationCache[stationFetchKey(this.config)] = this._stationData;
+          if (newData.length) saveSeriesCache(this._stationSeriesKey(), newData);
           this._stationError = newError;
           // Refresh the 3-h pressure tendency on the same cadence as the
           // station fetch (POLL_INTERVAL_MS, currently hourly). The
@@ -1106,6 +1160,14 @@ _syncDataSources(hass: HassMain): void {
 
   if (wantForecast) {
     if (!this._forecastSource) {
+      // Same stale-while-revalidate hydration as the station side.
+      if (!this._forecastDataReady) {
+        const cached = loadSeriesCache(this._forecastSeriesKey());
+        if (cached?.length) {
+          this._forecastData = cached;
+          this._forecastDataReady = true;
+        }
+      }
       this._forecastSource = new ForecastDataSource(hass, this.config);
       this._forecastUnsubscribe = this._forecastSource.subscribe((event) => {
         try {
@@ -1123,6 +1185,7 @@ _syncDataSources(hass: HassMain): void {
           this._forecastData = newData;
           this._forecastDataReady = true;
           this._forecastCache[forecastFetchKey(this.config)] = this._forecastData;
+          if (newData.length) saveSeriesCache(this._forecastSeriesKey(), newData);
           this._forecastError = newError;
           this._refreshForecasts();
         } catch (err) {
@@ -1155,6 +1218,34 @@ _syncDataSources(hass: HassMain): void {
   if (missing.join('|') !== this._missingSensors.join('|')) {
     this._missingSensors = missing;
   }
+}
+
+// Persistent-cache keys (perf pass 2026-08). Everything that changes
+// the fetched payload is part of the key: the recorder period / the
+// subscribe forecast_type, the window size, and the sensor→entity
+// MAPPING (role included — swapping two entities between roles, e.g.
+// temperature ↔ dew_point, changes what each series means and must
+// land on a different slot). A config edit that changes any of these
+// gets a fresh key, so hydration can never show data fetched for
+// another signature.
+_stationSeriesKey(): string {
+  const sensors = this.config?.sensors || {};
+  const roleEids = Object.entries(sensors)
+    .filter((kv): kv is [string, string] => typeof kv[1] === 'string' && kv[1] !== '')
+    .map(([role, eid]) => `${role}=${eid}`)
+    .sort((a, b) => a.localeCompare(b));
+  return seriesCacheKey('station', [
+    stationFetchKey(this.config),
+    parseInt(String(this.config?.days), 10) || 7,
+    ...roleEids,
+  ]);
+}
+
+_forecastSeriesKey(): string {
+  return seriesCacheKey('forecast', [
+    forecastFetchKey(this.config),
+    String(this.config?.weather_entity || ''),
+  ]);
 }
 
 // Pull the 3-h pressure delta from the recorder and stash it on the
@@ -1269,6 +1360,14 @@ async _refreshPressureDelta(): Promise<void> {
         this._clockTimer = null;
       }
     });
+    // Visibility gate (perf pass 2026-08): pause the 1 Hz clock and
+    // wake the hourly station poll when the tab/dashboard visibility
+    // flips. Registered here so disconnect always detaches it.
+    if (typeof document !== 'undefined') {
+      const onVisibility = () => this._handleVisibilityChange();
+      document.addEventListener('visibilitychange', onVisibility);
+      r.add(() => document.removeEventListener('visibilitychange', onVisibility));
+    }
     r.add(() => {
       if (this._precipRecomputeTimer) {
         clearInterval(this._precipRecomputeTimer);
@@ -1373,6 +1472,9 @@ async _refreshPressureDelta(): Promise<void> {
     } else {
       this._buildDailyOrHourlyForecasts(station, forecast, fcType, effectiveCfg);
     }
+    // Data genuinely changed shape or content — flag it so measureCard's
+    // skip-path pushes the fresh arrays into the live chart in place.
+    this._forecastsDirty = true;
     this.requestUpdate();
     // measureCard() recomputes forecastItems from the new this.forecasts
     // length and then redraws. Going through it (instead of calling
@@ -1398,8 +1500,9 @@ async _refreshPressureDelta(): Promise<void> {
 
   // `days` / `forecast_days` define the data-loading window for both
   // daily and hourly modes; at hourly each day expands to 24 buckets.
-  // 'today' caps the forecast slice at end-of-today; combination splits
-  // 12 station + 12 forecast hours, forecast-only expands to 24.
+  // 'today' (the day pager, 2026-08 rework) uses the SAME window as
+  // hourly — the whole span is 3-h-aggregated and paged one day per
+  // viewport, so the forecast side is no longer capped at end-of-today.
   // deno-lint-ignore no-explicit-any
   _sliceForecast(effectiveCfg: any, fcType: string, isToday: boolean, todayStartMs: number): any[] {
     if (effectiveCfg.show_forecast !== true || !effectiveCfg.weather_entity) return [];
@@ -1407,42 +1510,57 @@ async _refreshPressureDelta(): Promise<void> {
     const slotsPerUnit = isHourlyish ? 24 : 1;
     const cap = parseInt(effectiveCfg.forecast_days, 10);
     const dayLimit = cap > 0 ? cap : (parseInt(effectiveCfg.days, 10) || 7);
-    const isForecastOnly = isToday && effectiveCfg.show_station === false;
-    const todayLimit = isForecastOnly ? 24 : 12;
-    const limit = isToday ? todayLimit : dayLimit * slotsPerUnit;
+    const limit = dayLimit * slotsPerUnit;
     return filterMidnightStaleForecast(this._forecastData || [], todayStartMs)
       .slice(0, limit);
   }
 
-  // 'today' flow:
+  // 'today' flow (day pager, 2026-08 rework):
   //   1. Apply HOURLY sunshine to each entry (per-hour value).
-  //   2. 3-hour aggregate: temp/wind/etc. mean, precip+sunshine SUM,
-  //      condition mode. Day-length stays at hourly semantics
-  //      (1h per block × 3 = 3h denominator).
-  //   3. Recompute day_length to 3 (3 hours per block).
+  //   2. Calendar-aligned 3-hour aggregation over the MERGED series —
+  //      blocks anchor at local 00/03/…/21 and the output is
+  //      gap-filled to whole days (8 blocks per day, empty blocks all
+  //      null). Every viewport page is exactly one calendar day.
+  //   3. day_length = 3 per block (denominator for the sunshine
+  //      fraction: sunshine_h / 3).
+  //
+  // Station/forecast split happens at block granularity AFTER the
+  // merge: a boundary block containing both measured and forecast
+  // hours counts as station (measured wins). The split drives the
+  // solid/dashed line styling and the separator, same as before.
   // deno-lint-ignore no-explicit-any
   _buildTodayForecasts(station: any[], forecast: any[]): void {
-    // De-overlap is now done centrally in _refreshForecasts so the
-    // hourly + daily flows benefit too. Forecast here is already
-    // strictly after station's last hour.
+    // De-overlap is done centrally in _refreshForecasts so the hourly
+    // + daily flows benefit too. Forecast here is already strictly
+    // after station's last hour.
     const merged = overlayFromOpenMeteo(
       [...station, ...forecast],
       this._hass,
       this._openMeteoSource,
       'hourly',
     );
-    const stationLen = station.length;
-    const stationWithSun = merged.slice(0, stationLen);
-    const forecastWithSun = merged.slice(stationLen);
-    const stationAgg = aggregateThreeHour(stationWithSun);
-    const forecastAgg = aggregateThreeHour(forecastWithSun);
-    // Each 3h block represents 3 hours of "day". Used as the denominator
-    // for the sunshine fraction (sunshine_h / 3).
-    for (const e of stationAgg) e.day_length = 3;
-    for (const e of forecastAgg) e.day_length = 3;
-    this._stationCount = stationAgg.length;
-    this._forecastCount = forecastAgg.length;
-    this.forecasts = [...stationAgg, ...forecastAgg];
+    const blocks = aggregateThreeHourCalendar(merged);
+    for (const e of blocks) e.day_length = 3;
+
+    // Anchor of the block containing the last STATION hour — every
+    // block up to and including it is the measured side.
+    let lastStationAnchorMs = -Infinity;
+    if (station.length) {
+      const lastDt = (station[station.length - 1] as { datetime?: string }).datetime;
+      const d = lastDt ? new Date(lastDt) : null;
+      if (d && Number.isFinite(d.getTime())) {
+        d.setHours(Math.floor(d.getHours() / 3) * 3, 0, 0, 0);
+        lastStationAnchorMs = d.getTime();
+      }
+    }
+    let stationBlocks = 0;
+    for (const b of blocks) {
+      if (new Date(b.datetime).getTime() <= lastStationAnchorMs) stationBlocks++;
+      else break;
+    }
+    this._stationCount = stationBlocks;
+    this._forecastCount = blocks.length - stationBlocks;
+    this.forecasts = blocks;
   }
 
   // Daily / hourly flow: overlay sunshine at the matching granularity.
@@ -1565,16 +1683,9 @@ async _refreshPressureDelta(): Promise<void> {
       const t = new Date(e.datetime ?? '').getTime();
       return Number.isFinite(t) && t <= nowHourMs;
     });
-    let count: number;
-    if (type === 'today') {
-      // Combination splits the day 12 h past / 12 h forecast; a
-      // station-only today view expands the past to the full 24 h.
-      // Mirrors MeasuredDataSource's todayHours logic.
-      const isStationOnly = this.config?.show_forecast !== true;
-      count = isStationOnly ? 24 : 12;
-    } else {
-      count = (parseInt(String(this.config?.days), 10) || 7) * 24;
-    }
+    // 'today' (day pager) uses the same full hourly window as
+    // 'hourly' — the render layer aggregates and pages it.
+    const count = (parseInt(String(this.config?.days), 10) || 7) * 24;
     return past.slice(-count);
   }
 
@@ -1689,6 +1800,9 @@ async _refreshPressureDelta(): Promise<void> {
     // and doing that synchronously dozens of times confuses both Chart.js
     // and HA's grid layout — the card briefly drops out of the render tree
     // and only reappears after a hard reload. Coalesce into one rAF tick.
+    // Drop any prior instance (fast reconnects can schedule two
+    // delayed attaches) so we never leak a connected observer.
+    if (this.resizeObserver) this.resizeObserver.disconnect();
     this.resizeObserver = new ResizeObserver(() => {
       if (this._resizeRaf) return;
       this._resizeRaf = requestAnimationFrame(() => {
@@ -1696,10 +1810,30 @@ async _refreshPressureDelta(): Promise<void> {
         this.measureCard();
       });
     });
+    this._observeResizeTarget();
+  }
+
+  // (Re-)point the ResizeObserver at the CURRENT <ha-card>. Two ways
+  // the naive observe-once-at-attach approach goes silently dead:
+  //   1. attachResizeObserver runs from a setTimeout(0) after
+  //      connectedCallback — ha-card may not be rendered yet, so the
+  //      observer ends up observing nothing, forever. No resize ever
+  //      reaches measureCard, and the canvas gets CSS-stretched on a
+  //      later width change (pixelated temperature line).
+  //   2. Lit swaps the <ha-card> element when the render branch
+  //      changes; the observer keeps watching the detached old one.
+  // Called from attachResizeObserver AND from updated() after every
+  // render — idempotent (no-op while the observed element is still the
+  // live one), one querySelector per render.
+  _observeResizeTarget() {
+    if (!this.resizeObserver) return;
     const card = this.shadowRoot?.querySelector('ha-card');
-    if (card) {
-      this.resizeObserver.observe(card);
+    if (!card || card === this._resizeObservedCard) return;
+    if (this._resizeObservedCard) {
+      this.resizeObserver.unobserve(this._resizeObservedCard);
     }
+    this.resizeObserver.observe(card);
+    this._resizeObservedCard = card;
   }
 
   detachResizeObserver() {
@@ -1707,6 +1841,12 @@ async _refreshPressureDelta(): Promise<void> {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
     }
+    this._resizeObservedCard = null;
+    // Allow connectedCallback to re-attach on a reconnect. Without the
+    // reset, the first disconnect (teardown drain) killed the observer
+    // for the rest of the element's life — after an HA view switch the
+    // card never saw width changes again.
+    this.resizeInitialized = false;
     if (this._resizeRaf) {
       cancelAnimationFrame(this._resizeRaf);
       this._resizeRaf = null;
@@ -1736,14 +1876,12 @@ measureCard() {
   // Skip the destroy-and-rebuild dance when the chart is already live
   // and the visible-bar count hasn't changed. ResizeObserver fires
   // repeatedly as HA's section-grid settles its layout; each tick
-  // used to rebuild the Chart.js instance with a slightly different
+  // used to rebuild the chart instance with a slightly different
   // canvas size, and the bar ruler re-allocated per-column slot
   // widths each time — visible to the user as bars starting wide
-  // then narrowing once HA's layout settled. Chart.js's own
-  // responsive:true ResizeObserver handles the canvas-size change
-  // for us; the only reason to drawChart() here is when forecastItems
-  // changed (different dataset length needs a fresh chart) or no
-  // chart exists yet.
+  // then narrowing once HA's layout settled. The only reason to
+  // drawChart() here is when forecastItems changed (different dataset
+  // length needs a fresh chart) or no chart exists yet.
   //
   // BUT only skip when the existing chart is still LIVE in the DOM. On
   // an HA view switch the card is detached and re-attached; the forecast
@@ -1756,9 +1894,49 @@ measureCard() {
   // fresh div.
   const chartAlive = this.forecastChart?.uplot?.root?.isConnected === true;
   if (chartAlive && this.forecastItems === prevForecastItems) {
+    // Same-shape data refresh (hourly poll, forecast push): push the
+    // new values into the existing chart in place. Only runs when
+    // _refreshForecastsUnsafe actually rebuilt `forecasts` — a
+    // ResizeObserver tick or sensor tick never sets the flag, so the
+    // steady-state cost of those is zero canvas work (perf pass
+    // 2026-08; replaces the removed updated()-on-`weather` redraw).
+    if (this._forecastsDirty) {
+      this._forecastsDirty = false;
+      this.updateChart();
+    }
+    // uPlot does NOT auto-resize: Chart.js's responsive:true observer
+    // (which this skip path used to rely on) died with the library swap
+    // (ADR-0012). buildChart measures the container once; afterwards
+    // `#forecastChart canvas { width:100% }` CSS-stretches the fixed
+    // pixel buffer to whatever the container's CURRENT width is. So a
+    // later width change (sidebar toggle, window resize, section-grid
+    // settling) leaves a stretched bitmap — the user-visible symptom is
+    // a pixelated/blurry temperature line, worst at hourly where the
+    // canvas is widest. Snap the buffer to the new width without the
+    // full destroy+rebuild; resize() re-measures the container and
+    // calls uplot.setSize(), which redraws sharp.
+    this._resizeChartIfWidthChanged();
     return;
   }
   this.drawChart();
+}
+
+_resizeChartIfWidthChanged() {
+  const chart = this.forecastChart;
+  const root = chart?.uplot?.root as HTMLElement | undefined;
+  // Virtualized charts size against the scroll VIEWPORT (the wrapper),
+  // classic charts against the full-width .chart-container — mirror
+  // draw.ts's measureContainer so the comparison targets match.
+  const container = (root?.closest('.forecast-scroll.scrolling')
+    ?? root?.closest('.chart-container')) as HTMLElement | null;
+  if (!chart || !container) return;
+  // Same rounding as draw.ts's measureContainer so equal layouts
+  // compare equal — otherwise sub-pixel drift would trigger a redraw
+  // on every ResizeObserver tick.
+  const width = Math.round(container.getBoundingClientRect().width);
+  if (width > 0 && width !== chart.uplot.width) {
+    try { chart.resize(); } catch { /* chart torn down mid-tick */ }
+  }
 }
 
 // deno-lint-ignore no-explicit-any
@@ -1913,6 +2091,11 @@ async updated(changedProperties: Map<PropertyKey, unknown>) {
   // `unknown` to keep tsc happy while preserving the runtime assumption.
   setupActionHandler(this as unknown as Parameters<typeof setupActionHandler>[0]);
   setupScrollUx(this as unknown as Parameters<typeof setupScrollUx>[0]);
+  // Keep the ResizeObserver pinned to the live <ha-card> — same
+  // element-swap reasoning as the action-handler re-bind above, plus
+  // the first-render race (ha-card not yet rendered when the delayed
+  // attach fires). See _observeResizeTarget.
+  this._observeResizeTarget();
 
   if (changedProperties.has('config')) {
     const oldConfig = changedProperties.get('config');
@@ -1931,9 +2114,12 @@ async updated(changedProperties: Map<PropertyKey, unknown>) {
     }
   }
 
-  if (changedProperties.has('weather')) {
-    this.updateChart();
-  }
+  // NOTE (perf pass 2026-08): the former `changedProperties.has('weather')
+  // → updateChart()` hook is gone. The chart reads only `this.forecasts`
+  // — the synthesized weather object changes on every live sensor tick,
+  // so the hook forced a full uPlot setData + canvas repaint per tick
+  // without ever changing a pixel. Genuine data refreshes now reach the
+  // chart via the `_forecastsDirty` flag in measureCard.
 }
 
 // Tear down whichever data source had a config dependency change. The next
@@ -2066,6 +2252,9 @@ drawChart(args?: any): unknown[] | undefined {
     const result = drawChartUnsafe(this as unknown as Parameters<typeof drawChartUnsafe>[0], args);
     if (this.forecastChart) {
       this._initialChartBuilt = true;
+      // A full rebuild consumed the freshest `forecasts` — no in-place
+      // update needed on the next measureCard pass.
+      this._forecastsDirty = false;
       // Two-phase render (ADR-0016): the chart just painted with
       // placeholder rows (when scrolling). Fill the real condition-icon /
       // wind rows in a post-paint idle callback so their per-column DOM
@@ -2281,6 +2470,61 @@ renderModeToggle() {
   `;
 }
 
+// Scroll timeline / minimap (2026-08): a slim track below the chart
+// for the scrolling hourly-ish modes. One segment per calendar day
+// (width proportional to that day's share of the columns), today's
+// label bold, and a translucent thumb marking the currently visible
+// section. The thumb is positioned imperatively from scroll-ux's
+// rAF-coalesced scroll handler — Lit only renders the static track;
+// pointer interaction (click/scrub to navigate) is bound in
+// scroll-ux alongside the other scroll controls.
+renderScrollTimeline() {
+  const fc = (this.forecasts ?? []) as Array<{ datetime?: string }>;
+  const total = fc.length;
+  if (total < 2) return html``;
+
+  interface TimelineSeg { start: number; count: number; ms: number }
+  const segs: TimelineSeg[] = [];
+  let curKey = '';
+  for (let i = 0; i < total; i++) {
+    const dt = fc[i]?.datetime;
+    if (!dt) continue;
+    const d = new Date(dt);
+    if (!Number.isFinite(d.getTime())) continue;
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    if (key !== curKey) {
+      curKey = key;
+      const m = new Date(d);
+      m.setHours(0, 0, 0, 0);
+      segs.push({ start: i, count: 0, ms: m.getTime() });
+    }
+    segs[segs.length - 1].count++;
+  }
+  if (!segs.length) return html``;
+
+  const todayMs = startOfTodayMs();
+  const wdFmt = getDateTimeFormat(this.language, { weekday: 'short' });
+  const dayFmt = getDateTimeFormat(this.language, { day: 'numeric' });
+  const visible = effectiveVisibleBars(this.config);
+  const thumbPct = visible > 0 ? Math.min(100, (visible / total) * 100) : 100;
+
+  // The track is NOT aria-hidden: it carries real day labels, and an
+  // interactive element hidden from assistive tech is a WCAG smell.
+  // Keyboard users navigate via the chevron buttons instead; the
+  // thumb is a pure decoration (empty div) and stays hidden.
+  return html`
+    <div class="scroll-timeline">
+      ${segs.map((s) => html`
+        <div class="tl-seg ${s.ms === todayMs ? 'tl-today' : ''}"
+             style="left:${(s.start / total) * 100}%;width:${(s.count / total) * 100}%">
+          <span class="tl-seg-label">${wdFmt.format(new Date(s.ms))} ${dayFmt.format(new Date(s.ms))}</span>
+        </div>
+      `)}
+      <div class="tl-thumb" aria-hidden="true" style="left:0%;width:${thumbPct}%"></div>
+    </div>
+  `;
+}
+
 // Cycle through daily → today → hourly → daily via the same setConfig
 // path the editor radio uses. _invalidateStaleSources picks up the
 // forecast.type change and rebuilds both station and forecast data
@@ -2413,10 +2657,11 @@ _scheduleForecastRowsReveal(): void {
     // ~8 hours). 0 disables the viewport entirely (legacy "fit-all"
     // for users who explicitly set it).
     //
-    // 'today' is 3-hour-aggregated to exactly 8 bars (00-02, 03-05,
-    // …, 21-23) so the default 8-bar viewport fits the whole day
-    // with no scroll.
-    const visibleBars = parseInt(config.forecast.number_of_forecasts, 10) || 0;
+    // 'today' is a DAY PAGER (2026-08): the viewport always frames
+    // exactly one calendar day (8 × 3-h blocks) and scrolls day-wise
+    // through the whole aggregated span — effectiveVisibleBars pins
+    // it to 8 regardless of number_of_forecasts.
+    const visibleBars = effectiveVisibleBars(config);
     const totalBars = (this.forecasts ?? []).length;
     const scrolling = visibleBars > 0 && totalBars > visibleBars;
     const contentWidthPct = scrolling ? (totalBars / visibleBars) * 100 : 100;
@@ -2536,6 +2781,9 @@ _scheduleForecastRowsReveal(): void {
                 <ha-icon icon="mdi:crosshairs-gps" aria-hidden="true"></ha-icon>
               </button>
             ` : ''}
+            ${scrolling && (fcType === 'hourly' || fcType === 'today')
+              ? this.renderScrollTimeline()
+              : ''}
           </div>
           `;
           })() : (() => {
@@ -2766,81 +3014,61 @@ renderErrorBanner() {
 }
 
 renderMain({ config, sun, weather, temperature } = this) {
-  if (config.show_main === false)
+  if (config.show_main === false) {
+    // The live block is gone — stop the 1 Hz clock too. Without this a
+    // config edit that hides the block would leave the timer ticking
+    // against DOM that no longer exists.
+    this._syncClockTimer(false);
     return html``;
+  }
 
-  const use12HourFormat = config.use_12hour_format;
   // Live-block sub-toggles default to ON (opt-out): if the parent
   // show_main is enabled, every sub-cell appears unless the user has
-  // explicitly turned it off in YAML / editor.
+  // explicitly turned it off in YAML / editor. The clock's own options
+  // (12h format, seconds) are read inside _updateClock at tick time.
   const showTime = config.show_time !== false;
   const showDay = config.show_day !== false;
   const showDate = config.show_date !== false;
   const showCurrentCondition = config.show_current_condition !== false;
   const showTemperature = config.show_temperature !== false;
-  const showSeconds = config.show_time_seconds === true;
 
   let roundedTemperature = parseFloat(temperature);
   if (!isNaN(roundedTemperature) && roundedTemperature % 1 !== 0) {
     roundedTemperature = Math.round(roundedTemperature * 10) / 10;
   }
 
-  const iconHtml = html`<ha-icon icon="${this.getWeatherIcon(weather.state, sun.state)}"></ha-icon>`;
+  // The big condition glyph links to the weather entity — its
+  // more-info dialog carries the forecast panel, the natural "tell me
+  // more" for the current condition. Falls back to the temperature
+  // sensor in station-only setups (same rule as the condition text).
+  const iconHtml = this._entityLink(
+    this.config?.weather_entity || this.config?.sensors?.temperature,
+    html`<ha-icon icon="${this.getWeatherIcon(weather.state, sun.state)}"></ha-icon>`,
+  );
 
-  const updateClock = () => {
-    const currentDate = new Date();
-    const timeOptions = {
-      hour12: use12HourFormat,
-      hour: 'numeric',
-      minute: 'numeric',
-      second: showSeconds ? 'numeric' : undefined
-    };
-    // Route through the cached Intl factory so the 1Hz clock tick
-    // doesn't pay a fresh formatter construction every second.
-    const currentTime = getDateTimeFormat(this.language, timeOptions as Intl.DateTimeFormatOptions).format(currentDate);
-    const currentDayOfWeek = getDateTimeFormat(this.language, { weekday: 'long' }).format(currentDate).toUpperCase();
-    const currentDateFormatted = getDateTimeFormat(this.language, { month: 'long', day: 'numeric' }).format(currentDate);
-
-    const mainDiv = this.shadowRoot?.querySelector('.main');
-    if (mainDiv) {
-      const clockElement = mainDiv.querySelector('#digital-clock');
-      if (clockElement) {
-        clockElement.textContent = currentTime;
-      }
-      if (showDay) {
-        const dayElement = mainDiv.querySelector('.date-text.day');
-        if (dayElement) {
-          dayElement.textContent = currentDayOfWeek;
-        }
-      }
-      if (showDate) {
-        const dateElement = mainDiv.querySelector('.date-text.date');
-        if (dateElement) {
-          dateElement.textContent = currentDateFormatted;
-        }
-      }
-    }
-  };
-
-  updateClock();
-
-  if (this._clockTimer) {
-    clearInterval(this._clockTimer);
-    this._clockTimer = null;
-  }
-  if (showTime) {
-    this._clockTimer = setInterval(updateClock, 1000);
-  }
+  // Clock lifecycle moved out of the render pass (perf pass 2026-08):
+  // the old code re-created the closure and tore down + re-armed the
+  // 1 Hz interval on EVERY render. _syncClockTimer is idempotent —
+  // it only touches the timer when the desired state actually changed
+  // — and _updateClock reads its options from `this.config` at tick
+  // time so a config edit needs no re-arm. Immediate update keeps the
+  // clock text fresh on the render that mounts it.
+  this._syncClockTimer(showTime);
+  if (showTime) this._updateClock();
 
   return html`
     <div class="main">
       ${iconHtml}
       <div>
         <div>
-          ${showTemperature ? html`${roundedTemperature}<span>${this.getUnit('temperature')}</span>` : ''}
+          ${showTemperature ? this._entityLink(this._attrEntity('temperature'),
+            html`${roundedTemperature}<span>${this.getUnit('temperature')}</span>`) : ''}
           ${showCurrentCondition ? html`
             <div class="current-condition">
-              <span>${this.ll(weather.state)}</span>
+              ${this._entityLink(
+                this.config?.weather_entity || this.config?.sensors?.temperature,
+                html`<span>${this.ll(weather.state)}</span>`,
+              )}
             </div>
           ` : ''}
         </div>
@@ -2855,6 +3083,67 @@ renderMain({ config, sun, weather, temperature } = this) {
       </div>
     </div>
   `;
+}
+
+// 1 Hz clock tick. Reads config at tick time (12h format, seconds,
+// day/date visibility, language) so config edits apply on the next
+// second with no timer re-arm. All three Intl formatters come from the
+// process-wide cache — the tick is three .format calls + three
+// textContent writes.
+_updateClock(): void {
+  const cfg = this.config || {};
+  const currentDate = new Date();
+  const timeOptions = {
+    hour12: cfg.use_12hour_format,
+    hour: 'numeric',
+    minute: 'numeric',
+    second: cfg.show_time_seconds === true ? 'numeric' : undefined,
+  };
+  const currentTime = getDateTimeFormat(this.language, timeOptions as Intl.DateTimeFormatOptions).format(currentDate);
+  const mainDiv = this.shadowRoot?.querySelector('.main');
+  if (!mainDiv) return;
+  const clockElement = mainDiv.querySelector('#digital-clock');
+  if (clockElement) clockElement.textContent = currentTime;
+  if (cfg.show_day !== false) {
+    const dayElement = mainDiv.querySelector('.date-text.day');
+    if (dayElement) {
+      dayElement.textContent = getDateTimeFormat(this.language, { weekday: 'long' }).format(currentDate).toUpperCase();
+    }
+  }
+  if (cfg.show_date !== false) {
+    const dateElement = mainDiv.querySelector('.date-text.date');
+    if (dateElement) {
+      dateElement.textContent = getDateTimeFormat(this.language, { month: 'long', day: 'numeric' }).format(currentDate);
+    }
+  }
+}
+
+// Idempotent timer management for the clock. The timer runs only while
+// the clock is shown AND the document is visible — a wall tablet that
+// switches to another dashboard (or a backgrounded browser tab) stops
+// burning a wakeup per second. _handleVisibilityChange re-arms on
+// return and repaints immediately so the user never sees a stale time.
+_syncClockTimer(wantClock: boolean): void {
+  const visible = typeof document === 'undefined' || !document.hidden;
+  const shouldRun = wantClock && visible;
+  if (shouldRun && !this._clockTimer) {
+    this._clockTimer = setInterval(() => this._updateClock(), 1000);
+  } else if (!shouldRun && this._clockTimer) {
+    clearInterval(this._clockTimer);
+    this._clockTimer = null;
+  }
+}
+
+_handleVisibilityChange(): void {
+  const wantClock = this.config?.show_main !== false && this.config?.show_time !== false;
+  this._syncClockTimer(wantClock);
+  if (typeof document !== 'undefined' && !document.hidden) {
+    if (wantClock) this._updateClock();
+    // Wake the station poller: a poll that came due while the tab was
+    // hidden was skipped (see MeasuredDataSource) — run it now so the
+    // returning user sees fresh data instead of waiting up to an hour.
+    this._dataSource?.notifyVisible();
+  }
 }
 
 // Thin wrappers around the pure unit-converter utilities. They thread
@@ -2886,13 +3175,47 @@ _formatSunshineHours(sunshine_duration: any, sunshine_duration_unit: any): numbe
   return formatSunshineHours(sunshine_duration, sunshine_duration_unit);
 }
 
+// Entity-link wrapper: clicking a live-panel value opens HA's
+// more-info dialog for the sensor behind it — the same affordance
+// HA's own entities card gives every row. `role="button"` doubles as
+// the marker the card-level action handler uses to EXCLUDE the
+// element from tap/hold/double-tap detection (see isCardControl in
+// action-handler.ts), so a row click never also fires the card's
+// tap_action. Values without a backing entity (sensor not configured
+// AND no weather-entity fallback) render unwrapped — no dead cursor.
+// deno-lint-ignore no-explicit-any
+_entityLink(entityId: string | undefined, content: any): any {
+  if (!entityId || !this._hass?.states?.[entityId]) return content;
+  const open = (ev: Event) => {
+    ev.stopPropagation();
+    this._fire('hass-more-info', { entityId });
+  };
+  return html`<span class="wsc-entity-link" role="button" tabindex="0"
+    @click=${open}
+    @keydown=${(ev: KeyboardEvent) => {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(ev); }
+    }}>${content}</span>`;
+}
+
+// Entity id backing an attribute row: the configured sensor wins;
+// rows whose value can fall back to the weather entity's current
+// attributes (see _extractSensorReadings) link to the weather entity
+// in that case, so the click still lands on the data's real source.
+_attrEntity(sensorKey: string, weatherFallback: boolean = true): string | undefined {
+  const eid = this.config?.sensors?.[sensorKey];
+  if (typeof eid === 'string' && eid) return eid;
+  if (weatherFallback && this.config?.weather_entity) return this.config.weather_entity;
+  return undefined;
+}
+
 // Per-row template helpers. Each row is a single conditional render —
 // clearer than 4-row nested ternaries and lets ESLint's
 // no-nested-conditional rule apply at per-row granularity.
 
 _climateRow_humidity(show: boolean, humidity: unknown) {
   if (!show || humidity === undefined) return html``;
-  return html`<ha-icon icon="hass:water-percent"></ha-icon> ${humidity} %<br>`;
+  return html`${this._entityLink(this._attrEntity('humidity'),
+    html`<ha-icon icon="hass:water-percent"></ha-icon> ${humidity} %`)}<br>`;
 }
 // deno-lint-ignore no-explicit-any
 _climateRow_pressure(show: boolean, dPressure: any, deltaHpa: number | null) {
@@ -2920,9 +3243,10 @@ _climateRow_pressure(show: boolean, dPressure: any, deltaHpa: number | null) {
       .replace('{delta}', deltaStr)
       .replace('{influence}', influenceLabel);
   }
-  return html`<span title=${ariaLabel} aria-label=${ariaLabel}><ha-icon
+  return html`${this._entityLink(this._attrEntity('pressure'),
+    html`<span title=${ariaLabel} aria-label=${ariaLabel}><ha-icon
       icon="hass:${iconName}"
-    ></ha-icon> ${dPressure} ${unitLabel}</span><br>`;
+    ></ha-icon> ${dPressure} ${unitLabel}</span>`)}<br>`;
 }
 _climateRow_dewpoint(show: boolean, dew_point: unknown) {
   if (!show || dew_point === undefined) return html``;
@@ -2957,9 +3281,10 @@ _climateRow_dewpoint(show: boolean, dew_point: unknown) {
       .replace(/\{unit\}/g, String(displayUnit))
       .replace('{band}', bandLabel);
   }
-  return html`<span title=${ariaLabel} aria-label=${ariaLabel}><ha-icon
+  return html`${this._entityLink(this._attrEntity('dew_point'),
+    html`<span title=${ariaLabel} aria-label=${ariaLabel}><ha-icon
       icon="hass:${iconName}"
-    ></ha-icon> ${dew_point} ${displayUnit}</span><br>`;
+    ></ha-icon> ${dew_point} ${displayUnit}</span>`)}<br>`;
 }
 _climateRow_precip(show: boolean, hasValue: boolean, precipitation: unknown, precipitation_unit: unknown) {
   if (!show || !hasValue) return html``;
@@ -2973,7 +3298,8 @@ _climateRow_precip(show: boolean, hasValue: boolean, precipitation: unknown, pre
   const isRate = isPrecipRateUnit(unitStr);
   const rateMm = isRate ? toMillimeters(parseFloat(String(precipitation)), unitStr) : null;
   const icon = rateMm != null && Number.isFinite(rateMm) ? precipIcon(rateMm) : 'hass:weather-rainy';
-  return html`<ha-icon icon="${icon}"></ha-icon> ${precipitation}${unitSuffix}<br>`;
+  return html`${this._entityLink(this._attrEntity('precipitation', false),
+    html`<ha-icon icon="${icon}"></ha-icon> ${precipitation}${unitSuffix}`)}<br>`;
 }
 
 _sunRow_sunStrength(
@@ -3028,38 +3354,48 @@ _sunRow_sunStrength(
   const luxDisplay = showLuxSegment ? formatLux(out.lux) : '';
   const valueText = [uvDisplay, luxDisplay].filter(Boolean).join(' / ');
 
-  return html`<div title=${title} aria-label=${title}><ha-icon
-      icon="hass:${out.iconShape}"
-    ></ha-icon> ${valueText}</div>`;
+  // Link priority mirrors the value's own precedence: the UV sensor
+  // when the UV segment is shown, else the illuminance sensor, else
+  // the weather entity the UV fallback came from.
+  const strengthEntity = (showUvSegment && this.config?.sensors?.uv_index)
+    || this.config?.sensors?.illuminance
+    || this._attrEntity('uv_index');
+  return html`<div title=${title} aria-label=${title}>${this._entityLink(strengthEntity,
+    html`<ha-icon icon="hass:${out.iconShape}"></ha-icon> ${valueText}`)}</div>`;
 }
 _sunRow_sunshine(show: boolean, sunshineHours: number | undefined) {
   if (!show || sunshineHours === undefined) return html``;
-  return html`<div><ha-icon icon="hass:weather-sunny"></ha-icon> ${sunshineHours} h</div>`;
+  return html`<div>${this._entityLink(this._attrEntity('sunshine_duration', false),
+    html`<ha-icon icon="hass:weather-sunny"></ha-icon> ${sunshineHours} h`)}</div>`;
 }
 // deno-lint-ignore no-explicit-any
 _sunRow_sunPanel(show: boolean, sun: any, language: string) {
   if (!show || sun === undefined) return html``;
-  return html`<div>${this.renderSun({ sun, language } as unknown as this)}</div>`;
+  return html`<div>${this._entityLink('sun.sun',
+    this.renderSun({ sun, language } as unknown as this))}${this._renderMoonLine()}</div>`;
 }
 
 // deno-lint-ignore no-explicit-any
 _windRow_direction(show: boolean, windDirection: any) {
   if (!show || windDirection === undefined) return html``;
-  return html`<ha-icon icon="hass:${this.getWindDirIcon(windDirection)}"></ha-icon> ${this.getWindDir(windDirection)} <br>`;
+  return html`${this._entityLink(this._attrEntity('wind_direction'),
+    html`<ha-icon icon="hass:${this.getWindDirIcon(windDirection)}"></ha-icon> ${this.getWindDir(windDirection)}`)} <br>`;
 }
 // deno-lint-ignore no-explicit-any
 _windRow_speed(show: boolean, dWindSpeed: any) {
   if (!show || dWindSpeed === undefined) return html``;
   const unitLabel = this.unitSpeed ? this.ll('units')[this.unitSpeed] : '';
-  return html`<ha-icon icon="hass:weather-windy"></ha-icon>
-    ${dWindSpeed} ${unitLabel} <br>`;
+  return html`${this._entityLink(this._attrEntity('wind_speed'),
+    html`<ha-icon icon="hass:weather-windy"></ha-icon>
+    ${dWindSpeed} ${unitLabel}`)} <br>`;
 }
 // deno-lint-ignore no-explicit-any
 _windRow_gust(show: boolean, wind_gust_speed: any) {
   if (!show || wind_gust_speed === undefined) return html``;
   const unitLabel = this.unitSpeed ? this.ll('units')[this.unitSpeed] : '';
-  return html`<ha-icon icon="hass:weather-windy-variant"></ha-icon>
-    ${this._convertWindSpeed(parseFloat(wind_gust_speed))} ${unitLabel}`;
+  return html`${this._entityLink(this._attrEntity('gust_speed'),
+    html`<ha-icon icon="hass:weather-windy-variant"></ha-icon>
+    ${this._convertWindSpeed(parseFloat(wind_gust_speed))} ${unitLabel}`)}`;
 }
 
 // Climate group: humidity / pressure / dew-point / precipitation. Returns
@@ -3159,6 +3495,10 @@ renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, la
   `;
 }
 
+// Only the NEXT sun event is shown (2026-08): during the day that's
+// the sunset, at night the sunrise — the other one is hours of stale
+// information. The freed second line carries the moon phase (see
+// _renderMoonLine).
 renderSun({ sun, language } = this) {
   if (sun == undefined) {
     return html``;
@@ -3172,12 +3512,50 @@ const timeOptions = {
 } as Intl.DateTimeFormatOptions;
 
   const timeFmt = getDateTimeFormat(language, timeOptions);
+  const rising = new Date(sun.attributes.next_rising);
+  const setting = new Date(sun.attributes.next_setting);
+  const nextIsRise = rising.getTime() <= setting.getTime();
+  const next = nextIsRise ? rising : setting;
   return html`
-    <ha-icon icon="mdi:weather-sunset-up"></ha-icon>
-      ${timeFmt.format(new Date(sun.attributes.next_rising))}<br>
-    <ha-icon icon="mdi:weather-sunset-down"></ha-icon>
-      ${timeFmt.format(new Date(sun.attributes.next_setting))}
+    <ha-icon icon="${nextIsRise ? 'mdi:weather-sunset-up' : 'mdi:weather-sunset-down'}"></ha-icon>
+      ${timeFmt.format(next)}
   `;
+}
+
+// Moon-phase line — fed by HA's official Moon integration. Entity
+// resolution: explicit `sensors.moon_phase` config wins, then the
+// integration's default `sensor.moon_phase`, then the legacy
+// `sensor.moon`. No entity (or unavailable) → no line, the sun panel
+// just stays single-line.
+_moonEntityId(): string | undefined {
+  const cfg = this.config?.sensors?.moon_phase;
+  if (typeof cfg === 'string' && cfg) return cfg;
+  const states = this._hass?.states;
+  if (states?.['sensor.moon_phase']) return 'sensor.moon_phase';
+  if (states?.['sensor.moon']) return 'sensor.moon';
+  return undefined;
+}
+
+_renderMoonLine() {
+  const eid = this._moonEntityId();
+  const st = eid ? this._hass?.states?.[eid] : undefined;
+  if (!st || st.state === 'unavailable' || st.state === 'unknown') return html``;
+  const icon = MOON_PHASE_ICONS[st.state] ?? 'mdi:weather-night';
+  return html`<br>${this._entityLink(eid, html`<ha-icon icon="${icon}"></ha-icon>
+      ${this._formatMoonPhase(st)}`)}`;
+}
+
+// Localized phase label. Modern HA exposes `hass.formatEntityState`
+// (frontend translation tables — "Zunehmender Halbmond" etc.); older
+// frontends fall back to the raw enum with underscores prettified.
+// deno-lint-ignore no-explicit-any
+_formatMoonPhase(st: any): string {
+  const h = this._hass as unknown as { formatEntityState?: (s: unknown) => string } | null;
+  try {
+    if (h && typeof h.formatEntityState === 'function') return h.formatEntityState(st);
+  } catch { /* frontend helper unavailable mid-boot */ }
+  const raw = String(st?.state ?? '').replace(/_/g, ' ');
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
 // ADR-0018: the wide per-column rows render up to 168 condition icons
@@ -3189,11 +3567,12 @@ const timeOptions = {
 // once per card (renderIconSpriteDefs in render()). Icon names outside
 // the shipped sprite fall back to a regular <ha-icon>, so an upstream
 // mapping addition degrades to the slow path instead of a blank cell.
+// The template is hoisted to module scope (see ICON_SPRITE_TEMPLATE)
+// so render() returns the SAME TemplateResult every pass — Lit's diff
+// then skips the whole subtree instead of re-walking N symbol
+// templates on every render (perf pass 2026-08).
 renderIconSpriteDefs() {
-  return html`<svg class="wsc-sprite" aria-hidden="true">${
-    Object.entries(MDI_PATHS).map(([name, path]) =>
-      svg`<symbol id="wsc-i-${name}" viewBox="0 0 24 24"><path d="${path}"></path></symbol>`)
-  }</svg>`;
+  return ICON_SPRITE_TEMPLATE;
 }
 
 _spriteIcon(fullName: string | undefined, cls: string = '') {
@@ -3430,7 +3809,7 @@ _convertWindSpeed(raw: unknown, sourceUnit?: string): number | null {
       // implies; the ResizeObserver fallback below picks up the real
       // size change once Lit's re-render commits.
       const totalBars = (this._stationCount || 0) + (this._forecastCount || 0);
-      const visibleBars = parseInt(fcfg.number_of_forecasts, 10) || 0;
+      const visibleBars = effectiveVisibleBars(this.config);
       if (totalBars > 0 && visibleBars > 0 && totalBars > visibleBars) {
         const expectedScrollWidth = wrapper.clientWidth * (totalBars / visibleBars);
         // Tolerance accounts for sub-pixel rounding + browser layout
@@ -3440,7 +3819,14 @@ _convertWindSpeed(raw: unknown, sourceUnit?: string): number | null {
           return false;
         }
       }
-      const scrollLeft = computeInitialScrollLeft({
+      // Day pager: the initial position is the CURRENT day's page
+      // (today's midnight block at the left edge), not the
+      // station/forecast boundary. Falls back to the boundary-centred
+      // position when no midnight block matches (e.g. clock skew).
+      const dayPage = fcfg.type === 'today'
+        ? computeDayPageScrollLeft(this.forecasts, wrapper.scrollWidth)
+        : null;
+      const scrollLeft = dayPage ?? computeInitialScrollLeft({
         stationCount: this._stationCount || 0,
         forecastCount: this._forecastCount || 0,
         contentWidth: wrapper.scrollWidth,

@@ -6,6 +6,146 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.2.0] — 2026-08-07
+
+The "flip through your week" release: the today view becomes a day
+pager, scrolling gets a navigable day timeline, the live panel links
+every value to its sensor — and the chart pipeline was rebuilt so all
+of this runs smoothly on Raspberry Pi dashboards and wall tablets.
+
+### Added
+
+- **The today view is now a day pager.** Instead of a fixed 24-hour
+  window, the viewport frames exactly one calendar day (8 × 3-hour
+  blocks, aligned to 00/03/…/21 o'clock) and pages day-wise through
+  your whole `days:` window: the chevrons step one day at a time,
+  free scrolling settles on day boundaries, and the view opens on the
+  current day. Measured hours draw solid, forecast hours dashed —
+  same rules as before. `forecast.number_of_forecasts` is ignored in
+  this mode (the "one day per page" frame is the point).
+- **Day timeline under the scrolling chart.** Hourly and today mode
+  show a slim minimap below the chart: one segment per calendar day
+  (today bold), with a translucent thumb marking the visible section.
+  Click or scrub it to navigate. The date of the leftmost/rightmost
+  visible column is also overlaid at the viewport edges, so you always
+  know which day you're looking at mid-scroll.
+- **Every live-panel value opens its sensor.** Temperature, humidity,
+  pressure, wind, sun strength, condition — clicking (or keyboard-
+  activating) a value opens Home Assistant's more-info dialog for the
+  sensor behind it, same as HA's own entities card. Values without a
+  backing entity render as plain text.
+- **Moon phase in the live panel.** The sun cell now shows the current
+  moon phase (icon + localized name) fed by HA's official
+  [Moon integration](https://www.home-assistant.io/integrations/moon/).
+  Auto-detected (`sensor.moon_phase`, legacy `sensor.moon`) or set
+  explicitly via `sensors.moon_phase`. No entity → no line.
+- **Only the next sun event is shown.** During the day that's the
+  sunset, at night the sunrise — the other one was hours of stale
+  information. The freed line carries the moon phase.
+
+### Changed
+
+- **Scrolling and redraws got dramatically cheaper.** The chart canvas
+  is now viewport-sized and pans while you scroll, instead of being a
+  full-content-width bitmap (~7 700 px at hourly) repainted on every
+  frame. Label plugins skip off-screen columns. Redraw cost now scales
+  with what's visible, not with how much data is loaded.
+- **Sharper temperature line on standard-DPI screens.** The line is
+  drawn at 2 px into a supersampled buffer on low-DPI displays (wall
+  tablets, older monitors), eliminating the "pixelated" look; the
+  forecast dash pattern is longer and calmer.
+- **The card paints instantly after a reload.** The last fetched
+  station and forecast series (up to 12 h old) are persisted and shown
+  immediately while the live fetch — 0.5–3 s of recorder roundtrip on
+  Pi-class hosts — runs in the background. The skeleton only appears
+  on a genuinely cold cache.
+- **Several cards share one request.** Dashboards with multiple
+  weather-station-cards used to issue identical recorder / history /
+  Open-Meteo requests once per card; identical requests now collapse
+  into a single roundtrip shared by all cards in the tab.
+- **The lux-sunshine derivation stopped refetching history it already
+  knows.** Sunshine hours for completed days are cached per day; each
+  hourly poll now only fetches today's illuminance samples (~1/8 of
+  the previous payload).
+- **Hidden dashboards go fully idle.** When the tab or dashboard is
+  not visible, the 1 Hz clock stops and the hourly station poll is
+  deferred; both resume (and refresh immediately) the moment the
+  dashboard is shown again.
+
+### Fixed
+
+- Calendar-aligned 3-hour aggregation: recorder gaps no longer shift
+  later blocks off their wall-clock slot in the today view.
+- The 1 Hz clock timer was re-created on every render and kept running
+  when `show_main` was turned off; it is now managed idempotently and
+  stops with the panel.
+- Sensor state changes no longer trigger a full chart repaint per tick
+  — the chart only redraws when the plotted series actually changed.
+
+### Under the hood
+
+- New ADRs: [0019](docs/adr/0019-virtualized-chart-canvas.md)
+  (virtualized canvas + supersampling),
+  [0020](docs/adr/0020-cross-card-request-dedup-and-persistent-caches.md)
+  (request dedup + persistent caches),
+  [0021](docs/adr/0021-today-mode-day-pager.md) (today day pager).
+- New leaf modules `src/utils/shared-requests.ts` (keyed in-flight
+  dedup + result TTL; results are shared references — derive, don't
+  mutate) and `src/utils/series-cache.ts` (versioned localStorage
+  stale-while-revalidate with expired-slot pruning). Cache keys carry
+  the full fetch signature including the sensor role=entity mapping.
+- `effectiveVisibleBars` is resolved in the chart orchestrator and
+  passed to `draw.ts` via `BuildChartOpts` — config interpretation
+  stays out of the render module (dependency-cruiser gate is green).
+- scroll-ux rebinds when the timeline appears/disappears on a reused
+  wrapper element; programmatic day-page navigations declare their
+  destination so the settle-snap can't cancel them mid-flight, with a
+  failsafe snap if an animation is interrupted.
+- The moon-phase entity joins the entity-delta gate's watch list;
+  it is excluded from the recorder statistics fetch (enum sensor).
+
+## [2.1.9] — 2026-06-12
+
+### Fixed
+
+- **The temperature line stays sharp when the card changes width.** When
+  the card got wider or narrower after the chart was first drawn — for
+  example when opening or closing the Home Assistant sidebar, resizing
+  the browser window, or while the dashboard grid was still settling —
+  the chart canvas was stretched to the new width instead of being
+  redrawn, leaving the temperature line pixelated and blurry (most
+  visibly in the hourly view). The card now redraws the chart at the
+  new width, so the line stays crisp. Nothing to change in your
+  configuration.
+- **The card reliably notices width changes again.** Two related gaps
+  meant the card could stop reacting to size changes entirely: the
+  size observer could attach before the card's frame existed (and then
+  watched nothing forever), and after switching dashboard views it was
+  never re-attached. Both paths are fixed, so the sharp-line fix above
+  also holds across view switches and slow first renders.
+
+### Under the hood
+
+- `measureCard()`'s skip-rebuild guard now calls `chart.resize()`
+  (→ `uplot.setSize()`) when the `.chart-container` width changed while
+  the bar count did not. The guard previously assumed Chart.js's
+  `responsive: true` observer would handle this — that observer died
+  with the uPlot swap (ADR-0012). Regression spec:
+  `tests-e2e/chart-resize-sharpness.spec.ts`.
+- ResizeObserver wiring made self-healing: `_observeResizeTarget()`
+  re-pins the observer to the live `<ha-card>` on every render (Lit can
+  swap the element between render branches; the delayed attach could
+  fire before the first render committed), and `detachResizeObserver()`
+  resets `resizeInitialized` so a reconnect re-attaches instead of
+  staying observer-less for the rest of the element's life.
+- Removed the v2.0 feedback call-out from the README.
+- The README's release badge refreshes right after a release instead of
+  lagging up to a day: `build.yml` now dispatches `badges.yml` after the
+  release-asset upload. The workflow's `release: published` trigger had
+  never fired — the release is created with `GITHUB_TOKEN`, whose events
+  never trigger other workflows (GitHub's recursion guard); an explicit
+  `gh workflow run` is exempt from that guard.
+
 ## [2.1.8] — 2026-06-11
 
 A pure performance release: the card now sits idle between weather

@@ -157,8 +157,17 @@ src/
 │   │                          properties the chart re-reads on every
 │   │                          redraw; a MutationObserver on <html>
 │   │                          invalidates the cache on theme switch.
-│   └── unit-converters.ts     (v2)  Pure wind / pressure unit-
-│                              conversion lookup tables (ADR-0009).
+│   ├── unit-converters.ts     (v2)  Pure wind / pressure unit-
+│   │                          conversion lookup tables (ADR-0009).
+│   ├── shared-requests.ts     (v2.2)  Module-level request dedup —
+│   │                          identical recorder / Open-Meteo calls
+│   │                          from sibling cards collapse into one
+│   │                          roundtrip (ADR-0020). Results are
+│   │                          shared references; never mutate.
+│   └── series-cache.ts        (v2.2)  Versioned localStorage
+│                              stale-while-revalidate cache for the
+│                              station / forecast series — instant
+│                              paint after reload (ADR-0020).
 │
 ├── chart/
 │   ├── orchestrator.ts        drawChartUnsafe(card, args) — assembles
@@ -544,7 +553,7 @@ files**):
 - The live-row classifiers — `precip-rate.ts`, `pressure-trend.ts`,
   `dew-point-comfort.ts`, `sun-strength.ts`.
 - `utils/*` — safe-query, numeric, intl-cache, resolve-css-var,
-  theme-tokens, unit-converters.
+  theme-tokens, unit-converters, shared-requests, series-cache.
 - `defaults.ts` — DEFAULTS shape + schema-drift CI test (issue #93).
 - Editor mutator methods (`tests/editor.test.js`) + per-partial
   render smoketests + the `section-keys.ts` schema-drift guard

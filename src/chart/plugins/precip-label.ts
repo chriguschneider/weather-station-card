@@ -75,6 +75,12 @@ export function createPrecipLabelPlugin({
       meta.data.forEach((bar: ChartBarLike, i: number) => {
         const rawValue = data.precip ? data.precip[i] : null;
         if (rawValue == null || rawValue <= 0) return;
+        const cx = xScale && typeof xScale.getPixelForTick === 'function'
+          ? xScale.getPixelForTick(i)
+          : bar.x;
+        // Viewport culling (virtualized canvas): off-screen columns
+        // skip the measureText + box drawing entirely.
+        if (cx < chart.chartArea.left - 80 || cx > chart.chartArea.right + 80) return;
         // Convert the per-bar amount into the display unit. Bar heights
         // stay in the source unit (handled by the axis); only this label
         // text is converted. Inches need two decimals (values are ~25×
@@ -93,9 +99,6 @@ export function createPrecipLabelPlugin({
         const lineH = baseSize;
         const boxW = lineW + 2 * padX;
         const boxH = lineH + 2 * padY;
-        const cx = xScale && typeof xScale.getPixelForTick === 'function'
-          ? xScale.getPixelForTick(i)
-          : bar.x;
         const boxLeft = cx - boxW / 2;
         const boxTop = baselineY - boxH / 2;
 

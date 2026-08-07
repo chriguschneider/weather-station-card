@@ -76,9 +76,10 @@ export function createSunshineLabelPlugin({
       for (let i = 0; i < xScale.ticks.length; i++) {
         const value = data.sunshine ? data.sunshine[i] : null;
         if (value == null || value <= 0) continue;
-        const text = formatSunshineHours(value);
-
         const x = xScale.getPixelForTick(i);
+        // Viewport culling (virtualized canvas).
+        if (x < chart.chartArea.left - 60 || x > chart.chartArea.right + 60) continue;
+        const text = formatSunshineHours(value);
         c.font = `${baseSize}px ${fontFamily}`;
         const textW = c.measureText(text).width;
         const boxW = textW + 2 * padX;

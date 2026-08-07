@@ -6,15 +6,12 @@
 // What we cover:
 //   - updateScrollIndicators visibility math (left chevron,
 //     right chevron, jump-to-now)
-//   - updateScrollDateStamps clamping (the v1.0 Phase H fix that
-//     prevented "May 5" from poking past the card edges)
 //   - setupScrollUx idempotency on re-bind to the same wrapper
 
 import { describe, it, expect, vi } from 'vitest';
 import {
   setupScrollUx,
   updateScrollIndicators,
-  updateScrollDateStamps,
 } from '../src/scroll-ux.js';
 
 // ── Mock builders ─────────────────────────────────────────────────────
@@ -177,96 +174,6 @@ describe('updateScrollIndicators', () => {
       },
     };
     expect(() => updateScrollIndicators(card)).not.toThrow();
-  });
-});
-
-// ── updateScrollDateStamps ────────────────────────────────────────────
-
-describe('updateScrollDateStamps', () => {
-  // Simple 168-hour fixture: 7 days starting at midnight.
-  const HOUR_MS = 3600_000;
-  function buildHourlyForecasts(hours = 168) {
-    const start = new Date(2026, 4, 1, 0, 0, 0, 0).getTime(); // May 1 local
-    const out = [];
-    for (let i = 0; i < hours; i++) {
-      out.push({ datetime: new Date(start + i * HOUR_MS).toISOString() });
-    }
-    return out;
-  }
-
-  it('hides both stamps when forecasts is empty', () => {
-    const { block, wrapper, dateLeft, dateRight } = mockBlock({ scrollWidth: 1000, clientWidth: 200 });
-    const card = mockCard({ block, forecasts: [] });
-    updateScrollDateStamps(block, wrapper, card);
-    expect(dateLeft.hasAttribute('hidden')).toBe(true);
-    expect(dateRight.hasAttribute('hidden')).toBe(true);
-  });
-
-  it('hides the leftmost stamp when its tick is a midnight (chart already labels it)', () => {
-    const forecasts = buildHourlyForecasts(48);
-    // Bar width = 960 / 48 = 20. scrollLeft 0 → leftIdx 0 (which is
-    // the May 1 midnight). The chart already prints "May 1" above the
-    // 00:00 tick; our overlay hides to avoid the duplicate.
-    const { block, wrapper, dateLeft } = mockBlock({ scrollWidth: 960, clientWidth: 200, scrollLeft: 0 });
-    const card = mockCard({ block, forecasts });
-    updateScrollDateStamps(block, wrapper, card);
-    expect(dateLeft.hasAttribute('hidden')).toBe(true);
-  });
-
-  it('clamps left position to TEXT_HALF=30 so date does not poke past the left edge', () => {
-    // Force a tiny positive raw centre by scrolling so the leftmost
-    // visible tick is mostly off-screen (60-90 % scrolled past).
-    // bar width = 100 / 48 (= 2.08). scrollLeft = 5 → leftIdx 2. raw
-    // centre = (2.5 × 2.08) - 5 = 0.2 → clamped up to 30.
-    const forecasts = buildHourlyForecasts(48);
-    // Use 13:00 start so the leftmost isn't midnight (otherwise the
-    // overlay hides per chart-de-dup rule).
-    forecasts[2] = { datetime: new Date(Date.UTC(2026, 4, 1, 11, 0)).toISOString() };
-    const { block, wrapper, dateLeft } = mockBlock({ scrollWidth: 100, clientWidth: 50, scrollLeft: 5 });
-    const card = mockCard({ block, forecasts });
-    updateScrollDateStamps(block, wrapper, card);
-    if (!dateLeft.hasAttribute('hidden')) {
-      // Interpret left as int ≥ 30
-      const left = parseInt((dateLeft.style.left || '0').replace('px', ''), 10);
-      expect(left).toBeGreaterThanOrEqual(30);
-    }
-  });
-
-  it('clamps right position so date does not poke past the right edge', () => {
-    const forecasts = buildHourlyForecasts(48);
-    const { block, wrapper, dateRight } = mockBlock({
-      scrollWidth: 200, clientWidth: 100,
-      scrollLeft: 95, // rightmost tick mostly off-screen on the right
-    });
-    const card = mockCard({ block, forecasts });
-    updateScrollDateStamps(block, wrapper, card);
-    if (!dateRight.hasAttribute('hidden')) {
-      const left = parseInt((dateRight.style.left || '0').replace('px', ''), 10);
-      // Must sit at clientWidth - TEXT_HALF (= 70) or further left.
-      expect(left).toBeLessThanOrEqual(70);
-    }
-  });
-
-  it('hides the right stamp when leftIdx === rightIdx (single visible bar)', () => {
-    const forecasts = buildHourlyForecasts(2);
-    // Wide bars, narrow viewport — only one bar fits.
-    const { block, wrapper, dateLeft, dateRight } = mockBlock({ scrollWidth: 400, clientWidth: 50, scrollLeft: 50 });
-    const card = mockCard({ block, forecasts });
-    updateScrollDateStamps(block, wrapper, card);
-    expect(dateRight.hasAttribute('hidden')).toBe(true);
-    // Whether dateLeft renders depends on midnight-de-dup logic, but
-    // dateRight is unconditional in the same-idx case.
-    expect(dateLeft).toBeDefined();
-  });
-
-  it('survives malformed datetime strings without throwing', () => {
-    const forecasts = [
-      { datetime: 'not-a-real-date' },
-      { datetime: 'still-broken' },
-    ];
-    const { block, wrapper } = mockBlock({ scrollWidth: 400, clientWidth: 100 });
-    const card = mockCard({ block, forecasts });
-    expect(() => updateScrollDateStamps(block, wrapper, card)).not.toThrow();
   });
 });
 
@@ -508,11 +415,14 @@ describe('setupScrollUx drag tuning', () => {
 
 describe('setupScrollUx click handlers', () => {
   it('left-indicator click scrolls one viewport left', () => {
-    const { block, wrapper, left } = mockBlock({ clientWidth: 200 });
+    // Chevrons navigate via scrollTo with an explicit target (needed
+    // for the day-snap coordination) — from scrollLeft 400, one
+    // 0.85-viewport step left lands at 400 - 170 = 230.
+    const { block, wrapper, left } = mockBlock({ clientWidth: 200, scrollLeft: 400 });
     const card = mockCard({ block });
     setupScrollUx(card);
     left.dispatchEvent({ type: 'click', stopPropagation: () => {} });
-    expect(wrapper.scrollBy).toHaveBeenCalledWith({ left: -200 * 0.85, behavior: 'smooth' });
+    expect(wrapper.scrollTo).toHaveBeenCalledWith({ left: 400 - 200 * 0.85, behavior: 'smooth' });
   });
 
   it('right-indicator click scrolls one viewport right', () => {
@@ -520,7 +430,7 @@ describe('setupScrollUx click handlers', () => {
     const card = mockCard({ block });
     setupScrollUx(card);
     right.dispatchEvent({ type: 'click', stopPropagation: () => {} });
-    expect(wrapper.scrollBy).toHaveBeenCalledWith({ left: 200 * 0.85, behavior: 'smooth' });
+    expect(wrapper.scrollTo).toHaveBeenCalledWith({ left: 200 * 0.85, behavior: 'smooth' });
   });
 
   it('jump-to-now click smooth-scrolls to the canonical "now" position', () => {
@@ -556,27 +466,31 @@ describe('setupScrollUx click handlers', () => {
     }
   });
 
-  it('scroll-rAF callback redraws the chart when forecastChart exposes draw()', () => {
-    const draw = vi.fn();
+  it('scroll-rAF callback pans the virtualized chart via setScrollWindow', () => {
+    // Perf pass 2026-08: the per-scroll full `chart.draw()` is gone —
+    // the rAF callback pans the virtualized canvas by handing the
+    // wrapper's current scrollLeft to setScrollWindow instead.
+    const setScrollWindow = vi.fn();
     let rafCallback = null;
     const originalRaf = globalThis.requestAnimationFrame;
     globalThis.requestAnimationFrame = ((cb) => { rafCallback = cb; return 1; });
     try {
       const { block, wrapper } = mockBlock();
       const card = mockCard({ block });
-      card.forecastChart = { draw };
+      card.forecastChart = { setScrollWindow };
+      wrapper.scrollLeft = 123;
       setupScrollUx(card);
       wrapper.dispatchEvent({ type: 'scroll' });
-      // Synchronously invoke the rAF callback to exercise the redraw.
+      // Synchronously invoke the rAF callback to exercise the pan.
       expect(rafCallback).toBeTypeOf('function');
       rafCallback();
-      expect(draw).toHaveBeenCalled();
+      expect(setScrollWindow).toHaveBeenCalledWith(123);
     } finally {
       globalThis.requestAnimationFrame = originalRaf;
     }
   });
 
-  it('scroll-rAF callback does not throw when forecastChart is missing draw()', () => {
+  it('scroll-rAF callback does not throw when forecastChart is missing setScrollWindow()', () => {
     let rafCallback = null;
     const originalRaf = globalThis.requestAnimationFrame;
     globalThis.requestAnimationFrame = ((cb) => { rafCallback = cb; return 1; });

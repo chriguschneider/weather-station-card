@@ -23,6 +23,7 @@
 import type { DailySunshineEntry, HourlySunshineEntry } from './sunshine-source.js';
 import type { ForecastEntry } from './forecast-utils.js';
 import { wmoToCondition } from './weather-code-map.js';
+import { dedupeRequest } from './utils/shared-requests.js';
 
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 
@@ -443,6 +444,10 @@ export class OpenMeteoSource {
   includeHourly: boolean;
 
   private readonly _fetch: FetchLike | null;
+  /** True when the constructor received an injected fetchImpl (tests).
+   *  The module-level request dedup is bypassed then — it would leak
+   *  responses across test cases that reuse the same URL. */
+  private readonly _fetchIsCustom: boolean;
   private readonly _storage: StorageLike | null;
   private readonly _now: () => number;
 
@@ -475,6 +480,7 @@ export class OpenMeteoSource {
     // See resolveFetchImpl for the load-bearing null-vs-undefined
     // contract (`null` = no network, `undefined` = global fetch).
     this._fetch = resolveFetchImpl(fetchImpl);
+    this._fetchIsCustom = fetchImpl != null;
     const fallbackStorage = typeof window !== 'undefined' && window.localStorage ? window.localStorage : null;
     this._storage = storage !== undefined ? storage : fallbackStorage;
     this._now = now ?? (() => Date.now());
@@ -570,11 +576,20 @@ export class OpenMeteoSource {
 
     this._inFlight = (async () => {
       try {
-        const res = await (this._fetch as FetchLike)(url, signal ? { signal } : undefined);
-        if (!res?.ok) {
-          throw new Error(`Open-Meteo HTTP ${res ? res.status : '<no response>'}`);
-        }
-        const json = await res.json() as OpenMeteoResponse;
+        const doFetch = async (): Promise<OpenMeteoResponse> => {
+          const res = await (this._fetch as FetchLike)(url, signal ? { signal } : undefined);
+          if (!res?.ok) {
+            throw new Error(`Open-Meteo HTTP ${res ? res.status : '<no response>'}`);
+          }
+          return await res.json() as OpenMeteoResponse;
+        };
+        // Cross-card dedup (perf pass 2026-08): several cards at the
+        // same location build the same URL — share one HTTP roundtrip
+        // per minute instead of hitting Open-Meteo once per card.
+        // Bypassed for injected fetch impls (test isolation).
+        const json = this._fetchIsCustom
+          ? await doFetch()
+          : await dedupeRequest(`openmeteo:${url}`, 60 * 1000, doFetch);
         this._daily = parseDailySunshine(json);
         this._hourly = this.includeHourly ? parseHourlySunshine(json) : [];
         this._dailyForecast = buildDailyForecast(json);

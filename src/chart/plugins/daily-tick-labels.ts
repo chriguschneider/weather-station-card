@@ -61,22 +61,19 @@ interface RenderContext {
   getTickInfo(dataIdx: number): TickInfo | null;
 }
 
-/** Walk the visible ticks to find the first one whose pixel position
- *  is inside the scroll viewport. 'hourly' mode renders inside a
- *  horizontally-scrolling wrapper; the leftmost VISIBLE tick (not the
- *  leftmost data point) carries the date label. */
-function findLeftmostVisibleTick(chart: ChartLike, scrollLeft: number): number {
-  const xScale = chart.scales.x!;
-  for (let i = 0; i < xScale.ticks.length; i++) {
-    if (xScale.getPixelForTick(i) >= scrollLeft) return i;
-  }
-  return 0;
-}
-
 /** Today / hourly branch. Renders 24-hour time per column, left-
  *  aligned, with a stacked date label (BOLD, primary text colour) on
- *  the leftmost-visible column and on every midnight column. Midnight
- *  columns additionally draw a thick day-boundary stroke. */
+ *  day-boundary columns (and, for non-scrolling 'today', the first
+ *  column). Midnight columns additionally draw a thick day-boundary
+ *  stroke.
+ *
+ *  Perf pass 2026-08: the former scrollLeft-tracking "sticky" date on
+ *  the leftmost VISIBLE column is gone — it forced a full canvas
+ *  redraw on every scroll frame just to move one text label. The
+ *  scroll timeline below the chart carries the day context now; the
+ *  canvas output no longer depends on the scroll position.
+ *  Off-viewport columns are culled via `cullX` (virtualized canvas —
+ *  see chart/draw.ts). */
 function drawHourlyTimeLabels(chart: ChartLike, ctx: RenderContext): void {
   const xScale = chart.scales.x!;
   const c = chart.ctx;
@@ -87,22 +84,9 @@ function drawHourlyTimeLabels(chart: ChartLike, ctx: RenderContext): void {
   c.textAlign = 'left';
   c.textBaseline = 'bottom';
   const colW = xScale.width / xScale.ticks.length;
-
-  // For 'hourly' the chart can scroll horizontally inside an outer
-  // wrapper; the canvas is wider than the viewport. To mark the
-  // LEFTMOST VISIBLE tick (not the leftmost data point, which may
-  // be scrolled off-screen), find the first tick whose pixel
-  // position exceeds the wrapper's scrollLeft. 'today' has no
-  // scroll, so the leftmost visible == i === 0.
-  let leftmostVisibleIdx = 0;
-  let scrollLeft = 0;
   const isScrollable = ctx.config.forecast.type === 'hourly';
-  if (isScrollable) {
-    const canvas = (chart as { canvas?: HTMLElement | null }).canvas ?? null;
-    const wrapper = canvas ? canvas.closest('.forecast-scroll.scrolling') : null;
-    scrollLeft = wrapper ? (wrapper as HTMLElement).scrollLeft : 0;
-    leftmostVisibleIdx = findLeftmostVisibleTick(chart, scrollLeft);
-  }
+  const cullMin = chart.chartArea.left - 2 * colW;
+  const cullMax = chart.chartArea.right + 2 * colW;
 
   // Layout from top to bottom: date → time → sunshine "Xh" box
   // (drawn by the sibling sunshine plugin). The sunshineLabelBand
@@ -128,9 +112,18 @@ function drawHourlyTimeLabels(chart: ChartLike, ctx: RenderContext): void {
     // dKey-change branch covers 3h-aggregated 'today' mode where no
     // column anchors at exactly 00:00 (the midnight hour is pooled
     // inside the 22:00 block; the next column anchors at 01:00 of the
-    // new day).
+    // new day). prevDKey is tracked for EVERY column — including
+    // culled ones — so the boundary detection survives the viewport
+    // window.
     const dayChanged = prevDKey !== null && info.dKey !== prevDKey;
     const isDayBoundary = info.isMidnight || dayChanged;
+    prevDKey = info.dKey;
+
+    // Viewport culling: with the virtualized canvas only ~visibleBars
+    // columns land inside the plot area — skip the draw calls for the
+    // rest (the loop bookkeeping above stays, it feeds boundary
+    // detection).
+    if (x < cullMin || x > cullMax) continue;
 
     if (isDayBoundary) {
       // Bold day-boundary marker: thick vertical line from chart bottom
@@ -146,27 +139,15 @@ function drawHourlyTimeLabels(chart: ChartLike, ctx: RenderContext): void {
       c.restore();
     }
 
-    const showDate = i === leftmostVisibleIdx || isDayBoundary;
+    const showDate = (!isScrollable && i === 0) || isDayBoundary;
     if (showDate) {
-      // Sticky placement for the leftmost-visible date in scrollable
-      // hourly mode: when the column's left edge is scrolled off-screen
-      // (colLeft < scrollLeft), the date label would land outside the
-      // viewport. Clamp to scrollLeft so the date sits at the viewport's
-      // left edge — what the user expects from a "currently showing"
-      // date marker. Day-boundary labels stay at colLeft so they line
-      // up with the bold midnight stroke.
-      const stickyLeft = isScrollable && i === leftmostVisibleIdx && !isDayBoundary;
-      const dateLabelX = stickyLeft
-        ? Math.max(labelX, scrollLeft + labelGap)
-        : labelX;
       c.font = `bold ${fontSize}px Helvetica, Arial, sans-serif`;
       c.fillStyle = weekdayColor;
-      c.fillText(info.dateShort, dateLabelX, dateBaseY - lineH);
+      c.fillText(info.dateShort, labelX, dateBaseY - lineH);
     }
     c.font = `${fontSize}px Helvetica, Arial, sans-serif`;
     c.fillStyle = weekdayColor;
     c.fillText(info.time24, labelX, dateBaseY);
-    prevDKey = info.dKey;
   }
   c.restore();
 }
@@ -188,6 +169,9 @@ function drawDailyDateWeekdayLabels(chart: ChartLike, ctx: RenderContext): void 
   c.textBaseline = 'bottom';
   const dateBaseY = xScale.bottom - 2 - ctx.sunshineLabelBand;
   const weekdayY = ctx.showDateRow ? dateBaseY - lineH : dateBaseY;
+  const colWDaily = xScale.ticks.length ? xScale.width / xScale.ticks.length : 0;
+  const cullMin = chart.chartArea.left - 2 * colWDaily;
+  const cullMax = chart.chartArea.right + 2 * colWDaily;
 
   for (let i = 0; i < xScale.ticks.length; i++) {
     const info = ctx.getTickInfo(i);
@@ -199,6 +183,8 @@ function drawDailyDateWeekdayLabels(chart: ChartLike, ctx: RenderContext): void 
     // pass.
     if (ctx.doubledToday && i === ctx.stationCount - 1) continue;
     const x = xScale.getPixelForTick(i);
+    // Viewport culling for the virtualized (scrolling) canvas.
+    if (x < cullMin || x > cullMax) continue;
     const labelX = (ctx.doubledToday && i === ctx.stationCount)
       ? (xScale.getPixelForTick(i - 1) + x) / 2
       : x;

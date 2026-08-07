@@ -36,21 +36,6 @@
 A Lovelace card that charts your own weather station's history alongside any
 forecast — driven by sensor data, not a `weather.*` entity.
 
-> **📣 v2.0 — and now I'd love to hear from you.**
->
-> With v2.0 this card has reached the shape I set out to build: the
-> past-vs-forecast chart, the live "now" panel, a resilient render path
-> that degrades gracefully, custom-theme support, and a layout that
-> holds up on phones. For me, this is the milestone — feature-complete
-> for what I wanted it to be.
->
-> Where it goes next is up to the people who actually run it. **If this
-> card is on your dashboard, tell me how it's going** — what works, what
-> feels off, what your weather station needs that the card can't do yet.
-> Start a [Discussion](https://github.com/chriguschneider/weather-station-card/discussions)
-> or [open an issue](https://github.com/chriguschneider/weather-station-card/issues/new/choose).
-> Community feedback is what will shape v2.x from here. — *Chrigu*
-
 <details>
 <summary><b>Table of contents</b></summary>
 
@@ -91,8 +76,10 @@ reflects the live readings of those same sensors. This card does both:
   semi-transparent so predicted values read distinctly from measured
   ones. Span is configurable separately (`forecast_days:`).
 - A **live main panel** showing the current temperature, condition icon,
-  and (optionally) clock and weather attributes — all derived from current
-  sensor states, not from a forecast.
+  and (optionally) clock, weather attributes, next sun event and moon
+  phase — all derived from current sensor states, not from a forecast.
+  Every value is clickable and opens the backing sensor's more-info
+  dialog.
 
 Conditions are derived by a deterministic, meteorologically-grounded
 classifier (see [docs/CONDITIONS.md](docs/CONDITIONS.md#how-conditions-are-determined)
@@ -110,7 +97,7 @@ button.
 <tr>
 <th></th>
 <th>Daily (default)</th>
-<th>Today (24 h)</th>
+<th>Today (day pager)</th>
 <th>Hourly (7 days)</th>
 </tr>
 <tr>
@@ -149,12 +136,15 @@ button.
 
 - **Daily** (default) — one column per day across the past + forecast
   window. The classic view.
-- **Today** — zoom on the current 24 hours, 3-hourly aggregation
-  (8 columns). Combination splits into 12 station-hours back and
-  12 forecast-hours forward; forecast-only expands to the full 24.
+- **Today** — a day pager: the viewport frames exactly one calendar
+  day as 8 × 3-hour blocks and pages day-wise through the whole
+  `days:` window. Chevrons step one day at a time, free scrolling
+  snaps to day boundaries, and the view opens on the current day
+  (measured hours solid, forecast hours dashed).
 - **Hourly** — one column per hour over 7 days, scrollable. 168
   columns; the jump-to-now button snaps the viewport to the present
-  hour.
+  hour, and a slim day timeline below the chart shows where you are
+  (click or scrub it to navigate).
 
 ## Installation
 
