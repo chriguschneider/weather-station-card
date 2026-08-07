@@ -6,6 +6,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.2.1] — 2026-08-07
+
+Polish release for the v2.2.0 day pager plus a calmer restart
+experience: pager pages are always full, the day timeline only shows
+whole days, and an HA restart no longer paints the card red.
+
 ### Changed
 
 - **Calmer handling of unavailable sensors (HA restart).** When
