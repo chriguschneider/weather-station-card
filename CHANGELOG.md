@@ -6,6 +6,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Calmer handling of unavailable sensors (HA restart).** When
+  sensors flip to `unavailable` — typically for a minute or two after
+  a Home Assistant restart — the card no longer paints a red error
+  banner listing every sensor. Instead: the live panel keeps showing
+  the last known values, slightly dimmed, with a subtle
+  "Waiting for sensor data…" line; the red treatment is gone entirely.
+  Only when a sensor stays unavailable beyond a 5-minute grace period
+  (and HA reports it is fully running) does a compact warning line
+  appear. Fixes [#213](https://github.com/chriguschneider/weather-station-card/issues/213).
+
 ### Fixed
 
 - **Hourly-ish data windows end on whole calendar days.** The

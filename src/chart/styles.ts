@@ -123,6 +123,30 @@ function buildCardStyles({
      * them to --primary-text-color otherwise). role="button" on these
      * spans also excludes them from the card-level tap_action — see
      * isCardControl in action-handler.ts. */
+    /* Availability hint (issue #213): one slim neutral row instead of
+     * the former red banner when sensors are unavailable. The overdue
+     * variant tints the icon with the warning colour; the in-grace
+     * variant stays secondary-text neutral. .wsc-stale dims the live
+     * panel while values come from the last-known-good fallback. */
+    .wsc-availability {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin: 2px 8px 4px 8px;
+      font-size: 12px;
+      color: var(--secondary-text-color, #727272);
+    }
+    .wsc-availability ha-icon {
+      --mdc-icon-size: 16px;
+      color: var(--secondary-text-color, #727272);
+    }
+    .wsc-availability-overdue ha-icon {
+      color: var(--warning-color, #ffa600);
+    }
+    .wsc-stale {
+      opacity: 0.65;
+      transition: opacity 0.3s ease;
+    }
     .wsc-entity-link {
       cursor: pointer;
     }

@@ -99,6 +99,13 @@ import {
 } from './utils/unit-converters.js';
 import { drawChartUnsafe } from './chart/orchestrator.js';
 import { seriesCacheKey, loadSeriesCache, saveSeriesCache } from './utils/series-cache.js';
+import {
+  UNAVAILABLE_GRACE_MS,
+  updateMissingSince,
+  overdueMissing,
+  nextExpiryDelay,
+  type MissingSinceMap,
+} from './utils/availability-grace.js';
 import { sanitizeForecastEntries } from './chart/sanitize.js';
 import { renderChartSkeleton } from './chart/skeleton.js';
 import { cardStyles } from './chart/styles.js';
@@ -265,7 +272,20 @@ class WeatherStationCard extends LitElement {
   _forecastError: string | null = null;
   _stationCount: number = 0;
   _forecastCount: number = 0;
+  /** OVERDUE unavailable sensors — missing longer than the grace
+   *  period (issue #213). Surfaced as a compact warning hint, not the
+   *  red error banner. Reactive. */
   _missingSensors: string[] = [];
+  /** IN-GRACE unavailable sensors — recently gone, typically an HA
+   *  restart. Live panel dims and shows a subtle "waiting" hint;
+   *  values fall back to the last known good state. Reactive. */
+  _staleSensors: string[] = [];
+  /** entityId → first-seen-unavailable timestamp (availability-grace). */
+  _missingSince: MissingSinceMap = {};
+  /** entityId → last parseable state, feeding the unavailable-fallback
+   *  in _extractSensorReadings. In-memory only — resets on reload. */
+  _lastGoodStates: Record<string, string> = {};
+  _graceTimer: ReturnType<typeof setTimeout> | null = null;
   /** Advisory config-schema warnings from `validateConfig` (Slice 2) —
    *  unknown YAML keys / wrong-typed values. Surfaced through
    *  `renderErrorBanner()`; never blocks the render. */
@@ -558,6 +578,7 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
       // _syncDataSources) — a fresh array every pass would defeat the
       // reference check and re-render on every full hass pass.
       _missingSensors: { attribute: false },
+      _staleSensors: { attribute: false },
     };
   }
 
@@ -736,9 +757,19 @@ _extractSensorReadings(hass: HassMain): void {
   const sensors = this.config.sensors || {};
   const stateOf = (eid: string | undefined): HassEntityState | null =>
     (eid && hass.states?.[eid]) ? hass.states[eid] : null;
+  // `unavailable`/`unknown` states fall back to the last known good
+  // value (issue #213): during an HA restart the panel keeps showing
+  // the pre-restart readings (dimmed via .wsc-stale) instead of NaN /
+  // raw "unavailable" text. The fallback map is in-memory only — on a
+  // fresh page load with no last-good value the row renders empty.
   const valueOf = (eid: string | undefined): string | undefined => {
     const s = stateOf(eid);
-    return s ? s.state : undefined;
+    if (!s) return undefined;
+    if (s.state === 'unavailable' || s.state === 'unknown') {
+      return eid ? this._lastGoodStates[eid] : undefined;
+    }
+    if (eid) this._lastGoodStates[eid] = s.state;
+    return s.state;
   };
   const attrOf = (eid: string | undefined, attr: string): unknown => {
     const s = stateOf(eid);
@@ -1094,8 +1125,6 @@ _synthesizeWeatherEntity(currentCondition: string | undefined): any {
 // and could detach the listener — wrap each body in try/catch so the
 // chart can recover via _chartError instead.
 _syncDataSources(hass: HassMain): void {
-  const sensors = this.config.sensors || {};
-
   this._stationData = this._stationData || [];
   this._forecastData = this._forecastData || [];
 
@@ -1207,20 +1236,65 @@ _syncDataSources(hass: HassMain): void {
   // Initial merge so forecasts is at least an empty array (not undefined).
   if (!this.forecasts) this._refreshForecasts();
 
-  // Detect missing/unavailable sensor entities for the render-time banner.
-  // _missingSensors is reactive (the banner must appear/disappear without
-  // another trigger now that _hass ticks don't render, ADR-0017) — only
-  // reassign when the content differs so an unchanged scan stays inert.
-  const missing: string[] = [];
+  this._scanSensorAvailability(hass);
+}
+
+// Availability scan with a grace period (issue #213). An HA restart
+// flips every sensor to `unavailable` for a minute or two — that used
+// to paint the red error banner instantly, one line per sensor. Now:
+//   - IN GRACE (missing < 5 min, or HA reports it is still starting):
+//     `_staleSensors` — live panel dims, last known values keep
+//     showing, a subtle "waiting" hint appears.
+//   - OVERDUE (missing ≥ 5 min while HA runs): `_missingSensors` — a
+//     compact warning hint (NOT the red banner; that stays reserved
+//     for config/fetch/render errors).
+// Both fields are reactive; assignment is skipped when the content is
+// unchanged so a no-op scan stays render-inert (ADR-0017).
+_scanSensorAvailability(hass: HassMain): void {
+  const sensors = this.config?.sensors || {};
+  const missingNow: Array<{ key: string; eid: string }> = [];
   for (const [key, eid] of Object.entries(sensors)) {
     if (!eid || typeof eid !== 'string') continue;
     const s = hass.states?.[eid];
     if (!s || s.state === 'unavailable' || s.state === 'unknown') {
-      missing.push(`${key} (${eid})`);
+      missingNow.push({ key, eid });
     }
   }
-  if (missing.join('|') !== this._missingSensors.join('|')) {
-    this._missingSensors = missing;
+  const now = Date.now();
+  this._missingSince = updateMissingSince(
+    this._missingSince, missingNow.map((m) => m.eid), now);
+
+  // While HA itself reports a non-running core (restart in progress),
+  // nothing is "overdue" — the sensors are expected back shortly.
+  const coreState = (hass as unknown as { config?: { state?: string } }).config?.state;
+  const haStarting = typeof coreState === 'string' && coreState !== 'RUNNING';
+  const overdueSet = haStarting
+    ? new Set<string>()
+    : new Set(overdueMissing(this._missingSince, UNAVAILABLE_GRACE_MS, now));
+
+  const label = (m: { key: string; eid: string }): string => `${m.key} (${m.eid})`;
+  const overdue = missingNow.filter((m) => overdueSet.has(m.eid)).map(label);
+  const inGrace = missingNow.filter((m) => !overdueSet.has(m.eid)).map(label);
+  if (overdue.join('|') !== this._missingSensors.join('|')) {
+    this._missingSensors = overdue;
+  }
+  if (inGrace.join('|') !== this._staleSensors.join('|')) {
+    this._staleSensors = inGrace;
+  }
+
+  // In-grace entries must surface as overdue even if HA goes silent
+  // (no further hass ticks): arm a one-shot re-scan for the earliest
+  // expiry. Cleared on disconnect via the teardown registry.
+  if (this._graceTimer) {
+    clearTimeout(this._graceTimer);
+    this._graceTimer = null;
+  }
+  const delay = haStarting ? 30_000 : nextExpiryDelay(this._missingSince, UNAVAILABLE_GRACE_MS, now);
+  if (delay !== null && missingNow.length) {
+    this._graceTimer = setTimeout(() => {
+      this._graceTimer = null;
+      if (this._hass) this._scanSensorAvailability(this._hass);
+    }, delay + 1000);
   }
 }
 
@@ -1362,6 +1436,12 @@ async _refreshPressureDelta(): Promise<void> {
       if (this._clockTimer) {
         clearInterval(this._clockTimer);
         this._clockTimer = null;
+      }
+    });
+    r.add(() => {
+      if (this._graceTimer) {
+        clearTimeout(this._graceTimer);
+        this._graceTimer = null;
       }
     });
     // Visibility gate (perf pass 2026-08): pause the 1 Hz clock and
@@ -2723,8 +2803,11 @@ _scheduleForecastRowsReveal(): void {
         <div class="card">
           ${this.renderIconSpriteDefs()}
           ${banner}
-          ${mainSection}
-          ${attributesSection}
+          ${this._safeSection('availability note', () => this.renderAvailabilityNote())}
+          <div class="${(this._staleSensors?.length || this._missingSensors?.length) ? 'wsc-stale' : ''}">
+            ${mainSection}
+            ${attributesSection}
+          </div>
           ${forecastSection}
           ${debugSection}
         </div>
@@ -3010,9 +3093,11 @@ renderErrorBanner() {
   if (this._sectionError) {
     errors.push(this._sectionError);
   }
-  if (this._missingSensors?.length) {
-    errors.push(`Sensors unavailable: ${this._missingSensors.join(', ')}`);
-  }
+  // NOTE (issue #213): unavailable sensors are deliberately NOT part
+  // of this red banner anymore — a routine HA restart used to paint
+  // one alarming line per sensor. They surface through the subtle
+  // availability hint instead (renderAvailabilityNote), in-grace as a
+  // neutral "waiting" line, overdue as a compact warning line.
 
   // Advisory config-schema warnings (Slice 2). Rendered in a separate,
   // amber band below the red error band — they don't stop the card
@@ -3035,6 +3120,30 @@ renderErrorBanner() {
   `
     : html``;
   return html`${errorBanner}${warningBanner}`;
+}
+
+// Subtle availability hint (issue #213) — replaces the former red
+// banner line for unavailable sensors. One slim row, icon + short
+// text; the full sensor list lives in the tooltip. In-grace (typical
+// HA restart) renders neutral with a clock icon; overdue renders in
+// the warning colour. Nothing renders when all sensors are live.
+renderAvailabilityNote() {
+  const overdue = this._missingSensors ?? [];
+  const inGrace = this._staleSensors ?? [];
+  if (!overdue.length && !inGrace.length) return html``;
+  const isOverdue = overdue.length > 0;
+  const all = [...overdue, ...inGrace];
+  const text = isOverdue
+    ? `${overdue.length} sensor${overdue.length === 1 ? '' : 's'} unavailable`
+    : 'Waiting for sensor data…';
+  const title = `${isOverdue ? 'Unavailable' : 'Recently unavailable (updating)'}: ${all.join(', ')}`;
+  return html`
+    <div class="wsc-availability ${isOverdue ? 'wsc-availability-overdue' : ''}"
+         title=${title} aria-label=${title}>
+      <ha-icon icon="${isOverdue ? 'mdi:alert-circle-outline' : 'mdi:progress-clock'}"></ha-icon>
+      <span>${text}</span>
+    </div>
+  `;
 }
 
 renderMain({ config, sun, weather, temperature } = this) {
@@ -3086,7 +3195,7 @@ renderMain({ config, sun, weather, temperature } = this) {
       <div>
         <div>
           ${showTemperature ? this._entityLink(this._attrEntity('temperature'),
-            html`${roundedTemperature}<span>${this.getUnit('temperature')}</span>`) : ''}
+            html`${Number.isFinite(roundedTemperature) ? roundedTemperature : '—'}<span>${this.getUnit('temperature')}</span>`) : ''}
           ${showCurrentCondition ? html`
             <div class="current-condition">
               ${this._entityLink(
