@@ -6,6 +6,27 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Forecast-only today view no longer opens on a near-empty day
+  page.** Without a station block the current calendar day has no
+  measured hours, so a card mounted in the evening showed a blank
+  grid with the forecast squeezed into the last columns. In
+  forecast-only mode the day pager now anchors its pages at the first
+  forecast block (rolling next-24-h windows); fully empty leading
+  days (e.g. recorder history shorter than `days:`) are skipped in
+  every mode.
+
+### Under the hood
+
+- Unit tests for the v2.2.0 leaf modules (`series-cache`,
+  `shared-requests`) and day-pager helpers; both utils joined the
+  vitest coverage scope (they were invisible to the coverage report
+  and dragged SonarCloud's new-code coverage below the 80 % gate).
+- The SonarCloud job now waits for the quality-gate verdict
+  (`sonar.qualitygate.wait`) — a failing gate blocks the PR instead
+  of surfacing on master after the merge.
+
 ## [2.2.0] — 2026-08-07
 
 The "flip through your week" release: the today view becomes a day

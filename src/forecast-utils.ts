@@ -352,6 +352,50 @@ export function aggregateThreeHourCalendar<T extends Partial<ForecastEntry>>(
   return out;
 }
 
+/** True when a gap-filled block carries no data at all — every
+ *  numeric field null and no condition. These are the padding blocks
+ *  `aggregateThreeHourCalendar` emits for hours without source data. */
+function isEmptyBlock(b: ForecastEntry): boolean {
+  return b.temperature == null
+    && b.templow == null
+    && b.precipitation == null
+    && b.sunshine == null
+    && b.wind_speed == null
+    && b.wind_gust_speed == null
+    && b.wind_bearing == null
+    && b.pressure == null
+    && b.humidity == null
+    && b.uv_index == null
+    && !b.condition;
+}
+
+/** Trim data-less leading blocks off a gap-filled day-pager series.
+ *
+ *  Always drops WHOLE leading days (8-block groups) that are entirely
+ *  empty — e.g. a recorder whose history is shorter than the `days:`
+ *  window would otherwise page through blank days first.
+ *
+ *  With `allowPartialDayStart` (forecast-only mode), leading empty
+ *  blocks of the first remaining day are dropped too: without a
+ *  measured side there is nothing to anchor the calendar page to, and
+ *  a card mounted in the evening would show a near-empty current-day
+ *  page (data squeezed into the last blocks). Starting at the first
+ *  data block turns the pages into rolling next-24-h windows — the
+ *  natural framing when only a forecast exists. */
+export function trimLeadingEmptyBlocks(
+  blocks: ReadonlyArray<ForecastEntry>,
+  allowPartialDayStart: boolean,
+): ForecastEntry[] {
+  let start = 0;
+  while (blocks.length - start >= 8 && blocks.slice(start, start + 8).every(isEmptyBlock)) {
+    start += 8;
+  }
+  if (allowPartialDayStart) {
+    while (start < blocks.length && isEmptyBlock(blocks[start])) start++;
+  }
+  return start ? blocks.slice(start) : [...blocks];
+}
+
 /** Effective viewport size in bars. 'today' is a DAY PAGER: the
  *  viewport always frames exactly one calendar day (8 × 3-h blocks),
  *  regardless of `number_of_forecasts` — that invariant is what makes
