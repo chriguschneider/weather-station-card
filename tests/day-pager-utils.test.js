@@ -8,6 +8,8 @@ import {
   aggregateThreeHourCalendar,
   trimLeadingEmptyBlocks,
   trimTrailingEmptyBlocks,
+  trimToWholeDayStart,
+  trimToWholeDayEnd,
   effectiveVisibleBars,
   computeDayPageScrollLeft,
   computeTodayPagerScrollLeft,
@@ -176,6 +178,66 @@ describe('computeTodayPagerScrollLeft', () => {
       forecasts: series, stationCount: 1, forecastCount: 0,
       contentWidth: 0, viewportWidth: 400,
     })).toBeNull();
+  });
+});
+
+describe('whole-day windowing (trimToWholeDayStart / trimToWholeDayEnd)', () => {
+  /** Hourly entries from (y,m,d,h) inclusive, `n` hours long. */
+  function hours(y, m, d, h, n) {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      out.push({ datetime: new Date(y, m, d, h + i).toISOString() });
+    }
+    return out;
+  }
+
+  it('end: drops a trailing sliver day (single 00:00 hour)', () => {
+    // Thu full day + one lone Friday 00:00 hour — the sliver that grew
+    // a near-empty "Fri" segment on the day timeline.
+    const entries = [...hours(2026, 7, 13, 0, 24), ...hours(2026, 7, 14, 0, 1)];
+    const out = trimToWholeDayEnd(entries);
+    expect(out).toHaveLength(24);
+    expect(new Date(out[out.length - 1].datetime).getDate()).toBe(13);
+  });
+
+  it('end: drops a half-covered last day', () => {
+    const entries = [...hours(2026, 7, 13, 0, 24), ...hours(2026, 7, 14, 0, 13)];
+    expect(trimToWholeDayEnd(entries)).toHaveLength(24);
+  });
+
+  it('end: keeps a last day that reaches the 23:00 hour', () => {
+    const entries = [...hours(2026, 7, 13, 0, 24), ...hours(2026, 7, 14, 0, 24)];
+    expect(trimToWholeDayEnd(entries)).toHaveLength(48);
+  });
+
+  it('end: never drops the only day (short forecast survives)', () => {
+    const entries = hours(2026, 7, 13, 9, 5); // 09:00–13:00, one day
+    expect(trimToWholeDayEnd(entries)).toHaveLength(5);
+  });
+
+  it('start: drops a leading partial day', () => {
+    // Station history starting Fri 14:00 → the partial Friday goes,
+    // Saturday 00:00 becomes the first entry.
+    const entries = [...hours(2026, 6, 31, 14, 10), ...hours(2026, 7, 1, 0, 24)];
+    const out = trimToWholeDayStart(entries);
+    expect(out).toHaveLength(24);
+    expect(new Date(out[0].datetime).getHours()).toBe(0);
+    expect(new Date(out[0].datetime).getDate()).toBe(1);
+  });
+
+  it('start: keeps a first day that begins at 00:00', () => {
+    const entries = hours(2026, 7, 1, 0, 30);
+    expect(trimToWholeDayStart(entries)).toHaveLength(30);
+  });
+
+  it('start: never drops the only day', () => {
+    const entries = hours(2026, 7, 1, 14, 6);
+    expect(trimToWholeDayStart(entries)).toHaveLength(6);
+  });
+
+  it('both: empty input stays empty', () => {
+    expect(trimToWholeDayEnd([])).toEqual([]);
+    expect(trimToWholeDayStart([])).toEqual([]);
   });
 });
 

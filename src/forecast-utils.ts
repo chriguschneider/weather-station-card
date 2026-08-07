@@ -416,6 +416,58 @@ export function trimTrailingEmptyBlocks(
   return end < blocks.length ? blocks.slice(0, end) : [...blocks];
 }
 
+/** Local day key (y-m-d) of an entry; null for unparseable datetimes. */
+function localDayKeyOf(e: { datetime?: string } | null | undefined): string | null {
+  if (!e?.datetime) return null;
+  const d = new Date(e.datetime);
+  if (!Number.isFinite(d.getTime())) return null;
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+/** Whole-day windowing for the hourly-ish modes (2026-08, user
+ *  feedback "nur volle Tage"): a count-based slice (`days × 24` from
+ *  now) ends mid-day, so the day timeline grows a sliver segment — a
+ *  "day" holding a single trailing hour. Trim the OUTER boundaries to
+ *  local-calendar-day edges; the inner boundary (today / "now") stays
+ *  untouched.
+ *
+ *  `trimToWholeDayEnd`: if the LAST day's coverage stops before the
+ *  23:00 hour, drop that day's entries entirely — unless it is the
+ *  only day left (a forecast shorter than a day must survive). */
+export function trimToWholeDayEnd<T extends { datetime?: string }>(
+  entries: ReadonlyArray<T>,
+): T[] {
+  if (entries.length === 0) return [];
+  const last = entries[entries.length - 1];
+  const lastKey = localDayKeyOf(last);
+  if (lastKey === null) return [...entries];
+  const lastHour = new Date(last.datetime as string).getHours();
+  if (lastHour >= 23) return [...entries];
+  // Find where the incomplete last day begins.
+  let cut = entries.length;
+  while (cut > 0 && localDayKeyOf(entries[cut - 1]) === lastKey) cut--;
+  if (cut === 0) return [...entries]; // single-day series — keep
+  return entries.slice(0, cut);
+}
+
+/** `trimToWholeDayStart`: if the FIRST day's coverage does not start
+ *  at the 00:00 hour, drop that day's entries — unless it is the only
+ *  day present. Applied to the station-history side so the oldest
+ *  timeline segment is a full day, mirroring the forecast tail. */
+export function trimToWholeDayStart<T extends { datetime?: string }>(
+  entries: ReadonlyArray<T>,
+): T[] {
+  if (entries.length === 0) return [];
+  const first = entries[0];
+  const firstKey = localDayKeyOf(first);
+  if (firstKey === null) return [...entries];
+  if (new Date(first.datetime as string).getHours() === 0) return [...entries];
+  let cut = 0;
+  while (cut < entries.length && localDayKeyOf(entries[cut]) === firstKey) cut++;
+  if (cut >= entries.length) return [...entries]; // single-day series — keep
+  return entries.slice(cut);
+}
+
 /** Initial-scroll / jump-to-now target for the 'today' day pager.
  *  The viewport must never open on a half-empty page, so the anchor
  *  depends on which sides carry data:
