@@ -396,6 +396,57 @@ export function trimLeadingEmptyBlocks(
   return start ? blocks.slice(start) : [...blocks];
 }
 
+/** Mirror of `trimLeadingEmptyBlocks` for the series END. Always
+ *  drops whole trailing empty days (defensive — the aggregator's last
+ *  day always contains data); with `allowPartialDayEnd` (station-only
+ *  mode) the empty evening blocks of the last day go too, so the
+ *  series ends at the "now" block and the rightmost page is a full
+ *  rolling last-24-h window instead of a half-blank current day. */
+export function trimTrailingEmptyBlocks(
+  blocks: ReadonlyArray<ForecastEntry>,
+  allowPartialDayEnd: boolean,
+): ForecastEntry[] {
+  let end = blocks.length;
+  while (end >= 8 && blocks.slice(end - 8, end).every(isEmptyBlock)) {
+    end -= 8;
+  }
+  if (allowPartialDayEnd) {
+    while (end > 0 && isEmptyBlock(blocks[end - 1])) end--;
+  }
+  return end < blocks.length ? blocks.slice(0, end) : [...blocks];
+}
+
+/** Initial-scroll / jump-to-now target for the 'today' day pager.
+ *  The viewport must never open on a half-empty page, so the anchor
+ *  depends on which sides carry data:
+ *
+ *    - station-only (no forecast blocks): the rolling LAST-24-h
+ *      window — scroll to the far end, where the series was trimmed
+ *      to finish at the "now" block.
+ *    - forecast-only (no station blocks): the rolling NEXT-24-h
+ *      window — scroll to the start, where the series was trimmed to
+ *      begin at the first forecast block.
+ *    - combination: the current calendar day's page (both sides
+ *      populated); null when no block anchors at today's local
+ *      midnight (caller falls back to the boundary-centred position). */
+export function computeTodayPagerScrollLeft(opts: {
+  forecasts: ReadonlyArray<{ datetime?: string }> | null | undefined;
+  stationCount: number;
+  forecastCount: number;
+  contentWidth: number;
+  viewportWidth: number;
+  now?: Date;
+}): number | null {
+  const { forecasts, stationCount, forecastCount, contentWidth, viewportWidth } = opts;
+  if (!forecasts?.length || !Number.isFinite(contentWidth) || contentWidth <= 0) return null;
+  if (forecastCount <= 0 && stationCount > 0) {
+    const vw = Number.isFinite(viewportWidth) && viewportWidth > 0 ? viewportWidth : 0;
+    return Math.max(0, contentWidth - vw);
+  }
+  if (stationCount <= 0 && forecastCount > 0) return 0;
+  return computeDayPageScrollLeft(forecasts, contentWidth, opts.now ?? new Date());
+}
+
 /** Effective viewport size in bars. 'today' is a DAY PAGER: the
  *  viewport always frames exactly one calendar day (8 × 3-h blocks),
  *  regardless of `number_of_forecasts` — that invariant is what makes

@@ -50,6 +50,18 @@ Alternatives considered:
   merge; a boundary block containing both counts as station
   (measured wins).
 
+**Amendment (2026-08-07, post-v2.2.0):** a page must never open
+half-empty. Single-sided setups therefore anchor on the data instead
+of the calendar: `trimLeadingEmptyBlocks` / `trimTrailingEmptyBlocks`
+drop fully empty leading days in every mode, and in FORECAST-ONLY the
+empty start of the first day (pages become rolling next-24-h windows
+from the first forecast block), in STATION-ONLY the empty end of the
+last day (initial position and jump-to-now anchor at the series end —
+a rolling last-24-h window; the settle-snap treats the far end as a
+valid page). Combination keeps strict calendar pages — both sides
+populate the current day. `computeTodayPagerScrollLeft` encodes the
+anchor choice.
+
 ## Consequences
 
 **Pros**

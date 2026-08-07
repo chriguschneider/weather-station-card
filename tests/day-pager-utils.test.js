@@ -7,8 +7,10 @@ import { describe, it, expect } from 'vitest';
 import {
   aggregateThreeHourCalendar,
   trimLeadingEmptyBlocks,
+  trimTrailingEmptyBlocks,
   effectiveVisibleBars,
   computeDayPageScrollLeft,
+  computeTodayPagerScrollLeft,
 } from '../src/forecast-utils.js';
 
 /** Local-time hourly entry — the aggregator anchors on LOCAL hours. */
@@ -104,6 +106,76 @@ describe('trimLeadingEmptyBlocks', () => {
     const out = trimLeadingEmptyBlocks(blocks, true);
     expect(out).toEqual(blocks);
     expect(out).not.toBe(blocks);
+  });
+});
+
+describe('trimTrailingEmptyBlocks', () => {
+  it('keeps trailing empty evening blocks when a forecast side exists', () => {
+    const blocks = aggregateThreeHourCalendar([entry(2026, 7, 5, 9, { temperature: 15 })]);
+    const out = trimTrailingEmptyBlocks(blocks, false);
+    expect(out).toHaveLength(8); // page stays a full calendar day
+  });
+
+  it('trims to the last data block in station-only mode', () => {
+    const blocks = aggregateThreeHourCalendar([
+      entry(2026, 7, 5, 3, { temperature: 12 }),
+      entry(2026, 7, 5, 14, { temperature: 18 }),
+    ]);
+    const out = trimTrailingEmptyBlocks(blocks, true);
+    // Last kept block is the 12:00 block that holds the 14:00 entry.
+    expect(new Date(out[out.length - 1].datetime).getHours()).toBe(12);
+    expect(out[out.length - 1].temperature).toBe(18);
+  });
+
+  it('returns a copy even when nothing is trimmed', () => {
+    const blocks = aggregateThreeHourCalendar([entry(2026, 7, 5, 23, { temperature: 9 })]);
+    const out = trimTrailingEmptyBlocks(blocks, true);
+    expect(out).toEqual(blocks);
+    expect(out).not.toBe(blocks);
+  });
+});
+
+describe('computeTodayPagerScrollLeft', () => {
+  const series = [{ datetime: new Date(2026, 7, 6, 0).toISOString() }];
+
+  it('anchors station-only at the series end (rolling last-24-h window)', () => {
+    const left = computeTodayPagerScrollLeft({
+      forecasts: series, stationCount: 8, forecastCount: 0,
+      contentWidth: 1600, viewportWidth: 400,
+    });
+    expect(left).toBe(1200);
+  });
+
+  it('anchors forecast-only at the series start', () => {
+    const left = computeTodayPagerScrollLeft({
+      forecasts: series, stationCount: 0, forecastCount: 8,
+      contentWidth: 1600, viewportWidth: 400,
+    });
+    expect(left).toBe(0);
+  });
+
+  it("delegates to the current day's page in combination mode", () => {
+    const now = new Date(2026, 7, 6, 14, 30);
+    const twoDays = aggregateThreeHourCalendar([
+      entry(2026, 7, 5, 0, { temperature: 10 }),
+      entry(2026, 7, 6, 23, { temperature: 12 }),
+    ]);
+    const left = computeTodayPagerScrollLeft({
+      forecasts: twoDays, stationCount: 10, forecastCount: 6,
+      contentWidth: 1600, viewportWidth: 800, now,
+    });
+    expect(left).toBe(800); // today's midnight block at index 8 of 16
+  });
+
+  it('returns null on empty series or invalid width', () => {
+    expect(computeTodayPagerScrollLeft({
+      forecasts: [], stationCount: 1, forecastCount: 0,
+      contentWidth: 800, viewportWidth: 400,
+    })).toBeNull();
+    expect(computeTodayPagerScrollLeft({
+      forecasts: series, stationCount: 1, forecastCount: 0,
+      contentWidth: 0, viewportWidth: 400,
+    })).toBeNull();
   });
 });
 

@@ -8,12 +8,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **Forecast-only today view no longer opens on a near-empty day
-  page.** Without a station block the current calendar day has no
-  measured hours, so a card mounted in the evening showed a blank
-  grid with the forecast squeezed into the last columns. In
-  forecast-only mode the day pager now anchors its pages at the first
-  forecast block (rolling next-24-h windows); fully empty leading
+- **The today view never opens on a half-empty page.** Single-sided
+  setups anchor on their data instead of the calendar day:
+  forecast-only pages start at the first forecast block (rolling
+  next-24-h windows — previously an evening mount showed a blank grid
+  with the forecast squeezed into the last columns), station-only
+  pages end at the "now" block (rolling last-24-h window — previously
+  the evening of the current day was empty grid). Combination keeps
+  calendar pages, where both sides fill the day. Fully empty leading
   days (e.g. recorder history shorter than `days:`) are skipped in
   every mode.
 

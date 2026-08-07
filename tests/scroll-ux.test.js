@@ -506,3 +506,87 @@ describe('setupScrollUx click handlers', () => {
     }
   });
 });
+
+// ── day-pager navigation (today mode, ADR-0021 amendment) ────────────
+// Anchor targets and page stepping for the 'today' day pager: jump-to-
+// now goes to the mode's anchor page (series end for station-only,
+// start for forecast-only), chevrons page exactly one viewport rounded
+// to a page boundary, and the settle-snap accepts the far end as a
+// valid resting page (station-only's anchor after the trailing trim).
+
+describe('setupScrollUx day pager', () => {
+  const todayCard = (block, { stationCount, forecastCount }) => {
+    const card = mockCard({
+      block, stationCount, forecastCount,
+      forecasts: [{ datetime: new Date(2026, 7, 6, 0).toISOString() }],
+    });
+    card.config = { locale: 'en', forecast: { type: 'today' } };
+    return card;
+  };
+  const click = { type: 'click', stopPropagation: () => {} };
+
+  it('jump-to-now anchors station-only at the series end', () => {
+    const { block, wrapper, jump } = mockBlock({ scrollWidth: 1600, clientWidth: 200, scrollLeft: 0 });
+    const card = todayCard(block, { stationCount: 8, forecastCount: 0 });
+    setupScrollUx(card);
+    jump.dispatchEvent(click);
+    expect(wrapper.scrollTo).toHaveBeenCalledWith({ left: 1400, behavior: 'smooth' });
+    card._scrollUxTeardown();
+  });
+
+  it('jump-to-now anchors forecast-only at the series start', () => {
+    const { block, wrapper, jump } = mockBlock({ scrollWidth: 1600, clientWidth: 200, scrollLeft: 900 });
+    const card = todayCard(block, { stationCount: 0, forecastCount: 8 });
+    setupScrollUx(card);
+    jump.dispatchEvent(click);
+    expect(wrapper.scrollTo).toHaveBeenCalledWith({ left: 0, behavior: 'smooth' });
+    card._scrollUxTeardown();
+  });
+
+  it('chevrons page exactly one viewport, rounded onto a page boundary', () => {
+    // Mid-page position 130: right chevron target 330 rounds to page 2
+    // (400) — an interrupted animation never accumulates drift.
+    const { block, wrapper, right } = mockBlock({ scrollWidth: 1600, clientWidth: 200, scrollLeft: 130 });
+    const card = todayCard(block, { stationCount: 10, forecastCount: 6 });
+    setupScrollUx(card);
+    right.dispatchEvent(click);
+    expect(wrapper.scrollTo).toHaveBeenCalledWith({ left: 400, behavior: 'smooth' });
+    card._scrollUxTeardown();
+  });
+
+  it('settle-snap rounds a free scroll onto the nearest page but leaves the far end alone', () => {
+    vi.useFakeTimers();
+    const originalRaf = globalThis.requestAnimationFrame;
+    const originalCancelRaf = globalThis.cancelAnimationFrame;
+    globalThis.requestAnimationFrame = () => 1;
+    globalThis.cancelAnimationFrame = () => {};
+    try {
+      const { block, wrapper } = mockBlock({ scrollWidth: 1500, clientWidth: 200, scrollLeft: 0 });
+      const card = todayCard(block, { stationCount: 8, forecastCount: 0 });
+      setupScrollUx(card);
+
+      // Free scroll rests mid-page → snaps to the nearest multiple.
+      wrapper.scrollLeft = 310;
+      wrapper.dispatchEvent({ type: 'scroll' });
+      vi.advanceTimersByTime(300);
+      expect(wrapper.scrollTo).toHaveBeenCalledWith({ left: 400, behavior: 'smooth' });
+
+      // Resting at the far end (1500 - 200 = 1300, NOT a multiple of
+      // 200): the end is station-only's anchor page — no snap-away.
+      wrapper.scrollTo.mockClear();
+      // Release the pending programmatic target from the snap above.
+      vi.advanceTimersByTime(1300);
+      wrapper.scrollTo.mockClear();
+      wrapper.scrollLeft = 1300;
+      wrapper.dispatchEvent({ type: 'scroll' });
+      vi.advanceTimersByTime(300);
+      expect(wrapper.scrollTo).not.toHaveBeenCalled();
+
+      card._scrollUxTeardown();
+    } finally {
+      globalThis.requestAnimationFrame = originalRaf;
+      globalThis.cancelAnimationFrame = originalCancelRaf;
+      vi.useRealTimers();
+    }
+  });
+});

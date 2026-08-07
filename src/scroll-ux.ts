@@ -17,7 +17,7 @@
 
 import { safeQuery } from './utils/safe-query.js';
 import { computeInitialScrollLeft } from './format-utils.js';
-import { computeDayPageScrollLeft } from './forecast-utils.js';
+import { computeTodayPagerScrollLeft } from './forecast-utils.js';
 import type { ForecastEntry } from './forecast-utils.js';
 
 const DRAG_THRESHOLD = 5;
@@ -139,6 +139,12 @@ export function setupScrollUx(card: ScrollUxCard): void {
       snapTimer = null;
       const w = wrapper.clientWidth;
       if (w <= 0 || isDown || pendingTarget !== null) return;
+      // The far end is a valid resting page even when it is not a
+      // multiple of the page width — station-only trims the series to
+      // end at the "now" block, so its anchor page IS the end. Without
+      // this guard the snap would bounce the user off it.
+      const maxLeft = Math.max(0, wrapper.scrollWidth - w);
+      if (maxLeft - wrapper.scrollLeft <= 2) return;
       const nearest = clampLeft(Math.round(wrapper.scrollLeft / w) * w);
       if (Math.abs(nearest - wrapper.scrollLeft) > 2) {
         programmaticScrollTo(nearest);
@@ -252,10 +258,17 @@ export function setupScrollUx(card: ScrollUxCard): void {
   };
   const onJumpClick = (ev: Event): void => {
     ev.stopPropagation();
-    // Day pager jumps to the CURRENT day's page; other modes centre
-    // the station/forecast boundary.
+    // Day pager jumps to its anchor page (current day; series end for
+    // station-only, start for forecast-only); other modes centre the
+    // station/forecast boundary.
     const dayPage = isDayPager(card)
-      ? computeDayPageScrollLeft(card.forecasts, wrapper.scrollWidth)
+      ? computeTodayPagerScrollLeft({
+          forecasts: card.forecasts,
+          stationCount: card._stationCount || 0,
+          forecastCount: card._forecastCount || 0,
+          contentWidth: wrapper.scrollWidth,
+          viewportWidth: wrapper.clientWidth,
+        })
       : null;
     const target = dayPage ?? computeInitialScrollLeft({
       stationCount: card._stationCount || 0,
