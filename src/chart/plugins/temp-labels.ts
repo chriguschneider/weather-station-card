@@ -75,6 +75,8 @@ export function createTempLabelsPlugin(opts: TempLabelsPluginOpts): ChartPlugin 
       const v = values[i];
       if (v == null || !Number.isFinite(v)) continue;
       const x = xScale.getPixelForTick(i);
+      // Viewport culling (virtualized canvas).
+      if (x < chart.chartArea.left - 40 || x > chart.chartArea.right + 40) continue;
       const y = tempScale.getPixelForValue(v) + offsetY;
       c.font = `${isTodayAt(i) ? 'bold ' : ''}${fontSize}px ${fontFamily}`;
       c.fillText(`${v.toFixed(decimals)}°`, x, y);

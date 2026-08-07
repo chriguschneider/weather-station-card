@@ -27,6 +27,13 @@ import {
   toCelsius,
   toMillimeters,
 } from './utils/unit-converters.js';
+import { dedupeRequest } from './utils/shared-requests.js';
+
+// Dedup TTL for identical recorder requests across sibling cards on
+// the same dashboard. Long enough to absorb staggered card mounts and
+// drifting poll timers, short enough that a manual dashboard refresh
+// still fetches fresh buckets.
+const STATS_DEDUPE_TTL_MS = 60 * 1000;
 
 const POLL_INTERVAL_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -66,6 +73,10 @@ export interface SensorMap {
   /** Sunshine duration entity (handled by the sunshine overlay, not
    *  this module — listed so config-typing stays accurate). */
   sunshine_duration?: string;
+  /** Moon-phase entity (HA's Moon integration). Live-panel only —
+   *  non-numeric enum state, explicitly EXCLUDED from the recorder
+   *  statistics fetch below. */
+  moon_phase?: string;
 }
 
 /** Card config subset the data sources read from. The full config has
@@ -213,14 +224,21 @@ export async function fetchPressure3hDelta(
 
   let stats: StatsResponse;
   try {
-    stats = await hass.callWS<StatsResponse>({
-      type: 'recorder/statistics_during_period',
-      start_time: start.toISOString(),
-      end_time: end.toISOString(),
-      statistic_ids: [entityId],
-      period: 'hour',
-      types: ['mean'],
-    });
+    // Module-level dedup: the key carries entity + hour bucket, so all
+    // cards watching the same pressure sensor share one roundtrip per
+    // hour regardless of when each of them renders.
+    stats = await dedupeRequest(
+      `pressure3h:${entityId}:${bucketMs}`,
+      HOUR_MS,
+      () => hass.callWS<StatsResponse>({
+        type: 'recorder/statistics_during_period',
+        start_time: start.toISOString(),
+        end_time: end.toISOString(),
+        statistic_ids: [entityId],
+        period: 'hour',
+        types: ['mean'],
+      }),
+    );
   } catch (err) {
     console.debug('[weather-station-card] pressure 3h delta fetch failed', err);
     if (cache) { cache.bucketMs = bucketMs; cache.value = null; }
@@ -260,6 +278,86 @@ interface HourClassifyBag extends ClassifyInputs {
   hourStart?: Date;
 }
 
+// ── Lux-sunshine per-day cache (perf pass 2026-08) ──────────────────
+//
+// The B2 lux derivation used to refetch the illuminance sensor's FULL
+// high-resolution history over the whole window (days+1, typically 8
+// days) on EVERY hourly poll — tens of thousands of rows of JSON over
+// the WebSocket plus a recorder DB scan, although completed days can
+// never change. The cache stores the derived hours per completed local
+// day; once warm, each poll only fetches today's samples (~1/8 of the
+// payload). Keyed by entity + derivation parameters so a threshold or
+// location change invalidates cleanly.
+
+const LUX_CACHE_PREFIX = 'wsc_lux_days_';
+const LUX_CACHE_VERSION = 1;
+const LUX_CACHE_MAX_DAYS = 120;
+
+interface LuxDayCacheShape {
+  v: number;
+  threshold: number;
+  lat: number;
+  lon: number;
+  days: Record<string, number>;
+}
+
+function luxStorage(): { getItem(k: string): string | null; setItem(k: string, v: string): void } | null {
+  try {
+    return typeof window !== 'undefined' && window.localStorage ? window.localStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+function loadLuxDayCache(
+  entityId: string,
+  threshold: number,
+  lat: number,
+  lon: number,
+): Record<string, number> | null {
+  const storage = luxStorage();
+  if (!storage) return null;
+  try {
+    const raw = storage.getItem(`${LUX_CACHE_PREFIX}${entityId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as LuxDayCacheShape | null;
+    if (parsed?.v !== LUX_CACHE_VERSION) return null;
+    // Any derivation-parameter change makes the cached hours wrong.
+    if (parsed.threshold !== threshold) return null;
+    if (Math.abs(parsed.lat - lat) > 0.01 || Math.abs(parsed.lon - lon) > 0.01) return null;
+    return (parsed.days && typeof parsed.days === 'object') ? parsed.days : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveLuxDayCache(
+  entityId: string,
+  threshold: number,
+  lat: number,
+  lon: number,
+  days: Record<string, number>,
+): void {
+  const storage = luxStorage();
+  if (!storage) return;
+  // Prune oldest entries — YYYY-MM-DD keys sort chronologically.
+  const keys = Object.keys(days).sort((a, b) => a.localeCompare(b));
+  for (let i = 0; i < keys.length - LUX_CACHE_MAX_DAYS; i++) delete days[keys[i]];
+  try {
+    storage.setItem(
+      `${LUX_CACHE_PREFIX}${entityId}`,
+      JSON.stringify({ v: LUX_CACHE_VERSION, threshold, lat, lon, days } satisfies LuxDayCacheShape),
+    );
+  } catch {
+    // Quota / private mode — best-effort.
+  }
+}
+
+/** Local-date key (YYYY-MM-DD) for a midnight-aligned Date. */
+function localDayKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export class MeasuredDataSource {
   hass: HassLike | null;
   config: DataSourceConfig;
@@ -267,6 +365,11 @@ export class MeasuredDataSource {
   private _timer: ReturnType<typeof setInterval> | null = null;
   private _listener: DataSourceListener | null = null;
   private _failureCount = 0;
+  // True when an interval poll came due while the document was hidden.
+  // The poll is skipped then (recorder roundtrips for an invisible
+  // dashboard are pure waste); `notifyVisible` runs the deferred poll
+  // as soon as the card is on screen again.
+  private _pollDeferredWhileHidden = false;
 
   constructor(hass: HassLike | null, config: DataSourceConfig) {
     this.hass = hass;
@@ -281,7 +384,7 @@ export class MeasuredDataSource {
     this._listener = callback;
     // Fire-and-forget the initial poll; the interval re-polls every
     // POLL_INTERVAL_MS regardless of whether the first call resolves.
-    void this._poll();
+    void this._poll(true);
     this._timer = setInterval(() => { void this._poll(); }, POLL_INTERVAL_MS);
     return () => this.unsubscribe();
   }
@@ -294,8 +397,24 @@ export class MeasuredDataSource {
     }
   }
 
-  private async _poll(): Promise<void> {
+  /** Called by the card when the document became visible again. Runs
+   *  the poll that was skipped while hidden (if any). */
+  notifyVisible(): void {
+    if (!this._pollDeferredWhileHidden) return;
+    this._pollDeferredWhileHidden = false;
+    void this._poll();
+  }
+
+  private async _poll(initial: boolean = false): Promise<void> {
     if (!this._listener || !this.hass) return;
+    // Interval polls are skipped while the document is hidden — a
+    // recorder statistics roundtrip for an off-screen dashboard is
+    // wasted DB + WS load. The INITIAL poll always runs so a card
+    // mounted in a background tab still has data when first shown.
+    if (!initial && typeof document !== 'undefined' && document.hidden) {
+      this._pollDeferredWhileHidden = true;
+      return;
+    }
     try {
       const forecast = await this._fetchAggregates();
       this._failureCount = 0;
@@ -316,20 +435,21 @@ export class MeasuredDataSource {
     if (!this.hass) return [];
     const cfgDays = parseInt(String(this.config.days), 10) || 7;
     const type = this.config.forecast?.type;
-    // 'today' is the 24-hour zoom mode: hourly granularity but
-    // forced to a single-day horizon regardless of the user's `days:`
-    // setting. Reuses the entire hourly fetch / build path.
+    // 'today' (day pager, 2026-08 rework) shares the FULL hourly
+    // window — the render layer 3-h-aggregates the whole span and
+    // pages it one day per viewport. Identical fetch parameters also
+    // mean 'today' and 'hourly' genuinely share the recorder response
+    // via the request dedup and the mode-toggle lazy-cache.
     const isToday = type === 'today';
     const isHourly = type === 'hourly' || isToday;
-    // 'today' fetches the same hourly station window as 'hourly'
-    // mode (days * 24 hours back from now), but the rendering layer
-    // restricts the viewport to 24 bars + sparse-3h labels. Keeping
-    // the data window aligned with 'hourly' avoids edge cases in
-    // recorder-fetch + forecast-slice that misalign at runtime.
-    const days = isToday ? 1 : cfgDays;
+    const days = cfgDays;
     const sensors: SensorMap = this.config.sensors ?? {};
 
-    const entityIds = Object.values(sensors).filter(Boolean) as string[];
+    // moon_phase is a live-panel enum sensor — the recorder holds no
+    // numeric statistics for it, so it stays out of the stats request.
+    const { moon_phase: _moonPhase, ...chartSensors } = sensors;
+    void _moonPhase;
+    const entityIds = Object.values(chartSensors).filter(Boolean) as string[];
     if (entityIds.length === 0) return [];
 
     if (isHourly) {
@@ -337,21 +457,13 @@ export class MeasuredDataSource {
       // extra hour at the start (hours+1) so a cumulative precipitation
       // sensor has a baseline value to diff against on the oldest
       // displayed hour.
-      //
-      // 'today' is a rolling-24h view. In COMBINATION the station
-      // takes the past 12 hours and the forecast layer fills the
-      // next 12 hours. In STATION-ONLY (no forecast block) the
-      // station expands to the full 24 hours back from now so the
-      // user still sees a one-day view.
       const end = new Date();
       end.setMinutes(0, 0, 0);
       end.setHours(end.getHours() + 1);
-      const isStationOnly = isToday && this.config.show_forecast !== true;
-      const todayHours = isStationOnly ? 24 : 12;
-      const hours = isToday ? todayHours : days * 24;
+      const hours = days * 24;
       const start = new Date(end.getTime() - (hours + 1) * HOUR_MS);
 
-      const stats = await this.hass.callWS<StatsResponse>({
+      const stats = await this._callStatsDeduped({
         type: 'recorder/statistics_during_period',
         start_time: start.toISOString(),
         end_time: end.toISOString(),
@@ -373,7 +485,7 @@ export class MeasuredDataSource {
     const start = new Date(end);
     start.setDate(start.getDate() - (days + 1));
 
-    const stats = await this.hass.callWS<StatsResponse>({
+    const stats = await this._callStatsDeduped({
       type: 'recorder/statistics_during_period',
       start_time: start.toISOString(),
       end_time: end.toISOString(),
@@ -390,6 +502,20 @@ export class MeasuredDataSource {
     const luxByDate = await this._fetchLuxSunshine(sensors, start, end);
 
     return this._buildForecast(stats, sensors, start, days, luxByDate);
+  }
+
+  /** Recorder statistics call routed through the module-level request
+   *  dedup. Window boundaries are hour-/midnight-aligned, so sibling
+   *  cards with the same sensors and window produce byte-identical
+   *  request objects — N cards on one dashboard collapse to a single
+   *  recorder roundtrip. */
+  private _callStatsDeduped(msg: Record<string, unknown>): Promise<StatsResponse> {
+    const hass = this.hass as HassLike;
+    return dedupeRequest(
+      `stats:${JSON.stringify(msg)}`,
+      STATS_DEDUPE_TTL_MS,
+      () => hass.callWS<StatsResponse>(msg),
+    );
   }
 
   /** B2 past-tier helper: fetch the configured illuminance sensor's
@@ -410,26 +536,62 @@ export class MeasuredDataSource {
     const lon = this.hass.config?.longitude;
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
 
+    const cm = this.config.condition_mapping ?? {};
+    const threshold = (cm.sunshine_lux_ratio != null && Number.isFinite(cm.sunshine_lux_ratio))
+      ? Number(cm.sunshine_lux_ratio)
+      : 0.6;
+
+    // Per-day cache: completed days never change, so after the first
+    // full-window fetch every subsequent poll only needs TODAY's
+    // samples. `neededDays` walks the completed local days inside the
+    // requested window (start is midnight-aligned in the daily path).
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayMs = today.getTime();
+    const neededDays: string[] = [];
+    {
+      const d = new Date(start);
+      d.setHours(0, 0, 0, 0);
+      while (d.getTime() < todayMs) {
+        neededDays.push(localDayKey(d));
+        d.setDate(d.getDate() + 1);
+      }
+    }
+    const cachedDays = loadLuxDayCache(luxId, threshold, lat as number, lon as number);
+    const missingDays = cachedDays
+      ? neededDays.filter((k) => cachedDays[k] === undefined)
+      : neededDays;
+    const fetchStart = missingDays.length === 0 ? today : start;
+
     // history/history_during_period is the modern, compact recorder
     // history WS call (HA 2022+). Returns
     // { [entity_id]: [ { s: '<state>', lu: <unix-seconds> }, … ] }.
     let history: Record<string, Array<{ s?: unknown; lu?: unknown }>> = {};
     try {
-      history = await this.hass.callWS<typeof history>({
+      const hass = this.hass as HassLike;
+      const msg = {
         type: 'history/history_during_period',
-        start_time: start.toISOString(),
+        start_time: fetchStart.toISOString(),
         end_time: end.toISOString(),
         entity_ids: [luxId],
         minimal_response: true,
         no_attributes: true,
         significant_changes_only: false,
-      });
+      };
+      // Same cross-card dedup as the stats call — the lux history is
+      // by far the heaviest recorder payload the card requests.
+      history = await dedupeRequest(
+        `history:${JSON.stringify(msg)}`,
+        STATS_DEDUPE_TTL_MS,
+        () => hass.callWS<typeof history>(msg),
+      );
     } catch (err) {
       // Recorder unavailable / entity gone / permission — silently
       // fall through to the next precedence tier rather than show
-      // an error banner for an opportunistic enhancement.
+      // an error banner for an opportunistic enhancement. Cached
+      // completed days still serve if we have them.
       console.debug('[weather-station-card] lux-history fetch failed', err);
-      return null;
+      return this._luxMapFromCache(cachedDays, neededDays);
     }
 
     const samples: LuxSample[] = [];
@@ -440,17 +602,53 @@ export class MeasuredDataSource {
         samples.push({ ts, lux });
       }
     }
-    if (samples.length < 2) return null;
-
-    const cm = this.config.condition_mapping ?? {};
-    const threshold = (cm.sunshine_lux_ratio != null && Number.isFinite(cm.sunshine_lux_ratio))
-      ? Number(cm.sunshine_lux_ratio)
-      : 0.6;
+    if (samples.length < 2) return this._luxMapFromCache(cachedDays, neededDays);
 
     const perDay = sunshineFromLuxHistory(samples, lat as number, lon as number, threshold);
+
+    // Result map: cached completed days first, freshly-derived values
+    // (today, plus any completed days this fetch covered) on top.
     const map = new Map<string, number>();
+    if (cachedDays) {
+      for (const k of neededDays) {
+        if (cachedDays[k] !== undefined) map.set(k, cachedDays[k]);
+      }
+    }
     for (const e of perDay) map.set(e.date, e.hours);
+
+    // Persist every completed day the fetch window covered. Days the
+    // derivation emitted nothing for are stored as an explicit 0 in
+    // the CACHE (preventing a perpetual refetch for genuinely sunless
+    // or sensor-offline days) but NOT injected into the returned map —
+    // the caller's "configured sunshine source is authoritative → 0 h"
+    // rule produces the same 0 downstream, and the returned map keeps
+    // its historical only-days-with-sunshine shape.
+    const fetchedFromMs = fetchStart.getTime();
+    const updated: Record<string, number> = { ...(cachedDays ?? {}) };
+    let dirty = false;
+    for (const k of neededDays) {
+      const dayMs = new Date(`${k}T00:00`).getTime();
+      if (!Number.isFinite(dayMs) || dayMs < fetchedFromMs) continue;
+      const v = map.get(k) ?? 0;
+      if (updated[k] !== v) { updated[k] = v; dirty = true; }
+    }
+    if (dirty) saveLuxDayCache(luxId, threshold, lat as number, lon as number, updated);
     return map;
+  }
+
+  /** Cache-only fallback when the history fetch failed or returned too
+   *  few samples: serve whatever completed days we have; null when the
+   *  cache has nothing usable (caller falls to the next tier). */
+  private _luxMapFromCache(
+    cachedDays: Record<string, number> | null,
+    neededDays: ReadonlyArray<string>,
+  ): Map<string, number> | null {
+    if (!cachedDays) return null;
+    const map = new Map<string, number>();
+    for (const k of neededDays) {
+      if (cachedDays[k] !== undefined) map.set(k, cachedDays[k]);
+    }
+    return map.size ? map : null;
   }
 
   private _buildForecast(

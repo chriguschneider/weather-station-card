@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { bucketPrecipitation, MeasuredDataSource, ForecastDataSource } from '../src/data-source.js';
 import { WeatherEntityFeature } from '../src/const.js';
+import { clearDedupeCaches } from '../src/utils/shared-requests.js';
+
+// Recorder WS calls are deduplicated module-wide (cross-card sharing in
+// production) — reset between tests so identical request signatures in
+// different cases don't leak each other's mocked responses.
+beforeEach(() => clearDedupeCaches());
 
 describe('bucketPrecipitation', () => {
   const day = (props) => ({ start: '2026-05-01T00:00:00', ...props });
@@ -743,18 +749,20 @@ describe('MeasuredDataSource hourly mode', () => {
     expect(msg.period).toBe('day');
   });
 
-  // 'today' mode introduced in v1.4 (#17). The 12 h station / 12 h
-  // forecast split applies when both blocks are visible — in
-  // station-only the station expands to fill the full 24 h so the
-  // user still sees a one-day view with no forecast block. Tests
-  // verify the recorder window is sized correctly per branch.
-  it("_fetchAggregates 'today' + combination → 13 h window (12+1 baseline)", async () => {
+  // 'today' became the DAY PAGER in the 2026-08 rework: it shares the
+  // FULL hourly window (days × 24 h + 1 baseline hour) — the render
+  // layer 3-h-aggregates the span and pages it one day per viewport.
+  // Identical fetch parameters are load-bearing: they let 'today' and
+  // 'hourly' share the recorder response via the request dedup and
+  // the mode-toggle lazy-cache.
+  it("_fetchAggregates 'today' uses the full hourly window (days × 24 + 1)", async () => {
     const hass = {
       config: { latitude: 47.4, longitude: 8.5 },
       callWS: vi.fn().mockResolvedValue({}),
     };
     const ds = new MeasuredDataSource(hass, {
       sensors,
+      days: 3,
       forecast: { type: 'today' },
       show_forecast: true,
       show_station: true,
@@ -764,51 +772,28 @@ describe('MeasuredDataSource hourly mode', () => {
     expect(msg.period).toBe('hour');
     const startMs = new Date(msg.start_time).getTime();
     const endMs = new Date(msg.end_time).getTime();
-    // 12 station hours + 1 baseline hour for cumulative-precipitation
-    // diff = 13 hours total.
-    expect(Math.round((endMs - startMs) / HOUR_MS)).toBe(13);
+    expect(Math.round((endMs - startMs) / HOUR_MS)).toBe(3 * 24 + 1);
   });
 
-  it("_fetchAggregates 'today' + station-only → 25 h window (24+1 baseline)", async () => {
-    const hass = {
+  it("_fetchAggregates 'today' and 'hourly' issue identical recorder requests", async () => {
+    const mkHass = () => ({
       config: { latitude: 47.4, longitude: 8.5 },
       callWS: vi.fn().mockResolvedValue({}),
-    };
-    const ds = new MeasuredDataSource(hass, {
-      sensors,
-      forecast: { type: 'today' },
-      show_forecast: false,
-      show_station: true,
     });
-    await ds._fetchAggregates();
-    const [msg] = hass.callWS.mock.calls[0];
-    expect(msg.period).toBe('hour');
-    const startMs = new Date(msg.start_time).getTime();
-    const endMs = new Date(msg.end_time).getTime();
-    // 24 hours back + 1 baseline = 25 hours.
-    expect(Math.round((endMs - startMs) / HOUR_MS)).toBe(25);
-  });
-
-  it("_fetchAggregates 'today' ignores cfg days (always single-day horizon)", async () => {
-    // User has days: 7 in their config but switches to 'today' — the
-    // recorder fetch should still use the 12 h / 24 h horizon, not
-    // 7 × 24 = 168.
-    const hass = {
-      config: { latitude: 47.4, longitude: 8.5 },
-      callWS: vi.fn().mockResolvedValue({}),
-    };
-    const ds = new MeasuredDataSource(hass, {
-      sensors,
-      days: 7,
-      forecast: { type: 'today' },
-      show_forecast: true,
-    });
-    await ds._fetchAggregates();
-    const [msg] = hass.callWS.mock.calls[0];
-    const startMs = new Date(msg.start_time).getTime();
-    const endMs = new Date(msg.end_time).getTime();
-    // Combination = 12 + 1 = 13 h regardless of cfg days: 7
-    expect(Math.round((endMs - startMs) / HOUR_MS)).toBe(13);
+    const hassToday = mkHass();
+    const hassHourly = mkHass();
+    await new MeasuredDataSource(hassToday, {
+      sensors, days: 5, forecast: { type: 'today' }, show_forecast: true,
+    })._fetchAggregates();
+    // Identical requests dedupe module-wide — clear so the hourly
+    // source actually issues its own callWS for the comparison.
+    clearDedupeCaches();
+    await new MeasuredDataSource(hassHourly, {
+      sensors, days: 5, forecast: { type: 'hourly' }, show_forecast: true,
+    })._fetchAggregates();
+    const [msgToday] = hassToday.callWS.mock.calls[0];
+    const [msgHourly] = hassHourly.callWS.mock.calls[0];
+    expect(msgToday).toEqual(msgHourly);
   });
 });
 

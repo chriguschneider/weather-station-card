@@ -121,6 +121,7 @@ classifier, and (where relevant) the attribute readouts. Only
 | `sensors.uv_index` | UV attribute |
 | `sensors.dew_point` | Fog detection (combined with humidity) |
 | `sensors.sunshine_duration` | Today's live sunshine value (scalar, seconds or hours auto-detected at the `≥ 30` threshold). Past columns fall back to the recorder's daily-max for this same sensor. Only used when `forecast.show_sunshine: true`. *(since v0.9; fully wired in daily fetch since v1.4.)* |
+| `sensors.moon_phase` | Moon-phase line in the live panel's sun cell (icon + localized phase name, fed by [HA's Moon integration](https://www.home-assistant.io/integrations/moon/)). Auto-detected when unset: `sensor.moon_phase`, then the legacy `sensor.moon`. Live panel only — never part of the chart or the recorder fetch. *(since v2.2)* |
 
 ## Layout & Display
 
@@ -236,8 +237,8 @@ expands user-supplied `var(...)` exactly as before.
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `forecast.type` | `'daily' \| 'hourly' \| 'today'` | `'daily'` | At hourly, station data is fetched at hour resolution (mean per hour, single temperature line) and the forecast is subscribed with `forecast_type: hourly`. `days` / `forecast_days` define the data window (so `days: 4` at hourly = 96 hours of station history). The `'today'` mode (since v1.4) renders a 24-hour window centred on "now". Editor radio in Setup. See [Daily vs. hourly resolution](#daily-vs-hourly-resolution) below. |
-| `forecast.number_of_forecasts` | integer | `8` | Number of bars visible in the viewport at once. Default `8` works across both modes — at daily with `days: 7` everything fits without scrolling, at hourly it caps the viewport at ~8 hours and the user scrolls. Set `0` for "fit all" (no scrolling). When more bars are loaded than visible, the chart row + wind row + conditions row scroll horizontally in lockstep. Initial scroll position is "now" (centred at the station/forecast boundary in combination mode). |
+| `forecast.type` | `'daily' \| 'hourly' \| 'today'` | `'daily'` | At hourly, station data is fetched at hour resolution (mean per hour, single temperature line) and the forecast is subscribed with `forecast_type: hourly`. `days` / `forecast_days` define the data window (so `days: 4` at hourly = 96 hours of station history). The `'today'` mode (since v1.4; reworked as a **day pager** in v2.2) frames exactly one calendar day of 3-hour blocks per viewport and pages day-wise through the whole `days` window — chevrons step ±1 day, free scrolling snaps to day boundaries. Editor radio in Setup. See [Daily vs. hourly resolution](#daily-vs-hourly-resolution) below. |
+| `forecast.number_of_forecasts` | integer | `8` | Number of bars visible in the viewport at once. Default `8` works across the modes — at daily with `days: 7` everything fits without scrolling, at hourly it caps the viewport at ~8 hours and the user scrolls. Set `0` for "fit all" (no scrolling). **Ignored in `'today'` mode**, which always frames one calendar day (8 × 3-h blocks). When more bars are loaded than visible, the chart row + wind row + conditions row scroll horizontally in lockstep, and a slim day timeline below the chart shows where you are (click/scrub it to navigate). Initial scroll position is "now" (centred at the station/forecast boundary in combination mode; the current day's page in `'today'`). |
 | `locale` | string | HA's selected language | Override locale (e.g. `de`, `fr`). Falls back to English for missing keys. |
 
 ### `condition_mapping` — override classifier thresholds

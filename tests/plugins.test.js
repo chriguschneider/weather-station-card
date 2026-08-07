@@ -231,20 +231,18 @@ describe('createDailyTickLabelsPlugin', () => {
     expect(chart.ctx.fillText).toHaveBeenCalledTimes(14);
   });
 
-  it('hourly mode: leftmostVisibleIdx tracks wrapper.scrollLeft', () => {
-    // Mock the canvas → closest() lookup so the plugin sees a
-    // .forecast-scroll.scrolling wrapper with a non-zero scrollLeft.
-    // The first tick whose pixel position >= scrollLeft becomes the
-    // leftmost visible — its date label should be rendered, earlier
-    // (off-screen) ticks should not get a date label.
-    const wrapper = { scrollLeft: 100 };
-    const fakeCanvas = { closest: () => wrapper };
+  it('hourly mode: no canvas edge-date label — DOM overlay owns it (perf pass 2026-08)', () => {
+    // Scrollable hourly no longer paints a scrollLeft-tracking "sticky"
+    // date on the canvas: that forced a full redraw per scroll frame.
+    // The `.scroll-date-left/right` DOM overlays (scroll-ux.ts) carry
+    // the edge date now, so non-boundary columns render ONLY their
+    // time label and the canvas output is scroll-invariant.
     const p = createDailyTickLabelsPlugin({
       config: { forecast: { ...baseConfig.forecast, type: 'hourly' } },
       language: 'en',
       data: {
-        // Five non-midnight hourly entries within one day so only the
-        // leftmost-visible tick (not midnight columns) shows a date.
+        // Five non-midnight hourly entries within one day — no day
+        // boundary, so no date label at all.
         dateTime: [
           '2026-05-06T09:00:00',
           '2026-05-06T10:00:00',
@@ -256,15 +254,12 @@ describe('createDailyTickLabelsPlugin', () => {
       textColor: '#000', backgroundColor: '#fff', style: mockStyle,
       stationCount: 0, doubledToday: false,
     });
-    // tickCount=5, getPixelForTick(i)=i*50 → ticks at 0, 50, 100, 150, 200
-    // scrollLeft=100 → first tick where pixel >= 100 is i=2 (pixel 100).
     const chart = mockChart({ tickCount: 5 });
-    chart.canvas = fakeCanvas;
     chart.scales.x.bottom = 50;
     chart.scales.x.width = 250;
     p.afterDraw(chart);
-    // 5 time labels + 1 date label on i=2 (leftmost visible) = 6.
-    expect(chart.ctx.fillText).toHaveBeenCalledTimes(6);
+    // 5 time labels, zero date labels.
+    expect(chart.ctx.fillText).toHaveBeenCalledTimes(5);
   });
 
   it('bails out when xScale is missing', () => {

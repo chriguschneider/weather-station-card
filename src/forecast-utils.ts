@@ -291,6 +291,102 @@ export function sunshineFromCloudCoverage(
   return hours;
 }
 
+/** Calendar-aligned 3-hour aggregator — the day-pager variant of
+ *  `aggregateThreeHour` (2026-08, "today" mode rework). Differences:
+ *
+ *    - Blocks are anchored to the LOCAL calendar (00-03, 03-06, …,
+ *      21-24), not to the array's first index. Recorder gaps therefore
+ *      can't shift later blocks out of alignment.
+ *    - The emitted series is GAP-FILLED to whole days: every day from
+ *      the first entry's day through the last entry's day contributes
+ *      exactly 8 blocks; blocks with no source hours carry all-null
+ *      values (the chart draws gaps). This is what makes day-paging
+ *      exact — 8 blocks ≡ 1 viewport ≡ 1 day, so page boundaries are
+ *      integer multiples of the viewport width.
+ *
+ *  Field rules match `aggregateThreeHour`: temperature high/low from
+ *  the pooled real hourly values, precipitation + sunshine summed,
+ *  other numerics averaged, condition = most frequent. */
+export function aggregateThreeHourCalendar<T extends Partial<ForecastEntry>>(
+  entries: ReadonlyArray<T>,
+): ForecastEntry[] {
+  if (!Array.isArray(entries) || entries.length === 0) return [];
+
+  // Bucket every valid entry by its local (day, hour/3) block.
+  const buckets = new Map<number, T[]>();
+  let minMs = Infinity;
+  let maxMs = -Infinity;
+  for (const e of entries) {
+    if (!e?.datetime) continue;
+    const d = new Date(e.datetime);
+    const t = d.getTime();
+    if (!Number.isFinite(t)) continue;
+    const anchor = new Date(d);
+    anchor.setHours(Math.floor(d.getHours() / 3) * 3, 0, 0, 0);
+    const key = anchor.getTime();
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key)!.push(e);
+    if (key < minMs) minMs = key;
+    if (key > maxMs) maxMs = key;
+  }
+  if (!Number.isFinite(minMs)) return [];
+
+  // Walk whole days from the first entry's day to the last entry's
+  // day, emitting all 8 blocks per day. Date iteration (setDate /
+  // setHours) keeps this DST-correct — a 23/25-hour day still yields
+  // exactly 8 calendar blocks.
+  const out: ForecastEntry[] = [];
+  const cursor = new Date(minMs);
+  cursor.setHours(0, 0, 0, 0);
+  const lastDay = new Date(maxMs);
+  lastDay.setHours(0, 0, 0, 0);
+  while (cursor.getTime() <= lastDay.getTime()) {
+    for (let blk = 0; blk < 8; blk++) {
+      const anchor = new Date(cursor);
+      anchor.setHours(blk * 3, 0, 0, 0);
+      const slice = buckets.get(anchor.getTime()) ?? [];
+      out.push(aggregateBlock(slice, anchor.toISOString()));
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return out;
+}
+
+/** Effective viewport size in bars. 'today' is a DAY PAGER: the
+ *  viewport always frames exactly one calendar day (8 × 3-h blocks),
+ *  regardless of `number_of_forecasts` — that invariant is what makes
+ *  "scroll one whole day" exact. Other modes keep the configured
+ *  value (0 = fit-all, no scroll). */
+export function effectiveVisibleBars(
+  cfg: { forecast?: { type?: string; number_of_forecasts?: number | string } | null } | null | undefined,
+): number {
+  if (cfg?.forecast?.type === 'today') return 8;
+  const n = parseInt(String(cfg?.forecast?.number_of_forecasts ?? ''), 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** ScrollLeft that puts the CURRENT local day's first block at the
+ *  left edge — the initial position and jump-to-now target for the
+ *  'today' day pager. Returns null when the series carries no block
+ *  anchored at today's local midnight (caller falls back to the
+ *  boundary-centred position). */
+export function computeDayPageScrollLeft(
+  forecasts: ReadonlyArray<{ datetime?: string }> | null | undefined,
+  contentWidth: number,
+  now: Date = new Date(),
+): number | null {
+  if (!forecasts?.length || !Number.isFinite(contentWidth) || contentWidth <= 0) return null;
+  const midnight = new Date(now);
+  midnight.setHours(0, 0, 0, 0);
+  const targetMs = midnight.getTime();
+  const idx = forecasts.findIndex((e) => {
+    if (!e?.datetime) return false;
+    return new Date(e.datetime).getTime() === targetMs;
+  });
+  if (idx < 0) return null;
+  return (idx / forecasts.length) * contentWidth;
+}
+
 /** Structural deep-equality for two forecast arrays. Used by the data
  *  source subscribe callbacks to skip re-renders when HA's
  *  WebSocket layer fan-outs an identical payload — common when one
@@ -382,73 +478,90 @@ export function aggregateThreeHour<T extends Partial<ForecastEntry>>(
   for (let i = 0; i < entries.length; i += 3) {
     const slice = entries.slice(i, i + 3);
     if (!slice.length) continue;
-    const collect = (key: keyof ForecastEntry): number[] => {
-      const values: number[] = [];
-      for (const e of slice) {
-        const v = (e as Record<string, unknown>)[key as string];
-        if (v != null && typeof v === 'number' && Number.isFinite(v)) values.push(v);
-      }
-      return values;
-    };
-    const meanField = (key: keyof ForecastEntry): number | null => {
-      const values = collect(key);
-      if (!values.length) return null;
-      const mean = values.reduce((a, b) => a + b, 0) / values.length;
-      return Math.round(mean * 10) / 10;
-    };
-    const sumField = (key: keyof ForecastEntry): number | null => {
-      const values = collect(key);
-      if (!values.length) return null;
-      const sum = values.reduce((a, b) => a + b, 0);
-      return Math.round(sum * 10) / 10;
-    };
-    // Pool all real temperature readings in the block (both `temperature`
-    // and `templow` when the source provides them). Both lines come from
-    // this single pool so even a source that emits only `temperature` per
-    // hour still yields a meaningful high/low pair per 3-hour block.
-    const tempPool: number[] = [];
-    for (const e of slice) {
-      const t = (e as ForecastEntry).temperature;
-      const l = (e as ForecastEntry).templow;
-      if (typeof t === 'number' && Number.isFinite(t)) tempPool.push(t);
-      if (typeof l === 'number' && Number.isFinite(l)) tempPool.push(l);
-    }
-    const tempHigh = tempPool.length ? Math.round(Math.max(...tempPool) * 10) / 10 : null;
-    const tempLow = tempPool.length ? Math.round(Math.min(...tempPool) * 10) / 10 : null;
-    const modeField = (key: keyof ForecastEntry): string => {
-      const counts = new Map<string, number>();
-      for (const e of slice) {
-        const v = (e as Record<string, unknown>)[key as string];
-        if (v == null) continue;
-        const s = String(v);
-        counts.set(s, (counts.get(s) || 0) + 1);
-      }
-      let best = '';
-      let bestCount = 0;
-      for (const [v, c] of counts) {
-        if (c > bestCount) { best = v; bestCount = c; }
-      }
-      return best;
-    };
-    blocks.push({
-      datetime: (slice[0] as ForecastEntry).datetime,
-      temperature: tempHigh,
-      templow: tempLow,
-      precipitation: sumField('precipitation'),
-      // Sum hourly sunshine duration over the 3-hour block. Each
-      // hourly entry carries 0..1 hours of sun (cap=day_length=1 in
-      // attachSunshine's hourly path); summed across 3 hours, the
-      // block has 0..3 hours of sun. Capped against day_length=3
-      // (set by the caller) when the chart computes the bar fraction.
-      sunshine: sumField('sunshine'),
-      wind_speed: meanField('wind_speed'),
-      wind_gust_speed: meanField('wind_gust_speed'),
-      wind_bearing: meanField('wind_bearing'),
-      pressure: meanField('pressure'),
-      humidity: meanField('humidity'),
-      uv_index: meanField('uv_index'),
-      condition: modeField('condition'),
-    });
+    blocks.push(aggregateBlock(slice, (slice[0] as ForecastEntry).datetime));
   }
   return blocks;
+}
+
+// ── Shared block-aggregation helpers ────────────────────────────────
+// Field rules used by BOTH 3-hour aggregators (index-based above,
+// calendar-aligned below): temperature high/low from the pooled real
+// hourly values, precipitation + sunshine summed, other numerics
+// averaged (1 decimal), condition = most frequent.
+
+function collectNumeric<T>(slice: ReadonlyArray<T>, key: keyof ForecastEntry): number[] {
+  const values: number[] = [];
+  for (const e of slice) {
+    const v = (e as Record<string, unknown>)[key as string];
+    if (v != null && typeof v === 'number' && Number.isFinite(v)) values.push(v);
+  }
+  return values;
+}
+
+function meanOf<T>(slice: ReadonlyArray<T>, key: keyof ForecastEntry): number | null {
+  const values = collectNumeric(slice, key);
+  if (!values.length) return null;
+  return Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10;
+}
+
+function sumOf<T>(slice: ReadonlyArray<T>, key: keyof ForecastEntry): number | null {
+  const values = collectNumeric(slice, key);
+  if (!values.length) return null;
+  return Math.round(values.reduce((a, b) => a + b, 0) * 10) / 10;
+}
+
+function modeOf<T>(slice: ReadonlyArray<T>, key: keyof ForecastEntry): string {
+  const counts = new Map<string, number>();
+  for (const e of slice) {
+    const v = (e as Record<string, unknown>)[key as string];
+    if (v == null) continue;
+    const s = String(v);
+    counts.set(s, (counts.get(s) || 0) + 1);
+  }
+  let best = '';
+  let bestCount = 0;
+  for (const [v, c] of counts) {
+    if (c > bestCount) { best = v; bestCount = c; }
+  }
+  return best;
+}
+
+/** Aggregate one slice of hourly entries into a single block entry.
+ *  `datetime` is caller-provided (index anchor for the classic
+ *  aggregator, calendar anchor for the day-pager one). An empty slice
+ *  yields an all-null block — the chart draws gaps there. */
+function aggregateBlock<T extends Partial<ForecastEntry>>(
+  slice: ReadonlyArray<T>,
+  datetime: string,
+): ForecastEntry {
+  // Pool all real temperature readings in the block (both `temperature`
+  // and `templow` when the source provides them). Both lines come from
+  // this single pool so even a source that emits only `temperature` per
+  // hour still yields a meaningful high/low pair per block.
+  const tempPool: number[] = [];
+  for (const e of slice) {
+    const t = (e as ForecastEntry).temperature;
+    const l = (e as ForecastEntry).templow;
+    if (typeof t === 'number' && Number.isFinite(t)) tempPool.push(t);
+    if (typeof l === 'number' && Number.isFinite(l)) tempPool.push(l);
+  }
+  return {
+    datetime,
+    temperature: tempPool.length ? Math.round(Math.max(...tempPool) * 10) / 10 : null,
+    templow: tempPool.length ? Math.round(Math.min(...tempPool) * 10) / 10 : null,
+    precipitation: sumOf(slice, 'precipitation'),
+    // Sum hourly sunshine duration over the block. Each hourly entry
+    // carries 0..1 hours of sun (cap=day_length=1 in attachSunshine's
+    // hourly path); summed across 3 hours, the block has 0..3 hours.
+    // Capped against day_length=3 (set by the caller) when the chart
+    // computes the bar fraction.
+    sunshine: sumOf(slice, 'sunshine'),
+    wind_speed: meanOf(slice, 'wind_speed'),
+    wind_gust_speed: meanOf(slice, 'wind_gust_speed'),
+    wind_bearing: meanOf(slice, 'wind_bearing'),
+    pressure: meanOf(slice, 'pressure'),
+    humidity: meanOf(slice, 'humidity'),
+    uv_index: meanOf(slice, 'uv_index'),
+    condition: modeOf(slice, 'condition'),
+  };
 }

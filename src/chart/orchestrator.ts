@@ -24,7 +24,7 @@
 // the LitElement class) avoids a circular type dependency between
 // main.ts and this module.
 
-import { normalizeForecastMode } from '../forecast-utils.js';
+import { effectiveVisibleBars, normalizeForecastMode } from '../forecast-utils.js';
 import { lightenColor } from '../format-utils.js';
 import { resolveCssVar } from '../utils/resolve-css-var.js';
 import { getThemeTokens } from '../utils/theme-tokens.js';
@@ -593,6 +593,9 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
     isHourly,
     style,
     sunshineLabelBand,
+    // Config interpretation happens HERE (the wiring layer) — draw.ts
+    // only consumes the resolved number. 'today' is pinned to 8 bars.
+    visibleBars: effectiveVisibleBars(config as { forecast?: { type?: string; number_of_forecasts?: number | string } }),
     inPreview: card._isInPreview === true,
   });
   card._chartPhase = null;
