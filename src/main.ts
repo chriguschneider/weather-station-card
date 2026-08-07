@@ -60,6 +60,8 @@ import {
   aggregateThreeHourCalendar,
   trimLeadingEmptyBlocks,
   trimTrailingEmptyBlocks,
+  trimToWholeDayStart,
+  trimToWholeDayEnd,
   effectiveVisibleBars,
   computeTodayPagerScrollLeft,
   nextForecastType,
@@ -1513,8 +1515,13 @@ async _refreshPressureDelta(): Promise<void> {
     const cap = parseInt(effectiveCfg.forecast_days, 10);
     const dayLimit = cap > 0 ? cap : (parseInt(effectiveCfg.days, 10) || 7);
     const limit = dayLimit * slotsPerUnit;
-    return filterMidnightStaleForecast(this._forecastData || [], todayStartMs)
+    const sliced = filterMidnightStaleForecast(this._forecastData || [], todayStartMs)
       .slice(0, limit);
+    // Hourly-ish modes end on a WHOLE calendar day ("nur volle Tage"):
+    // the count cap lands mid-day (days × 24 h from now), which grew a
+    // sliver segment on the day timeline — a "day" holding a single
+    // trailing hour. Daily mode is day-granular already.
+    return isHourlyish ? trimToWholeDayEnd(sliced) : sliced;
   }
 
   // 'today' flow (day pager, 2026-08 rework):
@@ -1699,8 +1706,11 @@ async _refreshPressureDelta(): Promise<void> {
     });
     // 'today' (day pager) uses the same full hourly window as
     // 'hourly' — the render layer aggregates and pages it.
+    // The OLDEST day is trimmed to a whole calendar day (mirror of the
+    // forecast tail's whole-day rule) so the day timeline's first
+    // segment is a full day; the "now" end stays untouched.
     const count = (parseInt(String(this.config?.days), 10) || 7) * 24;
-    return past.slice(-count);
+    return trimToWholeDayStart(past.slice(-count));
   }
 
   // Lazy-init the Open-Meteo source and trigger a fetch when the cache

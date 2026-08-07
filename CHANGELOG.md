@@ -8,6 +8,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Hourly-ish data windows end on whole calendar days.** The
+  count-based window (`days × 24` hours from now) ended mid-day, so
+  the day timeline grew a sliver segment — a "day" holding a single
+  trailing hour (e.g. a lone `Fri 00:00` column). The forecast tail
+  now stops at the last fully covered day and the oldest station day
+  starts at midnight; the current day ("now") is untouched. A forecast
+  shorter than one day is never dropped.
 - **The today view never opens on a half-empty page.** Single-sided
   setups anchor on their data instead of the calendar day:
   forecast-only pages start at the first forecast block (rolling
