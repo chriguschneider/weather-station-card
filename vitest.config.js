@@ -37,6 +37,7 @@ export default {
         'src/chart/plugins/daily-tick-labels.ts',
         'src/chart/plugins/precip-label.ts',
         'src/chart/plugins/sunshine-label.ts',
+        'src/chart/plugins/temp-labels.ts',
         'src/chart/skeleton.ts',
         'src/scroll-ux.ts',
         'src/action-handler.ts',
