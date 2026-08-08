@@ -2204,6 +2204,7 @@ async updated(changedProperties: Map<PropertyKey, unknown>) {
   // this render (data still loading); a later render once data lands
   // will hit this line synchronously.
   this._maybeApplyInitialScroll(changedProperties);
+  this._maybeRealignDayPager();
   this._maybeRetriggerViewChangeAnimation();
   await this.updateComplete;
 
@@ -3884,6 +3885,28 @@ _convertWindSpeed(raw: unknown, sourceUnit?: string): number | null {
   //      The remount case (cache miss) doesn't need this branch: the
   //      fresh element already carries 'view-changing' from the
   //      template, so the animation runs on mount.
+  // Day-pager self-healing (2026-08): a data refresh can RESHAPE the
+  // content — after midnight the series gains a day, a longer provider
+  // forecast appends blocks — which changes .forecast-content's width
+  // while the wrapper's PIXEL scrollLeft is preserved by the browser.
+  // The preserved position then lands mid-page: the viewport shows
+  // "21:00 yesterday … 18:00 today" instead of a whole day. After
+  // every render, snap a drifted pager back to the nearest whole-day
+  // page. Skipped while the user is actively dragging (the drag-end
+  // snap in scroll-ux owns that case) and inert when already aligned.
+  _maybeRealignDayPager() {
+    if (this.config?.forecast?.type !== 'today') return;
+    const wrapper = safeQuery<HTMLElement>(this.shadowRoot, '.forecast-scroll.scrolling');
+    if (!wrapper || wrapper.classList.contains('dragging')) return;
+    const w = wrapper.clientWidth;
+    if (w <= 0 || wrapper.scrollWidth <= w) return;
+    const offset = wrapper.scrollLeft % w;
+    if (offset > 2 && offset < w - 2) {
+      const maxLeft = wrapper.scrollWidth - w;
+      wrapper.scrollLeft = Math.min(maxLeft, Math.max(0, Math.round(wrapper.scrollLeft / w) * w));
+    }
+  }
+
   _maybeRetriggerViewChangeAnimation() {
     const block = safeQuery<HTMLElement>(this.shadowRoot, '.forecast-scroll-block');
     if (!block) return;

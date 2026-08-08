@@ -30,9 +30,11 @@ Alternatives considered:
 
 'today' becomes a **day pager** (2026-08 rework):
 
-- The data window equals hourly's (`days × 24 h` station + full
-  forecast); 'today' and 'hourly' share recorder responses via the
-  request dedup and the mode-toggle lazy-cache (ADR-0020).
+- The data window equals hourly's (station history from LOCAL
+  MIDNIGHT `days` days back — day-boundary-anchored since v2.2.4 so
+  the oldest day is always complete — plus the full forecast);
+  'today' and 'hourly' share recorder responses via the request dedup
+  and the mode-toggle lazy-cache (ADR-0020).
 - `aggregateThreeHourCalendar` (`src/forecast-utils.ts`) anchors
   blocks to the LOCAL calendar (00/03/…/21) and gap-fills the output
   to whole days: every day contributes exactly 8 blocks, empty blocks

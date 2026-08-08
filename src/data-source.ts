@@ -461,15 +461,22 @@ export class MeasuredDataSource {
     if (entityIds.length === 0) return [];
 
     if (isHourly) {
-      // Window ends at the next full hour (exclusive). We fetch one
-      // extra hour at the start (hours+1) so a cumulative precipitation
-      // sensor has a baseline value to diff against on the oldest
-      // displayed hour.
+      // Window ends at the next full hour (exclusive) and starts at
+      // LOCAL MIDNIGHT `days` days back (2026-08): anchoring the start
+      // to a day boundary keeps the first day complete, so the scroll
+      // timeline's first segment is a full-width day (not a 2px
+      // sliver whose label can't render) and the 'today' day pager's
+      // first page carries real data instead of gap columns. One
+      // extra hour before that start so a cumulative precipitation
+      // sensor has a baseline to diff against on the oldest hour.
       const end = new Date();
       end.setMinutes(0, 0, 0);
       end.setHours(end.getHours() + 1);
-      const hours = days * 24;
-      const start = new Date(end.getTime() - (hours + 1) * HOUR_MS);
+      const dayStart = new Date();
+      dayStart.setHours(0, 0, 0, 0);
+      dayStart.setDate(dayStart.getDate() - days);
+      const start = new Date(dayStart.getTime() - HOUR_MS);
+      const hours = Math.round((end.getTime() - start.getTime()) / HOUR_MS) - 1;
 
       const stats = await this._callStatsDeduped({
         type: 'recorder/statistics_during_period',
