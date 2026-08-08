@@ -90,15 +90,25 @@ function buildDailyStats({ days, includeToday = true }: DailyStatsOpts): Record<
   const pressure = sineSeries(total, 4, 1015, 0.5);
   const wind = sineSeries(total, 2, 4, 1.5);
   const gust = sineSeries(total, 4, 8, 1.2);
-  const lux = sineSeries(total, 30000, 50000, 0);
+  // Lux daily-max drives the station-side sunshine derivation
+  // (ratio vs clear-sky noon ≈110 k lx). Keep the floor high enough
+  // that every day yields clearly visible sunshine bars.
+  const lux = sineSeries(total, 35000, 65000, 0);
   const dew = sineSeries(total, 3, 9, 1.8);
   const uv = sineSeries(total, 3, 4, 0).map((v) => Math.max(0, Math.round(v)));
   const dirs = sineSeries(total, 90, 180, 0.7);
   // Cumulative precipitation counter — `max` per bucket increases
   // monotonically. Daily-rainfall = max[i] - max[i-1].
+  //
+  // Balanced mix of dry and rainy days so EVERY window the specs use
+  // (4-day combination, 7-day single-block) shows visible rain bars
+  // without one outlier dwarfing the precip axis. Index 0 is the
+  // diff-baseline bucket; today (the window's last bucket) always
+  // carries rain so the measured-today column demonstrates the
+  // full-strength bar colour.
   let precipAccum = 0;
   const precipMax: number[] = [];
-  const dailyRain = [0, 1.4, 3.9, 6.7, 0.7, 7.4, 0.5, 26]; // mm per day, cycled
+  const dailyRain = [0, 3.4, 0, 1.8, 4.2, 0.9, 2.6, 5.1]; // mm per day, cycled
   for (let i = 0; i < total; i++) {
     precipAccum += dailyRain[i % dailyRain.length];
     precipMax.push(precipAccum);
@@ -172,12 +182,12 @@ function buildHourlyStats({ hours }: HourlyStatsOpts): Record<string, RecorderSt
   const end = new Date();
   end.setMinutes(0, 0, 0);
   end.setHours(end.getHours() + 1);
-  // For deterministic baselines: align end to fixture-day 18:00
-  // (matching the test's mock-now of 17:30 rounded up to next-full-
-  // hour). This puts a midnight crossing within the rolling 24-hour
-  // 'today' window — 12h forecast forward from 18:00 reaches into
-  // tomorrow's 06:00, demonstrating the day-boundary separator.
-  end.setTime(today.getTime() + 18 * HOUR_MS);
+  // For deterministic baselines: align end to fixture-day 14:00
+  // (matching the harness's mock-now of 13:30 rounded up to next-
+  // full-hour). Early afternoon keeps a morning shower and sunshine
+  // inside the measured side of today, and leaves the forecast side
+  // an afternoon with both rain and remaining daylight.
+  end.setTime(today.getTime() + 14 * HOUR_MS);
   const total = hours + 1;
   const start = new Date(end.getTime() - total * HOUR_MS);
 
@@ -197,18 +207,22 @@ function buildHourlyStats({ hours }: HourlyStatsOpts): Record<string, RecorderSt
   const dewAt = hourly(8, 3, 12);
   const uvAt = (hour: number): number => Math.max(0, Math.round(3 + 3 * Math.sin((hour - 6) * Math.PI / 12)));
   const dirsAt = hourly(180, 90, 12);
-  // Per-hour precipitation accumulator. A 4 mm shower over hours
-  // 12-15 of the window keeps the precip dataset visually present.
+  // Per-hour precipitation accumulator, keyed by WALL-CLOCK hour (not
+  // the window index — a window that doesn't start at midnight would
+  // otherwise drift the shower to arbitrary times of day). Every
+  // fixture day gets a morning drizzle (06 h) and a late-morning
+  // shower (11–13 h), so any whole-day window shows measured rain and
+  // the pre-14:00 "today" slice already contains a shower.
   let precipAccum = 0;
   const precipMax: number[] = [];
-  const hourlyRain = (i: number): number => {
-    const hr = i % 24;
-    if (hr >= 12 && hr <= 15) return 1; // mm/h
-    if (hr === 18) return 0.3;
+  const hourlyRain = (hr: number): number => {
+    if (hr >= 11 && hr <= 13) return 0.8; // mm/h
+    if (hr === 6) return 0.4;
     return 0;
   };
   for (let i = 0; i < total; i++) {
-    precipAccum += hourlyRain(i);
+    const hr = new Date(start.getTime() + i * HOUR_MS).getHours();
+    precipAccum += hourlyRain(hr);
     precipMax.push(precipAccum);
   }
 
@@ -282,7 +296,9 @@ function buildDailyForecast(days: number): Array<Record<string, unknown>> {
       datetime: date.toISOString(),
       temperature: round1(18 + Math.sin(i * 0.6) * 5),
       templow: round1(8 + Math.sin(i * 0.6 + 1) * 4),
-      precipitation: i % 3 === 0 ? 2.5 : 0,
+      // Dry/rainy mix tuned so both the 4-day combination window and
+      // the 7-day forecast-only window show at least two rain days.
+      precipitation: [2.2, 0, 1.4, 3.6, 0, 0.8, 2.9][i % 7],
       wind_speed: round1(12 + Math.sin(i * 0.4) * 4),
       wind_bearing: Math.round(180 + Math.sin(i * 0.7) * 90),
       condition: conditions[i % conditions.length],
@@ -296,11 +312,11 @@ function buildDailyForecast(days: number): Array<Record<string, unknown>> {
 function buildHourlyForecast(hours: number, opts: { withTemplow?: boolean } = {}): Array<Record<string, unknown>> {
   const today = todayAnchor();
   // Future hours start at "now" (rounded to hour). For deterministic
-  // baselines we anchor at fixture-day 18:00 (matching the test's
-  // mock-now of 17:30 rounded up). 12 forecast hours forward then
-  // reaches tomorrow-06:00, putting the midnight day-boundary in
-  // the middle of the chart for combination 'today' mode.
-  const start = new Date(today.getTime() + 18 * HOUR_MS);
+  // baselines we anchor at fixture-day 14:00 (matching the harness's
+  // mock-now of 13:30 rounded up). The forecast's first afternoon
+  // then carries both rain (14–17 h) and remaining daylight, so
+  // forecast-side pages open with sun AND rain visible.
+  const start = new Date(today.getTime() + 14 * HOUR_MS);
   const round1 = (v: number): number => Math.round(v * 10) / 10;
   // Diurnal forecast: same temp curve as the station's hourly fixture
   // (cold around 03:00, peak around 15:00). Forecast values get
@@ -332,6 +348,40 @@ function buildHourlyForecast(hours: number, opts: { withTemplow?: boolean } = {}
     }
     return entry;
   });
+}
+
+/** Hourly illuminance history for the B2 lux-sunshine derivation
+ *  (`history/history_during_period`). Without this the daily station
+ *  columns fall to the "configured lux source is authoritative → 0 h"
+ *  rule and render no sunshine bars at all.
+ *
+ *  Per fixture day a fixed number of SUNNY hours (well above any
+ *  clear-sky threshold at 120 k lx) sits centred around noon; the
+ *  remaining daylight reads dim (8 k lx) and nights are 0. The
+ *  derived sunshine hours per day are therefore exactly the
+ *  `sunnyHoursByDay` cycle — deterministic, visibly varied, never 0. */
+function buildLuxHistory(days: number): Record<string, Array<{ s: string; lu: number }>> {
+  const today = todayAnchor();
+  const start = new Date(today.getTime() - days * DAY_MS);
+  const end = new Date(today.getTime() + 14 * HOUR_MS);
+  const sunnyHoursByDay = [9, 4, 11, 6, 3, 10, 7];
+  // 5-minute resolution: the derivation skips sample intervals longer
+  // than its 10-minute gap guard (real recorders log every ~30 s), so
+  // hourly fixture samples would ALL be discarded.
+  const STEP_MS = 5 * 60 * 1000;
+  const rows: Array<{ s: string; lu: number }> = [];
+  for (let t = start.getTime(); t <= end.getTime(); t += STEP_MS) {
+    const d = new Date(t);
+    const hr = d.getHours();
+    const dayIdx = Math.floor((t - start.getTime()) / DAY_MS);
+    const sunny = sunnyHoursByDay[dayIdx % sunnyHoursByDay.length];
+    const from = 13 - Math.ceil(sunny / 2);
+    const isDaylight = hr >= 6 && hr <= 20;
+    const isSunny = hr >= from && hr < from + sunny;
+    const lux = !isDaylight ? 0 : (isSunny ? 120000 : 8000);
+    rows.push({ s: String(lux), lu: Math.floor(t / 1000) });
+  }
+  return { [SENSORS.illuminance]: rows };
 }
 
 /** Live state record per sensor. The card reads `hass.states[eid].state`
@@ -417,6 +467,7 @@ export function buildFullFixture(opts: FullFixtureOpts = {}): FixtureBag {
     recorderHourly: buildHourlyStats({ hours }),
     forecastDaily: buildDailyForecast(days),
     forecastHourly: buildHourlyForecast(forecastHours, { withTemplow: opts.forecastWithTemplow }),
+    luxHistory: buildLuxHistory(days),
   };
 }
 

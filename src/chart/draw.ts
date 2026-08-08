@@ -330,23 +330,22 @@ function buildSeries(
         align,
       };
       if (fillArr || strokeArr) {
+        // uPlot's bars builder indexes the returned colour arrays with
+        // the ABSOLUTE data index (`fillColors[i]` for i in idx0..idx1)
+        // — NOT relative to idx0. Return the full per-index arrays;
+        // a window-relative slice shifts every bar colour by idx0
+        // columns once the virtualized canvas pans (idx0 > 0), which
+        // painted today's measured rain in the forecast tint.
+        const len = ds.data.length;
+        const fullFill: string[] = new Array(len);
+        const fullStroke: string[] = new Array(len);
+        for (let i = 0; i < len; i++) {
+          fullFill[i] = fillArr?.[i] ?? singleFill;
+          fullStroke[i] = strokeArr?.[i] ?? singleStroke;
+        }
         barOpts.disp = {
-          fill: {
-            unit: 3,
-            values: (_u: uPlot, _si: number, i0: number, i1: number) => {
-              const out: string[] = [];
-              for (let i = i0; i <= i1; i++) out.push(fillArr?.[i] ?? singleFill);
-              return out;
-            },
-          },
-          stroke: {
-            unit: 3,
-            values: (_u: uPlot, _si: number, i0: number, i1: number) => {
-              const out: string[] = [];
-              for (let i = i0; i <= i1; i++) out.push(strokeArr?.[i] ?? singleStroke);
-              return out;
-            },
-          },
+          fill: { unit: 3, values: () => fullFill },
+          stroke: { unit: 3, values: () => fullStroke },
         };
       }
       series.push({

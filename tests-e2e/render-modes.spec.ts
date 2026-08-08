@@ -148,19 +148,20 @@ for (const theme of THEMES) {
           const themeSuffix = theme === 'dark' ? '-dark' : '';
           const name = `${forecastType}-${mode}${sunshineSuffix}${themeSuffix}`;
           test(name, async ({ page }) => {
-            // 'today' fixture needs only 24-hour horizon — anything
-            // larger gets sliced by the chart but inflates fixture
-            // load time. Other modes use the default 7-day / 168-hour
-            // fixture.
-            const fixture = forecastType === 'today'
-              ? buildFullFixture({ days: 1, hours: 24, forecastHours: 24 })
-              : buildFullFixture();
+            // ONE canonical dataset (maintainer decision, 2026-08):
+            // 7 days of past + 7 days of future, and every mode draws
+            // from it — the station cell shows exactly the past half
+            // of the combination cell, the forecast cell exactly its
+            // future half. 'today' shares the same window; the day
+            // pager anchors on the current day / data edge.
+            const fixture = buildFullFixture({ days: 7 });
 
             await mount(
               page,
               buildBaseConfig({
                 ...MODES[mode],
-                ...(forecastType === 'today' ? { days: 1, forecast_days: 1 } : {}),
+                days: 7,
+                forecast_days: 7,
                 forecast: {
                   type: forecastType,
                   disable_animation: true,

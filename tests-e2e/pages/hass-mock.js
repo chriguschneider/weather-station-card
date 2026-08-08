@@ -55,6 +55,18 @@ export function createHassMock(fixture = {}) {
         }
         return out;
       }
+      if (msg.type === 'history/history_during_period') {
+        // Compact recorder-history shape the B2 lux-sunshine
+        // derivation consumes: { [entity_id]: [{ s, lu }, …] }.
+        // Like the stats branch, no time-window filtering — fixtures
+        // provide exactly the window the card asks for.
+        const ids = msg.entity_ids || [];
+        const out = {};
+        for (const id of ids) {
+          out[id] = (fixture.luxHistory && fixture.luxHistory[id]) || [];
+        }
+        return out;
+      }
       if (msg.type === 'config/auth_provider/list') {
         return [];
       }
