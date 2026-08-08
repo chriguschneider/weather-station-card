@@ -66,5 +66,10 @@ export interface FixtureBag {
   recorderHourly?: Record<string, RecorderStatBucket[]>;
   forecastDaily?: Array<Record<string, unknown>>;
   forecastHourly?: Array<Record<string, unknown>>;
+  /** `history/history_during_period` payload per entity — compact
+   *  recorder-history rows ({ s: state string, lu: unix seconds }).
+   *  Feeds the B2 lux-sunshine derivation for the daily station
+   *  columns. */
+  luxHistory?: Record<string, Array<{ s: string; lu: number }>>;
 }
 

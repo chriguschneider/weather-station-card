@@ -350,6 +350,36 @@ function buildHourlyForecast(hours: number, opts: { withTemplow?: boolean } = {}
   });
 }
 
+/** Hourly illuminance history for the B2 lux-sunshine derivation
+ *  (`history/history_during_period`). Without this the daily station
+ *  columns fall to the "configured lux source is authoritative → 0 h"
+ *  rule and render no sunshine bars at all.
+ *
+ *  Per fixture day a fixed number of SUNNY hours (well above any
+ *  clear-sky threshold at 120 k lx) sits centred around noon; the
+ *  remaining daylight reads dim (8 k lx) and nights are 0. The
+ *  derived sunshine hours per day are therefore exactly the
+ *  `sunnyHoursByDay` cycle — deterministic, visibly varied, never 0. */
+function buildLuxHistory(days: number): Record<string, Array<{ s: string; lu: number }>> {
+  const today = todayAnchor();
+  const start = new Date(today.getTime() - days * DAY_MS);
+  const end = new Date(today.getTime() + 14 * HOUR_MS);
+  const sunnyHoursByDay = [9, 4, 11, 6, 3, 10, 7];
+  const rows: Array<{ s: string; lu: number }> = [];
+  for (let t = start.getTime(); t <= end.getTime(); t += HOUR_MS) {
+    const d = new Date(t);
+    const hr = d.getHours();
+    const dayIdx = Math.floor((t - start.getTime()) / DAY_MS);
+    const sunny = sunnyHoursByDay[dayIdx % sunnyHoursByDay.length];
+    const from = 13 - Math.ceil(sunny / 2);
+    const isDaylight = hr >= 6 && hr <= 20;
+    const isSunny = hr >= from && hr < from + sunny;
+    const lux = !isDaylight ? 0 : (isSunny ? 120000 : 8000);
+    rows.push({ s: String(lux), lu: Math.floor(t / 1000) });
+  }
+  return { [SENSORS.illuminance]: rows };
+}
+
 /** Live state record per sensor. The card reads `hass.states[eid].state`
  *  for the "now" current-condition rendering and for the live-fill in
  *  the last hourly bucket. */
@@ -433,6 +463,7 @@ export function buildFullFixture(opts: FullFixtureOpts = {}): FixtureBag {
     recorderHourly: buildHourlyStats({ hours }),
     forecastDaily: buildDailyForecast(days),
     forecastHourly: buildHourlyForecast(forecastHours, { withTemplow: opts.forecastWithTemplow }),
+    luxHistory: buildLuxHistory(days),
   };
 }
 

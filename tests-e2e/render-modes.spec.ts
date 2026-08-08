@@ -148,21 +148,20 @@ for (const theme of THEMES) {
           const themeSuffix = theme === 'dark' ? '-dark' : '';
           const name = `${forecastType}-${mode}${sunshineSuffix}${themeSuffix}`;
           test(name, async ({ page }) => {
-            // Window sizes per mode (maintainer decision, 2026-08):
-            // combination shows 4 days past + 4 days future so the
-            // whole span fits without scrolling and both sides are
-            // equally represented; single-block modes show the full
-            // 7-day window. 'today' shares its mode's window — the
-            // day pager anchors on the current day / data edge.
-            const days = mode === 'combination' ? 4 : 7;
-            const fixture = buildFullFixture({ days });
+            // ONE canonical dataset (maintainer decision, 2026-08):
+            // 7 days of past + 7 days of future, and every mode draws
+            // from it — the station cell shows exactly the past half
+            // of the combination cell, the forecast cell exactly its
+            // future half. 'today' shares the same window; the day
+            // pager anchors on the current day / data edge.
+            const fixture = buildFullFixture({ days: 7 });
 
             await mount(
               page,
               buildBaseConfig({
                 ...MODES[mode],
-                days,
-                forecast_days: days,
+                days: 7,
+                forecast_days: 7,
                 forecast: {
                   type: forecastType,
                   disable_animation: true,
