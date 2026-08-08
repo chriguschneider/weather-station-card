@@ -396,6 +396,10 @@ function buildPlugins(args: BuildPluginsArgs): ChartPlugin[] {
     tempHighColor: temp1Color,
     tempLowColor: temp2Color,
     chartTextColor,
+    // 3-px background-colour halo behind every value — keeps labels
+    // readable on top of the full-strength sunshine bars (community
+    // post 15 "purple"; variant decision N1 + halo).
+    haloColor: backgroundColor,
     roundTemp: config.forecast.round_temp === true,
   }));
 
@@ -501,8 +505,9 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
   // colour (anything other than the legacy default literal) passes
   // through unchanged. Dark detection via the resolved card
   // background's luma (HA exposes no dark-mode flag to cards).
+  const isDarkTheme = isDarkColor(backgroundColor);
   const TEMP2_LEGACY_DEFAULT = 'rgba(68, 115, 158, 1.0)';
-  const temp2ThemedDefault = isDarkColor(backgroundColor)
+  const temp2ThemedDefault = isDarkTheme
     ? 'rgba(130, 175, 220, 1.0)'
     : 'rgba(38, 90, 140, 1.0)';
   const temp2Configured = config.forecast.temperature2_color;
@@ -528,8 +533,20 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
   // columns over a 7-day window would crowd labels (the bar height
   // alone encodes the value at that density).
   const showSunshineLabels = showSunshine && config.forecast.type !== 'hourly';
-  const sunshineColor = resolveCssVar(config.forecast.sunshine_color, 'rgba(255, 215, 0, 1.0)');
-  const sunshineColorLight = lightenColor(sunshineColor) as string;
+  const SUNSHINE_LEGACY_DEFAULT = 'rgba(255, 215, 0, 1.0)';
+  const sunshineConfigured = config.forecast.sunshine_color;
+  const sunshineColor = resolveCssVar(sunshineConfigured, SUNSHINE_LEGACY_DEFAULT);
+  // Forecast-side sunshine in DARK themes: the default gold at
+  // lightenColor's 0.45 alpha blends with the near-black card into a
+  // murky olive. Variant decision "W58": warmer honey gold
+  // rgba(255,193,7) at 0.58 — the tone shift cancels the green cast,
+  // the strength keeps the bars present without matching the measured
+  // side. Light themes and user-set colours keep the classic
+  // lightenColor treatment.
+  const sunshineColorLight = (isDarkTheme
+    && (!sunshineConfigured || sunshineConfigured === SUNSHINE_LEGACY_DEFAULT))
+    ? 'rgba(255, 193, 7, 0.58)'
+    : lightenColor(sunshineColor) as string;
   const sunshinePerBarColor: string[] = (data.sunshine ?? []).map(
     (_v, i) => pickPerBarColor(i, hasBothBlocks, stationCountForGap, sunshineColor, sunshineColorLight),
   );

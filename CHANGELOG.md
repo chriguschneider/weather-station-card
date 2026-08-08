@@ -8,6 +8,23 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Temperature labels get a background-colour halo.** Every "16°"
+  value is drawn with a 3-px outline in the card background colour, so
+  labels stay readable on top of full-strength sunshine and
+  precipitation bars — in both themes, without changing the palette.
+- **The temperature line always leaves room for its labels.** The
+  TempAxis padding is now pixel-aware: at small `chart_height` values
+  the proportional top/bottom reserve fell below the label's fixed
+  pixel need and values poked into the date/time band. The scale now
+  pads until the labels fit; at the default chart height nothing
+  changes, and the sunshine/precipitation bars (own axes) keep their
+  exact heights.
+- **Forecast sunshine bars look golden in dark themes.** The default
+  gold at 45 % opacity blended with dark card backgrounds into a murky
+  olive; dark themes now render the forecast side in a warmer honey
+  gold (`rgba(255,193,7,0.58)`). The measured side stays full-strength
+  original gold, light themes are unchanged, and a custom
+  `sunshine_color` keeps the classic behaviour.
 - **The low-temperature line's default blue is now theme-aware.** The
   single steel-blue default read washed-out on light backgrounds and
   dropped to ~2.5:1 contrast in dark themes. The DEFAULT now resolves

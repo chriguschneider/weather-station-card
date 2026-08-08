@@ -18,6 +18,12 @@ export interface TempLabelsPluginOpts {
   tempHighColor: string;
   tempLowColor: string;
   chartTextColor?: string;
+  /** Card background colour for the 3-px text halo drawn behind every
+   *  value (community post 15 "purple"): a strokeText outline in the
+   *  background colour keeps labels readable on top of the sunshine /
+   *  precipitation bars without touching the palette. Omit to render
+   *  without halo. */
+  haloColor?: string;
   /** When false, labels keep one decimal place regardless of the source's
    *  own precision so daily/today/hourly read consistently (e.g. "28.0°"
    *  next to "16.2°"); when true the value is already integer-rounded
@@ -26,7 +32,7 @@ export interface TempLabelsPluginOpts {
 }
 
 export function createTempLabelsPlugin(opts: TempLabelsPluginOpts): ChartPlugin {
-  const { config, data, tempHighColor, tempLowColor, chartTextColor, roundTemp } = opts;
+  const { config, data, tempHighColor, tempLowColor, chartTextColor, haloColor, roundTemp } = opts;
   const decimals = roundTemp ? 0 : 1;
   const baseSize = parseInt(String(config.forecast.labels_font_size)) || 11;
   // style2 label is one size larger than the base axis-label size
@@ -71,6 +77,11 @@ export function createTempLabelsPlugin(opts: TempLabelsPluginOpts): ChartPlugin 
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     c.fillStyle = chartTextColor || color;
+    if (haloColor) {
+      c.strokeStyle = haloColor;
+      c.lineWidth = 3;
+      c.lineJoin = 'round';
+    }
     for (let i = 0; i < values.length; i++) {
       const v = values[i];
       if (v == null || !Number.isFinite(v)) continue;
@@ -78,8 +89,12 @@ export function createTempLabelsPlugin(opts: TempLabelsPluginOpts): ChartPlugin 
       // Viewport culling (virtualized canvas).
       if (x < chart.chartArea.left - 40 || x > chart.chartArea.right + 40) continue;
       const y = tempScale.getPixelForValue(v) + offsetY;
+      const text = `${v.toFixed(decimals)}°`;
       c.font = `${isTodayAt(i) ? 'bold ' : ''}${fontSize}px ${fontFamily}`;
-      c.fillText(`${v.toFixed(decimals)}°`, x, y);
+      // Halo first, glyph on top — the outline in the card background
+      // colour lifts the label off sunshine/precip bars behind it.
+      if (haloColor) c.strokeText(text, x, y);
+      c.fillText(text, x, y);
     }
     c.restore();
   }
