@@ -96,6 +96,7 @@ import {
   isPrecipRateUnit,
   precipBaseUnit,
   formatPrecipDisplay,
+  luxScaleFor,
 } from './utils/unit-converters.js';
 import { drawChartUnsafe } from './chart/orchestrator.js';
 import { seriesCacheKey, loadSeriesCache, saveSeriesCache } from './utils/series-cache.js';
@@ -519,7 +520,9 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
     sensors: {
       temperature: findByClass('temperature') || '',
       humidity: findByClass('humidity') || '',
-      illuminance: findByClass('illuminance') || '',
+      // Solar-irradiance sensors (W/m²) work in the same slot — the
+      // card converts them to lux internally.
+      illuminance: findByClass('illuminance') || findByClass('irradiance') || '',
       // Prefer a daily-reset sensor (e.g. utility_meter cycle: daily) so the
       // statistics max-per-day equals the day's rainfall. A cumulative
       // (lifetime) sensor would yield the running total, not daily mm.
@@ -827,7 +830,19 @@ _extractSensorReadings(hass: HassMain): void {
   this.windSpeed = fromWxIfMissing(valueOf(sensors.wind_speed), 'wind_speed');
   this.dew_point = fromWxIfMissing(valueOf(sensors.dew_point), 'dew_point');
   this.wind_gust_speed = fromWxIfMissing(valueOf(sensors.gust_speed), 'wind_gust_speed');
-  this.illuminance = valueOf(sensors.illuminance);
+  // Irradiance sensors (W/m², community post 15 point 5) convert to
+  // lux at extraction so EVERY downstream consumer — sun-strength row,
+  // live classifier, formatLux display — sees the pipeline's native
+  // unit. Plain lux sensors pass through unchanged (scale 1).
+  {
+    const rawIll = valueOf(sensors.illuminance);
+    const illAttrs = sensors.illuminance ? hass.states?.[sensors.illuminance]?.attributes : undefined;
+    const scale = luxScaleFor(illAttrs?.unit_of_measurement, illAttrs?.device_class);
+    const num = rawIll !== undefined ? parseFloat(String(rawIll)) : NaN;
+    this.illuminance = (scale !== 1 && Number.isFinite(num))
+      ? String(Math.round(num * scale))
+      : rawIll;
+  }
   this.precipitation = valueOf(sensors.precipitation);
   const rawPrecipUnit = (attrOf(sensors.precipitation, 'unit_of_measurement') as string | undefined) || undefined;
   this.precipitation_unit = rawPrecipUnit;
@@ -1025,7 +1040,15 @@ _resolveLiveClassifierInputs(hass: HassMain): any {
     sensors,
     wxState: wxEntity?.state,
     nowTemp: parseNumericSafe(this.temperature),
-    luxNow: parseNumericSafe(illuminanceState?.state),
+    // Irradiance sensors scale into lux for the clear-sky ratio.
+    luxNow: (() => {
+      const raw = parseNumericSafe(illuminanceState?.state);
+      if (raw == null) return raw;
+      return raw * luxScaleFor(
+        illuminanceState?.attributes?.unit_of_measurement,
+        illuminanceState?.attributes?.device_class,
+      );
+    })(),
     precipRateNow: precipIsRate ? parseNumericSafe(precipState?.state) : null,
     // Source units so the classifier can normalise to its canonical
     // °C / mm before comparing against thresholds. Dew point falls back

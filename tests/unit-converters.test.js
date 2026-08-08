@@ -404,3 +404,42 @@ describe('formatPrecipDisplay', () => {
     expect(formatPrecipDisplay(0.5, 'in', 'in')).toEqual({ value: '0.50', unit: 'in' });
   });
 });
+
+// ── irradiance → lux (community post 15, point 5) ───────────────────
+
+import { isIrradianceUnit, luxScaleFor, DAYLIGHT_EFFICACY_LM_PER_W } from '../src/utils/unit-converters.js';
+
+describe('isIrradianceUnit', () => {
+  it('recognises common W/m² spellings', () => {
+    expect(isIrradianceUnit('W/m²')).toBe(true);
+    expect(isIrradianceUnit('W/m2')).toBe(true);
+    expect(isIrradianceUnit('w/m²')).toBe(true);
+    expect(isIrradianceUnit('W / m²')).toBe(true);
+  });
+
+  it('rejects illuminance and unrelated units', () => {
+    expect(isIrradianceUnit('lx')).toBe(false);
+    expect(isIrradianceUnit('lux')).toBe(false);
+    expect(isIrradianceUnit('')).toBe(false);
+    expect(isIrradianceUnit(undefined)).toBe(false);
+    expect(isIrradianceUnit(42)).toBe(false);
+  });
+});
+
+describe('luxScaleFor', () => {
+  it('returns the daylight efficacy for irradiance by unit or device_class', () => {
+    expect(luxScaleFor('W/m²')).toBe(DAYLIGHT_EFFICACY_LM_PER_W);
+    expect(luxScaleFor('lx', 'irradiance')).toBe(DAYLIGHT_EFFICACY_LM_PER_W);
+    expect(luxScaleFor(undefined, 'irradiance')).toBe(DAYLIGHT_EFFICACY_LM_PER_W);
+  });
+
+  it('returns 1 for plain illuminance sensors', () => {
+    expect(luxScaleFor('lx')).toBe(1);
+    expect(luxScaleFor('lx', 'illuminance')).toBe(1);
+    expect(luxScaleFor(undefined, undefined)).toBe(1);
+  });
+
+  it('maps full sun (~1000 W/m²) into the clear-sky-noon lux range', () => {
+    expect(1000 * luxScaleFor('W/m²')).toBe(120000);
+  });
+});

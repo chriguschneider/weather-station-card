@@ -6,6 +6,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Solar-irradiance sensors (W/m²) work as the illuminance source.**
+  Stations that report solar irradiance instead of lux (SWS-12500,
+  Ecowitt solar sensors, …) can now be picked in the same
+  `sensors.illuminance` slot — detected by unit (`W/m²`) or
+  `device_class: irradiance` and converted internally at 120 lm/W
+  daylight luminous efficacy. Feeds the condition classifier, the
+  lux-derived station sunshine, and the live sun-strength row; the
+  editor's sensor picker lists irradiance entities, and auto-detection
+  falls back to them. Fine-tuning stays available via
+  `condition_mapping.sunshine_lux_ratio`.
+  ([community report](https://community.home-assistant.io/t/weather-station-card-weather-station-meets-forecast/1011385/15))
+
 ## [2.2.2] — 2026-08-08
 
 Readability release, shaped by maintainer-guided visual reviews:
