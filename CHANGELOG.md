@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.2.3] — 2026-08-08
+
 ### Added
 
 - **Solar-irradiance sensors (W/m²) work as the illuminance source.**
