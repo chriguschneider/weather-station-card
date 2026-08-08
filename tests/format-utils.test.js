@@ -1,9 +1,37 @@
 import { describe, it, expect } from 'vitest';
 import {
   lightenColor,
+  isDarkColor,
   computeBlockSeparatorPositions,
   computeInitialScrollLeft,
 } from '../src/format-utils.js';
+
+describe('isDarkColor', () => {
+  it('classifies HA dark-theme card backgrounds as dark', () => {
+    expect(isDarkColor('#1c1c1c')).toBe(true);
+    expect(isDarkColor('rgb(28, 28, 28)')).toBe(true);
+    expect(isDarkColor('rgba(17, 17, 17, 1)')).toBe(true);
+  });
+
+  it('classifies light backgrounds as light', () => {
+    expect(isDarkColor('#ffffff')).toBe(false);
+    expect(isDarkColor('#fff')).toBe(false);
+    expect(isDarkColor('rgb(250, 250, 250)')).toBe(false);
+  });
+
+  it('uses perceptual luma, not channel average', () => {
+    // Saturated blue is dark despite a maxed channel; yellow is light.
+    expect(isDarkColor('rgb(0, 0, 255)')).toBe(true);
+    expect(isDarkColor('rgb(255, 215, 0)')).toBe(false);
+  });
+
+  it('falls back to light for unparseable input', () => {
+    expect(isDarkColor('')).toBe(false);
+    expect(isDarkColor('var(--card-background-color)')).toBe(false);
+    expect(isDarkColor(undefined)).toBe(false);
+    expect(isDarkColor('papayawhip')).toBe(false);
+  });
+});
 
 describe('lightenColor', () => {
   it('reduces alpha of an rgba colour', () => {
