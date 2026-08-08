@@ -88,17 +88,7 @@ export function createTempLabelsPlugin(opts: TempLabelsPluginOpts): ChartPlugin 
       const x = xScale.getPixelForTick(i);
       // Viewport culling (virtualized canvas).
       if (x < chart.chartArea.left - 40 || x > chart.chartArea.right + 40) continue;
-      const yPoint = tempScale.getPixelForValue(v);
-      let y = yPoint + offsetY;
-      // Overflow guard (community post 15 "yellow"): a label must
-      // never leave the plot area into the axis bands (dates/times
-      // above, sunshine/precip boxes below). When the preferred side
-      // has no room — extreme values, small chart_height — the label
-      // flips to the other side of its dot instead of colliding.
-      const half = fontSize / 2;
-      if (y - half < chart.chartArea.top + 1 || y + half > chart.chartArea.bottom - 1) {
-        y = yPoint - offsetY;
-      }
+      const y = tempScale.getPixelForValue(v) + offsetY;
       const text = `${v.toFixed(decimals)}°`;
       c.font = `${isTodayAt(i) ? 'bold ' : ''}${fontSize}px ${fontFamily}`;
       // Halo first, glyph on top — the outline in the card background

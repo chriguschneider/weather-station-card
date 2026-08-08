@@ -661,8 +661,23 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
   // scale: a narrow temp range (cold week, 3 °C spread) gets just
   // enough padding; a wide range (cold morning → hot afternoon,
   // 25 °C spread) gets more headroom.
-  const bottomReserve = 0.24;
-  const topReserve = 0.18;
+  // Pixel-aware floor (community post 15 "yellow", maintainer
+  // decision): the label needs a FIXED number of pixels — offset
+  // above/below the dot (fontSize + 4) plus half a glyph plus
+  // breathing room — while the proportional reserve shrinks with the
+  // chart. At small chart_height values the 18 % top slice fell below
+  // the label's pixel need and "34°" poked into the date/time band.
+  // Raise the fractions until the label fits (capped so the plot
+  // never degenerates); at the default chart height the floors are
+  // inactive and the classic proportions apply unchanged. This pads
+  // ONLY the TempAxis — the sunshine/precip bars live on their own
+  // axes and keep their exact heights.
+  const labelFontPx = labelsBaseSize + 1;
+  const labelNeedPx = labelFontPx + 4 + Math.ceil(labelFontPx / 2) + 2;
+  const xAxisBandPx = Math.ceil(labelsBaseSize * 1.3) * 2 + sunshineLabelBand + 10;
+  const plotHeightPx = Math.max(40, height - xAxisBandPx);
+  const bottomReserve = Math.min(0.4, Math.max(0.24, labelNeedPx / plotHeightPx));
+  const topReserve = Math.min(0.35, Math.max(0.18, labelNeedPx / plotHeightPx));
   const tempMinForShim = rawMin - (rawRange + 3) * (bottomReserve / (1 - bottomReserve - topReserve));
   const tempMaxForShim = rawMax + (rawRange + 3) * (topReserve / (1 - bottomReserve - topReserve));
 

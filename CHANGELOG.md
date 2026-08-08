@@ -12,10 +12,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   value is drawn with a 3-px outline in the card background colour, so
   labels stay readable on top of full-strength sunshine and
   precipitation bars — in both themes, without changing the palette.
-- **Temperature labels never overflow into the axis bands.** A label
-  whose preferred side has no room (extreme values, small
-  `chart_height`) flips to the other side of its data point instead of
-  colliding with the date/time band above or the value boxes below.
+- **The temperature line always leaves room for its labels.** The
+  TempAxis padding is now pixel-aware: at small `chart_height` values
+  the proportional top/bottom reserve fell below the label's fixed
+  pixel need and values poked into the date/time band. The scale now
+  pads until the labels fit; at the default chart height nothing
+  changes, and the sunshine/precipitation bars (own axes) keep their
+  exact heights.
 - **Forecast sunshine bars look golden in dark themes.** The default
   gold at 45 % opacity blended with dark card backgrounds into a murky
   olive; dark themes now render the forecast side in a warmer honey
