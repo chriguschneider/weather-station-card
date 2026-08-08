@@ -773,7 +773,7 @@ describe('MeasuredDataSource hourly mode', () => {
     expect('humidity' in entry).toBe(true);
   });
 
-  it('_fetchAggregates requests period:hour with days*24 slots when hourly', async () => {
+  it('_fetchAggregates requests period:hour anchored at local midnight when hourly', async () => {
     const hass = {
       config: { latitude: 47.4, longitude: 8.5 },
       callWS: vi.fn().mockResolvedValue({}), // empty stats — we only check the request
@@ -786,10 +786,13 @@ describe('MeasuredDataSource hourly mode', () => {
     const [msg] = hass.callWS.mock.calls[0];
     expect(msg.type).toBe('recorder/statistics_during_period');
     expect(msg.period).toBe('hour');
-    // window: end - start should span (days*24 + 1) hours = 49 hours
-    const startMs = new Date(msg.start_time).getTime();
-    const endMs = new Date(msg.end_time).getTime();
-    expect(Math.round((endMs - startMs) / HOUR_MS)).toBe(2 * 24 + 1);
+    // Window starts at local midnight `days` days back, minus the
+    // 1-hour cumulative-precipitation baseline (2026-08 whole-day
+    // anchoring — keeps timeline segments and day pages complete).
+    const expectedStart = new Date();
+    expectedStart.setHours(0, 0, 0, 0);
+    expectedStart.setDate(expectedStart.getDate() - 2);
+    expect(new Date(msg.start_time).getTime()).toBe(expectedStart.getTime() - HOUR_MS);
   });
 
   it('_fetchAggregates falls back to period:day at default forecast.type', async () => {
@@ -804,12 +807,13 @@ describe('MeasuredDataSource hourly mode', () => {
   });
 
   // 'today' became the DAY PAGER in the 2026-08 rework: it shares the
-  // FULL hourly window (days × 24 h + 1 baseline hour) — the render
-  // layer 3-h-aggregates the span and pages it one day per viewport.
+  // full hourly window — which is anchored to LOCAL MIDNIGHT `days`
+  // days back (plus 1 baseline hour before it), so the first day is
+  // always complete: whole timeline segments, whole day pages.
   // Identical fetch parameters are load-bearing: they let 'today' and
   // 'hourly' share the recorder response via the request dedup and
   // the mode-toggle lazy-cache.
-  it("_fetchAggregates 'today' uses the full hourly window (days × 24 + 1)", async () => {
+  it("_fetchAggregates 'today' window starts at local midnight − 1 h, `days` days back", async () => {
     const hass = {
       config: { latitude: 47.4, longitude: 8.5 },
       callWS: vi.fn().mockResolvedValue({}),
@@ -824,9 +828,15 @@ describe('MeasuredDataSource hourly mode', () => {
     await ds._fetchAggregates();
     const [msg] = hass.callWS.mock.calls[0];
     expect(msg.period).toBe('hour');
-    const startMs = new Date(msg.start_time).getTime();
-    const endMs = new Date(msg.end_time).getTime();
-    expect(Math.round((endMs - startMs) / HOUR_MS)).toBe(3 * 24 + 1);
+    const expectedStart = new Date();
+    expectedStart.setHours(0, 0, 0, 0);
+    expectedStart.setDate(expectedStart.getDate() - 3);
+    expect(new Date(msg.start_time).getTime()).toBe(expectedStart.getTime() - HOUR_MS);
+    // End = next full hour (exclusive), same as before.
+    const end = new Date(msg.end_time);
+    expect(end.getMinutes()).toBe(0);
+    expect(end.getTime()).toBeGreaterThan(Date.now());
+    expect(end.getTime() - Date.now()).toBeLessThanOrEqual(HOUR_MS);
   });
 
   it("_fetchAggregates 'today' and 'hourly' issue identical recorder requests", async () => {

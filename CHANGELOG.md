@@ -6,6 +6,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.2.4] — 2026-08-09
+
+### Fixed
+
+- **The today view stays on whole days.** After midnight (or whenever
+  the weather provider extends its forecast) the day pager could end
+  up showing a window like "yesterday 21:00 → today 18:00" instead of
+  one full calendar day. The view now re-aligns itself to whole-day
+  pages after every data refresh.
+- **The first day no longer goes missing from the hourly timeline.**
+  History used to start exactly N×24 hours before "now", so the oldest
+  day appeared as a sliver too narrow to carry its label in the
+  timeline below the chart. History now starts at that day's midnight
+  — the first day is complete, in the chart and in the timeline.
+
 ## [2.2.3] — 2026-08-08
 
 ### Added
