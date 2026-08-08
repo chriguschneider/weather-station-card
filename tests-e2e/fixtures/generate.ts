@@ -365,8 +365,12 @@ function buildLuxHistory(days: number): Record<string, Array<{ s: string; lu: nu
   const start = new Date(today.getTime() - days * DAY_MS);
   const end = new Date(today.getTime() + 14 * HOUR_MS);
   const sunnyHoursByDay = [9, 4, 11, 6, 3, 10, 7];
+  // 5-minute resolution: the derivation skips sample intervals longer
+  // than its 10-minute gap guard (real recorders log every ~30 s), so
+  // hourly fixture samples would ALL be discarded.
+  const STEP_MS = 5 * 60 * 1000;
   const rows: Array<{ s: string; lu: number }> = [];
-  for (let t = start.getTime(); t <= end.getTime(); t += HOUR_MS) {
+  for (let t = start.getTime(); t <= end.getTime(); t += STEP_MS) {
     const d = new Date(t);
     const hr = d.getHours();
     const dayIdx = Math.floor((t - start.getTime()) / DAY_MS);
