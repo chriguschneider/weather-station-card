@@ -428,6 +428,18 @@ function buildLiveStates(): Record<string, HassState> {
         next_setting: '2026-05-06T18:50:00+00:00',
       },
     },
+    // Moon-phase line in the sun cell (HA's official Moon integration).
+    // Auto-detected by entity id — no card config needed. A fixed phase
+    // keeps baselines deterministic; the mock hass has no
+    // formatEntityState, so the card renders the prettified fallback
+    // ("Waxing gibbous").
+    'sensor.moon_phase': {
+      state: 'waxing_gibbous',
+      attributes: {
+        friendly_name: 'Moon Phase',
+        device_class: 'enum',
+      },
+    },
   };
 }
 
