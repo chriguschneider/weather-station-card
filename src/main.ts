@@ -3414,10 +3414,20 @@ _climateRow_dewpoint(show: boolean, dew_point: unknown) {
       .replace(/\{unit\}/g, String(displayUnit))
       .replace('{band}', bandLabel);
   }
+  // Cap the displayed value at one decimal — same rule as the main
+  // temperature. Dew points sourced from a weather entity's attribute
+  // are often computed full-precision floats ("12.345678"), which
+  // rendered raw until now (community thread report). A clean sensor
+  // value passes through unchanged; non-numeric states render as-is.
+  let displayDew: number = td_raw;
+  if (Number.isFinite(displayDew) && displayDew % 1 !== 0) {
+    displayDew = Math.round(displayDew * 10) / 10;
+  }
+  const dewText = Number.isFinite(displayDew) ? String(displayDew) : String(dew_point);
   return html`${this._entityLink(this._attrEntity('dew_point'),
     html`<span title=${ariaLabel} aria-label=${ariaLabel}><ha-icon
       icon="hass:${iconName}"
-    ></ha-icon> ${dew_point} ${displayUnit}</span>`)}<br>`;
+    ></ha-icon> ${dewText} ${displayUnit}</span>`)}<br>`;
 }
 _climateRow_precip(show: boolean, hasValue: boolean, precipitation: unknown, precipitation_unit: unknown) {
   if (!show || !hasValue) return html``;
