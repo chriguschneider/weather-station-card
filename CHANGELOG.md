@@ -6,6 +6,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Dew point shows at most one decimal.** Dew points sourced from a
+  weather entity's attribute are often computed full-precision floats
+  and rendered raw (`12.345678 °C`); the live panel now caps the
+  display at one decimal, matching the main temperature. Clean sensor
+  values pass through unchanged.
+  ([community report](https://community.home-assistant.io/t/weather-station-card-weather-station-meets-forecast/1011385/15))
+
 ## [2.2.1] — 2026-08-07
 
 Polish release for the v2.2.0 day pager plus a calmer restart
