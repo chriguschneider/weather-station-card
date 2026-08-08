@@ -6,6 +6,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The low-temperature line's default blue is now theme-aware.** The
+  single steel-blue default read washed-out on light backgrounds and
+  dropped to ~2.5:1 contrast in dark themes. The DEFAULT now resolves
+  per theme (deeper blue on light, brighter blue on dark, picked via
+  the card background's luma); any colour set in YAML or the editor
+  is untouched.
+  ([community report](https://community.home-assistant.io/t/weather-station-card-weather-station-meets-forecast/1011385/15))
+
 ### Fixed
 
 - **Dew point shows at most one decimal.** Dew points sourced from a

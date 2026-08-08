@@ -25,7 +25,7 @@
 // main.ts and this module.
 
 import { effectiveVisibleBars, normalizeForecastMode } from '../forecast-utils.js';
-import { lightenColor } from '../format-utils.js';
+import { isDarkColor, lightenColor } from '../format-utils.js';
 import { resolveCssVar } from '../utils/resolve-css-var.js';
 import { getThemeTokens } from '../utils/theme-tokens.js';
 import { sunshineFractions } from '../sunshine-source.js';
@@ -495,7 +495,20 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
   // Resolve any CSS-var-wrapped colour defaults against the live theme
   // tokens; pass-through for plain rgb/hex/hsl strings users set in YAML.
   const temp1Color = resolveCssVar(config.forecast.temperature1_color, 'rgba(255, 152, 0, 1.0)');
-  const temp2Color = resolveCssVar(config.forecast.temperature2_color, 'rgba(68, 115, 158, 1.0)');
+  // Low-temp line: the single steel-blue default read washed-out on
+  // white and fell to ~2.5:1 contrast on dark backgrounds (community
+  // post 15, "blue"). Only the DEFAULT is theme-aware — a user-set
+  // colour (anything other than the legacy default literal) passes
+  // through unchanged. Dark detection via the resolved card
+  // background's luma (HA exposes no dark-mode flag to cards).
+  const TEMP2_LEGACY_DEFAULT = 'rgba(68, 115, 158, 1.0)';
+  const temp2ThemedDefault = isDarkColor(backgroundColor)
+    ? 'rgba(130, 175, 220, 1.0)'
+    : 'rgba(38, 90, 140, 1.0)';
+  const temp2Configured = config.forecast.temperature2_color;
+  const temp2Color = (!temp2Configured || temp2Configured === TEMP2_LEGACY_DEFAULT)
+    ? temp2ThemedDefault
+    : resolveCssVar(temp2Configured, temp2ThemedDefault);
   const precipColor = resolveCssVar(config.forecast.precipitation_color, 'rgba(132, 209, 253, 1.0)');
   const precipColorLight = lightenColor(precipColor) as string;
   const precipPerBarColor: string[] = (data.precip || []).map(
