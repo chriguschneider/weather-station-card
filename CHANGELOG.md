@@ -6,6 +6,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.2.2] — 2026-08-08
+
+Readability release, shaped by maintainer-guided visual reviews:
+chart labels stay legible on every background, dark themes lose their
+murky forecast gold, and a scroll-dependent bar-colour bug is gone.
+
 ### Changed
 
 - **Temperature labels get a background-colour halo.** Every "16°"
