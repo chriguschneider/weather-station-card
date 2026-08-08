@@ -35,6 +35,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Measured bars no longer borrow the forecast tint after scrolling.**
+  uPlot's bar renderer indexes per-bar colour arrays by absolute data
+  index, but the card supplied window-relative arrays — once the
+  virtualized canvas panned, every bar colour shifted by the window
+  offset and (most visibly) today's measured rain rendered in the
+  pale forecast colour. Colours are now supplied absolutely indexed.
 - **Dew point shows at most one decimal.** Dew points sourced from a
   weather entity's attribute are often computed full-precision floats
   and rendered raw (`12.345678 °C`); the live panel now caps the

@@ -27,16 +27,17 @@ import type { FixtureBag } from './hass-mock.types.js';
  *  miss their fixture entry, the chart renders isolated dots and
  *  broken lines.
  *
- *  17:30 of fixture-day rounds up to 18:00 for the data source's
- *  "next full hour exclusive" end. With 'today' mode's 12-hour
- *  station + 12-hour forecast the rolling window spans today-06:00
- *  to tomorrow-06:00 — midnight falls in the middle of the chart so
- *  the day-boundary separator is visibly demonstrated in baselines. */
+ *  13:30 of fixture-day rounds up to 14:00 for the data source's
+ *  "next full hour exclusive" end. Early afternoon is the most
+ *  informative baseline anchor: the measured side of "today" already
+ *  contains a morning shower and sunshine, and the forecast side
+ *  starts mid-afternoon with rain (14–17 h) and remaining daylight —
+ *  every mode's default view shows sun AND rain on BOTH sides. */
 export async function openHarness(
   page: Page,
   opts: { theme?: 'light' | 'dark' } = {},
 ): Promise<void> {
-  await page.clock.install({ time: new Date('2026-05-06T17:30:00') });
+  await page.clock.install({ time: new Date('2026-05-06T13:30:00') });
   const query = opts.theme === 'dark' ? '?theme=dark' : '';
   await page.goto(`/tests-e2e/pages/card.html${query}`);
   await page.waitForFunction(() => typeof window.__wsc?.mount === 'function');
