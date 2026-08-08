@@ -205,3 +205,37 @@ export function formatSunshineHours(
   else if (u === 'min') divisor = 60;
   return Math.round((num / divisor) * 10) / 10;
 }
+
+// ── Solar irradiance → illuminance (community post 15, point 5) ──────
+//
+// Many stations (SWS-12500-class, Ecowitt solar sensors) report solar
+// irradiance in W/m² instead of illuminance in lux. The card's whole
+// sun pipeline — clear-sky ratios in the condition classifier, the B2
+// sunshine derivation, the live sun-strength row — is lux-based, and
+// crucially RATIO-based (measured / theoretical clear-sky), so a
+// constant conversion factor mostly cancels out. 120 lm/W is the
+// upper-middle of the daylight luminous-efficacy range (93–120 lm/W);
+// it maps full sun (~1000 W/m²) to ~120 klx, right at the clear-sky
+// model's noon value. Fine-tuning stays available through
+// `condition_mapping.sunshine_lux_ratio`.
+
+/** Daylight luminous efficacy used for W/m² → lx conversion. */
+export const DAYLIGHT_EFFICACY_LM_PER_W = 120;
+
+/** True when a unit string denotes solar irradiance (W/m² in its
+ *  common spellings). */
+export function isIrradianceUnit(unit: unknown): boolean {
+  if (typeof unit !== 'string') return false;
+  const u = unit.toLowerCase().replace(/\s+/g, '');
+  return u === 'w/m²' || u === 'w/m2' || u === 'w/㎡' || u === 'wm-2' || u === 'w*m-2';
+}
+
+/** Multiplier that converts a sensor reading into lux: 120 for an
+ *  irradiance sensor (by unit or `device_class: irradiance`), 1 for a
+ *  plain illuminance sensor. */
+export function luxScaleFor(unit: unknown, deviceClass?: unknown): number {
+  if (deviceClass === 'irradiance' || isIrradianceUnit(unit)) {
+    return DAYLIGHT_EFFICACY_LM_PER_W;
+  }
+  return 1;
+}

@@ -98,6 +98,9 @@ can't fit a label per bar — the bar height alone encodes the value.
 - **Lux-derived sunshine** (use your own illuminance sensor instead of
   the Open-Meteo model) — calibration data in
   [issue #6](https://github.com/chriguschneider/weather-station-card/issues/6).
+  Solar-**irradiance** sensors (W/m², `device_class: irradiance`) work
+  in the same `sensors.illuminance` slot since v2.2.3 — readings are
+  converted internally at 120 lm/W daylight luminous efficacy.
 - **PV-output-derived sunshine** for users with a solar inverter — same
   issue.
 - **Local-network-only operation** — the Open-Meteo path needs internet.

@@ -468,6 +468,60 @@ describe('MeasuredDataSource._fetchLuxSunshine (#56 + #66)', () => {
     expect(result).toBeNull();
   });
 
+  it('converts W/m² irradiance samples to lux before the derivation (post 15 point 5)', async () => {
+    const sensors = { illuminance: 'sensor.solar' };
+    const t0 = summerNoonUTC();
+    const samples = [];
+    // 650 W/m² at solar noon. Raw, 650 "lux" is hopeless against a
+    // ~100 k-lx clear sky; ×120 lm/W it becomes 78 k lx — well above
+    // the 0.6 ratio, so the interval counts as sunshine.
+    for (let i = 0; i <= 30; i++) {
+      samples.push({ s: '650', lu: (t0 + i * 60 * 1000) / 1000 });
+    }
+    const hass = makeHass(async () => ({ 'sensor.solar': samples }));
+    hass.states = {
+      'sensor.solar': { state: '650', attributes: { unit_of_measurement: 'W/m²' } },
+    };
+    const ds = new MeasuredDataSource(hass, { sensors });
+    const result = await ds._fetchLuxSunshine(sensors, new Date(t0 - HOUR_MS), new Date(t0 + HOUR_MS));
+    expect(result).not.toBeNull();
+    const totalHours = Array.from(result.values()).reduce((s, h) => s + h, 0);
+    expect(totalHours).toBeGreaterThan(0.4);
+  });
+
+  it('device_class irradiance triggers the same conversion without the unit string', async () => {
+    const sensors = { illuminance: 'sensor.solar' };
+    const t0 = summerNoonUTC();
+    const samples = [];
+    for (let i = 0; i <= 30; i++) {
+      samples.push({ s: '650', lu: (t0 + i * 60 * 1000) / 1000 });
+    }
+    const hass = makeHass(async () => ({ 'sensor.solar': samples }));
+    hass.states = {
+      'sensor.solar': { state: '650', attributes: { device_class: 'irradiance' } },
+    };
+    const ds = new MeasuredDataSource(hass, { sensors });
+    const result = await ds._fetchLuxSunshine(sensors, new Date(t0 - HOUR_MS), new Date(t0 + HOUR_MS));
+    const totalHours = Array.from(result.values()).reduce((s, h) => s + h, 0);
+    expect(totalHours).toBeGreaterThan(0.4);
+  });
+
+  it('unconverted 650-"lux" samples would NOT count (guards the conversion)', async () => {
+    const sensors = { illuminance: 'sensor.lux' };
+    const t0 = summerNoonUTC();
+    const samples = [];
+    for (let i = 0; i <= 30; i++) {
+      samples.push({ s: '650', lu: (t0 + i * 60 * 1000) / 1000 });
+    }
+    // Plain lux sensor (no irradiance unit) — 650 lx stays 650 lx.
+    const hass = makeHass(async () => ({ 'sensor.lux': samples }));
+    hass.states = { 'sensor.lux': { state: '650', attributes: { unit_of_measurement: 'lx' } } };
+    const ds = new MeasuredDataSource(hass, { sensors });
+    const result = await ds._fetchLuxSunshine(sensors, new Date(t0 - HOUR_MS), new Date(t0 + HOUR_MS));
+    const totalHours = result ? Array.from(result.values()).reduce((s, h) => s + h, 0) : 0;
+    expect(totalHours).toBe(0);
+  });
+
   it('aggregates above-threshold samples into a per-day map', async () => {
     const sensors = { illuminance: 'sensor.lux' };
     const t0 = summerNoonUTC();

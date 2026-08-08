@@ -24,6 +24,7 @@ import { sunshineFromLuxHistory, type LuxSample } from './sunshine-source.js';
 import {
   PRESSURE_CONVERSION,
   toMetersPerSecond,
+  luxScaleFor,
   toCelsius,
   toMillimeters,
 } from './utils/unit-converters.js';
@@ -298,6 +299,10 @@ interface LuxDayCacheShape {
   threshold: number;
   lat: number;
   lon: number;
+  /** Irradiance→lux multiplier the cached hours were derived with
+   *  (1 for plain lux sensors). A unit change on the same entity
+   *  invalidates the cache. Missing in v1 payloads → treated as 1. */
+  scale?: number;
   days: Record<string, number>;
 }
 
@@ -314,6 +319,7 @@ function loadLuxDayCache(
   threshold: number,
   lat: number,
   lon: number,
+  scale: number,
 ): Record<string, number> | null {
   const storage = luxStorage();
   if (!storage) return null;
@@ -324,6 +330,7 @@ function loadLuxDayCache(
     if (parsed?.v !== LUX_CACHE_VERSION) return null;
     // Any derivation-parameter change makes the cached hours wrong.
     if (parsed.threshold !== threshold) return null;
+    if ((parsed.scale ?? 1) !== scale) return null;
     if (Math.abs(parsed.lat - lat) > 0.01 || Math.abs(parsed.lon - lon) > 0.01) return null;
     return (parsed.days && typeof parsed.days === 'object') ? parsed.days : null;
   } catch {
@@ -336,6 +343,7 @@ function saveLuxDayCache(
   threshold: number,
   lat: number,
   lon: number,
+  scale: number,
   days: Record<string, number>,
 ): void {
   const storage = luxStorage();
@@ -346,7 +354,7 @@ function saveLuxDayCache(
   try {
     storage.setItem(
       `${LUX_CACHE_PREFIX}${entityId}`,
-      JSON.stringify({ v: LUX_CACHE_VERSION, threshold, lat, lon, days } satisfies LuxDayCacheShape),
+      JSON.stringify({ v: LUX_CACHE_VERSION, threshold, lat, lon, scale, days } satisfies LuxDayCacheShape),
     );
   } catch {
     // Quota / private mode — best-effort.
@@ -557,7 +565,11 @@ export class MeasuredDataSource {
         d.setDate(d.getDate() + 1);
       }
     }
-    const cachedDays = loadLuxDayCache(luxId, threshold, lat as number, lon as number);
+    // W/m² irradiance sensors convert to lux before the
+    // ratio-vs-clear-sky derivation (scale 1 for plain lux sensors);
+    // the cache is keyed on the scale so a unit change invalidates.
+    const luxScale = this._luxScale(luxId);
+    const cachedDays = loadLuxDayCache(luxId, threshold, lat as number, lon as number, luxScale);
     const missingDays = cachedDays
       ? neededDays.filter((k) => cachedDays[k] === undefined)
       : neededDays;
@@ -599,7 +611,7 @@ export class MeasuredDataSource {
       const ts = typeof row.lu === 'number' ? row.lu * 1000 : NaN;
       const lux = typeof row.s === 'string' ? parseFloat(row.s) : NaN;
       if (Number.isFinite(ts) && Number.isFinite(lux) && lux >= 0) {
-        samples.push({ ts, lux });
+        samples.push({ ts, lux: lux * luxScale });
       }
     }
     if (samples.length < 2) return this._luxMapFromCache(cachedDays, neededDays);
@@ -632,7 +644,7 @@ export class MeasuredDataSource {
       const v = map.get(k) ?? 0;
       if (updated[k] !== v) { updated[k] = v; dirty = true; }
     }
-    if (dirty) saveLuxDayCache(luxId, threshold, lat as number, lon as number, updated);
+    if (dirty) saveLuxDayCache(luxId, threshold, lat as number, lon as number, luxScale, updated);
     return map;
   }
 
@@ -724,7 +736,10 @@ export class MeasuredDataSource {
       const pressureMean = at(sensors.pressure, 'mean');
       const windMean = at(sensors.wind_speed, 'mean');
       const gustMax = at(sensors.gust_speed, 'max');
-      const luxMax = at(sensors.illuminance, 'max');
+      const luxMaxRaw = at(sensors.illuminance, 'max');
+      // Irradiance sensors (W/m²) scale into lux for the classifier's
+      // clear-sky ratio; plain lux sensors pass through (scale 1).
+      const luxMax = luxMaxRaw != null ? luxMaxRaw * this._luxScale(sensors.illuminance) : luxMaxRaw;
       const dewPointMean = at(sensors.dew_point, 'mean');
 
       const precipitation = sensors.precipitation
@@ -796,6 +811,18 @@ export class MeasuredDataSource {
       });
     }
     return out;
+  }
+
+  /** Lux multiplier for the configured illuminance slot: 120 when the
+   *  entity is a solar-IRRADIANCE sensor (W/m² unit or
+   *  `device_class: irradiance` — community post 15, point 5), 1 for
+   *  a plain lux sensor. Applied once wherever raw readings enter the
+   *  lux-based sun pipeline. */
+  private _luxScale(eid?: string): number {
+    if (!eid || !this.hass?.states) return 1;
+    const attrs = this.hass.states[eid]?.attributes as
+      { unit_of_measurement?: unknown; device_class?: unknown } | undefined;
+    return luxScaleFor(attrs?.unit_of_measurement, attrs?.device_class);
   }
 
   /** Native unit_of_measurement of a sensor entity, or undefined.
@@ -910,7 +937,9 @@ export class MeasuredDataSource {
       const pressureMean = atOrLive(sensors.pressure, 'mean');
       const windMean = atOrLive(sensors.wind_speed, 'mean');
       const gustMax = atOrLive(sensors.gust_speed, 'max');
-      const luxMax = atOrLive(sensors.illuminance, 'max');
+      const luxMaxRaw = atOrLive(sensors.illuminance, 'max');
+      // Same irradiance→lux scaling as the daily path.
+      const luxMax = luxMaxRaw != null ? luxMaxRaw * this._luxScale(sensors.illuminance) : luxMaxRaw;
       const dewPointMean = atOrLive(sensors.dew_point, 'mean');
       // For the last hour with only a single live datapoint, max/min
       // collapse to the same value so the classifier still gets numbers

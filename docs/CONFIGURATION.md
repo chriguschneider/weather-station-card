@@ -112,7 +112,7 @@ classifier, and (where relevant) the attribute readouts. Only
 | --- | --- |
 | `sensors.temperature` | Temperature curves (high/low), main-panel temperature, classifier |
 | `sensors.humidity` | Humidity attribute, fog detection |
-| `sensors.illuminance` | Cloud-cover ratio for live + daily conditions |
+| `sensors.illuminance` | Cloud-cover ratio for live + daily conditions, and the lux-derived station sunshine. Accepts a plain illuminance sensor (lx) **or a solar-irradiance sensor (W/m², `device_class: irradiance`)** — irradiance readings are converted internally at 120 lm/W (daylight luminous efficacy); tune via `condition_mapping.sunshine_lux_ratio` if needed. *(irradiance support since v2.2.3)* |
 | `sensors.precipitation` | Precipitation bars, rainy/pouring/snowy classification |
 | `sensors.pressure` | Pressure attribute |
 | `sensors.wind_speed` | Mean-wind classification, attribute readout |

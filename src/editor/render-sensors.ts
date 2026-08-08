@@ -62,7 +62,9 @@ function buildSensorFields(hass: HassWithStates | null): Array<{ key: string; ca
   return [
     { key: 'temperature',         candidates: byDeviceClass(['temperature']) },
     { key: 'humidity',            candidates: byDeviceClass(['humidity']) },
-    { key: 'illuminance',         candidates: byDeviceClass(['illuminance']) },
+    // Solar-irradiance sensors (W/m²) share the slot — the card
+    // converts them to lux internally (community post 15, point 5).
+    { key: 'illuminance',         candidates: byDeviceClass(['illuminance', 'irradiance']) },
     { key: 'precipitation',       candidates: byDeviceClass(['precipitation']) },
     { key: 'pressure',            candidates: byDeviceClass(['atmospheric_pressure', 'pressure']) },
     { key: 'wind_speed',          candidates: byDeviceClass(['wind_speed', 'speed']) },
