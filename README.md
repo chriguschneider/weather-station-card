@@ -1,3 +1,5 @@
+
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/images/logo.svg" alt="Weather Station Card logo" width="160" />
 </p>
@@ -196,7 +198,7 @@ Or manually:
 
 1. In HACS, go to **Frontend → ⋮ → Custom repositories**.
 2. Add `https://github.com/chriguschneider/weather-station-card` with
-   category **Dashboard**.
+   category **Frontend**.
 3. Click **Install** on the *Weather Station Card* entry that appears in the
    Frontend list.
 4. Hard-refresh your browser (Ctrl-F5 or equivalent) so the new resource
