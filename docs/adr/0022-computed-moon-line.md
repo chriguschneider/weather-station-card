@@ -40,10 +40,13 @@ Compute everything in-card and drop the entity dependency entirely.
   `nextMoonEvent` (parabola-fit horizon crossings, next-event scan
   over 3 days), and `litMoonPath` (SVG terminator geometry).
 - **Dynamically drawn disc** instead of static icons: a 24×24 inline
-  SVG — faint full disc + `currentColor` lit region whose terminator
-  is the exact illuminated fraction. Stufenlos (a 78 % gibbous looks
-  different from 60 %), theme-safe via `currentColor`, mirrored for
-  southern-hemisphere latitudes.
+  SVG whose terminator is the exact illuminated fraction — stepless (a
+  78 % gibbous looks different from 60 %) and mirrored for
+  southern-hemisphere latitudes. Colours are true to nature in BOTH
+  themes: lit side white, shadow black, plus a thin `currentColor`
+  outline so the disc edge reads on any background. (A first
+  iteration filled the lit side with `currentColor`, which rendered
+  "lit = black" on light themes — exactly backwards.)
 - **Line content:** disc + illumination percentage + next
   moonrise/moonset (`mdi:weather-moonset-up/-down` + time), mirroring
   the sun line's then next-event-only policy (v2.3 shows both sun

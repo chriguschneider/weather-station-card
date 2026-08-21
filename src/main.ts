@@ -1166,6 +1166,18 @@ _syncDataSources(hass: HassMain): void {
       this._dataSource = new MeasuredDataSource(hass, this.config);
       this._dataUnsubscribe = this._dataSource.subscribe((event) => {
         try {
+          // Refresh the 3-h pressure tendency on the same cadence as the
+          // station fetch (POLL_INTERVAL_MS, currently hourly). MUST stay
+          // above the identical-payload guard below: since the v2.2.0
+          // stale-while-revalidate hydration, the first live recorder
+          // result after a page load usually matches the persisted
+          // payload, so the early return would skip the fetch and leave
+          // the pressure row on the legacy gauge icon until the next
+          // hour bucket. `fetchPressure3hDelta` dedupes per hour via
+          // `_pressureDeltaCache`, so redundant invocations cost one
+          // cache lookup. Fire-and-forget: errors degrade silently to
+          // the gauge icon.
+          void this._refreshPressureDelta();
           const newData = event.forecast || [];
           const newError = event.error || null;
           // Skip the re-render path when HA's WS layer fan-outs an
@@ -1182,13 +1194,6 @@ _syncDataSources(hass: HassMain): void {
           this._stationCache[stationFetchKey(this.config)] = this._stationData;
           if (newData.length) saveSeriesCache(this._stationSeriesKey(), newData);
           this._stationError = newError;
-          // Refresh the 3-h pressure tendency on the same cadence as the
-          // station fetch (POLL_INTERVAL_MS, currently hourly). The
-          // cache key inside `fetchPressure3hDelta` is the
-          // start-of-current-hour timestamp, so renders within the same
-          // hour reuse one roundtrip. Fire-and-forget: errors degrade
-          // silently to the legacy gauge icon.
-          void this._refreshPressureDelta();
           this._refreshForecasts();
         } catch (err) {
           console.error('[weather-station-card] station callback failed', err);
@@ -3691,8 +3696,8 @@ const timeOptions = {
 // Moon line — computed in-card (src/moon.ts, ADR-0022), no Moon
 // integration or entity needed. Shows the exact illuminated fraction
 // as a dynamically drawn disc + percentage, followed by the NEXT
-// moonrise/moonset (same next-event-only policy as the sun line
-// above). The line is text-free by design, so it needs no locale
+// moonrise/moonset (only the next horizon crossing is computed).
+// The line is text-free by design, so it needs no locale
 // strings. `show_moon: false` opts out.
 _renderMoonLine(language: string) {
   if (this.config?.show_moon === false) return html``;
@@ -3723,10 +3728,15 @@ _renderMoonLine(language: string) {
         }).format(ev.time)}`
     : html``;
 
+  // True-to-nature colours in BOTH themes: lit = white, shadow = black
+  // (a currentColor fill read as "lit = black" on light themes). Only
+  // the thin outline uses currentColor, so the disc edge stays visible
+  // on either background.
   return html`<br><svg class="wsc-moon" viewBox="0 0 24 24" aria-hidden="true"><circle
-        cx="12" cy="12" r="9.5" fill="currentColor" fill-opacity="0.14"
-        stroke="currentColor" stroke-opacity="0.45" stroke-width="1"></circle><path
-        d=${litMoonPath(fraction, litRight)} fill="currentColor"></path></svg>
+        cx="12" cy="12" r="9.5" fill="#000"></circle><path
+        d=${litMoonPath(fraction, litRight)} fill="#fff"></path><circle
+        cx="12" cy="12" r="9.5" fill="none" stroke="currentColor"
+        stroke-width="1"></circle></svg>
       ${pct}${evPart}`;
 }
 
