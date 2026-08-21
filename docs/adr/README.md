@@ -65,3 +65,4 @@ status line.
 - [0019 — Virtualized chart canvas with viewport panning and low-DPR supersampling](./0019-virtualized-chart-canvas.md) (Accepted)
 - [0020 — Cross-card request dedup and persistent stale-while-revalidate caches](./0020-cross-card-request-dedup-and-persistent-caches.md) (Accepted)
 - [0021 — 'today' mode is a day pager over calendar-aligned 3-hour blocks](./0021-today-mode-day-pager.md) (Accepted)
+- [0022 — Computed moon line: in-card astronomy instead of the Moon integration](./0022-computed-moon-line.md) (Accepted)

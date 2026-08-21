@@ -491,6 +491,17 @@ function buildCardStyles({
       fill: currentColor;
       color: var(--primary-text-color, #212121);
     }
+    /* Computed moon disc (ADR-0022) — same box/colour contract as
+     * .wsc-icon so it sits pixel-compatible beside the ha-icons of the
+     * sun cell; the disc itself paints via currentColor + opacity, so
+     * it follows any theme without its own colour tokens. */
+    .wsc-moon {
+      display: inline-flex;
+      width: var(--mdc-icon-size, 24px);
+      height: var(--mdc-icon-size, 24px);
+      vertical-align: middle;
+      color: var(--primary-text-color, #212121);
+    }
     .conditions {
       display: flex;
       justify-content: space-around;
