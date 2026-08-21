@@ -1166,6 +1166,18 @@ _syncDataSources(hass: HassMain): void {
       this._dataSource = new MeasuredDataSource(hass, this.config);
       this._dataUnsubscribe = this._dataSource.subscribe((event) => {
         try {
+          // Refresh the 3-h pressure tendency on the same cadence as the
+          // station fetch (POLL_INTERVAL_MS, currently hourly). MUST stay
+          // above the identical-payload guard below: since the v2.2.0
+          // stale-while-revalidate hydration, the first live recorder
+          // result after a page load usually matches the persisted
+          // payload, so the early return would skip the fetch and leave
+          // the pressure row on the legacy gauge icon until the next
+          // hour bucket. `fetchPressure3hDelta` dedupes per hour via
+          // `_pressureDeltaCache`, so redundant invocations cost one
+          // cache lookup. Fire-and-forget: errors degrade silently to
+          // the gauge icon.
+          void this._refreshPressureDelta();
           const newData = event.forecast || [];
           const newError = event.error || null;
           // Skip the re-render path when HA's WS layer fan-outs an
@@ -1182,13 +1194,6 @@ _syncDataSources(hass: HassMain): void {
           this._stationCache[stationFetchKey(this.config)] = this._stationData;
           if (newData.length) saveSeriesCache(this._stationSeriesKey(), newData);
           this._stationError = newError;
-          // Refresh the 3-h pressure tendency on the same cadence as the
-          // station fetch (POLL_INTERVAL_MS, currently hourly). The
-          // cache key inside `fetchPressure3hDelta` is the
-          // start-of-current-hour timestamp, so renders within the same
-          // hour reuse one roundtrip. Fire-and-forget: errors degrade
-          // silently to the legacy gauge icon.
-          void this._refreshPressureDelta();
           this._refreshForecasts();
         } catch (err) {
           console.error('[weather-station-card] station callback failed', err);
