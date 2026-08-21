@@ -130,7 +130,7 @@ const en: LocaleEntry = {
     'tap_action_label': 'Tap action',
     'hold_action_label': 'Hold action',
     'double_tap_action_label': 'Double tap action',
-    'chart_appearance_heading': 'Chart',
+    'chart_appearance_heading': 'Appearance',
     // Toggles
     'show_main': 'Show "now" main panel',
     'show_temperature': 'Show current temperature',
@@ -175,6 +175,32 @@ const en: LocaleEntry = {
     'number_of_forecasts': 'Visible columns',
     'number_of_forecasts_hint': 'How many bars are visible at once (default 8 — fits both 7-day daily and an hour-window at hourly). 0 = fit all without scrolling. When loaded bars exceed visible, scroll horizontally for the rest.',
     'locale': 'Locale override',
+    // v2.4 editor redesign (ADR-0023) — panel summaries, past-source
+    // dropdown, clock dropdown, unit labels, helper texts.
+    'past_source_label': 'Past data',
+    'past_source_station': 'From my weather station (sensors)',
+    'past_source_openmeteo': 'From Open-Meteo — I have no weather station',
+    'chart_height': 'Chart height (px)',
+    'number_of_forecasts_helper': 'Visible columns: 0 = show all without scrolling',
+    'clock_label': 'Clock',
+    'clock_off': 'Off',
+    'clock_24h': '24-hour',
+    'clock_24h_seconds': '24-hour + seconds',
+    'clock_12h': '12-hour',
+    'clock_12h_seconds': '12-hour + seconds',
+    'main_elements_label': 'Elements',
+    'unit_pressure_label': 'Show pressure in',
+    'unit_speed_label': 'Show wind speed in',
+    'unit_precipitation_label': 'Show precipitation in',
+    'summary_connected': '{n} sensors connected',
+    'summary_no_sensors': 'No sensors configured',
+    'summary_openmeteo': 'Open-Meteo history (no station)',
+    'summary_days': 'days',
+    'summary_columns': 'columns',
+    'summary_rows': 'rows',
+    'summary_attributes': 'attributes',
+    'summary_on': 'on',
+    'summary_off': 'off',
   }
 };
 

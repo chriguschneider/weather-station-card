@@ -169,38 +169,31 @@ test.describe('editor', () => {
     expect((after?.config.forecast as { disable_animation?: boolean }).disable_animation).toBe(true);
   });
 
-  test('_conditionMappingChanged adds, updates, removes a threshold', async ({ page }) => {
+  test('_setPastSource switches between station sensors and Open-Meteo history', async ({ page }) => {
     await page.evaluate((cfg) => window.__wsce.mount(cfg), buildBaseConfig());
 
-    // Add a threshold override.
+    // Switch to Open-Meteo: opt-in set, sensors dropped (the runtime
+    // would ignore them anyway — the recorder always wins).
     await page.evaluate(() => {
       const ed = window.__wsce.get() as HTMLElement & {
-        _conditionMappingChanged: (e: { target: { value?: string } }, key: string) => void;
+        _setPastSource: (v: 'station' | 'openmeteo') => void;
       };
-      ed._conditionMappingChanged({ target: { value: '2.5' } }, 'rainy_threshold_mm');
+      ed._setPastSource('openmeteo');
     });
-    const afterAdd = await page.evaluate(() => window.__wsce.lastEvent);
-    expect((afterAdd?.config.condition_mapping as Record<string, number>)?.rainy_threshold_mm).toBe(2.5);
+    const afterOpenMeteo = await page.evaluate(() => window.__wsce.lastEvent);
+    expect((afterOpenMeteo?.config.forecast as { openmeteo_history?: boolean }).openmeteo_history).toBe(true);
+    expect(afterOpenMeteo?.config.sensors).toBeUndefined();
 
-    // Update — overwrite value.
+    // Back to station: opt-in removed (sensors stay gone until re-picked).
     await page.evaluate(() => {
       const ed = window.__wsce.get() as HTMLElement & {
-        _conditionMappingChanged: (e: { target: { value?: string } }, key: string) => void;
+        _setPastSource: (v: 'station' | 'openmeteo') => void;
       };
-      ed._conditionMappingChanged({ target: { value: '5' } }, 'rainy_threshold_mm');
+      ed._setPastSource('station');
     });
-    const afterUpdate = await page.evaluate(() => window.__wsce.lastEvent);
-    expect((afterUpdate?.config.condition_mapping as Record<string, number>)?.rainy_threshold_mm).toBe(5);
-
-    // Remove — empty string drops the key, and dropping the last key
-    // also removes the condition_mapping object entirely.
-    await page.evaluate(() => {
-      const ed = window.__wsce.get() as HTMLElement & {
-        _conditionMappingChanged: (e: { target: { value?: string } }, key: string) => void;
-      };
-      ed._conditionMappingChanged({ target: { value: '' } }, 'rainy_threshold_mm');
-    });
-    const afterRemove = await page.evaluate(() => window.__wsce.lastEvent);
-    expect(afterRemove?.config.condition_mapping).toBeUndefined();
+    const afterStation = await page.evaluate(() => window.__wsce.lastEvent);
+    expect(
+      (afterStation?.config.forecast as { openmeteo_history?: boolean } | undefined)?.openmeteo_history,
+    ).toBeUndefined();
   });
 });

@@ -190,37 +190,137 @@ describe('editor._actionChanged', () => {
   });
 });
 
-describe('editor._conditionMappingChanged', () => {
-  let editor;
-  beforeEach(() => {
-    editor = makeEditor({ condition_mapping: { rainy_threshold_mm: 0.3 } });
+describe('editor._pastSource / _setPastSource', () => {
+  it('reads "station" when any sensor is configured — even with the opt-in on', () => {
+    const editor = makeEditor({
+      sensors: { temperature: 'sensor.t' },
+      forecast: { openmeteo_history: true },
+    });
+    expect(editor._pastSource).toBe('station');
   });
 
-  it('writes a numeric value, coercing the string from the input', () => {
-    editor._conditionMappingChanged(event('5.5'), 'pouring_threshold_mm');
-    const newCfg = editor.configChanged.mock.calls[0][0];
-    expect(newCfg.condition_mapping.pouring_threshold_mm).toBe(5.5);
-    expect(newCfg.condition_mapping.rainy_threshold_mm).toBe(0.3); // unchanged
+  it('reads "openmeteo" when no sensors and the opt-in is on', () => {
+    expect(makeEditor({ forecast: { openmeteo_history: true } })._pastSource).toBe('openmeteo');
   });
 
-  it('deletes the key on empty string (use default)', () => {
-    editor._conditionMappingChanged(event(''), 'rainy_threshold_mm');
-    const newCfg = editor.configChanged.mock.calls[0][0];
-    expect('rainy_threshold_mm' in (newCfg.condition_mapping || {})).toBe(false);
+  it('defaults to "station" when neither is configured', () => {
+    expect(makeEditor({})._pastSource).toBe('station');
   });
 
-  it('drops the entire condition_mapping when emptied to {}', () => {
-    editor._conditionMappingChanged(event(''), 'rainy_threshold_mm');
+  it('openmeteo: sets the opt-in and drops the sensors block', () => {
+    const editor = makeEditor({
+      sensors: { temperature: 'sensor.t' },
+      forecast: { type: 'hourly' },
+    });
+    editor._setPastSource('openmeteo');
     const newCfg = editor.configChanged.mock.calls[0][0];
-    expect('condition_mapping' in newCfg).toBe(false);
+    expect(newCfg.forecast.openmeteo_history).toBe(true);
+    expect(newCfg.forecast.type).toBe('hourly'); // sibling kept
+    expect('sensors' in newCfg).toBe(false);
   });
 
-  it('ignores non-numeric input (no write, no exception)', () => {
-    editor._conditionMappingChanged(event('not a number'), 'rainy_threshold_mm');
-    // configChanged still fires (the editor still touches the config wrapper),
-    // but rainy_threshold_mm keeps its previous value.
+  it('station: removes the opt-in and prunes an emptied forecast block', () => {
+    const editor = makeEditor({ forecast: { openmeteo_history: true } });
+    editor._setPastSource('station');
     const newCfg = editor.configChanged.mock.calls[0][0];
-    expect(newCfg.condition_mapping.rainy_threshold_mm).toBe(0.3);
+    expect('forecast' in newCfg).toBe(false);
+  });
+
+  it('station: keeps other forecast keys when removing the opt-in', () => {
+    const editor = makeEditor({ forecast: { openmeteo_history: true, type: 'hourly' } });
+    editor._setPastSource('station');
+    const newCfg = editor.configChanged.mock.calls[0][0];
+    expect('openmeteo_history' in newCfg.forecast).toBe(false);
+    expect(newCfg.forecast.type).toBe('hourly');
+  });
+});
+
+describe('editor._clockMode / _setClockMode', () => {
+  it('reads "off" when show_time is not explicitly on', () => {
+    expect(makeEditor({})._clockMode).toBe('off');
+    expect(makeEditor({ show_time: false })._clockMode).toBe('off');
+  });
+
+  it('reads the four on-variants from the three booleans', () => {
+    expect(makeEditor({ show_time: true })._clockMode).toBe('24h');
+    expect(makeEditor({ show_time: true, show_time_seconds: true })._clockMode).toBe('24h_seconds');
+    expect(makeEditor({ show_time: true, use_12hour_format: true })._clockMode).toBe('12h');
+    expect(makeEditor({
+      show_time: true, show_time_seconds: true, use_12hour_format: true,
+    })._clockMode).toBe('12h_seconds');
+  });
+
+  it('writes only the non-default booleans (defaults are deleted, YAML stays terse)', () => {
+    const editor = makeEditor({ show_time: true, show_time_seconds: true });
+    editor._setClockMode('12h');
+    const newCfg = editor.configChanged.mock.calls[0][0];
+    expect(newCfg.show_time).toBe(true);
+    expect('show_time_seconds' in newCfg).toBe(false);
+    expect(newCfg.use_12hour_format).toBe(true);
+  });
+
+  it('off deletes all three keys', () => {
+    const editor = makeEditor({
+      show_time: true, show_time_seconds: true, use_12hour_format: true,
+    });
+    editor._setClockMode('off');
+    const newCfg = editor.configChanged.mock.calls[0][0];
+    expect('show_time' in newCfg).toBe(false);
+    expect('show_time_seconds' in newCfg).toBe(false);
+    expect('use_12hour_format' in newCfg).toBe(false);
+  });
+
+  it('round-trips through the getter', () => {
+    const editor = makeEditor({});
+    editor._setClockMode('12h_seconds');
+    editor._config = editor.configChanged.mock.calls[0][0];
+    expect(editor._clockMode).toBe('12h_seconds');
+  });
+});
+
+describe('editor._applyTogglePaths', () => {
+  it('writes non-default values and deletes keys landing on their default', () => {
+    const editor = makeEditor({ show_day: true });
+    editor._applyTogglePaths(
+      [
+        { path: 'show_temperature', def: true },
+        { path: 'show_day', def: false },
+      ],
+      ['show_temperature'],
+    );
+    const newCfg = editor.configChanged.mock.calls[0][0];
+    // show_temperature selected + def true → key deleted (terse YAML).
+    expect('show_temperature' in newCfg).toBe(false);
+    // show_day deselected + def false → key deleted too.
+    expect('show_day' in newCfg).toBe(false);
+  });
+
+  it('writes explicit false for a deselected opt-out key', () => {
+    const editor = makeEditor({});
+    editor._applyTogglePaths([{ path: 'show_temperature', def: true }], []);
+    const newCfg = editor.configChanged.mock.calls[0][0];
+    expect(newCfg.show_temperature).toBe(false);
+  });
+
+  it('handles nested forecast.* paths, creating the branch on demand', () => {
+    const editor = makeEditor({});
+    editor._applyTogglePaths([{ path: 'forecast.show_sunshine', def: false }], ['show_sunshine']);
+    const newCfg = editor.configChanged.mock.calls[0][0];
+    expect(newCfg.forecast.show_sunshine).toBe(true);
+  });
+
+  it('prunes an emptied forecast block when a nested key falls back to default', () => {
+    const editor = makeEditor({ forecast: { show_sunshine: true } });
+    editor._applyTogglePaths([{ path: 'forecast.show_sunshine', def: false }], []);
+    const newCfg = editor.configChanged.mock.calls[0][0];
+    expect('forecast' in newCfg).toBe(false);
+  });
+
+  it('does not mutate the original config', () => {
+    const editor = makeEditor({ forecast: { show_sunshine: true } });
+    const before = JSON.parse(JSON.stringify(editor._config));
+    editor._applyTogglePaths([{ path: 'forecast.show_sunshine', def: false }], []);
+    expect(editor._config).toEqual(before);
   });
 });
 

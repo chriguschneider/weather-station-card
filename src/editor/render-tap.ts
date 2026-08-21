@@ -1,14 +1,17 @@
-// Editor render partial — Section 7: "Aktionen" (Actions).
-// Tap / hold / double-tap action selectors. Always visible.
+// Editor render partial — "Aktionen" (Actions) panel.
+// Tap / hold / double-tap action selectors.
 
 import { html, type TemplateResult } from 'lit';
 import type { EditorLike, EditorContext } from './types.js';
-import { renderSectionHeader } from './section-header.js';
+import { renderEditorPanel } from './expansion-panel.js';
 
 export function renderTapSection(editor: EditorLike, ctx: EditorContext): TemplateResult {
   const { t, cfg } = ctx;
-  return html`
-    ${renderSectionHeader({ editor, title: t('actions_section_heading'), sectionKey: 'actions', resetLabel: t('reset_section') })}
+
+  const tapAction = (cfg.tap_action as { action?: string } | undefined)?.action || 'none';
+  const summary = `${t('tap_action_label')}: ${tapAction}`;
+
+  const body = html`
     <div class="textfield-container">
       ${[
         ['tap_action', 'tap_action_label'],
@@ -25,4 +28,14 @@ export function renderTapSection(editor: EditorLike, ctx: EditorContext): Templa
       `)}
     </div>
   `;
+
+  return renderEditorPanel({
+    editor,
+    sectionKey: 'actions',
+    icon: 'mdi:gesture-tap',
+    title: t('actions_section_heading'),
+    summary,
+    resetLabel: t('reset_section'),
+    body,
+  });
 }

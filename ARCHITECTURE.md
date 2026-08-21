@@ -212,35 +212,36 @@ src/
 │   │                          than by technical concern — see ADR-0005.
 │   ├── types.ts               Shared types: EditorLike, EditorContext,
 │   │                          TFn, ChangeEvt.
-│   ├── section-header.ts      Shared <h3> section-heading helper that
-│   │                          wires the per-section reset-to-defaults
-│   │                          button.
+│   ├── expansion-panel.ts     Shared <ha-expansion-panel> wrapper for
+│   │                          the collapsible sections (ADR-0023):
+│   │                          icon + title + state summary + reset
+│   │                          button in the header.
 │   ├── section-keys.ts        Per-section config-key inventories the
 │   │                          reset buttons delete. A CI drift guard
-│   │                          (editor-schema test) keeps this in sync
-│   │                          with the section schemas.
-│   ├── render-mode.ts         Section 1 — "Karte einrichten" / Card
-│   │                          setup. Mode (station/forecast/combination)
-│   │                          and chart-type radios.
-│   ├── render-forecast.ts     Section 2 — "Wettervorhersage" / Weather
-│   │                          forecast. weather_entity picker.
-│   ├── render-sensors.ts      Section 3 — "Sensoren" / Sensors. Past-
-│   │                          data window (days) + sensor pickers
-│   │                          (ha-form, ranked auto-detect).
-│   ├── render-chart.ts        Section 4 — "Diagramm" / Chart. Time
-│   │                          range, chart rows, appearance/style.
-│   ├── render-live-panel.ts   Section 5 — "Live-Anzeige" / Live panel.
-│   │                          Main panel + attributes-row toggles.
-│   ├── render-units.ts        Section 6 — "Einheiten" / Units.
-│   └── render-tap.ts          Section 7 — "Aktionen" / Actions. Tap /
-│                              hold / double-tap selectors.
+│   │                          (tests/defaults.test.js) keeps this in
+│   │                          sync with the section schemas.
+│   ├── render-basics.ts       Basics (always visible, no panel): mode,
+│   │                          chart type, title, weather_entity.
+│   ├── render-sensors.ts      "Sensoren" panel. Past-data source
+│   │                          dropdown (station sensors vs Open-Meteo
+│   │                          history) + sensor pickers in a 2-column
+│   │                          grid (ha-form, ranked auto-detect).
+│   ├── render-chart.ts        "Diagramm" panel. Time range grids,
+│   │                          chart-rows multi-select, appearance.
+│   ├── render-live-panel.ts   "Live-Anzeige" panel. Main-panel gate +
+│   │                          element multi-select + clock dropdown;
+│   │                          attributes gate + multi-select.
+│   ├── render-units.ts        "Einheiten" panel (localized labels).
+│   └── render-tap.ts          "Aktionen" panel. Tap / hold /
+│                              double-tap selectors.
 │
 └── weather-station-card-editor.ts   LitElement editor host. Owns
                                mutator methods (_valueChanged,
-                               _sensorsChanged, _conditionMappingChanged,
-                               _setMode, _resetSection,
+                               _sensorsChanged, _setMode, _setPastSource,
+                               _setClockMode, _applyTogglePaths,
+                               _resetSection,
                                _renderSunshineAvailabilityHint, etc.);
-                               render() delegates to the seven partials
+                               render() delegates to the six partials
                                above. Lazy-loaded as its own chunk
                                (ADR-0013).
 ```
