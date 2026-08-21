@@ -36,6 +36,33 @@ export function lightenColor(color: unknown, factor: number = 0.45): unknown {
   return color;
 }
 
+/** True when `color` is perceptually dark (luma < 0.5). Used to pick
+ *  theme-aware colour DEFAULTS (e.g. the low-temp line, community
+ *  post 15): HA exposes no explicit dark-mode flag to cards, but the
+ *  resolved `--card-background-color` luma is a reliable proxy.
+ *  Handles rgb/rgba and hex; anything unparseable (empty string,
+ *  var() leftovers, named colours) returns false — the light-theme
+ *  default is the safe fallback. */
+export function isDarkColor(color: unknown): boolean {
+  if (!color || typeof color !== 'string') return false;
+  const c = color.trim();
+  let r: number, g: number, b: number;
+  let m = /^rgba?\s*\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i.exec(c);
+  if (m) {
+    r = parseFloat(m[1]); g = parseFloat(m[2]); b = parseFloat(m[3]);
+  } else {
+    m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(c);
+    if (!m) return false;
+    const h = m[1].length === 3 ? m[1].split('').map((x) => x + x).join('') : m[1];
+    r = parseInt(h.slice(0, 2), 16);
+    g = parseInt(h.slice(2, 4), 16);
+    b = parseInt(h.slice(4, 6), 16);
+  }
+  // Rec. 601 luma — perceptual weighting is enough for a binary
+  // light/dark split; no need for linearised sRGB here.
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 < 0.5;
+}
+
 /** Decide where to scroll the hourly viewport on first render so the user
  *  lands at a useful position rather than "the start of all loaded data".
  *

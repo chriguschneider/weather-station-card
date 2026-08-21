@@ -138,6 +138,7 @@ const de: LocaleEntry = {
     'show_precipitation': 'Niederschlag',
     'show_sunshine_duration': 'Sonnenscheindauer',
     'show_sun': 'Sonne (Auf-/Untergang)',
+    'show_moon': 'Mond (Beleuchtung / Auf-/Untergang)',
     'show_time': 'Uhr anzeigen',
     'show_time_seconds': 'Sekunden',
     'show_day': 'Wochentag',

@@ -112,7 +112,7 @@ classifier, and (where relevant) the attribute readouts. Only
 | --- | --- |
 | `sensors.temperature` | Temperature curves (high/low), main-panel temperature, classifier |
 | `sensors.humidity` | Humidity attribute, fog detection |
-| `sensors.illuminance` | Cloud-cover ratio for live + daily conditions |
+| `sensors.illuminance` | Cloud-cover ratio for live + daily conditions, and the lux-derived station sunshine. Accepts a plain illuminance sensor (lx) **or a solar-irradiance sensor (W/m², `device_class: irradiance`)** — irradiance readings are converted internally at 120 lm/W (daylight luminous efficacy); tune via `condition_mapping.sunshine_lux_ratio` if needed. *(irradiance support since v2.2.3)* |
 | `sensors.precipitation` | Precipitation bars, rainy/pouring/snowy classification |
 | `sensors.pressure` | Pressure attribute |
 | `sensors.wind_speed` | Mean-wind classification, attribute readout |
@@ -121,6 +121,7 @@ classifier, and (where relevant) the attribute readouts. Only
 | `sensors.uv_index` | UV attribute |
 | `sensors.dew_point` | Fog detection (combined with humidity) |
 | `sensors.sunshine_duration` | Today's live sunshine value (scalar, seconds or hours auto-detected at the `≥ 30` threshold). Past columns fall back to the recorder's daily-max for this same sensor. Only used when `forecast.show_sunshine: true`. *(since v0.9; fully wired in daily fetch since v1.4.)* |
+| `sensors.moon_phase` | **Deprecated (v2.3, ADR-0022)** — the moon line is now computed in-card and reads no entity, so [HA's Moon integration](https://www.home-assistant.io/integrations/moon/) is no longer needed. The key is accepted and ignored so older configs keep validating. Use [`show_moon`](#layout--display) to control the line. *(entity-fed v2.2 only)* |
 
 ## Layout & Display
 
@@ -169,6 +170,7 @@ matching attribute on `weather_entity`)
 | `show_wind_speed` | bool | opt-out (`true` when value present) | Wind-speed value. |
 | `show_wind_gust_speed` | bool | `false` | Gust speed (opt-in, requires `sensors.gust_speed` or weather-entity attribute). |
 | `show_sun` | bool | `false` | Sunrise / sunset row (opt-in). |
+| `show_moon` | bool | `true` (renders with the sun cell) | Moon line inside the sun cell: dynamically drawn disc showing the exact illuminated fraction, the percentage, and the next moonrise/moonset. Computed in-card (ADR-0022) — no sensor or Moon integration required; rise/set times come from HA's configured location and are omitted when it has none. On the southern hemisphere the disc is mirrored to match the local view. Set `false` to keep the sun cell sun-only. *(since v2.3)* |
 
 **Chart rows**
 
@@ -236,8 +238,8 @@ expands user-supplied `var(...)` exactly as before.
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `forecast.type` | `'daily' \| 'hourly' \| 'today'` | `'daily'` | At hourly, station data is fetched at hour resolution (mean per hour, single temperature line) and the forecast is subscribed with `forecast_type: hourly`. `days` / `forecast_days` define the data window (so `days: 4` at hourly = 96 hours of station history). The `'today'` mode (since v1.4) renders a 24-hour window centred on "now". Editor radio in Setup. See [Daily vs. hourly resolution](#daily-vs-hourly-resolution) below. |
-| `forecast.number_of_forecasts` | integer | `8` | Number of bars visible in the viewport at once. Default `8` works across both modes — at daily with `days: 7` everything fits without scrolling, at hourly it caps the viewport at ~8 hours and the user scrolls. Set `0` for "fit all" (no scrolling). When more bars are loaded than visible, the chart row + wind row + conditions row scroll horizontally in lockstep. Initial scroll position is "now" (centred at the station/forecast boundary in combination mode). |
+| `forecast.type` | `'daily' \| 'hourly' \| 'today'` | `'daily'` | At hourly, station data is fetched at hour resolution (mean per hour, single temperature line) and the forecast is subscribed with `forecast_type: hourly`. `days` / `forecast_days` define the data window (so `days: 4` at hourly = 96 hours of station history). The `'today'` mode (since v1.4; reworked as a **day pager** in v2.2) frames exactly one calendar day of 3-hour blocks per viewport and pages day-wise through the whole `days` window — chevrons step ±1 day, free scrolling snaps to day boundaries. Editor radio in Setup. See [Daily vs. hourly resolution](#daily-vs-hourly-resolution) below. |
+| `forecast.number_of_forecasts` | integer | `8` | Number of bars visible in the viewport at once. Default `8` works across the modes — at daily with `days: 7` everything fits without scrolling, at hourly it caps the viewport at ~8 hours and the user scrolls. Set `0` for "fit all" (no scrolling). **Ignored in `'today'` mode**, which always frames one calendar day (8 × 3-h blocks). When more bars are loaded than visible, the chart row + wind row + conditions row scroll horizontally in lockstep, and a slim day timeline below the chart shows where you are (click/scrub it to navigate). Initial scroll position is "now" (centred at the station/forecast boundary in combination mode; the current day's page in `'today'`). |
 | `locale` | string | HA's selected language | Override locale (e.g. `de`, `fr`). Falls back to English for missing keys. |
 
 ### `condition_mapping` — override classifier thresholds

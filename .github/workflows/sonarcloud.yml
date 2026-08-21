@@ -35,7 +35,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
 
@@ -52,7 +52,14 @@ jobs:
         # Direct call to the unified Sonar action (cloud + server).
         # The legacy `sonarsource/sonarcloud-github-action` is itself
         # a deprecated wrapper that delegates here — we skip the hop.
+        #
+        # qualitygate.wait makes this JOB fail when the quality gate
+        # fails, so a coverage regression blocks the PR instead of
+        # surfacing on master after the merge (v2.2.0 lesson: the
+        # scan uploaded fine, the gate result was never enforced).
         uses: SonarSource/sonarqube-scan-action@v8
+        with:
+          args: -Dsonar.qualitygate.wait=true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

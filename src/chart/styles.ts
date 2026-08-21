@@ -116,6 +116,51 @@ function buildCardStyles({
       font-weight: 300;
       direction: ltr;
     }
+    /* Clickable entity values (live panel + attribute rows): each
+     * opens the backing sensor's more-info dialog. Cursor + hover tint
+     * mirror the affordance of HA's entities card; icons follow the
+     * hover colour via color:inherit (the base ha-icon rule above pins
+     * them to --primary-text-color otherwise). role="button" on these
+     * spans also excludes them from the card-level tap_action — see
+     * isCardControl in action-handler.ts. */
+    /* Availability hint (issue #213): one slim neutral row instead of
+     * the former red banner when sensors are unavailable. The overdue
+     * variant tints the icon with the warning colour; the in-grace
+     * variant stays secondary-text neutral. .wsc-stale dims the live
+     * panel while values come from the last-known-good fallback. */
+    .wsc-availability {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin: 2px 8px 4px 8px;
+      font-size: 12px;
+      color: var(--secondary-text-color, #727272);
+    }
+    .wsc-availability ha-icon {
+      --mdc-icon-size: 16px;
+      color: var(--secondary-text-color, #727272);
+    }
+    .wsc-availability-overdue ha-icon {
+      color: var(--warning-color, #ffa600);
+    }
+    .wsc-stale {
+      opacity: 0.65;
+      transition: opacity 0.3s ease;
+    }
+    .wsc-entity-link {
+      cursor: pointer;
+    }
+    .wsc-entity-link:hover {
+      color: var(--primary-color, #03a9f4);
+    }
+    .wsc-entity-link:hover ha-icon {
+      color: inherit;
+    }
+    .wsc-entity-link:focus-visible {
+      outline: 2px solid var(--primary-color, #03a9f4);
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
     /* Scroll block — .forecast-scroll-block is the relative parent that
      * positions the side indicators; .forecast-scroll inside it is the
      * actual overflow:auto viewport. Native scrollbars are hidden across
@@ -231,8 +276,8 @@ function buildCardStyles({
     .scroll-indicator-right { right: -14px; }
     /* Mode-toggle (daily↔hourly) and jump-to-now — overlaid on the
      * forecast-scroll-block at the precipitation-baseline level (near
-     * the chart's bottom edge). Out of the way of the .scroll-date
-     * overlays at the top of the chart, and visually aligned with the
+     * the chart's bottom edge). Out of the way of the chart's own
+     * date labels at the top, and visually aligned with the
      * precip labels. Vertical centring uses chartHeight - 15 so the
      * 30 px button sits centred on Chart.js's precip-axis 0-line
      * (chartArea.bottom ≈ chartHeight - 10 due to layout.padding.bottom). */
@@ -262,27 +307,65 @@ function buildCardStyles({
       transform: translateX(-50%);
     }
     .jump-to-now[hidden] { display: none; }
-    /* Edge date stamps at hourly: which day are the leftmost / rightmost
-     * visible bars on. Styled to match the chart's own midnight-tick
-     * date marker (plain text in --secondary-text-color, no pill or
-     * background) so an edge "May 5" reads as the same kind of label
-     * as the "May 6" over the 00:00 tick mid-chart. pointer-events:none
-     * keeps clicks falling through to the chart. */
-    .scroll-date {
-      position: absolute;
-      top: 2px;
-      font-size: ${labelsBaseSize || 11}px;
-      color: var(--secondary-text-color, #727272);
-      z-index: 1;
-      pointer-events: none;
-      white-space: nowrap;
-      /* JS sets the inline left style per element to the pixel centre
-       * of the leftmost (or rightmost) visible tick; translateX centres
-       * the text on that point so the overlay reads as the same kind
-       * of label as the chart's "May 6" sitting above its 00:00 tick. */
-      transform: translateX(-50%);
+    /* NOTE (2026-08): the former .scroll-date edge stamps were removed
+     * — the scroll timeline below the chart carries the day context
+     * now, and the stamps collided visually with the canvas's own
+     * midnight boundary dates. */
+    /* Scroll timeline / minimap (2026-08): slim track below the chart
+     * in the scrolling hourly-ish modes. One segment per calendar day,
+     * a translucent thumb marks the visible section (positioned
+     * imperatively from scroll-ux on every scroll frame). Click /
+     * scrub navigates; touch-action:none so a drag on the track never
+     * turns into a page scroll on mobile. */
+    .scroll-timeline {
+      position: relative;
+      height: 18px;
+      margin: 6px 2px 0 2px;
+      border-radius: 4px;
+      /* Transparent track — the day labels float on the card
+       * background; only the thin day separators and the thumb give
+       * the axis its shape. */
+      background: transparent;
+      overflow: hidden;
+      cursor: pointer;
+      touch-action: none;
+      user-select: none;
     }
-    .scroll-date[hidden] { display: none; }
+    .scroll-timeline .tl-seg {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      border-left: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+      pointer-events: none;
+    }
+    .scroll-timeline .tl-seg:first-child {
+      border-left: none;
+    }
+    .scroll-timeline .tl-seg-label {
+      font-size: 9px;
+      line-height: 1;
+      color: var(--secondary-text-color, #727272);
+      white-space: nowrap;
+    }
+    .scroll-timeline .tl-seg.tl-today .tl-seg-label {
+      font-weight: 700;
+      color: var(--primary-text-color, #212121);
+    }
+    .scroll-timeline .tl-thumb {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      border-radius: 4px;
+      /* Borderless highlight — just a soft primary-tinted lens over
+       * the visible section. */
+      background: color-mix(in srgb, var(--primary-color, #03a9f4) 22%, transparent);
+      box-sizing: border-box;
+      pointer-events: none;
+    }
     .scroll-indicator ha-icon {
       --mdc-icon-size: 22px;
     }
@@ -406,6 +489,18 @@ function buildCardStyles({
       height: var(--mdc-icon-size, 24px);
       vertical-align: middle;
       fill: currentColor;
+      color: var(--primary-text-color, #212121);
+    }
+    /* Computed moon disc (ADR-0022) — same box contract as .wsc-icon
+     * so it sits pixel-compatible beside the ha-icons of the sun cell.
+     * The disc paints true-to-nature in BOTH themes (lit = white,
+     * shadow = black); only the thin outline reads currentColor via
+     * the color below, keeping the edge visible on any background. */
+    .wsc-moon {
+      display: inline-flex;
+      width: var(--mdc-icon-size, 24px);
+      height: var(--mdc-icon-size, 24px);
+      vertical-align: middle;
       color: var(--primary-text-color, #212121);
     }
     .conditions {
@@ -543,10 +638,10 @@ function buildCardStyles({
         gap: 4px 12px;
         font-size: 13px;
       }
-      /* Tighten the chart-chrome typography so edge date stamps and
+      /* Tighten the chart-chrome typography so timeline labels and
        * wind units don't overflow their narrow columns. */
-      .scroll-date {
-        font-size: ${Math.max(9, (labelsBaseSize || 11) - 1)}px;
+      .scroll-timeline .tl-seg-label {
+        font-size: ${Math.max(8, (labelsBaseSize || 11) - 3)}px;
       }
       .wind-speed {
         font-size: 10px;

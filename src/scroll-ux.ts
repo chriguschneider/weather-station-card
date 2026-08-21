@@ -1,7 +1,8 @@
 // Scroll UX wiring for the forecast block: drag-to-scroll on desktop,
 // left/right indicator chevrons, the jump-to-now floating button, the
-// leftmost / rightmost visible-date overlay at hourly mode, and the
-// indicator visibility tracking via the wrapper's scroll event.
+// scroll timeline (day segments + visible-section thumb) below the
+// chart, day paging for 'today', and the indicator visibility
+// tracking via the wrapper's scroll event.
 //
 // Touch falls through to native `overflow-x: auto` scroll; we only
 // listen for movement-detection so a swipe doesn't also fire the
@@ -16,12 +17,20 @@
 
 import { safeQuery } from './utils/safe-query.js';
 import { computeInitialScrollLeft } from './format-utils.js';
-import { getDateTimeFormat } from './utils/intl-cache.js';
+import { computeTodayPagerScrollLeft } from './forecast-utils.js';
 import type { ForecastEntry } from './forecast-utils.js';
 
 const DRAG_THRESHOLD = 5;
 const STEP_BY = 0.85; // scroll about one viewport, leave a hint of overlap
-const TEXT_HALF = 30; // half-width reserved so date stamps stay inside card edges
+const DAY_SNAP_DELAY_MS = 160; // settle time before snapping to a day page
+
+/** 'today' is the day pager (2026-08): the viewport frames exactly one
+ *  calendar day, chevrons page ±1 day and free scrolling snaps to day
+ *  boundaries (page width ≡ wrapper.clientWidth, guaranteed by the
+ *  gap-filled 8-blocks-per-day aggregation + effectiveVisibleBars). */
+function isDayPager(card: ScrollUxCard): boolean {
+  return (card.config?.forecast as { type?: string } | undefined)?.type === 'today';
+}
 
 /** Subset of the card the scroll-ux module reads / writes. */
 export interface ScrollUxCard {
@@ -37,6 +46,14 @@ export interface ScrollUxCard {
 
 interface BoundWrapper extends HTMLElement {
   _wsScrollUxBound?: boolean;
+  /** The `.scroll-timeline` element the current binding attached its
+   *  pointer handlers to (null = none existed at bind time). Lit can
+   *  reuse the wrapper across a mode toggle while the timeline
+   *  appears, disappears, or is replaced in a LATER render — when the
+   *  live DOM no longer matches this reference, the binding must be
+   *  torn down and rebuilt or the new timeline would sit listener-less
+   *  (clicks would even fall through to the card's tap_action). */
+  _wsBoundTimeline?: HTMLElement | null;
 }
 
 export function setupScrollUx(card: ScrollUxCard): void {
@@ -51,10 +68,19 @@ export function setupScrollUx(card: ScrollUxCard): void {
     return;
   }
   if (wrapper._wsScrollUxBound) {
-    // Same element, already bound — only refresh indicator visibility
-    // (which depends on current scrollLeft / scrollWidth).
-    updateScrollIndicators(card);
-    return;
+    const liveTimeline = wrapper.parentElement?.querySelector<HTMLElement>('.scroll-timeline') ?? null;
+    if (liveTimeline === (wrapper._wsBoundTimeline ?? null)) {
+      // Same element, same timeline — only refresh indicator visibility
+      // (which depends on current scrollLeft / scrollWidth).
+      updateScrollIndicators(card);
+      return;
+    }
+    // Wrapper survived a render that changed the timeline (mode toggle
+    // daily↔hourly/today on a reused element) — rebind from scratch.
+    if (card._scrollUxTeardown) {
+      card._scrollUxTeardown();
+      card._scrollUxTeardown = null;
+    }
   }
   wrapper._wsScrollUxBound = true;
 
@@ -80,9 +106,58 @@ export function setupScrollUx(card: ScrollUxCard): void {
   let startScrollLeft = 0;
   let activePointerId: number | null = null;
 
+  // ── Day-page snapping (today mode) ────────────────────────────────
+  // Free scrolling (touch momentum, wheel, released drags) settles on
+  // the nearest whole-day page. Programmatic navigations (chevrons,
+  // jump-to-now, timeline, the snap itself) declare their destination
+  // via `pendingTarget` and the snap stands down until it's reached —
+  // without this, browser smooth-scroll events thin out near the end
+  // of an animation, the debounce fires MID-FLIGHT, rounds back to the
+  // origin page and cancels the navigation (worst case: two smooth
+  // scrolls cancelling each other in a loop). A 1.2 s failsafe clears
+  // a stale target if the animation was interrupted (user wheel) —
+  // and re-arms the day snap, because an interrupted animation can
+  // rest mid-page with no further scroll events to trigger one.
+  let snapTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingTarget: number | null = null;
+  let pendingClear: ReturnType<typeof setTimeout> | null = null;
+  const clampLeft = (left: number): number =>
+    Math.min(Math.max(0, wrapper.scrollWidth - wrapper.clientWidth), Math.max(0, left));
+  const programmaticScrollTo = (left: number): void => {
+    const target = clampLeft(left);
+    pendingTarget = target;
+    if (pendingClear) clearTimeout(pendingClear);
+    pendingClear = setTimeout(() => {
+      pendingTarget = null;
+      if (isDayPager(card)) scheduleDaySnap();
+    }, 1200);
+    wrapper.scrollTo({ left: target, behavior: 'smooth' });
+  };
+  const scheduleDaySnap = (): void => {
+    if (snapTimer) clearTimeout(snapTimer);
+    snapTimer = setTimeout(() => {
+      snapTimer = null;
+      const w = wrapper.clientWidth;
+      if (w <= 0 || isDown || pendingTarget !== null) return;
+      // The far end is a valid resting page even when it is not a
+      // multiple of the page width — station-only trims the series to
+      // end at the "now" block, so its anchor page IS the end. Without
+      // this guard the snap would bounce the user off it.
+      const maxLeft = Math.max(0, wrapper.scrollWidth - w);
+      if (maxLeft - wrapper.scrollLeft <= 2) return;
+      const nearest = clampLeft(Math.round(wrapper.scrollLeft / w) * w);
+      if (Math.abs(nearest - wrapper.scrollLeft) > 2) {
+        programmaticScrollTo(nearest);
+      }
+    }, DAY_SNAP_DELAY_MS);
+  };
+
   const onPointerDown = (ev: PointerEvent): void => {
     isDown = true;
     dragMoved = false;
+    // A fresh user gesture supersedes any in-flight programmatic
+    // navigation — release the snap suppression.
+    pendingTarget = null;
     activePointerId = ev.pointerId;
     startX = ev.clientX;
     startScrollLeft = wrapper.scrollLeft;
@@ -138,6 +213,8 @@ export function setupScrollUx(card: ScrollUxCard): void {
       // tap would still trigger. setTimeout(0) defers the reset to
       // the next macrotask, after the entire event dispatch is done.
       setTimeout(() => { card._dragMoved = false; }, 0);
+      // Day pager: settle the released drag onto a whole-day page.
+      if (isDayPager(card)) scheduleDaySnap();
     }
   };
 
@@ -157,24 +234,49 @@ export function setupScrollUx(card: ScrollUxCard): void {
   // ── Indicator + jump-to-now click ─────────────────────────────────
   // stopPropagation prevents the action handler (bound on ha-card)
   // from interpreting the indicator click as a card-level tap.
+  // Day pager: chevrons page EXACTLY one viewport (= one calendar
+  // day); other modes keep the 0.85-viewport step with overlap.
   const stopDown = (ev: Event): void => { ev.stopPropagation(); };
+  const stepPx = (): number =>
+    isDayPager(card) ? wrapper.clientWidth : wrapper.clientWidth * STEP_BY;
+  const chevronTarget = (direction: -1 | 1): number => {
+    let target = wrapper.scrollLeft + direction * stepPx();
+    // Day pager: land ON a page boundary even when the current
+    // position is mid-page (interrupted animation, resize drift).
+    if (isDayPager(card) && wrapper.clientWidth > 0) {
+      target = Math.round(target / wrapper.clientWidth) * wrapper.clientWidth;
+    }
+    return target;
+  };
   const onLeftClick = (ev: Event): void => {
     ev.stopPropagation();
-    wrapper.scrollBy({ left: -wrapper.clientWidth * STEP_BY, behavior: 'smooth' });
+    programmaticScrollTo(chevronTarget(-1));
   };
   const onRightClick = (ev: Event): void => {
     ev.stopPropagation();
-    wrapper.scrollBy({ left: wrapper.clientWidth * STEP_BY, behavior: 'smooth' });
+    programmaticScrollTo(chevronTarget(1));
   };
   const onJumpClick = (ev: Event): void => {
     ev.stopPropagation();
-    const target = computeInitialScrollLeft({
+    // Day pager jumps to its anchor page (current day; series end for
+    // station-only, start for forecast-only); other modes centre the
+    // station/forecast boundary.
+    const dayPage = isDayPager(card)
+      ? computeTodayPagerScrollLeft({
+          forecasts: card.forecasts,
+          stationCount: card._stationCount || 0,
+          forecastCount: card._forecastCount || 0,
+          contentWidth: wrapper.scrollWidth,
+          viewportWidth: wrapper.clientWidth,
+        })
+      : null;
+    const target = dayPage ?? computeInitialScrollLeft({
       stationCount: card._stationCount || 0,
       forecastCount: card._forecastCount || 0,
       contentWidth: wrapper.scrollWidth,
       viewportWidth: wrapper.clientWidth,
     });
-    wrapper.scrollTo({ left: target, behavior: 'smooth' });
+    programmaticScrollTo(target);
   };
   // The control pointerdown handlers only stopPropagation (never
   // preventDefault) so they're safe to mark passive — a tap on a
@@ -193,25 +295,94 @@ export function setupScrollUx(card: ScrollUxCard): void {
     jumpBtn.addEventListener('pointerdown', stopDown, { passive: true });
   }
 
-  // ── Indicator visibility on scroll ───────────────────────────────
-  // Also nudge the chart to redraw so the dailyTickLabelsPlugin
-  // recomputes its leftmost-visible date label against the new
-  // scrollLeft. chart.draw() reruns all plugins (~5 ms at hourly with
-  // 168 ticks); on a touch device scroll events fire at 60+ Hz, so
-  // bare-bones `chart.draw()` per event would overload the main thread
-  // and produce visible jank. Coalesce via requestAnimationFrame:
-  // multiple scroll events between two paint frames collapse into a
-  // single redraw. The latest scrollLeft is read from the wrapper
-  // inside the rAF callback, so the redraw always sees the freshest
-  // position even when several scroll events arrived in the same frame.
+  // ── Timeline / minimap scrubbing ─────────────────────────────────
+  // Click jumps to (and centres on) the clicked position; holding and
+  // moving scrubs live. Day pager rounds every target to a whole-day
+  // page, so a click on a day label lands exactly on that day.
+  // stopPropagation on all three phases keeps the gesture out of the
+  // card-level tap/hold detection on ha-card.
+  const timeline = block ? block.querySelector<HTMLElement>('.scroll-timeline') : null;
+  // Remember which timeline (if any) this binding attached to — the
+  // idempotency check at the top compares it against the live DOM so
+  // a timeline that appears/vanishes on a reused wrapper forces a
+  // rebind instead of staying listener-less.
+  wrapper._wsBoundTimeline = timeline;
+  let tlScrubbing = false;
+  const tlScrollTo = (clientX: number, smooth: boolean): void => {
+    if (!timeline) return;
+    const rect = timeline.getBoundingClientRect();
+    if (rect.width <= 0 || wrapper.scrollWidth <= 0) return;
+    const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    let target = frac * wrapper.scrollWidth - wrapper.clientWidth / 2;
+    if (isDayPager(card)) {
+      target = Math.round(target / wrapper.clientWidth) * wrapper.clientWidth;
+    }
+    if (smooth) {
+      programmaticScrollTo(target);
+    } else {
+      // Live scrub — track the pointer instantly; snapping happens on
+      // release via the pointer-end handler.
+      pendingTarget = null;
+      wrapper.scrollTo({ left: clampLeft(target), behavior: 'auto' });
+    }
+  };
+  const onTlPointerDown = (ev: PointerEvent): void => {
+    ev.stopPropagation();
+    tlScrubbing = true;
+    try { timeline?.setPointerCapture(ev.pointerId); } catch { /* unsupported */ }
+    tlScrollTo(ev.clientX, true);
+  };
+  const onTlPointerMove = (ev: PointerEvent): void => {
+    if (!tlScrubbing) return;
+    ev.stopPropagation();
+    tlScrollTo(ev.clientX, false);
+  };
+  const onTlPointerEnd = (ev: PointerEvent): void => {
+    if (!tlScrubbing) return;
+    ev.stopPropagation();
+    tlScrubbing = false;
+    if (isDayPager(card)) scheduleDaySnap();
+  };
+  if (timeline) {
+    timeline.addEventListener('pointerdown', onTlPointerDown);
+    timeline.addEventListener('pointermove', onTlPointerMove);
+    timeline.addEventListener('pointerup', onTlPointerEnd);
+    timeline.addEventListener('pointercancel', onTlPointerEnd);
+  }
+
+  // ── Scroll handling ──────────────────────────────────────────────
+  // Fully rAF-coalesced (perf pass 2026-08): scroll events fire at
+  // 60+ Hz on touch devices and BOTH consumers force synchronous
+  // layout reads (indicator visibility → scrollWidth/clientWidth) or
+  // canvas work — running them per event thrashed the main thread.
+  // One rAF per frame reads the freshest scrollLeft and does:
+  //   1. indicator + timeline-thumb DOM updates;
+  //   2. `setScrollWindow` on the virtualized chart — an uPlot
+  //      setScale pan that redraws only the ~visibleBars columns in
+  //      the viewport. The former full `chart.draw()` per frame
+  //      (entire 7 700-px canvas, all label plugins) is gone; the
+  //      day context lives in the scroll timeline below the chart.
   let scrollRafId: number | null = null;
   const onScroll = (): void => {
-    updateScrollIndicators(card);
+    // Programmatic navigation in flight: stand down until the smooth
+    // scroll reaches its declared destination, then release.
+    if (pendingTarget !== null && Math.abs(wrapper.scrollLeft - pendingTarget) <= 2) {
+      pendingTarget = null;
+    }
+    // Day pager: any FREE scroll motion (touch momentum, wheel)
+    // re-arms the settle-snap — not while a programmatic navigation
+    // knows its destination, and not while a pointer is actively
+    // dragging the chart or scrubbing the timeline (their end
+    // handlers snap).
+    if (isDayPager(card) && pendingTarget === null && !isDown && !tlScrubbing) scheduleDaySnap();
     if (scrollRafId !== null) return;
     scrollRafId = requestAnimationFrame(() => {
       scrollRafId = null;
-      const chart = (card as { forecastChart?: { draw?: () => void } }).forecastChart;
-      if (chart && typeof chart.draw === 'function') chart.draw();
+      updateScrollIndicators(card);
+      const chart = (card as { forecastChart?: { setScrollWindow?: (px: number) => void } }).forecastChart;
+      if (chart && typeof chart.setScrollWindow === 'function') {
+        chart.setScrollWindow(wrapper.scrollLeft);
+      }
     });
   };
   wrapper.addEventListener('scroll', onScroll, { passive: true });
@@ -222,11 +393,25 @@ export function setupScrollUx(card: ScrollUxCard): void {
       cancelAnimationFrame(scrollRafId);
       scrollRafId = null;
     }
+    if (snapTimer) {
+      clearTimeout(snapTimer);
+      snapTimer = null;
+    }
+    if (pendingClear) {
+      clearTimeout(pendingClear);
+      pendingClear = null;
+    }
     wrapper.removeEventListener('pointerdown', onPointerDown);
     wrapper.removeEventListener('pointermove', onPointerMove);
     wrapper.removeEventListener('pointerup', onPointerEnd);
     wrapper.removeEventListener('pointercancel', onPointerEnd);
     wrapper.removeEventListener('scroll', onScroll);
+    if (timeline) {
+      timeline.removeEventListener('pointerdown', onTlPointerDown);
+      timeline.removeEventListener('pointermove', onTlPointerMove);
+      timeline.removeEventListener('pointerup', onTlPointerEnd);
+      timeline.removeEventListener('pointercancel', onTlPointerEnd);
+    }
     if (leftBtn) {
       leftBtn.removeEventListener('click', onLeftClick);
       leftBtn.removeEventListener('pointerdown', stopDown);
@@ -241,6 +426,7 @@ export function setupScrollUx(card: ScrollUxCard): void {
     }
     wrapper.classList.remove('dragging');
     wrapper._wsScrollUxBound = false;
+    wrapper._wsBoundTimeline = null;
   };
 }
 
@@ -280,101 +466,16 @@ export function updateScrollIndicators(card: ScrollUxCard): void {
     if (offset > threshold) jump.removeAttribute('hidden');
     else jump.setAttribute('hidden', '');
   }
-  updateScrollDateStamps(block, wrapper, card);
-}
-
-interface DateStampInfo {
-  date: string;
-  isMidnight: boolean;
-}
-
-/** At hourly: surface the date of the leftmost and rightmost visible
- *  bar by overlaying it directly above the corresponding tick — same
- *  visual style as the chart's own midnight marker (e.g. "May 6" above
- *  "00:00"). The chart only prints a date at midnight ticks, so a
- *  viewport that doesn't span 00:00 would otherwise leave the user
- *  without context which day they're looking at.
- *
- *  When the leftmost / rightmost visible IS a midnight, the chart
- *  already shows the date there — we hide our overlay to avoid a
- *  duplicate.
- *
- *  Exported for unit-test reach; the runtime call goes through
- *  `updateScrollIndicators` above. */
-export function updateScrollDateStamps(
-  block: HTMLElement,
-  wrapper: HTMLElement,
-  card: ScrollUxCard,
-): void {
-  const leftEl = block.querySelector<HTMLElement>('.scroll-date-left');
-  const rightEl = block.querySelector<HTMLElement>('.scroll-date-right');
-  if (!leftEl || !rightEl) return;
-
-  const total = (card.forecasts ?? []).length;
-  if (!total || wrapper.scrollWidth <= 0) {
-    leftEl.setAttribute('hidden', '');
-    rightEl.setAttribute('hidden', '');
-    return;
-  }
-
-  const barWidth = wrapper.scrollWidth / total;
-  if (barWidth <= 0) return;
-
-  // floor(scrollLeft / barWidth) is the leftmost partially-visible
-  // bar; floor((scrollLeft + clientWidth - 1) / barWidth) is the
-  // rightmost. Each bar's tick label sits centred at (idx + 0.5) ×
-  // barWidth in canvas-pixel coordinates; subtract scrollLeft to
-  // map to viewport-pixel coordinates.
-  const leftIdx = Math.max(0, Math.min(total - 1, Math.floor(wrapper.scrollLeft / barWidth)));
-  const rightIdx = Math.max(0, Math.min(total - 1, Math.floor((wrapper.scrollLeft + wrapper.clientWidth - 1) / barWidth)));
-  const rawLeftCenterX = (leftIdx + 0.5) * barWidth - wrapper.scrollLeft;
-  const rawRightCenterX = (rightIdx + 0.5) * barWidth - wrapper.scrollLeft;
-  const leftCenterX = Math.max(TEXT_HALF, rawLeftCenterX);
-  const rightCenterX = Math.min(wrapper.clientWidth - TEXT_HALF, rawRightCenterX);
-
-  const lang = card.config.locale || card.language || 'en';
-  const dateFmt = getDateTimeFormat(lang, { day: 'numeric', month: 'short' });
-  const fmt = (idx: number): DateStampInfo => {
-    const item = card.forecasts ? card.forecasts[idx] : undefined;
-    if (!item?.datetime) return { date: '', isMidnight: false };
-    try {
-      const d = new Date(item.datetime);
-      const isMidnight = d.getHours() === 0 && d.getMinutes() === 0;
-      return {
-        date: dateFmt.format(d),
-        isMidnight,
-      };
-    } catch (err) {
-      // Malformed datetime in the forecast entry — fall back to empty
-      // labels rather than letting one bad bucket break the chart.
-      void err;
-      return { date: '', isMidnight: false };
+  // Timeline thumb — mirrors the visible section onto the minimap.
+  // Positioned imperatively (style.left/width) so the 60 Hz scroll
+  // path never triggers a Lit render.
+  const timeline = block.querySelector<HTMLElement>('.scroll-timeline');
+  if (timeline && wrapper.scrollWidth > 0) {
+    const thumb = timeline.querySelector<HTMLElement>('.tl-thumb');
+    if (thumb) {
+      thumb.style.left = `${(wrapper.scrollLeft / wrapper.scrollWidth) * 100}%`;
+      thumb.style.width = `${(wrapper.clientWidth / wrapper.scrollWidth) * 100}%`;
     }
-  };
-
-  // Collect the dates of every midnight tick that's currently inside
-  // the viewport — those dates are already drawn by the chart's own
-  // tick callback as a "May 6" stamp above the 00:00 tick. If our
-  // edge overlay would show the same date, it's redundant.
-  const visibleMidnightDates = new Set<string>();
-  for (let i = leftIdx; i <= rightIdx; i++) {
-    const info = fmt(i);
-    if (info.isMidnight) visibleMidnightDates.add(info.date);
   }
-
-  const leftInfo = fmt(leftIdx);
-  const rightInfo = fmt(rightIdx);
-
-  const apply = (el: HTMLElement, info: DateStampInfo, centerX: number): void => {
-    if (!info.date || info.isMidnight || visibleMidnightDates.has(info.date)) {
-      el.setAttribute('hidden', '');
-      return;
-    }
-    el.textContent = info.date;
-    el.style.left = `${Math.round(centerX)}px`;
-    el.removeAttribute('hidden');
-  };
-  apply(leftEl, leftInfo, leftCenterX);
-  if (rightIdx === leftIdx) rightEl.setAttribute('hidden', '');
-  else apply(rightEl, rightInfo, rightCenterX);
 }
+

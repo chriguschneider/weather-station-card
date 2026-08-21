@@ -8,11 +8,11 @@
 
 <p align="center">
   <a href="LICENSE.md"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
-  <a href="https://hacs.xyz/"><img alt="HACS Custom" src="https://img.shields.io/badge/HACS-Custom-orange.svg" /></a>
+  <a href="https://hacs.xyz/"><img alt="HACS Default" src="https://img.shields.io/badge/HACS-Default-41BDF5.svg" /></a>
   <a href="https://github.com/chriguschneider/weather-station-card/releases/latest"><img alt="Latest release" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriguschneider%2Fweather-station-card%2Fbadges%2Frelease.json" /></a>
   <a href="https://github.com/chriguschneider/weather-station-card/actions/workflows/build.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/chriguschneider/weather-station-card/build.yml?label=build" /></a>
   <a href="https://sonarcloud.io/summary/new_code?id=chriguschneider_weather-station-card"><img alt="Quality Gate Status" src="https://sonarcloud.io/api/project_badges/measure?project=chriguschneider_weather-station-card&metric=alert_status" /></a>
-  <a href="https://github.com/chriguschneider/weather-station-card/releases"><img alt="Total downloads" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriguschneider%2Fweather-station-card%2Fbadges%2Fdownloads.json" /></a>
+  <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=chriguschneider&category=frontend&repository=weather-station-card"><img alt="HACS installs" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriguschneider%2Fweather-station-card%2Fbadges%2Finstalls.json" /></a>
   <a href="https://github.com/chriguschneider/weather-station-card/stargazers"><img alt="Stars" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriguschneider%2Fweather-station-card%2Fbadges%2Fstars.json" /></a>
   <a href="https://github.com/chriguschneider/weather-station-card/commits/master"><img alt="Last commit" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriguschneider%2Fweather-station-card%2Fbadges%2Flastcommit.json" /></a>
   <a href="https://buymeacoffee.com/chriguschneider"><img alt="Buy Me a Coffee" src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00.svg" /></a>
@@ -35,21 +35,6 @@
 
 A Lovelace card that charts your own weather station's history alongside any
 forecast — driven by sensor data, not a `weather.*` entity.
-
-> **📣 v2.0 — and now I'd love to hear from you.**
->
-> With v2.0 this card has reached the shape I set out to build: the
-> past-vs-forecast chart, the live "now" panel, a resilient render path
-> that degrades gracefully, custom-theme support, and a layout that
-> holds up on phones. For me, this is the milestone — feature-complete
-> for what I wanted it to be.
->
-> Where it goes next is up to the people who actually run it. **If this
-> card is on your dashboard, tell me how it's going** — what works, what
-> feels off, what your weather station needs that the card can't do yet.
-> Start a [Discussion](https://github.com/chriguschneider/weather-station-card/discussions)
-> or [open an issue](https://github.com/chriguschneider/weather-station-card/issues/new/choose).
-> Community feedback is what will shape v2.x from here. — *Chrigu*
 
 <details>
 <summary><b>Table of contents</b></summary>
@@ -91,8 +76,12 @@ reflects the live readings of those same sensors. This card does both:
   semi-transparent so predicted values read distinctly from measured
   ones. Span is configurable separately (`forecast_days:`).
 - A **live main panel** showing the current temperature, condition icon,
-  and (optionally) clock and weather attributes — all derived from current
-  sensor states, not from a forecast.
+  and (optionally) clock, weather attributes, next sun event and the
+  moon — exact illumination percentage on a dynamically drawn disc plus
+  the next moonrise/moonset, computed in-card with no Moon integration
+  needed. All values derive from current sensor states, not from a
+  forecast; every sensor-backed value is clickable and opens its
+  more-info dialog.
 
 Conditions are derived by a deterministic, meteorologically-grounded
 classifier (see [docs/CONDITIONS.md](docs/CONDITIONS.md#how-conditions-are-determined)
@@ -110,7 +99,7 @@ button.
 <tr>
 <th></th>
 <th>Daily (default)</th>
-<th>Today (24 h)</th>
+<th>Today (day pager)</th>
 <th>Hourly (7 days)</th>
 </tr>
 <tr>
@@ -133,6 +122,41 @@ button.
 </tr>
 </table>
 
+<!-- Dark-theme matrix as a collapsible block. Deliberately NOT the
+     <picture>/prefers-color-scheme mechanism: the HACS info-panel
+     sanitizer drops <picture>/<source> (see the README-image rule in
+     the repo conventions), while <details> with plain <img> children
+     survives both GitHub and HACS. -->
+<details>
+<summary>🌙 <b>Same matrix in a dark theme</b> (click to expand)</summary>
+<table>
+<tr>
+<th></th>
+<th>Daily (default)</th>
+<th>Today (day pager)</th>
+<th>Hourly (7 days)</th>
+</tr>
+<tr>
+<th>Combination</th>
+<td><img alt="Combination, daily, dark" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/daily-combination-sunshine-dark.png" /></td>
+<td><img alt="Combination, today, dark" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/today-combination-sunshine-dark.png" /></td>
+<td><img alt="Combination, hourly, dark" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/hourly-combination-sunshine-dark.png" /></td>
+</tr>
+<tr>
+<th>Station</th>
+<td><img alt="Station, daily, dark" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/daily-station-sunshine-dark.png" /></td>
+<td><img alt="Station, today, dark" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/today-station-sunshine-dark.png" /></td>
+<td><img alt="Station, hourly, dark" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/hourly-station-sunshine-dark.png" /></td>
+</tr>
+<tr>
+<th>Forecast</th>
+<td><img alt="Forecast, daily, dark" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/daily-forecast-sunshine-dark.png" /></td>
+<td><img alt="Forecast, today, dark" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/today-forecast-sunshine-dark.png" /></td>
+<td><img alt="Forecast, hourly, dark" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/hourly-forecast-sunshine-dark.png" /></td>
+</tr>
+</table>
+</details>
+
 **Modes** (rows):
 
 - **Combination** — past sensor history + today as a doubled column
@@ -149,12 +173,15 @@ button.
 
 - **Daily** (default) — one column per day across the past + forecast
   window. The classic view.
-- **Today** — zoom on the current 24 hours, 3-hourly aggregation
-  (8 columns). Combination splits into 12 station-hours back and
-  12 forecast-hours forward; forecast-only expands to the full 24.
+- **Today** — a day pager: the viewport frames exactly one calendar
+  day as 8 × 3-hour blocks and pages day-wise through the whole
+  `days:` window. Chevrons step one day at a time, free scrolling
+  snaps to day boundaries, and the view opens on the current day
+  (measured hours solid, forecast hours dashed).
 - **Hourly** — one column per hour over 7 days, scrollable. 168
   columns; the jump-to-now button snaps the viewport to the present
-  hour.
+  hour, and a slim day timeline below the chart shows where you are
+  (click or scrub it to navigate).
 
 ## Installation
 
@@ -163,20 +190,19 @@ button.
 > The forecast block subscribes via Home Assistant's standard `weather.subscribe_forecast` API,
 > so anything HA recognises as a weather entity should work.
 
-### HACS (Custom Repository)
+### HACS (recommended)
+
+The card is in the HACS default store — no custom repository needed.
 
 **One-click**: [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=chriguschneider&category=frontend&repository=weather-station-card)
 
 Or manually:
 
-1. In HACS, go to **Frontend → ⋮ → Custom repositories**.
-2. Add `https://github.com/chriguschneider/weather-station-card` with
-   category **Dashboard**.
-3. Click **Install** on the *Weather Station Card* entry that appears in the
-   Frontend list.
-4. Hard-refresh your browser (Ctrl-F5 or equivalent) so the new resource
+1. In HACS, search for **Weather Station Card** and open the entry.
+2. Click **Download**.
+3. Hard-refresh your browser (Ctrl-F5 or equivalent) so the new resource
    loads.
-5. Add the card to your dashboard via the Lovelace UI ("Add Card → Custom:
+4. Add the card to your dashboard via the Lovelace UI ("Add Card → Custom:
    Weather Station Card") or paste the YAML below.
 
 ### Manual

@@ -147,6 +147,7 @@ const en: LocaleEntry = {
     'show_precipitation': 'Precipitation',
     'show_sunshine_duration': 'Sunshine duration',
     'show_sun': 'Sun (sunrise / sunset)',
+    'show_moon': 'Moon (illumination / rise / set)',
     'show_time': 'Show clock',
     'show_time_seconds': 'Seconds',
     'show_day': 'Day name',

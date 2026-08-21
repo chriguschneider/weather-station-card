@@ -74,6 +74,7 @@ export const SECTION_KEYS: Record<SectionKey, ReadonlyArray<string>> = {
     'show_wind_speed',
     'show_wind_gust_speed',
     'show_sun',
+    'show_moon',
   ],
   units: [
     'units',

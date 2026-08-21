@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { fetchPressure3hDelta } from '../src/data-source.js';
+import { clearDedupeCaches } from '../src/utils/shared-requests.js';
 
 // Build a hass-like mock with stubbable callWS + an entity-state map for
 // unit-of-measurement lookup. Each test constructs the recorder fixture
@@ -36,6 +37,10 @@ describe('fetchPressure3hDelta', () => {
     now = new Date('2026-05-12T14:23:45Z');
     vi.useFakeTimers();
     vi.setSystemTime(now);
+    // The WS call is deduplicated module-wide (cross-card sharing in
+    // production) — reset between tests so each case gets its own
+    // roundtrip against its own mock.
+    clearDedupeCaches();
   });
 
   it('returns null when hass is missing', async () => {

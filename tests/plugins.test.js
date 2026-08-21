@@ -21,6 +21,7 @@ import {
   createDailyTickLabelsPlugin,
   createSunshineLabelPlugin,
   createPrecipLabelPlugin,
+  createTempLabelsPlugin,
 } from '../src/chart/plugins.js';
 
 function mockCtx() {
@@ -33,6 +34,7 @@ function mockCtx() {
     stroke: vi.fn(),
     fillRect: vi.fn(),
     fillText: vi.fn(),
+    strokeText: vi.fn(),
     measureText: vi.fn(() => ({ width: 10 })),
     strokeRect: vi.fn(),
     strokeStyle: '',
@@ -231,20 +233,18 @@ describe('createDailyTickLabelsPlugin', () => {
     expect(chart.ctx.fillText).toHaveBeenCalledTimes(14);
   });
 
-  it('hourly mode: leftmostVisibleIdx tracks wrapper.scrollLeft', () => {
-    // Mock the canvas → closest() lookup so the plugin sees a
-    // .forecast-scroll.scrolling wrapper with a non-zero scrollLeft.
-    // The first tick whose pixel position >= scrollLeft becomes the
-    // leftmost visible — its date label should be rendered, earlier
-    // (off-screen) ticks should not get a date label.
-    const wrapper = { scrollLeft: 100 };
-    const fakeCanvas = { closest: () => wrapper };
+  it('hourly mode: no canvas edge-date label — DOM overlay owns it (perf pass 2026-08)', () => {
+    // Scrollable hourly no longer paints a scrollLeft-tracking "sticky"
+    // date on the canvas: that forced a full redraw per scroll frame.
+    // The `.scroll-date-left/right` DOM overlays (scroll-ux.ts) carry
+    // the edge date now, so non-boundary columns render ONLY their
+    // time label and the canvas output is scroll-invariant.
     const p = createDailyTickLabelsPlugin({
       config: { forecast: { ...baseConfig.forecast, type: 'hourly' } },
       language: 'en',
       data: {
-        // Five non-midnight hourly entries within one day so only the
-        // leftmost-visible tick (not midnight columns) shows a date.
+        // Five non-midnight hourly entries within one day — no day
+        // boundary, so no date label at all.
         dateTime: [
           '2026-05-06T09:00:00',
           '2026-05-06T10:00:00',
@@ -256,15 +256,12 @@ describe('createDailyTickLabelsPlugin', () => {
       textColor: '#000', backgroundColor: '#fff', style: mockStyle,
       stationCount: 0, doubledToday: false,
     });
-    // tickCount=5, getPixelForTick(i)=i*50 → ticks at 0, 50, 100, 150, 200
-    // scrollLeft=100 → first tick where pixel >= 100 is i=2 (pixel 100).
     const chart = mockChart({ tickCount: 5 });
-    chart.canvas = fakeCanvas;
     chart.scales.x.bottom = 50;
     chart.scales.x.width = 250;
     p.afterDraw(chart);
-    // 5 time labels + 1 date label on i=2 (leftmost visible) = 6.
-    expect(chart.ctx.fillText).toHaveBeenCalledTimes(6);
+    // 5 time labels, zero date labels.
+    expect(chart.ctx.fillText).toHaveBeenCalledTimes(5);
   });
 
   it('bails out when xScale is missing', () => {
@@ -657,5 +654,93 @@ describe('createPrecipLabelPlugin', () => {
     const chart2 = precipMockChart({ barCount: 1 });
     p.afterDatasetsDraw(chart2);
     expect(chart2.ctx.fillText).toHaveBeenCalledWith('4.7', expect.any(Number), expect.any(Number));
+  });
+});
+
+// ── createTempLabelsPlugin ───────────────────────────────────────────
+// Halo (variant decision N1b): the value labels draw a background-
+// colour outline before the fill. Label headroom itself is guaranteed
+// by the pixel-aware TempAxis reserves in draw.ts — the plugin renders
+// at the scale position without clamping or flipping.
+
+describe('createTempLabelsPlugin', () => {
+  function tempChart({ top = 20, bottom = 180 } = {}) {
+    const chart = mockChart();
+    chart.chartArea = { top, bottom, left: 0, right: 700 };
+    chart.scales.TempAxis = { getPixelForValue: (v) => 200 - v * 5 };
+    return chart;
+  }
+
+  function makePlugin(extra = {}) {
+    return createTempLabelsPlugin({
+      config: { forecast: { style: 'style2', labels_font_size: 11, round_temp: true } },
+      data: {
+        dateTime: ['2000-01-01T12:00:00', '2000-01-02T12:00:00'],
+        tempHigh: [20, 22],
+        tempLow: [10, 12],
+      },
+      tempHighColor: '#ff9800',
+      tempLowColor: '#44739e',
+      roundTemp: true,
+      ...extra,
+    });
+  }
+
+  it('returns a plugin object with id and afterDraw hook', () => {
+    const p = makePlugin();
+    expect(p.id).toBe('tempLabels');
+    expect(typeof p.afterDraw).toBe('function');
+  });
+
+  it('no-ops for style1 (no per-point labels there)', () => {
+    const p = createTempLabelsPlugin({
+      config: { forecast: { style: 'style1', labels_font_size: 11 } },
+      data: { dateTime: [], tempHigh: [20], tempLow: [10] },
+      tempHighColor: '#f00', tempLowColor: '#00f', roundTemp: true,
+    });
+    const chart = tempChart();
+    p.afterDraw(chart);
+    expect(chart.ctx.fillText).not.toHaveBeenCalled();
+  });
+
+  it('renders every finite value with the degree suffix', () => {
+    const p = makePlugin();
+    const chart = tempChart();
+    p.afterDraw(chart);
+    const texts = chart.ctx.fillText.mock.calls.map((c) => c[0]);
+    expect(texts).toEqual(expect.arrayContaining(['20°', '22°', '10°', '12°']));
+  });
+
+  it('draws the halo outline before the glyph when haloColor is set', () => {
+    const p = makePlugin({ haloColor: '#1c1c1c' });
+    const chart = tempChart();
+    p.afterDraw(chart);
+    expect(chart.ctx.strokeText).toHaveBeenCalledTimes(chart.ctx.fillText.mock.calls.length);
+    // Outline colour is the card background, width 3.
+    expect(chart.ctx.strokeStyle).toBe('#1c1c1c');
+    expect(chart.ctx.lineWidth).toBe(3);
+  });
+
+  it('skips the halo entirely when haloColor is omitted', () => {
+    const p = makePlugin();
+    const chart = tempChart();
+    p.afterDraw(chart);
+    expect(chart.ctx.strokeText).not.toHaveBeenCalled();
+  });
+
+  it('keeps the preferred side when there is room', () => {
+    // 20 → y=100; high label at 100-16=84 stays.
+    const p = makePlugin({ data: {
+      dateTime: ['2000-01-01T12:00:00'], tempHigh: [20], tempLow: [] } });
+    const chart = tempChart();
+    p.afterDraw(chart);
+    expect(chart.ctx.fillText.mock.calls[0][2]).toBe(84);
+  });
+
+  it('bails out silently when the TempAxis scale is missing', () => {
+    const p = makePlugin();
+    const chart = mockChart(); // no TempAxis
+    expect(() => p.afterDraw(chart)).not.toThrow();
+    expect(chart.ctx.fillText).not.toHaveBeenCalled();
   });
 });

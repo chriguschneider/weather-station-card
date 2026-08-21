@@ -44,6 +44,12 @@ test.describe('mobile layout — daily-combination', () => {
     // canvas whose bottom rows render past the chart-container.
     // Assert the canvas's CSS-computed bounding box height matches
     // the container's bounding box height.
+    //
+    // Width contract since the virtualized canvas (ADR-0019): in
+    // scrolling modes the canvas is VIEWPORT-sized (it matches the
+    // `.forecast-scroll.scrolling` wrapper and pans via setScale),
+    // while `.chart-container` keeps the full content width. In
+    // non-scrolling renders the canvas still matches the container.
     await openHarness(page);
     const fix = buildFullFixture('daily-combination');
     const cfg = buildBaseConfig('daily-combination');
@@ -55,6 +61,7 @@ test.describe('mobile layout — daily-combination', () => {
       const root = host?.shadowRoot;
       if (!root) throw new Error('no shadow root');
       const container = root.querySelector('.chart-container') as HTMLElement | null;
+      const wrapper = root.querySelector('.forecast-scroll.scrolling') as HTMLElement | null;
       const canvas = root.querySelector('#forecastChart canvas') as HTMLCanvasElement | null;
       if (!container || !canvas) throw new Error('chart-container or canvas missing');
       const cRect = container.getBoundingClientRect();
@@ -63,7 +70,9 @@ test.describe('mobile layout — daily-combination', () => {
         containerHeight: cRect.height,
         canvasCssHeight: cnRect.height,
         canvasCssWidth: cnRect.width,
-        containerWidth: cRect.width,
+        // Virtualized (scrolling) charts size against the wrapper
+        // viewport; classic charts against the container.
+        expectedWidth: (wrapper ?? container).getBoundingClientRect().width,
         canvasHtmlWidth: Number(canvas.getAttribute('width')) || 0,
         canvasHtmlHeight: Number(canvas.getAttribute('height')) || 0,
         pxRatio: window.devicePixelRatio,
@@ -74,8 +83,9 @@ test.describe('mobile layout — daily-combination', () => {
     // and the bug present, canvasCssHeight would be ~472 px against
     // a 180 px container.
     expect(dims.canvasCssHeight).toBeCloseTo(dims.containerHeight, 0);
-    // Width too — same failure mode, different axis.
-    expect(dims.canvasCssWidth).toBeCloseTo(dims.containerWidth, 0);
+    // Width — against the viewport wrapper when virtualized (see
+    // header comment), the container otherwise.
+    expect(dims.canvasCssWidth).toBeCloseTo(dims.expectedWidth, 0);
     // Sanity: the HTML buffer dimensions ARE DPR-multiplied (this is
     // intentional, gives sharp retina rendering). If this assertion
     // ever flips it means uPlot stopped doing DPR scaling internally

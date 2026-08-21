@@ -24,12 +24,15 @@ jobs:
       # update the GitHub Release on tag push. The repo default is
       # contents:read since GitHub tightened workflow permissions.
       contents: write
+      # `gh workflow run badges.yml` (badge refresh after release
+      # upload) needs actions:write to dispatch a workflow.
+      actions: write
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
 
@@ -209,3 +212,19 @@ jobs:
         with:
           files: dist/*.js
           body_path: .release-notes.md
+
+      - name: Refresh badge metrics
+        # badges.yml computes the release badge from `releases/latest`
+        # and has a `release: published` trigger — but the release above
+        # is created with GITHUB_TOKEN, and GitHub never fires workflow
+        # triggers for events created by GITHUB_TOKEN (recursion guard).
+        # That trigger has therefore never fired once; the badge lagged
+        # up to a day behind every release until the daily cron caught
+        # up (v2.1.8 shipped while the README still showed v2.1.7).
+        # Dispatching the workflow explicitly is not subject to the
+        # recursion guard, so the badge refreshes within a minute of
+        # the release. The daily cron stays as the self-healing path.
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run badges.yml --ref master -R "${{ github.repository }}"

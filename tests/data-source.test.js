@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { bucketPrecipitation, MeasuredDataSource, ForecastDataSource } from '../src/data-source.js';
 import { WeatherEntityFeature } from '../src/const.js';
+import { clearDedupeCaches } from '../src/utils/shared-requests.js';
+
+// Recorder WS calls are deduplicated module-wide (cross-card sharing in
+// production) — reset between tests so identical request signatures in
+// different cases don't leak each other's mocked responses.
+beforeEach(() => clearDedupeCaches());
 
 describe('bucketPrecipitation', () => {
   const day = (props) => ({ start: '2026-05-01T00:00:00', ...props });
@@ -462,6 +468,60 @@ describe('MeasuredDataSource._fetchLuxSunshine (#56 + #66)', () => {
     expect(result).toBeNull();
   });
 
+  it('converts W/m² irradiance samples to lux before the derivation (post 15 point 5)', async () => {
+    const sensors = { illuminance: 'sensor.solar' };
+    const t0 = summerNoonUTC();
+    const samples = [];
+    // 650 W/m² at solar noon. Raw, 650 "lux" is hopeless against a
+    // ~100 k-lx clear sky; ×120 lm/W it becomes 78 k lx — well above
+    // the 0.6 ratio, so the interval counts as sunshine.
+    for (let i = 0; i <= 30; i++) {
+      samples.push({ s: '650', lu: (t0 + i * 60 * 1000) / 1000 });
+    }
+    const hass = makeHass(async () => ({ 'sensor.solar': samples }));
+    hass.states = {
+      'sensor.solar': { state: '650', attributes: { unit_of_measurement: 'W/m²' } },
+    };
+    const ds = new MeasuredDataSource(hass, { sensors });
+    const result = await ds._fetchLuxSunshine(sensors, new Date(t0 - HOUR_MS), new Date(t0 + HOUR_MS));
+    expect(result).not.toBeNull();
+    const totalHours = Array.from(result.values()).reduce((s, h) => s + h, 0);
+    expect(totalHours).toBeGreaterThan(0.4);
+  });
+
+  it('device_class irradiance triggers the same conversion without the unit string', async () => {
+    const sensors = { illuminance: 'sensor.solar' };
+    const t0 = summerNoonUTC();
+    const samples = [];
+    for (let i = 0; i <= 30; i++) {
+      samples.push({ s: '650', lu: (t0 + i * 60 * 1000) / 1000 });
+    }
+    const hass = makeHass(async () => ({ 'sensor.solar': samples }));
+    hass.states = {
+      'sensor.solar': { state: '650', attributes: { device_class: 'irradiance' } },
+    };
+    const ds = new MeasuredDataSource(hass, { sensors });
+    const result = await ds._fetchLuxSunshine(sensors, new Date(t0 - HOUR_MS), new Date(t0 + HOUR_MS));
+    const totalHours = Array.from(result.values()).reduce((s, h) => s + h, 0);
+    expect(totalHours).toBeGreaterThan(0.4);
+  });
+
+  it('unconverted 650-"lux" samples would NOT count (guards the conversion)', async () => {
+    const sensors = { illuminance: 'sensor.lux' };
+    const t0 = summerNoonUTC();
+    const samples = [];
+    for (let i = 0; i <= 30; i++) {
+      samples.push({ s: '650', lu: (t0 + i * 60 * 1000) / 1000 });
+    }
+    // Plain lux sensor (no irradiance unit) — 650 lx stays 650 lx.
+    const hass = makeHass(async () => ({ 'sensor.lux': samples }));
+    hass.states = { 'sensor.lux': { state: '650', attributes: { unit_of_measurement: 'lx' } } };
+    const ds = new MeasuredDataSource(hass, { sensors });
+    const result = await ds._fetchLuxSunshine(sensors, new Date(t0 - HOUR_MS), new Date(t0 + HOUR_MS));
+    const totalHours = result ? Array.from(result.values()).reduce((s, h) => s + h, 0) : 0;
+    expect(totalHours).toBe(0);
+  });
+
   it('aggregates above-threshold samples into a per-day map', async () => {
     const sensors = { illuminance: 'sensor.lux' };
     const t0 = summerNoonUTC();
@@ -713,7 +773,7 @@ describe('MeasuredDataSource hourly mode', () => {
     expect('humidity' in entry).toBe(true);
   });
 
-  it('_fetchAggregates requests period:hour with days*24 slots when hourly', async () => {
+  it('_fetchAggregates requests period:hour anchored at local midnight when hourly', async () => {
     const hass = {
       config: { latitude: 47.4, longitude: 8.5 },
       callWS: vi.fn().mockResolvedValue({}), // empty stats — we only check the request
@@ -726,10 +786,13 @@ describe('MeasuredDataSource hourly mode', () => {
     const [msg] = hass.callWS.mock.calls[0];
     expect(msg.type).toBe('recorder/statistics_during_period');
     expect(msg.period).toBe('hour');
-    // window: end - start should span (days*24 + 1) hours = 49 hours
-    const startMs = new Date(msg.start_time).getTime();
-    const endMs = new Date(msg.end_time).getTime();
-    expect(Math.round((endMs - startMs) / HOUR_MS)).toBe(2 * 24 + 1);
+    // Window starts at local midnight `days` days back, minus the
+    // 1-hour cumulative-precipitation baseline (2026-08 whole-day
+    // anchoring — keeps timeline segments and day pages complete).
+    const expectedStart = new Date();
+    expectedStart.setHours(0, 0, 0, 0);
+    expectedStart.setDate(expectedStart.getDate() - 2);
+    expect(new Date(msg.start_time).getTime()).toBe(expectedStart.getTime() - HOUR_MS);
   });
 
   it('_fetchAggregates falls back to period:day at default forecast.type', async () => {
@@ -743,18 +806,21 @@ describe('MeasuredDataSource hourly mode', () => {
     expect(msg.period).toBe('day');
   });
 
-  // 'today' mode introduced in v1.4 (#17). The 12 h station / 12 h
-  // forecast split applies when both blocks are visible — in
-  // station-only the station expands to fill the full 24 h so the
-  // user still sees a one-day view with no forecast block. Tests
-  // verify the recorder window is sized correctly per branch.
-  it("_fetchAggregates 'today' + combination → 13 h window (12+1 baseline)", async () => {
+  // 'today' became the DAY PAGER in the 2026-08 rework: it shares the
+  // full hourly window — which is anchored to LOCAL MIDNIGHT `days`
+  // days back (plus 1 baseline hour before it), so the first day is
+  // always complete: whole timeline segments, whole day pages.
+  // Identical fetch parameters are load-bearing: they let 'today' and
+  // 'hourly' share the recorder response via the request dedup and
+  // the mode-toggle lazy-cache.
+  it("_fetchAggregates 'today' window starts at local midnight − 1 h, `days` days back", async () => {
     const hass = {
       config: { latitude: 47.4, longitude: 8.5 },
       callWS: vi.fn().mockResolvedValue({}),
     };
     const ds = new MeasuredDataSource(hass, {
       sensors,
+      days: 3,
       forecast: { type: 'today' },
       show_forecast: true,
       show_station: true,
@@ -762,53 +828,36 @@ describe('MeasuredDataSource hourly mode', () => {
     await ds._fetchAggregates();
     const [msg] = hass.callWS.mock.calls[0];
     expect(msg.period).toBe('hour');
-    const startMs = new Date(msg.start_time).getTime();
-    const endMs = new Date(msg.end_time).getTime();
-    // 12 station hours + 1 baseline hour for cumulative-precipitation
-    // diff = 13 hours total.
-    expect(Math.round((endMs - startMs) / HOUR_MS)).toBe(13);
+    const expectedStart = new Date();
+    expectedStart.setHours(0, 0, 0, 0);
+    expectedStart.setDate(expectedStart.getDate() - 3);
+    expect(new Date(msg.start_time).getTime()).toBe(expectedStart.getTime() - HOUR_MS);
+    // End = next full hour (exclusive), same as before.
+    const end = new Date(msg.end_time);
+    expect(end.getMinutes()).toBe(0);
+    expect(end.getTime()).toBeGreaterThan(Date.now());
+    expect(end.getTime() - Date.now()).toBeLessThanOrEqual(HOUR_MS);
   });
 
-  it("_fetchAggregates 'today' + station-only → 25 h window (24+1 baseline)", async () => {
-    const hass = {
+  it("_fetchAggregates 'today' and 'hourly' issue identical recorder requests", async () => {
+    const mkHass = () => ({
       config: { latitude: 47.4, longitude: 8.5 },
       callWS: vi.fn().mockResolvedValue({}),
-    };
-    const ds = new MeasuredDataSource(hass, {
-      sensors,
-      forecast: { type: 'today' },
-      show_forecast: false,
-      show_station: true,
     });
-    await ds._fetchAggregates();
-    const [msg] = hass.callWS.mock.calls[0];
-    expect(msg.period).toBe('hour');
-    const startMs = new Date(msg.start_time).getTime();
-    const endMs = new Date(msg.end_time).getTime();
-    // 24 hours back + 1 baseline = 25 hours.
-    expect(Math.round((endMs - startMs) / HOUR_MS)).toBe(25);
-  });
-
-  it("_fetchAggregates 'today' ignores cfg days (always single-day horizon)", async () => {
-    // User has days: 7 in their config but switches to 'today' — the
-    // recorder fetch should still use the 12 h / 24 h horizon, not
-    // 7 × 24 = 168.
-    const hass = {
-      config: { latitude: 47.4, longitude: 8.5 },
-      callWS: vi.fn().mockResolvedValue({}),
-    };
-    const ds = new MeasuredDataSource(hass, {
-      sensors,
-      days: 7,
-      forecast: { type: 'today' },
-      show_forecast: true,
-    });
-    await ds._fetchAggregates();
-    const [msg] = hass.callWS.mock.calls[0];
-    const startMs = new Date(msg.start_time).getTime();
-    const endMs = new Date(msg.end_time).getTime();
-    // Combination = 12 + 1 = 13 h regardless of cfg days: 7
-    expect(Math.round((endMs - startMs) / HOUR_MS)).toBe(13);
+    const hassToday = mkHass();
+    const hassHourly = mkHass();
+    await new MeasuredDataSource(hassToday, {
+      sensors, days: 5, forecast: { type: 'today' }, show_forecast: true,
+    })._fetchAggregates();
+    // Identical requests dedupe module-wide — clear so the hourly
+    // source actually issues its own callWS for the comparison.
+    clearDedupeCaches();
+    await new MeasuredDataSource(hassHourly, {
+      sensors, days: 5, forecast: { type: 'hourly' }, show_forecast: true,
+    })._fetchAggregates();
+    const [msgToday] = hassToday.callWS.mock.calls[0];
+    const [msgHourly] = hassHourly.callWS.mock.calls[0];
+    expect(msgToday).toEqual(msgHourly);
   });
 });
 

@@ -6,6 +6,314 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The moon line computes itself — HA's Moon integration is no longer
+  needed.** The sun cell's moon line no longer reads any entity:
+  illuminated fraction, waxing/waning, and the next moonrise/moonset
+  are computed in-card from the clock and HA's configured location
+  (ADR-0022). The 8-step phase icon is replaced by a dynamically drawn
+  disc that shows the *exact* illumination (a 78 % gibbous looks
+  different from a 60 % one), painted true to nature in both themes —
+  lit side white, shadow black, with a thin theme-contrast outline —
+  and mirrored on the southern hemisphere where the moon appears
+  flipped. The localized phase name gives way to the illumination
+  percentage plus the next moon event (`↑ 21:14` / `↓ 06:32`,
+  mirroring the sun line's next-event-only policy). The line now
+  renders for every install with the sun cell enabled — no Moon
+  integration, no configuration. Opt out with `show_moon: false`.
+  `sensors.moon_phase` is deprecated and ignored (still accepted, so
+  v2.2 configs keep validating).
+
+### Fixed
+
+- **Precipitation bars rescale as the rain develops — no reload needed.**
+  The chart's y-axis ceilings were computed once when the chart was
+  built; the in-place data refresh that runs while the card stays on
+  screen kept drawing new values against that stale scale. During
+  intensifying rain a bucket that outgrew the old ceiling clipped flat
+  at the top (and neighbouring bars read as equally tall) until a page
+  reload rebuilt the chart. The precipitation ceiling — and the
+  temperature-axis padding, which had the same frozen-at-build-time
+  problem on long-running dashboards — are now re-derived from the
+  fresh data on every update, on the same redraw.
+- **The pressure-trend arrow shows up again after a page load.** Since
+  v2.2.0's stale-while-revalidate hydration, the first recorder result
+  after opening a dashboard usually matches the persisted station
+  payload, and the identical-payload guard skipped the 3-h
+  pressure-delta fetch along with the redundant re-render — the
+  pressure row stayed on the legacy gauge icon until the next hour
+  bucket changed the payload. The delta refresh now runs on every
+  station callback, ahead of the guard; its hourly cache keeps the
+  extra invocations free.
+
+## [2.2.4] — 2026-08-09
+
+### Fixed
+
+- **The today view stays on whole days.** After midnight (or whenever
+  the weather provider extends its forecast) the day pager could end
+  up showing a window like "yesterday 21:00 → today 18:00" instead of
+  one full calendar day. The view now re-aligns itself to whole-day
+  pages after every data refresh.
+- **The first day no longer goes missing from the hourly timeline.**
+  History used to start exactly N×24 hours before "now", so the oldest
+  day appeared as a sliver too narrow to carry its label in the
+  timeline below the chart. History now starts at that day's midnight
+  — the first day is complete, in the chart and in the timeline.
+
+## [2.2.3] — 2026-08-08
+
+### Added
+
+- **Solar-irradiance sensors (W/m²) work as the illuminance source.**
+  Stations that report solar irradiance instead of lux (SWS-12500,
+  Ecowitt solar sensors, …) can now be picked in the same
+  `sensors.illuminance` slot — detected by unit (`W/m²`) or
+  `device_class: irradiance` and converted internally at 120 lm/W
+  daylight luminous efficacy. Feeds the condition classifier, the
+  lux-derived station sunshine, and the live sun-strength row; the
+  editor's sensor picker lists irradiance entities, and auto-detection
+  falls back to them. Fine-tuning stays available via
+  `condition_mapping.sunshine_lux_ratio`.
+  ([community report](https://community.home-assistant.io/t/weather-station-card-weather-station-meets-forecast/1011385/15))
+
+## [2.2.2] — 2026-08-08
+
+Readability release, shaped by maintainer-guided visual reviews:
+chart labels stay legible on every background, dark themes lose their
+murky forecast gold, and a scroll-dependent bar-colour bug is gone.
+
+### Changed
+
+- **Temperature labels get a background-colour halo.** Every "16°"
+  value is drawn with a 3-px outline in the card background colour, so
+  labels stay readable on top of full-strength sunshine and
+  precipitation bars — in both themes, without changing the palette.
+- **The temperature line always leaves room for its labels.** The
+  TempAxis padding is now pixel-aware: at small `chart_height` values
+  the proportional top/bottom reserve fell below the label's fixed
+  pixel need and values poked into the date/time band. The scale now
+  pads until the labels fit; at the default chart height nothing
+  changes, and the sunshine/precipitation bars (own axes) keep their
+  exact heights.
+- **Forecast sunshine bars look golden in dark themes.** The default
+  gold at 45 % opacity blended with dark card backgrounds into a murky
+  olive; dark themes now render the forecast side in a warmer honey
+  gold (`rgba(255,193,7,0.58)`). The measured side stays full-strength
+  original gold, light themes are unchanged, and a custom
+  `sunshine_color` keeps the classic behaviour.
+- **The low-temperature line's default blue is now theme-aware.** The
+  single steel-blue default read washed-out on light backgrounds and
+  dropped to ~2.5:1 contrast in dark themes. The DEFAULT now resolves
+  per theme (deeper blue on light, brighter blue on dark, picked via
+  the card background's luma); any colour set in YAML or the editor
+  is untouched.
+  ([community report](https://community.home-assistant.io/t/weather-station-card-weather-station-meets-forecast/1011385/15))
+
+### Fixed
+
+- **Measured bars no longer borrow the forecast tint after scrolling.**
+  uPlot's bar renderer indexes per-bar colour arrays by absolute data
+  index, but the card supplied window-relative arrays — once the
+  virtualized canvas panned, every bar colour shifted by the window
+  offset and (most visibly) today's measured rain rendered in the
+  pale forecast colour. Colours are now supplied absolutely indexed.
+- **Dew point shows at most one decimal.** Dew points sourced from a
+  weather entity's attribute are often computed full-precision floats
+  and rendered raw (`12.345678 °C`); the live panel now caps the
+  display at one decimal, matching the main temperature. Clean sensor
+  values pass through unchanged.
+  ([community report](https://community.home-assistant.io/t/weather-station-card-weather-station-meets-forecast/1011385/15))
+
+## [2.2.1] — 2026-08-07
+
+Polish release for the v2.2.0 day pager plus a calmer restart
+experience: pager pages are always full, the day timeline only shows
+whole days, and an HA restart no longer paints the card red.
+
+### Changed
+
+- **Calmer handling of unavailable sensors (HA restart).** When
+  sensors flip to `unavailable` — typically for a minute or two after
+  a Home Assistant restart — the card no longer paints a red error
+  banner listing every sensor. Instead: the live panel keeps showing
+  the last known values, slightly dimmed, with a subtle
+  "Waiting for sensor data…" line; the red treatment is gone entirely.
+  Only when a sensor stays unavailable beyond a 5-minute grace period
+  (and HA reports it is fully running) does a compact warning line
+  appear. Fixes [#213](https://github.com/chriguschneider/weather-station-card/issues/213).
+
+### Fixed
+
+- **Hourly-ish data windows end on whole calendar days.** The
+  count-based window (`days × 24` hours from now) ended mid-day, so
+  the day timeline grew a sliver segment — a "day" holding a single
+  trailing hour (e.g. a lone `Fri 00:00` column). The forecast tail
+  now stops at the last fully covered day and the oldest station day
+  starts at midnight; the current day ("now") is untouched. A forecast
+  shorter than one day is never dropped.
+- **The today view never opens on a half-empty page.** Single-sided
+  setups anchor on their data instead of the calendar day:
+  forecast-only pages start at the first forecast block (rolling
+  next-24-h windows — previously an evening mount showed a blank grid
+  with the forecast squeezed into the last columns), station-only
+  pages end at the "now" block (rolling last-24-h window — previously
+  the evening of the current day was empty grid). Combination keeps
+  calendar pages, where both sides fill the day. Fully empty leading
+  days (e.g. recorder history shorter than `days:`) are skipped in
+  every mode.
+
+### Under the hood
+
+- Unit tests for the v2.2.0 leaf modules (`series-cache`,
+  `shared-requests`) and day-pager helpers; both utils joined the
+  vitest coverage scope (they were invisible to the coverage report
+  and dragged SonarCloud's new-code coverage below the 80 % gate).
+- The SonarCloud job now waits for the quality-gate verdict
+  (`sonar.qualitygate.wait`) — a failing gate blocks the PR instead
+  of surfacing on master after the merge.
+
+## [2.2.0] — 2026-08-07
+
+The "flip through your week" release: the today view becomes a day
+pager, scrolling gets a navigable day timeline, the live panel links
+every value to its sensor — and the chart pipeline was rebuilt so all
+of this runs smoothly on Raspberry Pi dashboards and wall tablets.
+
+### Added
+
+- **The today view is now a day pager.** Instead of a fixed 24-hour
+  window, the viewport frames exactly one calendar day (8 × 3-hour
+  blocks, aligned to 00/03/…/21 o'clock) and pages day-wise through
+  your whole `days:` window: the chevrons step one day at a time,
+  free scrolling settles on day boundaries, and the view opens on the
+  current day. Measured hours draw solid, forecast hours dashed —
+  same rules as before. `forecast.number_of_forecasts` is ignored in
+  this mode (the "one day per page" frame is the point).
+- **Day timeline under the scrolling chart.** Hourly and today mode
+  show a slim minimap below the chart: one segment per calendar day
+  (today bold), with a translucent thumb marking the visible section.
+  Click or scrub it to navigate. The date of the leftmost/rightmost
+  visible column is also overlaid at the viewport edges, so you always
+  know which day you're looking at mid-scroll.
+- **Every live-panel value opens its sensor.** Temperature, humidity,
+  pressure, wind, sun strength, condition — clicking (or keyboard-
+  activating) a value opens Home Assistant's more-info dialog for the
+  sensor behind it, same as HA's own entities card. Values without a
+  backing entity render as plain text.
+- **Moon phase in the live panel.** The sun cell now shows the current
+  moon phase (icon + localized name) fed by HA's official
+  [Moon integration](https://www.home-assistant.io/integrations/moon/).
+  Auto-detected (`sensor.moon_phase`, legacy `sensor.moon`) or set
+  explicitly via `sensors.moon_phase`. No entity → no line.
+- **Only the next sun event is shown.** During the day that's the
+  sunset, at night the sunrise — the other one was hours of stale
+  information. The freed line carries the moon phase.
+
+### Changed
+
+- **Scrolling and redraws got dramatically cheaper.** The chart canvas
+  is now viewport-sized and pans while you scroll, instead of being a
+  full-content-width bitmap (~7 700 px at hourly) repainted on every
+  frame. Label plugins skip off-screen columns. Redraw cost now scales
+  with what's visible, not with how much data is loaded.
+- **Sharper temperature line on standard-DPI screens.** The line is
+  drawn at 2 px into a supersampled buffer on low-DPI displays (wall
+  tablets, older monitors), eliminating the "pixelated" look; the
+  forecast dash pattern is longer and calmer.
+- **The card paints instantly after a reload.** The last fetched
+  station and forecast series (up to 12 h old) are persisted and shown
+  immediately while the live fetch — 0.5–3 s of recorder roundtrip on
+  Pi-class hosts — runs in the background. The skeleton only appears
+  on a genuinely cold cache.
+- **Several cards share one request.** Dashboards with multiple
+  weather-station-cards used to issue identical recorder / history /
+  Open-Meteo requests once per card; identical requests now collapse
+  into a single roundtrip shared by all cards in the tab.
+- **The lux-sunshine derivation stopped refetching history it already
+  knows.** Sunshine hours for completed days are cached per day; each
+  hourly poll now only fetches today's illuminance samples (~1/8 of
+  the previous payload).
+- **Hidden dashboards go fully idle.** When the tab or dashboard is
+  not visible, the 1 Hz clock stops and the hourly station poll is
+  deferred; both resume (and refresh immediately) the moment the
+  dashboard is shown again.
+
+### Fixed
+
+- Calendar-aligned 3-hour aggregation: recorder gaps no longer shift
+  later blocks off their wall-clock slot in the today view.
+- The 1 Hz clock timer was re-created on every render and kept running
+  when `show_main` was turned off; it is now managed idempotently and
+  stops with the panel.
+- Sensor state changes no longer trigger a full chart repaint per tick
+  — the chart only redraws when the plotted series actually changed.
+
+### Under the hood
+
+- New ADRs: [0019](docs/adr/0019-virtualized-chart-canvas.md)
+  (virtualized canvas + supersampling),
+  [0020](docs/adr/0020-cross-card-request-dedup-and-persistent-caches.md)
+  (request dedup + persistent caches),
+  [0021](docs/adr/0021-today-mode-day-pager.md) (today day pager).
+- New leaf modules `src/utils/shared-requests.ts` (keyed in-flight
+  dedup + result TTL; results are shared references — derive, don't
+  mutate) and `src/utils/series-cache.ts` (versioned localStorage
+  stale-while-revalidate with expired-slot pruning). Cache keys carry
+  the full fetch signature including the sensor role=entity mapping.
+- `effectiveVisibleBars` is resolved in the chart orchestrator and
+  passed to `draw.ts` via `BuildChartOpts` — config interpretation
+  stays out of the render module (dependency-cruiser gate is green).
+- scroll-ux rebinds when the timeline appears/disappears on a reused
+  wrapper element; programmatic day-page navigations declare their
+  destination so the settle-snap can't cancel them mid-flight, with a
+  failsafe snap if an animation is interrupted.
+- The moon-phase entity joins the entity-delta gate's watch list;
+  it is excluded from the recorder statistics fetch (enum sensor).
+
+## [2.1.9] — 2026-06-12
+
+### Fixed
+
+- **The temperature line stays sharp when the card changes width.** When
+  the card got wider or narrower after the chart was first drawn — for
+  example when opening or closing the Home Assistant sidebar, resizing
+  the browser window, or while the dashboard grid was still settling —
+  the chart canvas was stretched to the new width instead of being
+  redrawn, leaving the temperature line pixelated and blurry (most
+  visibly in the hourly view). The card now redraws the chart at the
+  new width, so the line stays crisp. Nothing to change in your
+  configuration.
+- **The card reliably notices width changes again.** Two related gaps
+  meant the card could stop reacting to size changes entirely: the
+  size observer could attach before the card's frame existed (and then
+  watched nothing forever), and after switching dashboard views it was
+  never re-attached. Both paths are fixed, so the sharp-line fix above
+  also holds across view switches and slow first renders.
+
+### Under the hood
+
+- `measureCard()`'s skip-rebuild guard now calls `chart.resize()`
+  (→ `uplot.setSize()`) when the `.chart-container` width changed while
+  the bar count did not. The guard previously assumed Chart.js's
+  `responsive: true` observer would handle this — that observer died
+  with the uPlot swap (ADR-0012). Regression spec:
+  `tests-e2e/chart-resize-sharpness.spec.ts`.
+- ResizeObserver wiring made self-healing: `_observeResizeTarget()`
+  re-pins the observer to the live `<ha-card>` on every render (Lit can
+  swap the element between render branches; the delayed attach could
+  fire before the first render committed), and `detachResizeObserver()`
+  resets `resizeInitialized` so a reconnect re-attaches instead of
+  staying observer-less for the rest of the element's life.
+- Removed the v2.0 feedback call-out from the README.
+- The README's release badge refreshes right after a release instead of
+  lagging up to a day: `build.yml` now dispatches `badges.yml` after the
+  release-asset upload. The workflow's `release: published` trigger had
+  never fired — the release is created with `GITHUB_TOKEN`, whose events
+  never trigger other workflows (GitHub's recursion guard); an explicit
+  `gh workflow run` is exempt from that guard.
+
 ## [2.1.8] — 2026-06-11
 
 A pure performance release: the card now sits idle between weather

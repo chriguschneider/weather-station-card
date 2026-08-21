@@ -45,7 +45,13 @@ export interface BuildChartOpts {
   backgroundColor: string;
   dividerColor: string;
   chartTextColor?: string;
-  precipMax: number;
+  /** Mode/unit-static FLOOR for the precipitation y-axis ceiling,
+   *  resolved by the orchestrator (config interpretation stays in the
+   *  wiring layer). The actual ceiling — max(floor, tallest bucket) —
+   *  is derived from the data HERE, at build time and again on every
+   *  in-place update(), so a data refresh rescales the bars without a
+   *  destroy+rebuild. */
+  precipFloor: number;
   precipUnit: string;
   tempUnit: string;
   doubledToday: boolean;
@@ -65,6 +71,11 @@ export interface BuildChartOpts {
    *  time (Lit just committed the template; layout may still be settling).
    *  uPlot needs an explicit numeric height up-front. */
   chartHeight: number;
+  /** Viewport size in bars for the scrolling modes (0 = fit-all, no
+   *  virtualization). Computed by the ORCHESTRATOR via
+   *  `effectiveVisibleBars(config)` — config interpretation stays out
+   *  of this render module; draw.ts only consumes the number. */
+  visibleBars: number;
   inPreview?: boolean;
 }
 
@@ -102,6 +113,13 @@ export interface UplotChart {
   destroy(): void;
   resize(width?: number, height?: number): void;
   draw(): void;
+  /** Virtualized-canvas pan (perf pass 2026-08). In scrolling modes
+   *  the canvas is only viewport-wide and pinned (position: sticky);
+   *  the scroll handler calls this with the wrapper's scrollLeft and
+   *  the chart pans via uPlot setScale — a redraw proportional to the
+   *  ~visibleBars columns on screen, not the full series. No-op for
+   *  non-virtualized (non-scrolling) charts. */
+  setScrollWindow(scrollLeftPx: number): void;
 }
 
 type AlignedData = [Array<number>, ...Array<Array<number | null | undefined>>];
@@ -198,6 +216,15 @@ function toAlignedData(
  *  `align: -1` (left half of slot) for the first bar series and
  *  `align: 1` (right half) for the second, with `size: [0.5]` each.
  *  Single-bar charts keep their full `barPercentage` width centered. */
+// Temperature line styling. Width 2 (integer) instead of the old 1.5:
+// at DPR 1 a 1.5 px stroke has NO solid pixel core — the whole line is
+// anti-aliasing fuzz, read by users as "verpixelt". 2 px renders a
+// crisp core row. Dash lengthened from [6,4] to [10,6] so the forecast
+// line reads as a calm dashed curve instead of choppy confetti when
+// the hourly data wiggles by ±0.2 °C.
+const LINE_WIDTH = 2;
+const FORECAST_DASH = [10, 6];
+
 function buildSeries(
   datasets: BuildChartOpts['datasets'],
   textColor: string,
@@ -236,7 +263,7 @@ function buildSeries(
           scale: ds.yAxisID,
           show: !ds.hidden,
           stroke,
-          width: 1.5,
+          width: LINE_WIDTH,
           paths: splineFactory?.() ?? null,
           // Show a small point at each data value — matches the
           // Chart.js baseline's `elements.point.radius: 2`.
@@ -248,8 +275,8 @@ function buildSeries(
           scale: ds.yAxisID,
           show: !ds.hidden,
           stroke,
-          width: 1.5,
-          dash: [6, 4],
+          width: LINE_WIDTH,
+          dash: FORECAST_DASH,
           paths: splineFactory?.() ?? null,
           // Show a small point at each data value — matches the
           // Chart.js baseline's `elements.point.radius: 2`.
@@ -262,7 +289,7 @@ function buildSeries(
           scale: ds.yAxisID,
           show: !ds.hidden,
           stroke,
-          width: 1.5,
+          width: LINE_WIDTH,
           paths: splineFactory?.() ?? null,
           // Show a small point at each data value — matches the
           // Chart.js baseline's `elements.point.radius: 2`.
@@ -309,23 +336,22 @@ function buildSeries(
         align,
       };
       if (fillArr || strokeArr) {
+        // uPlot's bars builder indexes the returned colour arrays with
+        // the ABSOLUTE data index (`fillColors[i]` for i in idx0..idx1)
+        // — NOT relative to idx0. Return the full per-index arrays;
+        // a window-relative slice shifts every bar colour by idx0
+        // columns once the virtualized canvas pans (idx0 > 0), which
+        // painted today's measured rain in the forecast tint.
+        const len = ds.data.length;
+        const fullFill: string[] = new Array(len);
+        const fullStroke: string[] = new Array(len);
+        for (let i = 0; i < len; i++) {
+          fullFill[i] = fillArr?.[i] ?? singleFill;
+          fullStroke[i] = strokeArr?.[i] ?? singleStroke;
+        }
         barOpts.disp = {
-          fill: {
-            unit: 3,
-            values: (_u: uPlot, _si: number, i0: number, i1: number) => {
-              const out: string[] = [];
-              for (let i = i0; i <= i1; i++) out.push(fillArr?.[i] ?? singleFill);
-              return out;
-            },
-          },
-          stroke: {
-            unit: 3,
-            values: (_u: uPlot, _si: number, i0: number, i1: number) => {
-              const out: string[] = [];
-              for (let i = i0; i <= i1; i++) out.push(strokeArr?.[i] ?? singleStroke);
-              return out;
-            },
-          },
+          fill: { unit: 3, values: () => fullFill },
+          stroke: { unit: 3, values: () => fullStroke },
         };
       }
       series.push({
@@ -344,17 +370,108 @@ function buildSeries(
   return series;
 }
 
-/** Y-scale definitions from the orchestrator. Temperature autoscales
- *  with a ±5° padding ring (matches the old `suggestedMin/Max` recipe
- *  in draw.ts); precipitation pins to the orchestrator-provided ceiling
- *  so a single trailing 0.1 mm doesn't blow up the axis; sunshine is
- *  0..1 fractions. */
+/** Mutable x-window state shared between the scale's range function
+ *  and `setScrollWindow`. Non-virtual charts keep min=-0.5 and
+ *  span=columnCount for the chart's whole life; virtual charts pan
+ *  `min` as the user scrolls. */
+interface XWindow {
+  min: number;
+  span: number;
+}
+
+/** Mutable y-scale ceilings, shared BY REFERENCE between the scale
+ *  range closures (buildScales), the per-draw plugin shim
+ *  (buildChartLikeShim), and `update()`. uPlot re-invokes the range
+ *  functions when setData re-ranges the scales, so mutating this
+ *  object right before setData applies a fresh ceiling on that same
+ *  redraw — no destroy+rebuild. Frozen build-time scalars here were
+ *  the "precip bars only rescale on reload" bug: once rain pushed a
+ *  bucket past the ceiling computed at build time, the in-place
+ *  update path kept drawing against the stale maximum and the tall
+ *  bars clipped flat at the top. Same pattern as XWindow above. */
+export interface YScaleState {
+  precipMax: number;
+  tempMin: number;
+  tempMax: number;
+}
+
+/** Precipitation y-axis ceiling: max(floor, tallest finite bucket).
+ *  The mode/unit floor keeps a light-drizzle day from blowing the
+ *  axis up; the data max lifts the ceiling so heavy precipitation
+ *  scales proportionally instead of clipping. Also backs the
+ *  orchestrator's computePrecipMax, so the build path and the
+ *  update() path derive identical ceilings. */
+export function precipCeiling(
+  floor: number,
+  precip: ReadonlyArray<number | null | undefined> = [],
+): number {
+  let dataMax = 0;
+  for (const v of precip) {
+    if (typeof v === 'number' && Number.isFinite(v) && v > dataMax) dataMax = v;
+  }
+  return Math.max(floor, dataMax);
+}
+
+/** TempAxis min/max from the CURRENT temperature values plus the
+ *  reserve fractions (see the pixel-aware reserve computation in
+ *  buildChart). The reserves are the slices of the y-range kept free
+ *  below the lowest / above the highest point so the style2 "X°"
+ *  labels always land inside the chart without crashing into the
+ *  precip-label boxes (bottom) or the date band (top). Solved from
+ *  the proportionality equation
+ *    (lowestValue - tempMin) / (tempMax - tempMin) = bottomReserve
+ *  and mirrored at the top. Constants are proportional to the data
+ *  range so they scale: a narrow temp range (cold week, 3 °C spread)
+ *  gets just enough padding; a wide range gets more headroom. */
+function tempAxisBounds(
+  temps: ReadonlyArray<number | null | undefined>,
+  bottomReserve: number,
+  topReserve: number,
+): { min: number; max: number } {
+  const finite = temps.filter((v): v is number => Number.isFinite(v as number));
+  const rawMin = finite.length ? Math.min(...finite) : 0;
+  const rawMax = finite.length ? Math.max(...finite) : 30;
+  const rawRange = Math.max(1, rawMax - rawMin);
+  const denom = 1 - bottomReserve - topReserve;
+  return {
+    min: rawMin - (rawRange + 3) * (bottomReserve / denom),
+    max: rawMax + (rawRange + 3) * (topReserve / denom),
+  };
+}
+
+/** Re-derive the y-scale ceilings from the given per-series data and
+ *  write them into `state`. ONE code path for build and update: called
+ *  with the freshly-built datasets at construction time and with the
+ *  current data arrays from `update()`, so an in-place refresh lands
+ *  on exactly the ceiling a full rebuild would compute. Exported for
+ *  unit tests. */
+export function refreshYScaleState(
+  state: YScaleState,
+  series: ReadonlyArray<{ yAxisID: string; data: ReadonlyArray<number | null | undefined> }>,
+  precipFloor: number,
+  bottomReserve: number,
+  topReserve: number,
+): void {
+  const byAxis = (axisId: string): Array<number | null | undefined> => {
+    const out: Array<number | null | undefined> = [];
+    for (const s of series) {
+      if (s.yAxisID === axisId) out.push(...s.data);
+    }
+    return out;
+  };
+  state.precipMax = precipCeiling(precipFloor, byAxis('PrecipAxis'));
+  const bounds = tempAxisBounds(byAxis('TempAxis'), bottomReserve, topReserve);
+  state.tempMin = bounds.min;
+  state.tempMax = bounds.max;
+}
+
+/** Y-scale definitions. Temperature and precipitation ranges read the
+ *  shared YScaleState LIVE (same pattern as the x-scale's XWindow),
+ *  so update() can rescale without rebuilding the chart; sunshine is
+ *  fixed 0..1 fractions. */
 function buildScales(
-  _data: BuildChartOpts['data'],
-  precipMax: number,
-  columnCount: number,
-  tempMin: number,
-  tempMax: number,
+  scaleState: YScaleState,
+  win: XWindow,
 ): uPlot.Scales {
   return {
     // x scale padded by 0.5 either side so data values land at
@@ -362,12 +479,14 @@ function buildScales(
     // padding, uPlot positions data 0 at xOff (left edge) and data
     // N-1 at xOff+xDim (right edge); the daily-tick-labels and
     // other plugins position labels at column-CENTER (i+0.5)*colW.
-    x: { time: false, range: () => [-0.5, Math.max(0.5, columnCount - 0.5)] },
+    // The range function reads the shared window state so a
+    // virtualized chart pans by mutating `win.min` + setScale.
+    x: { time: false, range: () => [win.min, win.min + win.span] },
     TempAxis: {
-      range: () => [tempMin, tempMax],
+      range: () => [scaleState.tempMin, scaleState.tempMax],
     },
     PrecipAxis: {
-      range: () => [0, precipMax],
+      range: () => [0, scaleState.precipMax],
     },
     SunshineAxis: {
       range: () => [0, 1],
@@ -425,16 +544,32 @@ function buildChartLikeShim(
   u: uPlot,
   columnCount: number,
   datasets: BuildChartOpts['datasets'],
-  tempMinForShim: number,
-  tempMaxForShim: number,
+  scaleState: YScaleState,
 ): ChartLike {
+  // The shim is rebuilt per draw, AFTER any scale re-range — reading
+  // the live state here keeps plugin pixel math and uPlot's own scale
+  // in agreement across in-place updates.
+  const { tempMin: tempMinForShim, tempMax: tempMaxForShim, precipMax } = scaleState;
   const chartArea = {
     left: u.bbox.left / uPlot.pxRatio,
     top: u.bbox.top / uPlot.pxRatio,
     right: (u.bbox.left + u.bbox.width) / uPlot.pxRatio,
     bottom: (u.bbox.top + u.bbox.height) / uPlot.pxRatio,
   };
-  const colW = columnCount > 0 ? (u.bbox.width / uPlot.pxRatio) / columnCount : 0;
+  // X mapping derives from the LIVE x-scale window rather than the
+  // total column count, so the same formula covers both the classic
+  // full-width canvas (scale spans all columns) and the virtualized
+  // viewport canvas (scale spans ~visibleBars columns, panned via
+  // setScrollWindow). `xScale.width` reports the VIRTUAL full width
+  // (columnCount × px-per-column) — plugins divide it by ticks.length
+  // to recover the column width, which must stay scroll-invariant.
+  const plotW = u.bbox.width / uPlot.pxRatio;
+  const sx = u.scales['x'];
+  const scaleMin = (sx && typeof sx.min === 'number' && Number.isFinite(sx.min)) ? sx.min : -0.5;
+  const scaleMax = (sx && typeof sx.max === 'number' && Number.isFinite(sx.max)) ? sx.max : (Math.max(0.5, columnCount - 0.5));
+  const span = Math.max(0.001, scaleMax - scaleMin);
+  const pxPerCol = plotW / span;
+  const xToPx = (v: number): number => chartArea.left + (v - scaleMin) * pxPerCol;
   // X-axis lives ABOVE the chart drawing area (uPlot side: 0). The
   // Chart.js plugins were written against that orientation
   // (`position: 'top'`), so `xScale.top` is the canvas top (0) and
@@ -444,46 +579,43 @@ function buildChartLikeShim(
     ticks: Array.from({ length: columnCount }, (_, i) => ({ value: i })),
     top: 0,
     bottom: chartArea.top,
-    width: u.bbox.width / uPlot.pxRatio,
-    getPixelForTick: (i: number) => chartArea.left + (i + 0.5) * colW,
-    getPixelForValue: (v: number) => chartArea.left + (v + 0.5) * colW,
+    width: columnCount * pxPerCol,
+    getPixelForTick: xToPx,
+    getPixelForValue: xToPx,
+  };
+  // Y mapping is pure arithmetic against the known scale ranges
+  // (PrecipAxis [0, precipMax], SunshineAxis [0, 1], TempAxis
+  // [tempMin, tempMax]) — no u.valToPos, which both cost a call +
+  // try/catch per data point per draw and returned NaN when a
+  // split-line series left a scale unranged.
+  const drawHeight = chartArea.bottom - chartArea.top;
+  const tempRange = (tempMaxForShim - tempMinForShim) || 1;
+  const yFor = (axisId: string, v: number): number => {
+    if (axisId === 'PrecipAxis') {
+      return precipMax > 0 ? chartArea.bottom - (v / precipMax) * drawHeight : chartArea.bottom;
+    }
+    if (axisId === 'SunshineAxis') {
+      return chartArea.bottom - v * drawHeight;
+    }
+    return chartArea.bottom - ((v - tempMinForShim) / tempRange) * drawHeight;
   };
   const precipScale: ChartScaleLike = {
     ticks: [],
     top: chartArea.top,
     bottom: chartArea.bottom,
-    width: u.bbox.width / uPlot.pxRatio,
+    width: plotW,
     getPixelForTick: () => 0,
-    getPixelForValue: (v: number) => {
-      // Anchor value-0 lookups to the actual chart-area bottom: the
-      // precip-label plugin uses this to position the "Xmm" boxes
-      // centered on the PrecipAxis baseline, and we want them sitting
-      // at the bottom of the chart. uPlot's valToPos(0, scale) can
-      // drift when the scale's range is contested by other series on
-      // the same y direction, so for the bar-baseline case we read it
-      // off the bbox directly.
-      if (v === 0) return chartArea.bottom;
-      try { return u.valToPos(v, 'PrecipAxis'); } catch { return chartArea.bottom; }
-    },
+    // Value-0 anchors to the actual chart-area bottom — the precip-label
+    // plugin centres its "Xmm" boxes on the PrecipAxis baseline.
+    getPixelForValue: (v: number) => (v === 0 ? chartArea.bottom : yFor('PrecipAxis', v)),
   };
-  // TempAxis pixel mapping computed directly from the orchestrator's
-  // tempMin/tempMax (passed in via opts) so we don't depend on
-  // u.valToPos(_, 'TempAxis'), which has been returning NaN when
-  // uPlot's scale init paths haven't fully populated the scale's
-  // min/max (split-line series with mostly-null data on one side
-  // can leave the scale unranged).
   const tempScale: ChartScaleLike = {
     ticks: [],
     top: chartArea.top,
     bottom: chartArea.bottom,
-    width: u.bbox.width / uPlot.pxRatio,
+    width: plotW,
     getPixelForTick: () => 0,
-    getPixelForValue: (v: number) => {
-      const drawHeight = chartArea.bottom - chartArea.top;
-      const range = (tempMaxForShim - tempMinForShim) || 1;
-      const fracFromMin = (v - tempMinForShim) / range;
-      return chartArea.bottom - fracFromMin * drawHeight;
-    },
+    getPixelForValue: (v: number) => yFor('TempAxis', v),
   };
   return {
     ctx: u.ctx,
@@ -500,11 +632,10 @@ function buildChartLikeShim(
       const data: ChartBarLike[] = [];
       for (let i = 0; i < ds.data.length; i++) {
         const v = ds.data[i];
-        const x = chartArea.left + (i + 0.5) * colW;
-        let y = chartArea.bottom;
-        if (typeof v === 'number' && Number.isFinite(v)) {
-          try { y = u.valToPos(v, ds.yAxisID); } catch { /* axis not ready */ }
-        }
+        const x = xToPx(i);
+        const y = (typeof v === 'number' && Number.isFinite(v))
+          ? yFor(ds.yAxisID, v)
+          : chartArea.bottom;
         const colorAtI = Array.isArray(ds.borderColor) ? ds.borderColor[i] : ds.borderColor;
         data.push({ x, y, options: { borderColor: typeof colorAtI === 'string' ? colorAtI : undefined } });
       }
@@ -521,8 +652,15 @@ function buildChartLikeShim(
  *  `.forecast-content`, which IS sized by the time drawChart fires).
  *  Falls back to the target's own width if the container can't be
  *  resolved. */
-function measureContainer(target: HTMLElement, chartHeight: number): { width: number; height: number } {
-  const container = target.closest('.chart-container') as HTMLElement | null;
+function measureContainer(
+  target: HTMLElement,
+  chartHeight: number,
+  wrapperEl: HTMLElement | null = null,
+): { width: number; height: number } {
+  // Virtualized mode: the canvas is viewport-sized, so measure the
+  // scroll wrapper (the visible viewport), NOT the full-content-width
+  // .chart-container.
+  const container = wrapperEl ?? (target.closest('.chart-container') as HTMLElement | null);
   const rect = (container ?? target).getBoundingClientRect();
   const width = Math.max(1, Math.round(rect.width || target.getBoundingClientRect().width));
   return { width, height: Math.max(1, chartHeight) };
@@ -534,7 +672,7 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
     plugins,
     data,
     config,
-    precipMax,
+    precipFloor,
     sunshineLabelBand,
   } = opts;
 
@@ -548,40 +686,105 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
   // destroys the previous instance before constructing a new one).
   while (target.firstChild) target.removeChild(target.firstChild);
 
-  const labelsBaseSize = parseInt(String(config.forecast.labels_font_size)) || 11;
-  const { width, height } = measureContainer(target, opts.chartHeight);
+  // ── Canvas virtualization (perf pass 2026-08) ─────────────────────
+  // In scrolling modes the canvas used to be CONTENT-width (~7 700 CSS
+  // px at hourly ×DPR² device px ≈ tens of MB of buffer) and scrolled
+  // via CSS overflow — every redraw painted the full width. Now the
+  // canvas is VIEWPORT-width, pinned with position:sticky inside the
+  // full-width .chart-container, and the x-scale window pans via
+  // `setScrollWindow` as the wrapper scrolls. The DOM rows (condition
+  // icons, wind) keep the full-width native scroll; alignment holds
+  // because px-per-column is identical on both sides
+  // (viewportW / visibleBars === contentW / totalBars).
+  const wrapperEl = target.closest('.forecast-scroll.scrolling') as HTMLElement | null;
+  // Same viewport rule as render() — 'today' is pinned to 8 bars
+  // (one calendar day per page), other modes use number_of_forecasts.
+  // The orchestrator computes this via effectiveVisibleBars(config).
+  const visibleBars = opts.visibleBars;
+  const virtual = !!wrapperEl && visibleBars > 0 && columnCount > visibleBars;
 
-  // Pre-compute TempAxis min/max so the shim and the scale agree.
-  //
-  // Bottom-pad sized so the lowest data value always renders with
-  // ~25 % of the chart drawing area BELOW it — that band is the
-  // exact space the style2 low-temp label ("X°" rendered below the
-  // dot) needs, plus a small gap above the precip-label boxes at
-  // chartArea.bottom. Solved from the proportionality equation
-  //   (lowestValue - tempMin) / (tempMax - tempMin) = 0.25
-  // so the label always fits inside the chart without overlapping
-  // either the line dot or the precip box.
-  // Same on top so the high-temp labels have room above.
-  const tempFiniteForShim = [...data.tempHigh, ...data.tempLow].filter((v): v is number => Number.isFinite(v as number));
-  const rawMin = tempFiniteForShim.length ? Math.min(...tempFiniteForShim) : 0;
-  const rawMax = tempFiniteForShim.length ? Math.max(...tempFiniteForShim) : 30;
-  const rawRange = Math.max(1, rawMax - rawMin);
-  // Reserve a fraction of the y-axis range at top and bottom so
-  // the style2 "X°" labels (rendered below the low spline and above
-  // the high spline) always have chart space to land in without
-  // crashing into the precip-label boxes (bottom) or the date band
-  // (top). Constants are proportional to the data range so they
-  // scale: a narrow temp range (cold week, 3 °C spread) gets just
-  // enough padding; a wide range (cold morning → hot afternoon,
-  // 25 °C spread) gets more headroom.
-  const bottomReserve = 0.24;
-  const topReserve = 0.18;
-  const tempMinForShim = rawMin - (rawRange + 3) * (bottomReserve / (1 - bottomReserve - topReserve));
-  const tempMaxForShim = rawMax + (rawRange + 3) * (topReserve / (1 - bottomReserve - topReserve));
+  const labelsBaseSize = parseInt(String(config.forecast.labels_font_size)) || 11;
+  const { width, height } = measureContainer(target, opts.chartHeight, virtual ? wrapperEl : null);
+
+  // Sticky pinning + explicit width for the virtual canvas; reset any
+  // leftovers when this build is non-virtual (mode toggle reusing the
+  // same target div).
+  if (virtual) {
+    target.style.position = 'sticky';
+    target.style.left = '0';
+    target.style.width = `${width}px`;
+  } else {
+    target.style.position = '';
+    target.style.left = '';
+    target.style.width = '';
+  }
+
+  // X-window: virtual charts start at the wrapper's current scroll
+  // offset (a rebuild mid-scroll must not snap the view); classic
+  // charts span every column for their whole life.
+  let colWpx = virtual ? width / visibleBars : 0;
+  const win: XWindow = virtual
+    ? { min: (wrapperEl ? wrapperEl.scrollLeft : 0) / colWpx - 0.5, span: visibleBars }
+    : { min: -0.5, span: Math.max(1, columnCount) };
+
+  // TempAxis reserve fractions — the y-range slices kept free below /
+  // above the data so the style2 "X°" labels fit (see tempAxisBounds
+  // for the proportionality math).
+  // Pixel-aware floor (community post 15 "yellow", maintainer
+  // decision): the label needs a FIXED number of pixels — offset
+  // above/below the dot (fontSize + 4) plus half a glyph plus
+  // breathing room — while the proportional reserve shrinks with the
+  // chart. At small chart_height values the 18 % top slice fell below
+  // the label's pixel need and "34°" poked into the date/time band.
+  // Raise the fractions until the label fits (capped so the plot
+  // never degenerates); at the default chart height the floors are
+  // inactive and the classic proportions apply unchanged. This pads
+  // ONLY the TempAxis — the sunshine/precip bars live on their own
+  // axes and keep their exact heights. Layout-static per chart
+  // instance, so update() can reuse them when it re-derives bounds.
+  const labelFontPx = labelsBaseSize + 1;
+  const labelNeedPx = labelFontPx + 4 + Math.ceil(labelFontPx / 2) + 2;
+  const xAxisBandPx = Math.ceil(labelsBaseSize * 1.3) * 2 + sunshineLabelBand + 10;
+  const plotHeightPx = Math.max(40, height - xAxisBandPx);
+  const bottomReserve = Math.min(0.4, Math.max(0.24, labelNeedPx / plotHeightPx));
+  const topReserve = Math.min(0.35, Math.max(0.18, labelNeedPx / plotHeightPx));
+
+  // Y-scale ceilings: derived from the initial data here, RE-derived
+  // from the live data on every update() — the scale range closures
+  // and the per-draw plugin shim read this object by reference, so
+  // both stay in sync with what is actually drawn.
+  const scaleState: YScaleState = { precipMax: precipFloor, tempMin: 0, tempMax: 1 };
+  refreshYScaleState(scaleState, datasets, precipFloor, bottomReserve, topReserve);
 
   const series = buildSeries(datasets, opts.textColor, hasBothBlocks);
-  const scales = buildScales(data, precipMax, columnCount, tempMinForShim, tempMaxForShim);
+  const scales = buildScales(scaleState, win);
   const axes = buildAxes(sunshineLabelBand, labelsBaseSize);
+
+  // ── Supersampling for low-DPR displays (visual pass 2026-08) ──────
+  // At DPR 1 every stroke is rendered with exactly one sample per
+  // pixel — a 2 px spline is visibly stair-stepped ("verpixelt").
+  // Render into a 2× pixel buffer instead and let the canvas's CSS
+  // size (unchanged) scale it down: 4 samples per displayed pixel,
+  // the same smoothing a Retina screen gets for free. Implementation:
+  // uPlot 1.6.x has no per-instance pxRatio, so after every internal
+  // canvas (re)size we grow the BUFFER and pre-scale the context —
+  // uPlot's own drawing (device-px coordinates) and the plugin layer
+  // (ctx.scale on top of the existing transform) both inherit the
+  // scale transparently. Memory cost is 4× the canvas buffer, which
+  // the viewport-sized virtual canvas keeps at ~2 MB. High-DPR
+  // devices skip this — they're already smooth.
+  const superSample = (typeof devicePixelRatio === 'number' && devicePixelRatio < 1.5) ? 2 : 1;
+  const applySuperSample = (u: uPlot): void => {
+    if (superSample === 1) return;
+    const can = u.ctx.canvas;
+    const targetW = Math.round(u.width * uPlot.pxRatio * superSample);
+    const targetH = Math.round(u.height * uPlot.pxRatio * superSample);
+    if (can.width === targetW && can.height === targetH) return;
+    // Assigning width/height resets the context transform — re-apply.
+    can.width = targetW;
+    can.height = targetH;
+    u.ctx.setTransform(superSample, 0, 0, superSample, 0, 0);
+  };
 
   // Run the existing chart.js-shaped plugins through a synthesized
   // ChartLike on every uPlot draw. Order matters: separator and tick
@@ -590,8 +793,14 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
   // afterDraw ordering by listing them in the same sequence).
   const uplotPlugin: uPlot.Plugin = {
     hooks: {
+      // Ensure the supersampled buffer BEFORE anything paints this
+      // frame. drawClear fires at the start of every redraw; setSize
+      // covers the resize path where uPlot just reset the canvas
+      // buffer to its own 1× dimensions.
+      setSize: (u) => { applySuperSample(u); },
+      drawClear: (u) => { applySuperSample(u); },
       draw: (u) => {
-        const shim = buildChartLikeShim(u, columnCount, datasets, tempMinForShim, tempMaxForShim);
+        const shim = buildChartLikeShim(u, columnCount, datasets, scaleState);
         // Plugins draw in CSS pixels (per the shim's divide-by-pxRatio
         // bbox conversion). uPlot itself draws in device pixels by
         // multiplying coordinates by pxRatio inline; it does NOT use
@@ -663,6 +872,23 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
     // interface doc) so main.ts can refresh its fields in place.
     renderData: data,
     update(): void {
+      // Re-derive the y-scale ceilings from the CURRENT data BEFORE
+      // setData re-ranges the scales: the range closures read
+      // scaleState live, so the fresh ceiling applies on this very
+      // redraw. Without this the ceilings stayed frozen at their
+      // build-time values — intensifying rain pushed buckets past the
+      // old precip ceiling and the bars clipped flat at the top until
+      // something forced a full rebuild (the "bar scaling only
+      // updates on reload" bug). Reads dataBag.datasets — the same
+      // arrays toAlignedData feeds to uPlot below — so the scale
+      // always covers exactly what gets drawn.
+      refreshYScaleState(
+        scaleState,
+        datasets.map((ds, i) => ({ yAxisID: ds.yAxisID, data: dataBag.datasets[i]?.data ?? [] })),
+        precipFloor,
+        bottomReserve,
+        topReserve,
+      );
       // dataBag.datasets is the original chart.js-shaped dataset list
       // (one entry per logical dataset). toAlignedData re-splits line
       // datasets into station+forecast portions at the current
@@ -682,13 +908,39 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
     },
     destroy(): void {
       try { uplot.destroy(); } catch { /* already gone */ }
+      // Drop the virtual-mode inline styles so a later non-virtual
+      // build into the same div starts clean.
+      target.style.position = '';
+      target.style.left = '';
+      target.style.width = '';
     },
     resize(w?: number, h?: number): void {
-      const next = (w && h) ? { width: w, height: h } : measureContainer(target, opts.chartHeight);
+      const next = (w && h)
+        ? { width: w, height: h }
+        : measureContainer(target, opts.chartHeight, virtual ? wrapperEl : null);
+      if (virtual) {
+        target.style.width = `${next.width}px`;
+        colWpx = next.width / visibleBars;
+        // Re-anchor the window to the wrapper's current scroll offset
+        // under the NEW column width.
+        win.min = (wrapperEl ? wrapperEl.scrollLeft : 0) / colWpx - 0.5;
+      }
       uplot.setSize(next);
+      if (virtual) {
+        uplot.setScale('x', { min: win.min, max: win.min + win.span });
+      }
     },
     draw(): void {
       uplot.redraw();
+    },
+    setScrollWindow(scrollLeftPx: number): void {
+      if (!virtual || !Number.isFinite(scrollLeftPx) || colWpx <= 0) return;
+      const min = scrollLeftPx / colWpx - 0.5;
+      // Sub-millicolumn no-op guard — scroll events can repeat the
+      // same position (momentum end, programmatic clamps).
+      if (Math.abs(min - win.min) < 1e-3) return;
+      win.min = min;
+      uplot.setScale('x', { min, max: min + win.span });
     },
   };
 

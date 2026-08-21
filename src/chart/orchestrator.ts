@@ -8,7 +8,7 @@
 //     hasn't committed it yet
 //   - destroy any previous chart instance so we don't leak handles
 //   - read live theme tokens from getComputedStyle(document.body)
-//   - compute precip max, station/forecast gap framing, sunshine
+//   - resolve the precip-axis floor, station/forecast gap framing, sunshine
 //     fraction data, dataset segment-options (transparent boundary
 //     at daily combination, dashed at hourly combination), per-bar
 //     colour palettes
@@ -24,12 +24,12 @@
 // the LitElement class) avoids a circular type dependency between
 // main.ts and this module.
 
-import { normalizeForecastMode } from '../forecast-utils.js';
-import { lightenColor } from '../format-utils.js';
+import { effectiveVisibleBars, normalizeForecastMode } from '../forecast-utils.js';
+import { isDarkColor, lightenColor } from '../format-utils.js';
 import { resolveCssVar } from '../utils/resolve-css-var.js';
 import { getThemeTokens } from '../utils/theme-tokens.js';
 import { sunshineFractions } from '../sunshine-source.js';
-import { buildChart, type UplotChart } from './draw.js';
+import { buildChart, precipCeiling, type UplotChart } from './draw.js';
 import { coerceNumericSeries } from './sanitize.js';
 import {
   createSeparatorPlugin,
@@ -160,6 +160,18 @@ interface SegmentHelpers {
   };
 }
 
+/** Mode/unit-static floor for the precipitation y-axis ceiling.
+ *  Hourly/today 4 mm (metric) / 1 in; daily 20 mm / 1 in. Resolved
+ *  here (the wiring layer interprets config/units) and handed to
+ *  buildChart, which derives the actual ceiling from the data — at
+ *  build time AND on every in-place update(), so intensifying rain
+ *  rescales the bars without waiting for a full rebuild. */
+export function precipAxisFloor(isHourlyish: boolean, lengthUnit: string): number {
+  return isHourlyish
+    ? (lengthUnit === 'km' ? 4 : 1)
+    : (lengthUnit === 'km' ? 20 : 1);
+}
+
 /** Precipitation y-axis ceiling.
  *
  *  The fixed per-mode value acts as a FLOOR, not a hard cap: it keeps a
@@ -174,20 +186,16 @@ interface SegmentHelpers {
  *  full height and read as equally tall, which is exactly the bug this
  *  fixes. Daily totals likewise overrun the 20 mm floor on a stormy day.
  *
- *  Floors: hourly/today 4 mm (metric) / 1 in; daily 20 mm / 1 in. */
+ *  The live chart derives this same ceiling itself via precipCeiling
+ *  in chart/draw.ts (fed with precipAxisFloor above) so the update()
+ *  path can rescale without the orchestrator. This composite stays as
+ *  the canonical statement of the rule and the unit-test surface. */
 export function computePrecipMax(
   isHourlyish: boolean,
   lengthUnit: string,
   precip: ReadonlyArray<number | null | undefined> = [],
 ): number {
-  const floor = isHourlyish
-    ? (lengthUnit === 'km' ? 4 : 1)
-    : (lengthUnit === 'km' ? 20 : 1);
-  let dataMax = 0;
-  for (const v of precip) {
-    if (typeof v === 'number' && Number.isFinite(v) && v > dataMax) dataMax = v;
-  }
-  return Math.max(floor, dataMax);
+  return precipCeiling(precipAxisFloor(isHourlyish, lengthUnit), precip);
 }
 
 /** uPlot has no equivalent of Chart.js's global defaults — series
@@ -396,6 +404,10 @@ function buildPlugins(args: BuildPluginsArgs): ChartPlugin[] {
     tempHighColor: temp1Color,
     tempLowColor: temp2Color,
     chartTextColor,
+    // 3-px background-colour halo behind every value — keeps labels
+    // readable on top of the full-strength sunshine bars (community
+    // post 15 "purple"; variant decision N1 + halo).
+    haloColor: backgroundColor,
     roundTemp: config.forecast.round_temp === true,
   }));
 
@@ -481,7 +493,7 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
   // 'today' is hourly granularity (per-hour bars), same precip scale
   // as 'hourly'. 'daily' aggregates over the full day, scale is wider.
   const isHourlyish = config.forecast.type === 'hourly' || config.forecast.type === 'today';
-  const precipMax = computePrecipMax(isHourlyish, lengthUnit, data.precip);
+  const precipFloor = precipAxisFloor(isHourlyish, lengthUnit);
 
   applyChartDefaults(textColor, dividerColor);
 
@@ -495,7 +507,21 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
   // Resolve any CSS-var-wrapped colour defaults against the live theme
   // tokens; pass-through for plain rgb/hex/hsl strings users set in YAML.
   const temp1Color = resolveCssVar(config.forecast.temperature1_color, 'rgba(255, 152, 0, 1.0)');
-  const temp2Color = resolveCssVar(config.forecast.temperature2_color, 'rgba(68, 115, 158, 1.0)');
+  // Low-temp line: the single steel-blue default read washed-out on
+  // white and fell to ~2.5:1 contrast on dark backgrounds (community
+  // post 15, "blue"). Only the DEFAULT is theme-aware — a user-set
+  // colour (anything other than the legacy default literal) passes
+  // through unchanged. Dark detection via the resolved card
+  // background's luma (HA exposes no dark-mode flag to cards).
+  const isDarkTheme = isDarkColor(backgroundColor);
+  const TEMP2_LEGACY_DEFAULT = 'rgba(68, 115, 158, 1.0)';
+  const temp2ThemedDefault = isDarkTheme
+    ? 'rgba(130, 175, 220, 1.0)'
+    : 'rgba(38, 90, 140, 1.0)';
+  const temp2Configured = config.forecast.temperature2_color;
+  const temp2Color = (!temp2Configured || temp2Configured === TEMP2_LEGACY_DEFAULT)
+    ? temp2ThemedDefault
+    : resolveCssVar(temp2Configured, temp2ThemedDefault);
   const precipColor = resolveCssVar(config.forecast.precipitation_color, 'rgba(132, 209, 253, 1.0)');
   const precipColorLight = lightenColor(precipColor) as string;
   const precipPerBarColor: string[] = (data.precip || []).map(
@@ -515,8 +541,20 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
   // columns over a 7-day window would crowd labels (the bar height
   // alone encodes the value at that density).
   const showSunshineLabels = showSunshine && config.forecast.type !== 'hourly';
-  const sunshineColor = resolveCssVar(config.forecast.sunshine_color, 'rgba(255, 215, 0, 1.0)');
-  const sunshineColorLight = lightenColor(sunshineColor) as string;
+  const SUNSHINE_LEGACY_DEFAULT = 'rgba(255, 215, 0, 1.0)';
+  const sunshineConfigured = config.forecast.sunshine_color;
+  const sunshineColor = resolveCssVar(sunshineConfigured, SUNSHINE_LEGACY_DEFAULT);
+  // Forecast-side sunshine in DARK themes: the default gold at
+  // lightenColor's 0.45 alpha blends with the near-black card into a
+  // murky olive. Variant decision "W58": warmer honey gold
+  // rgba(255,193,7) at 0.58 — the tone shift cancels the green cast,
+  // the strength keeps the bars present without matching the measured
+  // side. Light themes and user-set colours keep the classic
+  // lightenColor treatment.
+  const sunshineColorLight = (isDarkTheme
+    && (!sunshineConfigured || sunshineConfigured === SUNSHINE_LEGACY_DEFAULT))
+    ? 'rgba(255, 193, 7, 0.58)'
+    : lightenColor(sunshineColor) as string;
   const sunshinePerBarColor: string[] = (data.sunshine ?? []).map(
     (_v, i) => pickPerBarColor(i, hasBothBlocks, stationCountForGap, sunshineColor, sunshineColorLight),
   );
@@ -585,7 +623,7 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
     backgroundColor,
     dividerColor,
     chartTextColor: chart_text_color,
-    precipMax,
+    precipFloor,
     precipUnit,
     tempUnit,
     doubledToday,
@@ -593,6 +631,9 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
     isHourly,
     style,
     sunshineLabelBand,
+    // Config interpretation happens HERE (the wiring layer) — draw.ts
+    // only consumes the resolved number. 'today' is pinned to 8 bars.
+    visibleBars: effectiveVisibleBars(config as { forecast?: { type?: string; number_of_forecasts?: number | string } }),
     inPreview: card._isInPreview === true,
   });
   card._chartPhase = null;
