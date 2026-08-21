@@ -45,7 +45,13 @@ export interface BuildChartOpts {
   backgroundColor: string;
   dividerColor: string;
   chartTextColor?: string;
-  precipMax: number;
+  /** Mode/unit-static FLOOR for the precipitation y-axis ceiling,
+   *  resolved by the orchestrator (config interpretation stays in the
+   *  wiring layer). The actual ceiling — max(floor, tallest bucket) —
+   *  is derived from the data HERE, at build time and again on every
+   *  in-place update(), so a data refresh rescales the bars without a
+   *  destroy+rebuild. */
+  precipFloor: number;
   precipUnit: string;
   tempUnit: string;
   doubledToday: boolean;
@@ -364,11 +370,6 @@ function buildSeries(
   return series;
 }
 
-/** Y-scale definitions from the orchestrator. Temperature autoscales
- *  with a ±5° padding ring (matches the old `suggestedMin/Max` recipe
- *  in draw.ts); precipitation pins to the orchestrator-provided ceiling
- *  so a single trailing 0.1 mm doesn't blow up the axis; sunshine is
- *  0..1 fractions. */
 /** Mutable x-window state shared between the scale's range function
  *  and `setScrollWindow`. Non-virtual charts keep min=-0.5 and
  *  span=columnCount for the chart's whole life; virtual charts pan
@@ -378,12 +379,99 @@ interface XWindow {
   span: number;
 }
 
+/** Mutable y-scale ceilings, shared BY REFERENCE between the scale
+ *  range closures (buildScales), the per-draw plugin shim
+ *  (buildChartLikeShim), and `update()`. uPlot re-invokes the range
+ *  functions when setData re-ranges the scales, so mutating this
+ *  object right before setData applies a fresh ceiling on that same
+ *  redraw — no destroy+rebuild. Frozen build-time scalars here were
+ *  the "precip bars only rescale on reload" bug: once rain pushed a
+ *  bucket past the ceiling computed at build time, the in-place
+ *  update path kept drawing against the stale maximum and the tall
+ *  bars clipped flat at the top. Same pattern as XWindow above. */
+export interface YScaleState {
+  precipMax: number;
+  tempMin: number;
+  tempMax: number;
+}
+
+/** Precipitation y-axis ceiling: max(floor, tallest finite bucket).
+ *  The mode/unit floor keeps a light-drizzle day from blowing the
+ *  axis up; the data max lifts the ceiling so heavy precipitation
+ *  scales proportionally instead of clipping. Also backs the
+ *  orchestrator's computePrecipMax, so the build path and the
+ *  update() path derive identical ceilings. */
+export function precipCeiling(
+  floor: number,
+  precip: ReadonlyArray<number | null | undefined> = [],
+): number {
+  let dataMax = 0;
+  for (const v of precip) {
+    if (typeof v === 'number' && Number.isFinite(v) && v > dataMax) dataMax = v;
+  }
+  return Math.max(floor, dataMax);
+}
+
+/** TempAxis min/max from the CURRENT temperature values plus the
+ *  reserve fractions (see the pixel-aware reserve computation in
+ *  buildChart). The reserves are the slices of the y-range kept free
+ *  below the lowest / above the highest point so the style2 "X°"
+ *  labels always land inside the chart without crashing into the
+ *  precip-label boxes (bottom) or the date band (top). Solved from
+ *  the proportionality equation
+ *    (lowestValue - tempMin) / (tempMax - tempMin) = bottomReserve
+ *  and mirrored at the top. Constants are proportional to the data
+ *  range so they scale: a narrow temp range (cold week, 3 °C spread)
+ *  gets just enough padding; a wide range gets more headroom. */
+function tempAxisBounds(
+  temps: ReadonlyArray<number | null | undefined>,
+  bottomReserve: number,
+  topReserve: number,
+): { min: number; max: number } {
+  const finite = temps.filter((v): v is number => Number.isFinite(v as number));
+  const rawMin = finite.length ? Math.min(...finite) : 0;
+  const rawMax = finite.length ? Math.max(...finite) : 30;
+  const rawRange = Math.max(1, rawMax - rawMin);
+  const denom = 1 - bottomReserve - topReserve;
+  return {
+    min: rawMin - (rawRange + 3) * (bottomReserve / denom),
+    max: rawMax + (rawRange + 3) * (topReserve / denom),
+  };
+}
+
+/** Re-derive the y-scale ceilings from the given per-series data and
+ *  write them into `state`. ONE code path for build and update: called
+ *  with the freshly-built datasets at construction time and with the
+ *  current data arrays from `update()`, so an in-place refresh lands
+ *  on exactly the ceiling a full rebuild would compute. Exported for
+ *  unit tests. */
+export function refreshYScaleState(
+  state: YScaleState,
+  series: ReadonlyArray<{ yAxisID: string; data: ReadonlyArray<number | null | undefined> }>,
+  precipFloor: number,
+  bottomReserve: number,
+  topReserve: number,
+): void {
+  const byAxis = (axisId: string): Array<number | null | undefined> => {
+    const out: Array<number | null | undefined> = [];
+    for (const s of series) {
+      if (s.yAxisID === axisId) out.push(...s.data);
+    }
+    return out;
+  };
+  state.precipMax = precipCeiling(precipFloor, byAxis('PrecipAxis'));
+  const bounds = tempAxisBounds(byAxis('TempAxis'), bottomReserve, topReserve);
+  state.tempMin = bounds.min;
+  state.tempMax = bounds.max;
+}
+
+/** Y-scale definitions. Temperature and precipitation ranges read the
+ *  shared YScaleState LIVE (same pattern as the x-scale's XWindow),
+ *  so update() can rescale without rebuilding the chart; sunshine is
+ *  fixed 0..1 fractions. */
 function buildScales(
-  _data: BuildChartOpts['data'],
-  precipMax: number,
+  scaleState: YScaleState,
   win: XWindow,
-  tempMin: number,
-  tempMax: number,
 ): uPlot.Scales {
   return {
     // x scale padded by 0.5 either side so data values land at
@@ -395,10 +483,10 @@ function buildScales(
     // virtualized chart pans by mutating `win.min` + setScale.
     x: { time: false, range: () => [win.min, win.min + win.span] },
     TempAxis: {
-      range: () => [tempMin, tempMax],
+      range: () => [scaleState.tempMin, scaleState.tempMax],
     },
     PrecipAxis: {
-      range: () => [0, precipMax],
+      range: () => [0, scaleState.precipMax],
     },
     SunshineAxis: {
       range: () => [0, 1],
@@ -456,10 +544,12 @@ function buildChartLikeShim(
   u: uPlot,
   columnCount: number,
   datasets: BuildChartOpts['datasets'],
-  tempMinForShim: number,
-  tempMaxForShim: number,
-  precipMax: number,
+  scaleState: YScaleState,
 ): ChartLike {
+  // The shim is rebuilt per draw, AFTER any scale re-range — reading
+  // the live state here keeps plugin pixel math and uPlot's own scale
+  // in agreement across in-place updates.
+  const { tempMin: tempMinForShim, tempMax: tempMaxForShim, precipMax } = scaleState;
   const chartArea = {
     left: u.bbox.left / uPlot.pxRatio,
     top: u.bbox.top / uPlot.pxRatio,
@@ -582,7 +672,7 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
     plugins,
     data,
     config,
-    precipMax,
+    precipFloor,
     sunshineLabelBand,
   } = opts;
 
@@ -637,29 +727,9 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
     ? { min: (wrapperEl ? wrapperEl.scrollLeft : 0) / colWpx - 0.5, span: visibleBars }
     : { min: -0.5, span: Math.max(1, columnCount) };
 
-  // Pre-compute TempAxis min/max so the shim and the scale agree.
-  //
-  // Bottom-pad sized so the lowest data value always renders with
-  // ~25 % of the chart drawing area BELOW it — that band is the
-  // exact space the style2 low-temp label ("X°" rendered below the
-  // dot) needs, plus a small gap above the precip-label boxes at
-  // chartArea.bottom. Solved from the proportionality equation
-  //   (lowestValue - tempMin) / (tempMax - tempMin) = 0.25
-  // so the label always fits inside the chart without overlapping
-  // either the line dot or the precip box.
-  // Same on top so the high-temp labels have room above.
-  const tempFiniteForShim = [...data.tempHigh, ...data.tempLow].filter((v): v is number => Number.isFinite(v as number));
-  const rawMin = tempFiniteForShim.length ? Math.min(...tempFiniteForShim) : 0;
-  const rawMax = tempFiniteForShim.length ? Math.max(...tempFiniteForShim) : 30;
-  const rawRange = Math.max(1, rawMax - rawMin);
-  // Reserve a fraction of the y-axis range at top and bottom so
-  // the style2 "X°" labels (rendered below the low spline and above
-  // the high spline) always have chart space to land in without
-  // crashing into the precip-label boxes (bottom) or the date band
-  // (top). Constants are proportional to the data range so they
-  // scale: a narrow temp range (cold week, 3 °C spread) gets just
-  // enough padding; a wide range (cold morning → hot afternoon,
-  // 25 °C spread) gets more headroom.
+  // TempAxis reserve fractions — the y-range slices kept free below /
+  // above the data so the style2 "X°" labels fit (see tempAxisBounds
+  // for the proportionality math).
   // Pixel-aware floor (community post 15 "yellow", maintainer
   // decision): the label needs a FIXED number of pixels — offset
   // above/below the dot (fontSize + 4) plus half a glyph plus
@@ -670,18 +740,24 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
   // never degenerates); at the default chart height the floors are
   // inactive and the classic proportions apply unchanged. This pads
   // ONLY the TempAxis — the sunshine/precip bars live on their own
-  // axes and keep their exact heights.
+  // axes and keep their exact heights. Layout-static per chart
+  // instance, so update() can reuse them when it re-derives bounds.
   const labelFontPx = labelsBaseSize + 1;
   const labelNeedPx = labelFontPx + 4 + Math.ceil(labelFontPx / 2) + 2;
   const xAxisBandPx = Math.ceil(labelsBaseSize * 1.3) * 2 + sunshineLabelBand + 10;
   const plotHeightPx = Math.max(40, height - xAxisBandPx);
   const bottomReserve = Math.min(0.4, Math.max(0.24, labelNeedPx / plotHeightPx));
   const topReserve = Math.min(0.35, Math.max(0.18, labelNeedPx / plotHeightPx));
-  const tempMinForShim = rawMin - (rawRange + 3) * (bottomReserve / (1 - bottomReserve - topReserve));
-  const tempMaxForShim = rawMax + (rawRange + 3) * (topReserve / (1 - bottomReserve - topReserve));
+
+  // Y-scale ceilings: derived from the initial data here, RE-derived
+  // from the live data on every update() — the scale range closures
+  // and the per-draw plugin shim read this object by reference, so
+  // both stay in sync with what is actually drawn.
+  const scaleState: YScaleState = { precipMax: precipFloor, tempMin: 0, tempMax: 1 };
+  refreshYScaleState(scaleState, datasets, precipFloor, bottomReserve, topReserve);
 
   const series = buildSeries(datasets, opts.textColor, hasBothBlocks);
-  const scales = buildScales(data, precipMax, win, tempMinForShim, tempMaxForShim);
+  const scales = buildScales(scaleState, win);
   const axes = buildAxes(sunshineLabelBand, labelsBaseSize);
 
   // ── Supersampling for low-DPR displays (visual pass 2026-08) ──────
@@ -724,7 +800,7 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
       setSize: (u) => { applySuperSample(u); },
       drawClear: (u) => { applySuperSample(u); },
       draw: (u) => {
-        const shim = buildChartLikeShim(u, columnCount, datasets, tempMinForShim, tempMaxForShim, precipMax);
+        const shim = buildChartLikeShim(u, columnCount, datasets, scaleState);
         // Plugins draw in CSS pixels (per the shim's divide-by-pxRatio
         // bbox conversion). uPlot itself draws in device pixels by
         // multiplying coordinates by pxRatio inline; it does NOT use
@@ -796,6 +872,23 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
     // interface doc) so main.ts can refresh its fields in place.
     renderData: data,
     update(): void {
+      // Re-derive the y-scale ceilings from the CURRENT data BEFORE
+      // setData re-ranges the scales: the range closures read
+      // scaleState live, so the fresh ceiling applies on this very
+      // redraw. Without this the ceilings stayed frozen at their
+      // build-time values — intensifying rain pushed buckets past the
+      // old precip ceiling and the bars clipped flat at the top until
+      // something forced a full rebuild (the "bar scaling only
+      // updates on reload" bug). Reads dataBag.datasets — the same
+      // arrays toAlignedData feeds to uPlot below — so the scale
+      // always covers exactly what gets drawn.
+      refreshYScaleState(
+        scaleState,
+        datasets.map((ds, i) => ({ yAxisID: ds.yAxisID, data: dataBag.datasets[i]?.data ?? [] })),
+        precipFloor,
+        bottomReserve,
+        topReserve,
+      );
       // dataBag.datasets is the original chart.js-shaped dataset list
       // (one entry per logical dataset). toAlignedData re-splits line
       // datasets into station+forecast portions at the current

@@ -39,6 +39,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `sensors.moon_phase` is deprecated and ignored (still accepted, so
   v2.2 configs keep validating).
 
+### Fixed
+
+- **Precipitation bars rescale as the rain develops — no reload needed.**
+  The chart's y-axis ceilings were computed once when the chart was
+  built; the in-place data refresh that runs while the card stays on
+  screen kept drawing new values against that stale scale. During
+  intensifying rain a bucket that outgrew the old ceiling clipped flat
+  at the top (and neighbouring bars read as equally tall) until a page
+  reload rebuilt the chart. The precipitation ceiling — and the
+  temperature-axis padding, which had the same frozen-at-build-time
+  problem on long-running dashboards — are now re-derived from the
+  fresh data on every update, on the same redraw.
+
 ## [2.2.4] — 2026-08-09
 
 ### Fixed
