@@ -8,6 +8,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Humidity moved onto the dew-point line — and is now opt-in.** The
+  live panel's climate column no longer spends a full row on humidity:
+  when `show_humidity: true` is set, the value appears right after the
+  dew point on the same line (with its own icon and entity link). By
+  default the line shows only the dew point. Humidity alone still
+  renders on that line if no dew point is wired or `show_dew_point` is
+  off. The editor toggle now correctly reflects the opt-in default
+  (it previously showed "on" for configs that never set the key).
+
 - **The moon line computes itself — HA's Moon integration is no longer
   needed.** The sun cell's moon line no longer reads any entity:
   illuminated fraction, waxing/waning, and the next moonrise/moonset
