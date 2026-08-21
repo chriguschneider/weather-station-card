@@ -3712,10 +3712,15 @@ _renderMoonLine(language: string) {
         }).format(ev.time)}`
     : html``;
 
+  // True-to-nature colours in BOTH themes: lit = white, shadow = black
+  // (a currentColor fill read as "lit = black" on light themes). Only
+  // the thin outline uses currentColor, so the disc edge stays visible
+  // on either background.
   return html`<br><svg class="wsc-moon" viewBox="0 0 24 24" aria-hidden="true"><circle
-        cx="12" cy="12" r="9.5" fill="currentColor" fill-opacity="0.14"
-        stroke="currentColor" stroke-opacity="0.45" stroke-width="1"></circle><path
-        d=${litMoonPath(fraction, litRight)} fill="currentColor"></path></svg>
+        cx="12" cy="12" r="9.5" fill="#000"></circle><path
+        d=${litMoonPath(fraction, litRight)} fill="#fff"></path><circle
+        cx="12" cy="12" r="9.5" fill="none" stroke="currentColor"
+        stroke-width="1"></circle></svg>
       ${pct}${evPart}`;
 }
 
