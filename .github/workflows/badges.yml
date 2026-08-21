@@ -1,6 +1,6 @@
 name: Badge metrics
 
-# Self-hosts the README's metric badges (HACS installs, stars,
+# Self-hosts the README's metric badges (downloads, stars,
 # release, last-commit) so they don't depend on shields.io's shared
 # GitHub-API token pool. That pool is regularly exhausted ("Unable to
 # select next GitHub token from pool"), and GitHub's Camo image proxy
@@ -15,7 +15,7 @@ name: Badge metrics
 
 on:
   schedule:
-    # Daily at 04:17 UTC. Stars/installs move slowly; once a day is plenty.
+    # Daily at 04:17 UTC. Stars/downloads move slowly; once a day is plenty.
     - cron: '17 4 * * *'
   release:
     # Refresh the release badge right after a release ships.
@@ -41,11 +41,18 @@ jobs:
           set -euo pipefail
 
           stars=$(gh api "repos/${REPO}" --jq '.stargazers_count')
-          # Install count as reported by HACS (the "downloads" field in its
-          # published store data — the same number the HACS UI shows).
-          installs=$(curl -sf https://data-v2.hacs.xyz/plugin/data.json \
-            | jq --arg repo "$REPO" -r \
-              '([.[] | select(.full_name == $repo).downloads] | first) // 0')
+          # Cumulative downloads of the main bundle across all releases.
+          # Deliberately NOT shields' /downloads/total: every release ships
+          # ~25 assets (language chunks + editor) and HACS fetches all of
+          # them, so /total over-counts by that factor. And NOT HACS's own
+          # "downloads" figure: that only counts the latest release, so it
+          # resets to zero every time we ship. Summing the one asset HACS
+          # names in hacs.json gives a number that is honest and monotonic.
+          # gh applies --jq per page, so sum the per-page subtotals here.
+          downloads=$(gh api --paginate "repos/${REPO}/releases?per_page=100" \
+            --jq '[.[] | .assets[] | select(.name == "weather-station-card.js")
+                   | .download_count] | add // 0' \
+            | awk '{ s += $1 } END { print s + 0 }')
           release=$(gh api "repos/${REPO}/releases/latest" --jq '.tag_name')
           commit_date=$(gh api "repos/${REPO}/commits?per_page=1" \
             --jq '.[0].commit.committer.date')
@@ -75,8 +82,8 @@ jobs:
           fi
 
           mkdir -p out
-          printf '{"schemaVersion":1,"label":"installs","message":"%s","color":"brightgreen"}\n' \
-            "$(humanize "$installs")" > out/installs.json
+          printf '{"schemaVersion":1,"label":"downloads","message":"%s","color":"brightgreen"}\n' \
+            "$(humanize "$downloads")" > out/downloads.json
           printf '{"schemaVersion":1,"label":"stars","message":"%s","color":"blue"}\n' \
             "$(humanize "$stars")" > out/stars.json
           printf '{"schemaVersion":1,"label":"release","message":"%s","color":"blue"}\n' \
@@ -84,8 +91,8 @@ jobs:
           printf '{"schemaVersion":1,"label":"last commit","message":"%s","color":"%s"}\n' \
             "$last_commit" "$commit_color" > out/lastcommit.json
 
-          echo "stars=$stars installs=$installs release=$release last_commit=$last_commit"
-          cat out/installs.json out/stars.json out/release.json out/lastcommit.json
+          echo "stars=$stars downloads=$downloads release=$release last_commit=$last_commit"
+          cat out/downloads.json out/stars.json out/release.json out/lastcommit.json
 
       - name: Publish to badges branch
         env:
@@ -98,7 +105,7 @@ jobs:
           git checkout -q -b badges
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add installs.json stars.json release.json lastcommit.json
+          git add downloads.json stars.json release.json lastcommit.json
           git commit -q -m "chore(badges): update metrics [skip ci]"
           # Force-push a single-commit orphan: the branch only ever holds
           # the generated badge files, so no history is worth keeping.
