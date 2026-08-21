@@ -74,9 +74,10 @@ export interface SensorMap {
   /** Sunshine duration entity (handled by the sunshine overlay, not
    *  this module — listed so config-typing stays accurate). */
   sunshine_duration?: string;
-  /** Moon-phase entity (HA's Moon integration). Live-panel only —
-   *  non-numeric enum state, explicitly EXCLUDED from the recorder
-   *  statistics fetch below. */
+  /** DEPRECATED (v2.3, ADR-0022): the moon line is computed in-card
+   *  and reads no entity. The key stays typed so configs written for
+   *  ≤v2.2 don't fail the type boundary, and stays EXCLUDED from the
+   *  recorder statistics fetch below (its enum state has none). */
   moon_phase?: string;
 }
 
@@ -453,8 +454,9 @@ export class MeasuredDataSource {
     const days = cfgDays;
     const sensors: SensorMap = this.config.sensors ?? {};
 
-    // moon_phase is a live-panel enum sensor — the recorder holds no
-    // numeric statistics for it, so it stays out of the stats request.
+    // Legacy ≤v2.2 configs may still carry sensors.moon_phase (an enum
+    // entity with no recorder statistics) — keep it out of the stats
+    // request even though the card itself no longer reads it.
     const { moon_phase: _moonPhase, ...chartSensors } = sensors;
     void _moonPhase;
     const entityIds = Object.values(chartSensors).filter(Boolean) as string[];

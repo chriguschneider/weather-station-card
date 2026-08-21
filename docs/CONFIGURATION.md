@@ -121,7 +121,7 @@ classifier, and (where relevant) the attribute readouts. Only
 | `sensors.uv_index` | UV attribute |
 | `sensors.dew_point` | Fog detection (combined with humidity) |
 | `sensors.sunshine_duration` | Today's live sunshine value (scalar, seconds or hours auto-detected at the `≥ 30` threshold). Past columns fall back to the recorder's daily-max for this same sensor. Only used when `forecast.show_sunshine: true`. *(since v0.9; fully wired in daily fetch since v1.4.)* |
-| `sensors.moon_phase` | Moon-phase line in the live panel's sun cell (icon + localized phase name, fed by [HA's Moon integration](https://www.home-assistant.io/integrations/moon/)). Auto-detected when unset: `sensor.moon_phase`, then the legacy `sensor.moon`. Live panel only — never part of the chart or the recorder fetch. *(since v2.2)* |
+| `sensors.moon_phase` | **Deprecated (v2.3, ADR-0022)** — the moon line is now computed in-card and reads no entity, so [HA's Moon integration](https://www.home-assistant.io/integrations/moon/) is no longer needed. The key is accepted and ignored so older configs keep validating. Use [`show_moon`](#layout--display) to control the line. *(entity-fed v2.2 only)* |
 
 ## Layout & Display
 
@@ -170,6 +170,7 @@ matching attribute on `weather_entity`)
 | `show_wind_speed` | bool | opt-out (`true` when value present) | Wind-speed value. |
 | `show_wind_gust_speed` | bool | `false` | Gust speed (opt-in, requires `sensors.gust_speed` or weather-entity attribute). |
 | `show_sun` | bool | `false` | Sunrise / sunset row (opt-in). |
+| `show_moon` | bool | `true` (renders with the sun cell) | Moon line inside the sun cell: dynamically drawn disc showing the exact illuminated fraction, the percentage, and the next moonrise/moonset. Computed in-card (ADR-0022) — no sensor or Moon integration required; rise/set times come from HA's configured location and are omitted when it has none. On the southern hemisphere the disc is mirrored to match the local view. Set `false` to keep the sun cell sun-only. *(since v2.3)* |
 
 **Chart rows**
 

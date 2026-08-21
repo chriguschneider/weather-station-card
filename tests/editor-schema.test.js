@@ -264,9 +264,11 @@ describe('renderLivePanelSection (schema-driven)', () => {
       }),
     );
     const names = allFieldNames(container);
-    // Master + show_sun (always shown) + nothing else.
+    // Master + show_sun + show_moon (always shown — the moon line is
+    // computed in-card, no sensor gate) + nothing else.
     expect(names).toContain('show_attributes');
     expect(names).toContain('show_sun');
+    expect(names).toContain('show_moon');
     expect(names).not.toContain('show_humidity');
     expect(names).not.toContain('show_pressure');
   });
