@@ -8,11 +8,11 @@
 
 <p align="center">
   <a href="LICENSE.md"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
-  <a href="https://hacs.xyz/"><img alt="HACS Custom" src="https://img.shields.io/badge/HACS-Custom-orange.svg" /></a>
+  <a href="https://hacs.xyz/"><img alt="HACS Default" src="https://img.shields.io/badge/HACS-Default-41BDF5.svg" /></a>
   <a href="https://github.com/chriguschneider/weather-station-card/releases/latest"><img alt="Latest release" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriguschneider%2Fweather-station-card%2Fbadges%2Frelease.json" /></a>
   <a href="https://github.com/chriguschneider/weather-station-card/actions/workflows/build.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/chriguschneider/weather-station-card/build.yml?label=build" /></a>
   <a href="https://sonarcloud.io/summary/new_code?id=chriguschneider_weather-station-card"><img alt="Quality Gate Status" src="https://sonarcloud.io/api/project_badges/measure?project=chriguschneider_weather-station-card&metric=alert_status" /></a>
-  <a href="https://github.com/chriguschneider/weather-station-card/releases"><img alt="Total downloads" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriguschneider%2Fweather-station-card%2Fbadges%2Fdownloads.json" /></a>
+  <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=chriguschneider&category=frontend&repository=weather-station-card"><img alt="HACS installs" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriguschneider%2Fweather-station-card%2Fbadges%2Finstalls.json" /></a>
   <a href="https://github.com/chriguschneider/weather-station-card/stargazers"><img alt="Stars" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriguschneider%2Fweather-station-card%2Fbadges%2Fstars.json" /></a>
   <a href="https://github.com/chriguschneider/weather-station-card/commits/master"><img alt="Last commit" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriguschneider%2Fweather-station-card%2Fbadges%2Flastcommit.json" /></a>
   <a href="https://buymeacoffee.com/chriguschneider"><img alt="Buy Me a Coffee" src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00.svg" /></a>
@@ -188,20 +188,19 @@ button.
 > The forecast block subscribes via Home Assistant's standard `weather.subscribe_forecast` API,
 > so anything HA recognises as a weather entity should work.
 
-### HACS (Custom Repository)
+### HACS (recommended)
+
+The card is in the HACS default store — no custom repository needed.
 
 **One-click**: [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=chriguschneider&category=frontend&repository=weather-station-card)
 
 Or manually:
 
-1. In HACS, go to **Frontend → ⋮ → Custom repositories**.
-2. Add `https://github.com/chriguschneider/weather-station-card` with
-   category **Dashboard**.
-3. Click **Install** on the *Weather Station Card* entry that appears in the
-   Frontend list.
-4. Hard-refresh your browser (Ctrl-F5 or equivalent) so the new resource
+1. In HACS, search for **Weather Station Card** and open the entry.
+2. Click **Download**.
+3. Hard-refresh your browser (Ctrl-F5 or equivalent) so the new resource
    loads.
-5. Add the card to your dashboard via the Lovelace UI ("Add Card → Custom:
+4. Add the card to your dashboard via the Lovelace UI ("Add Card → Custom:
    Weather Station Card") or paste the YAML below.
 
 ### Manual
