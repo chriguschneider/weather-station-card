@@ -76,10 +76,12 @@ reflects the live readings of those same sensors. This card does both:
   semi-transparent so predicted values read distinctly from measured
   ones. Span is configurable separately (`forecast_days:`).
 - A **live main panel** showing the current temperature, condition icon,
-  and (optionally) clock, weather attributes, next sun event and moon
-  phase — all derived from current sensor states, not from a forecast.
-  Every value is clickable and opens the backing sensor's more-info
-  dialog.
+  and (optionally) clock, weather attributes, next sun event and the
+  moon — exact illumination percentage on a dynamically drawn disc plus
+  the next moonrise/moonset, computed in-card with no Moon integration
+  needed. All values derive from current sensor states, not from a
+  forecast; every sensor-backed value is clickable and opens its
+  more-info dialog.
 
 Conditions are derived by a deterministic, meteorologically-grounded
 classifier (see [docs/CONDITIONS.md](docs/CONDITIONS.md#how-conditions-are-determined)

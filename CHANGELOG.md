@@ -6,6 +6,25 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The moon line computes itself — HA's Moon integration is no longer
+  needed.** The sun cell's moon line no longer reads any entity:
+  illuminated fraction, waxing/waning, and the next moonrise/moonset
+  are computed in-card from the clock and HA's configured location
+  (ADR-0022). The 8-step phase icon is replaced by a dynamically drawn
+  disc that shows the *exact* illumination (a 78 % gibbous looks
+  different from a 60 % one), painted true to nature in both themes —
+  lit side white, shadow black, with a thin theme-contrast outline —
+  and mirrored on the southern hemisphere where the moon appears
+  flipped. The localized phase name gives way to the illumination
+  percentage plus the next moon event (`↑ 21:14` / `↓ 06:32`,
+  mirroring the sun line's next-event-only policy). The line now
+  renders for every install with the sun cell enabled — no Moon
+  integration, no configuration. Opt out with `show_moon: false`.
+  `sensors.moon_phase` is deprecated and ignored (still accepted, so
+  v2.2 configs keep validating).
+
 ### Fixed
 
 - **Precipitation bars rescale as the rain develops — no reload needed.**
@@ -18,6 +37,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   temperature-axis padding, which had the same frozen-at-build-time
   problem on long-running dashboards — are now re-derived from the
   fresh data on every update, on the same redraw.
+- **The pressure-trend arrow shows up again after a page load.** Since
+  v2.2.0's stale-while-revalidate hydration, the first recorder result
+  after opening a dashboard usually matches the persisted station
+  payload, and the identical-payload guard skipped the 3-h
+  pressure-delta fetch along with the redundant re-render — the
+  pressure row stayed on the legacy gauge icon until the next hour
+  bucket changed the payload. The delta refresh now runs on every
+  station callback, ahead of the guard; its hourly cache keeps the
+  extra invocations free.
 
 ## [2.2.4] — 2026-08-09
 

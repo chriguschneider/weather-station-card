@@ -86,6 +86,14 @@ src/
 │                              illuminance into a cloud-aware sun/moon
 │                              icon; WHO 5-tier UV bands. Pure.
 │
+├── moon.ts                    (v2.3)  Moon astronomy for the live
+│                              panel's moon line (ADR-0022): illuminated
+│                              fraction + waxing/waning, moonrise/set,
+│                              next-event scan, and the SVG terminator
+│                              path for the dynamically drawn disc.
+│                              Meeus/suncalc low-precision series, no
+│                              entity, no dependency. Pure.
+│
 ├── forecast-utils.ts          Pure helpers: hourlyTempSeries,
 │                              normalizeForecastMode, startOfTodayMs,
 │                              filterMidnightStaleForecast,

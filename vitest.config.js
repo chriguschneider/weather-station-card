@@ -55,6 +55,7 @@ export default {
         'src/pressure-trend.ts',
         'src/dew-point-comfort.ts',
         'src/sun-strength.ts',
+        'src/moon.ts',
       ],
       thresholds: {
         statements: 80,

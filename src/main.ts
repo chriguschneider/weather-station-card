@@ -110,7 +110,8 @@ import {
 import { sanitizeForecastEntries } from './chart/sanitize.js';
 import { renderChartSkeleton } from './chart/skeleton.js';
 import { cardStyles } from './chart/styles.js';
-import { getDateTimeFormat } from './utils/intl-cache.js';
+import { getDateTimeFormat, getNumberFormat } from './utils/intl-cache.js';
+import { moonIllumination, nextMoonEvent, litMoonPath } from './moon.js';
 // Chart library: uPlot. Imported transitively via ./chart/draw.js —
 // there is no global registration step (uPlot has no plugin registry;
 // per-instance hooks/plugins are passed directly to the constructor).
@@ -144,18 +145,6 @@ declare global {
     customCards?: any[];
   }
 }
-
-// Moon-phase enum (HA's official Moon integration) → MDI icon.
-const MOON_PHASE_ICONS: Record<string, string> = {
-  new_moon: 'mdi:moon-new',
-  waxing_crescent: 'mdi:moon-waxing-crescent',
-  first_quarter: 'mdi:moon-first-quarter',
-  waxing_gibbous: 'mdi:moon-waxing-gibbous',
-  full_moon: 'mdi:moon-full',
-  waning_gibbous: 'mdi:moon-waning-gibbous',
-  last_quarter: 'mdi:moon-last-quarter',
-  waning_crescent: 'mdi:moon-waning-crescent',
-};
 
 // In-bundle icon sprite (ADR-0018), built ONCE at module load. MDI_PATHS
 // is a static import, so the symbol list can never change at runtime —
@@ -705,6 +694,9 @@ set hass(hass: HassMain) {
 // sensor, the weather entity, and sun.sun (day/night + sunrise row).
 // Anything NOT in this list never feeds the live panel — its state
 // changes are irrelevant to this card and safe to ignore.
+// The computed moon line needs no entity here: sun.sun's attribute
+// tick (elevation, ~1/min) already re-renders the card, which keeps
+// the moon % and next-event time fresh without a card-level timer.
 _watchedEntityIds(): string[] {
   const ids: string[] = [];
   const sensors = this.config?.sensors || {};
@@ -713,10 +705,6 @@ _watchedEntityIds(): string[] {
   }
   if (this.config?.weather_entity) ids.push(this.config.weather_entity);
   ids.push('sun.sun');
-  // Moon-phase line (auto-detected entity included, so a phase change
-  // passes the entity-delta gate even without explicit config).
-  const moon = this._moonEntityId();
-  if (moon) ids.push(moon);
   return ids;
 }
 
@@ -1178,6 +1166,18 @@ _syncDataSources(hass: HassMain): void {
       this._dataSource = new MeasuredDataSource(hass, this.config);
       this._dataUnsubscribe = this._dataSource.subscribe((event) => {
         try {
+          // Refresh the 3-h pressure tendency on the same cadence as the
+          // station fetch (POLL_INTERVAL_MS, currently hourly). MUST stay
+          // above the identical-payload guard below: since the v2.2.0
+          // stale-while-revalidate hydration, the first live recorder
+          // result after a page load usually matches the persisted
+          // payload, so the early return would skip the fetch and leave
+          // the pressure row on the legacy gauge icon until the next
+          // hour bucket. `fetchPressure3hDelta` dedupes per hour via
+          // `_pressureDeltaCache`, so redundant invocations cost one
+          // cache lookup. Fire-and-forget: errors degrade silently to
+          // the gauge icon.
+          void this._refreshPressureDelta();
           const newData = event.forecast || [];
           const newError = event.error || null;
           // Skip the re-render path when HA's WS layer fan-outs an
@@ -1194,13 +1194,6 @@ _syncDataSources(hass: HassMain): void {
           this._stationCache[stationFetchKey(this.config)] = this._stationData;
           if (newData.length) saveSeriesCache(this._stationSeriesKey(), newData);
           this._stationError = newError;
-          // Refresh the 3-h pressure tendency on the same cadence as the
-          // station fetch (POLL_INTERVAL_MS, currently hourly). The
-          // cache key inside `fetchPressure3hDelta` is the
-          // start-of-current-hour timestamp, so renders within the same
-          // hour reuse one roundtrip. Fire-and-forget: errors degrade
-          // silently to the legacy gauge icon.
-          void this._refreshPressureDelta();
           this._refreshForecasts();
         } catch (err) {
           console.error('[weather-station-card] station callback failed', err);
@@ -3539,7 +3532,7 @@ _sunRow_sunshine(show: boolean, sunshineHours: number | undefined) {
 _sunRow_sunPanel(show: boolean, sun: any, language: string) {
   if (!show || sun === undefined) return html``;
   return html`<div>${this._entityLink('sun.sun',
-    this.renderSun({ sun, language } as unknown as this))}${this._renderMoonLine()}</div>`;
+    this.renderSun({ sun, language } as unknown as this))}${this._renderMoonLine(language)}</div>`;
 }
 
 // deno-lint-ignore no-explicit-any
@@ -3689,40 +3682,51 @@ const timeOptions = {
   `;
 }
 
-// Moon-phase line — fed by HA's official Moon integration. Entity
-// resolution: explicit `sensors.moon_phase` config wins, then the
-// integration's default `sensor.moon_phase`, then the legacy
-// `sensor.moon`. No entity (or unavailable) → no line, the sun panel
-// just stays single-line.
-_moonEntityId(): string | undefined {
-  const cfg = this.config?.sensors?.moon_phase;
-  if (typeof cfg === 'string' && cfg) return cfg;
-  const states = this._hass?.states;
-  if (states?.['sensor.moon_phase']) return 'sensor.moon_phase';
-  if (states?.['sensor.moon']) return 'sensor.moon';
-  return undefined;
-}
+// Moon line — computed in-card (src/moon.ts, ADR-0022), no Moon
+// integration or entity needed. Shows the exact illuminated fraction
+// as a dynamically drawn disc + percentage, followed by the NEXT
+// moonrise/moonset (same next-event-only policy as the sun line
+// above). The line is text-free by design, so it needs no locale
+// strings. `show_moon: false` opts out.
+_renderMoonLine(language: string) {
+  if (this.config?.show_moon === false) return html``;
+  const now = new Date();
+  const { fraction, waxing } = moonIllumination(now);
 
-_renderMoonLine() {
-  const eid = this._moonEntityId();
-  const st = eid ? this._hass?.states?.[eid] : undefined;
-  if (!st || st.state === 'unavailable' || st.state === 'unknown') return html``;
-  const icon = MOON_PHASE_ICONS[st.state] ?? 'mdi:weather-night';
-  return html`<br>${this._entityLink(eid, html`<ha-icon icon="${icon}"></ha-icon>
-      ${this._formatMoonPhase(st)}`)}`;
-}
+  // Site coordinates from hass.config (same source as the sun-strength
+  // row). Missing/non-finite → the rise/set part is simply omitted;
+  // the illumination is geocentric and renders regardless.
+  const haCfg = this._hass?.config as { latitude?: number; longitude?: number } | undefined;
+  const lat = haCfg && Number.isFinite(haCfg.latitude) ? haCfg.latitude as number : null;
+  const lon = haCfg && Number.isFinite(haCfg.longitude) ? haCfg.longitude as number : null;
 
-// Localized phase label. Modern HA exposes `hass.formatEntityState`
-// (frontend translation tables — "Zunehmender Halbmond" etc.); older
-// frontends fall back to the raw enum with underscores prettified.
-// deno-lint-ignore no-explicit-any
-_formatMoonPhase(st: any): string {
-  const h = this._hass as unknown as { formatEntityState?: (s: unknown) => string } | null;
-  try {
-    if (h && typeof h.formatEntityState === 'function') return h.formatEntityState(st);
-  } catch { /* frontend helper unavailable mid-boot */ }
-  const raw = String(st?.state ?? '').replace(/_/g, ' ');
-  return raw.charAt(0).toUpperCase() + raw.slice(1);
+  // Southern-hemisphere observers see the moon mirrored — the waxing
+  // moon grows from the LEFT there, so the lit side flips with lat.
+  const litRight = lat !== null && lat < 0 ? !waxing : waxing;
+  const pct = getNumberFormat(language, { style: 'percent', maximumFractionDigits: 0 })
+    .format(fraction);
+
+  const ev = lat !== null && lon !== null ? nextMoonEvent(now, lat, lon) : undefined;
+  const evIcon = ev?.kind === 'rise' ? 'mdi:weather-moonset-up' : 'mdi:weather-moonset-down';
+  const evPart = ev
+    ? html` <ha-icon icon="${evIcon}"></ha-icon>
+        ${getDateTimeFormat(language, {
+          hour12: this.config.use_12hour_format,
+          hour: 'numeric',
+          minute: 'numeric',
+        }).format(ev.time)}`
+    : html``;
+
+  // True-to-nature colours in BOTH themes: lit = white, shadow = black
+  // (a currentColor fill read as "lit = black" on light themes). Only
+  // the thin outline uses currentColor, so the disc edge stays visible
+  // on either background.
+  return html`<br><svg class="wsc-moon" viewBox="0 0 24 24" aria-hidden="true"><circle
+        cx="12" cy="12" r="9.5" fill="#000"></circle><path
+        d=${litMoonPath(fraction, litRight)} fill="#fff"></path><circle
+        cx="12" cy="12" r="9.5" fill="none" stroke="currentColor"
+        stroke-width="1"></circle></svg>
+      ${pct}${evPart}`;
 }
 
 // ADR-0018: the wide per-column rows render up to 168 condition icons
