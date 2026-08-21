@@ -27,6 +27,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Precipitation bars rescale as the rain develops — no reload needed.**
+  The chart's y-axis ceilings were computed once when the chart was
+  built; the in-place data refresh that runs while the card stays on
+  screen kept drawing new values against that stale scale. During
+  intensifying rain a bucket that outgrew the old ceiling clipped flat
+  at the top (and neighbouring bars read as equally tall) until a page
+  reload rebuilt the chart. The precipitation ceiling — and the
+  temperature-axis padding, which had the same frozen-at-build-time
+  problem on long-running dashboards — are now re-derived from the
+  fresh data on every update, on the same redraw.
 - **The pressure-trend arrow shows up again after a page load.** Since
   v2.2.0's stale-while-revalidate hydration, the first recorder result
   after opening a dashboard usually matches the persisted station
