@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.3.0] — 2026-08-21
+
 > **Highlights** — the visual editor was redesigned from a ~4,200 px
 > scroll into one compact screen of collapsible panels; the whole card
 > (editor included) now speaks **23 languages**; the moon line computes
