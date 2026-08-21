@@ -6,6 +6,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The pressure-trend arrow shows up again after a page load.** Since
+  v2.2.0's stale-while-revalidate hydration, the first recorder result
+  after opening a dashboard usually matches the persisted station
+  payload, and the identical-payload guard skipped the 3-h
+  pressure-delta fetch along with the redundant re-render — the
+  pressure row stayed on the legacy gauge icon until the next hour
+  bucket changed the payload. The delta refresh now runs on every
+  station callback, ahead of the guard; its hourly cache keeps the
+  extra invocations free.
+
 ## [2.2.4] — 2026-08-09
 
 ### Fixed
