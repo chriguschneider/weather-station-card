@@ -49,7 +49,9 @@ Compute everything in-card and drop the entity dependency entirely.
   "lit = black" on light themes — exactly backwards.)
 - **Line content:** disc + illumination percentage + next
   moonrise/moonset (`mdi:weather-moonset-up/-down` + time), mirroring
-  the sun line's next-event-only policy. Deliberately text-free — no
+  the sun line's then next-event-only policy (v2.3 shows both sun
+  times on one line again; the moon line stays next-event-only, since
+  only the next crossing is computed). Deliberately text-free — no
   locale strings needed.
 - **Freshness without a timer:** the card already re-renders on
   `sun.sun`'s attribute tick (~1/min via the ADR-0017 delta gate);

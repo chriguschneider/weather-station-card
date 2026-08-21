@@ -8,6 +8,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Sunrise and sunset share one line again.** v2.2 cut the sun row
+  down to only the next event; the row now shows both times side by
+  side (rise first, set second), each with its own icon, while the
+  moon line keeps the second line. Note `sun.sun` only exposes the
+  *next* rise/set, so during the day the rise column shows tomorrow's
+  sunrise.
+
 - **Humidity moved onto the dew-point line — and is now opt-in.** The
   live panel's climate column no longer spends a full row on humidity:
   when `show_humidity: true` is set, the value appears right after the
@@ -27,8 +34,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   lit side white, shadow black, with a thin theme-contrast outline —
   and mirrored on the southern hemisphere where the moon appears
   flipped. The localized phase name gives way to the illumination
-  percentage plus the next moon event (`↑ 21:14` / `↓ 06:32`,
-  mirroring the sun line's next-event-only policy). The line now
+  percentage plus the next moon event (`↑ 21:14` / `↓ 06:32`). The line now
   renders for every install with the sun cell enabled — no Moon
   integration, no configuration. Opt out with `show_moon: false`.
   `sensors.moon_phase` is deprecated and ignored (still accepted, so
