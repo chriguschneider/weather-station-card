@@ -146,20 +146,20 @@ ON; in YAML the sub-keys are evaluated regardless.
 requires a backing value — either a sensor under `sensors.*` or the
 matching attribute on `weather_entity`)
 
-> **Opt-out semantics for the headline attributes**: humidity,
-> pressure, UV, wind-direction, and wind-speed default to *visible*
-> when their backing value is present. The `false` defaults in the
-> table mean "absent unless the renderer sees a value"; the runtime
-> check is `cfg.show_x !== false`, so omitting the key keeps the
-> attribute visible. Set `show_x: false` explicitly to hide.
-> `show_dew_point`, `show_wind_gust_speed`, `show_illuminance`,
-> `show_precipitation`, `show_sunshine_duration`, and `show_sun` are
-> opt-in (require an explicit `true`).
+> **Opt-out semantics for the headline attributes**: pressure, UV,
+> wind-direction, and wind-speed default to *visible* when their
+> backing value is present. The `false` defaults in the table mean
+> "absent unless the renderer sees a value"; the runtime check is
+> `cfg.show_x !== false`, so omitting the key keeps the attribute
+> visible. Set `show_x: false` explicitly to hide.
+> `show_humidity`, `show_dew_point`, `show_wind_gust_speed`,
+> `show_illuminance`, `show_precipitation`, `show_sunshine_duration`,
+> and `show_sun` are opt-in (require an explicit `true`).
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `show_attributes` | bool | `false` | Show humidity / pressure / dew point / sun / wind row. |
-| `show_humidity` | bool | opt-out (`true` when value present) | Humidity attribute. |
+| `show_humidity` | bool | `false` | Humidity, rendered on the dew-point line after the dew point (opt-in). When `show_dew_point` is off or no dew-point value is wired, humidity takes the line alone. *(changed in v2.3: was its own row)* |
 | `show_pressure` | bool | opt-out (`true` when value present) | Pressure attribute. |
 | `show_dew_point` | bool | `false` | Dew-point attribute (opt-in). |
 | `show_uv_index` | bool | opt-out (`true` when value present) | UV index attribute. |

@@ -3357,11 +3357,6 @@ _attrEntity(sensorKey: string, weatherFallback: boolean = true): string | undefi
 // clearer than 4-row nested ternaries and lets ESLint's
 // no-nested-conditional rule apply at per-row granularity.
 
-_climateRow_humidity(show: boolean, humidity: unknown) {
-  if (!show || humidity === undefined) return html``;
-  return html`${this._entityLink(this._attrEntity('humidity'),
-    html`<ha-icon icon="hass:water-percent"></ha-icon> ${humidity} %`)}<br>`;
-}
 // deno-lint-ignore no-explicit-any
 _climateRow_pressure(show: boolean, dPressure: any, deltaHpa: number | null) {
   if (!show || dPressure === undefined) return html``;
@@ -3393,8 +3388,19 @@ _climateRow_pressure(show: boolean, dPressure: any, deltaHpa: number | null) {
       icon="hass:${iconName}"
     ></ha-icon> ${dPressure} ${unitLabel}</span>`)}<br>`;
 }
-_climateRow_dewpoint(show: boolean, dew_point: unknown) {
-  if (!show || dew_point === undefined) return html``;
+// Dew point and humidity share one line (v2.3): the dew point is the
+// headline value, humidity is an opt-in second segment with its own
+// icon and entity link. Humidity alone still renders when the dew
+// point is hidden or unwired.
+_climateRow_dewpoint(show: boolean, dew_point: unknown, showHumidity: boolean, humidity: unknown) {
+  const dewVisible = show && dew_point !== undefined;
+  const humVisible = showHumidity && humidity !== undefined;
+  if (!dewVisible && !humVisible) return html``;
+  const humSegment = humVisible
+    ? this._entityLink(this._attrEntity('humidity'),
+        html`<ha-icon icon="hass:water-percent"></ha-icon> ${humidity} %`)
+    : html``;
+  if (!dewVisible) return html`${humSegment}<br>`;
   const displayUnit = this.weather.attributes.temperature_unit;
   // Classifier wants pure °C; convert once when the source sensor is in
   // °F. Display values themselves stay in the user's unit.
@@ -3436,10 +3442,13 @@ _climateRow_dewpoint(show: boolean, dew_point: unknown) {
     displayDew = Math.round(displayDew * 10) / 10;
   }
   const dewText = Number.isFinite(displayDew) ? String(displayDew) : String(dew_point);
-  return html`${this._entityLink(this._attrEntity('dew_point'),
+  const dewSegment = this._entityLink(this._attrEntity('dew_point'),
     html`<span title=${ariaLabel} aria-label=${ariaLabel}><ha-icon
       icon="hass:${iconName}"
-    ></ha-icon> ${dewText} ${displayUnit}</span>`)}<br>`;
+    ></ha-icon> ${dewText} ${displayUnit}</span>`);
+  return humVisible
+    ? html`${dewSegment} ${humSegment}<br>`
+    : html`${dewSegment}<br>`;
 }
 _climateRow_precip(show: boolean, hasValue: boolean, precipitation: unknown, precipitation_unit: unknown) {
   if (!show || !hasValue) return html``;
@@ -3553,17 +3562,17 @@ _windRow_gust(show: boolean, wind_gust_speed: any) {
     ${this._convertWindSpeed(parseFloat(wind_gust_speed))} ${unitLabel}`)}`;
 }
 
-// Climate group: humidity / pressure / dew-point / precipitation. Returns
-// nothing-html when every row's toggle is off or backing value is empty.
+// Climate group: pressure / dew-point (+ opt-in humidity on the same
+// line) / precipitation. Returns nothing-html when every row's toggle
+// is off or backing value is empty.
 // deno-lint-ignore no-explicit-any
 _renderClimateGroup({ showHumidity, humidity, showPressure, dPressure, pressureDelta3h, showDewpoint, dew_point, showPrecipitation, precipitation, precipitation_unit, hasPrecipValue }: any) {
   const anyVisible = (showHumidity && humidity !== undefined) || (showPressure && dPressure !== undefined) || (showDewpoint && dew_point !== undefined) || (showPrecipitation && hasPrecipValue);
   if (!anyVisible) return html``;
   return html`
     <div>
-      ${this._climateRow_humidity(showHumidity, humidity)}
       ${this._climateRow_pressure(showPressure, dPressure, pressureDelta3h)}
-      ${this._climateRow_dewpoint(showDewpoint, dew_point)}
+      ${this._climateRow_dewpoint(showDewpoint, dew_point, showHumidity, humidity)}
       ${this._climateRow_precip(showPrecipitation, hasPrecipValue, precipitation, precipitation_unit)}
     </div>
   `;
@@ -3603,9 +3612,9 @@ renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, la
 
   if (config.show_attributes === false) return html``;
 
-  // All live-block sub-toggles default to ON (opt-out): once the
-  // master show_attributes is enabled, every available data point
-  // appears unless explicitly turned off in YAML / editor.
+  // Live-block sub-toggle defaults come from DEFAULTS (merged in
+  // setConfig): headline attributes are on, detail attributes and
+  // humidity are opt-in.
   // Precipitation display: a native rate sensor is converted to the
   // configured display unit in `set hass`; a cumulative counter is
   // turned into a live rate by `_maybeDerivePrecipRate`. The display
@@ -3621,7 +3630,9 @@ renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, la
   const lon = haCfg && Number.isFinite(haCfg.longitude) ? haCfg.longitude as number : null;
 
   const ctx = {
-    showHumidity: config.show_humidity !== false,
+    // Opt-in since the dew-point line merge (v2.3): the line shows only
+    // the dew point by default; humidity joins it on explicit `true`.
+    showHumidity: config.show_humidity === true,
     showPressure: config.show_pressure !== false,
     showWindDirection: config.show_wind_direction !== false,
     showWindSpeed: config.show_wind_speed !== false,
