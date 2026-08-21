@@ -6,6 +6,27 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+> **Highlights** — the visual editor was redesigned from a ~4,200 px
+> scroll into one compact screen of collapsible panels; the whole card
+> (editor included) now speaks **23 languages**; the moon line computes
+> itself with no Moon integration; and two long-standing chart/live-row
+> refresh bugs are fixed.
+
+### Added
+
+- **The editor speaks 23 languages.** Only English and German carried
+  editor translations — every other language fell back to English
+  across the entire visual editor. The card now ships a fully
+  translated editor in Bulgarian, Catalan, Czech, Danish, Greek,
+  Spanish, Finnish, French, Hungarian, Italian, Korean, Lithuanian,
+  Norwegian Bokmål, Dutch, Polish, Portuguese, Romanian, Russian,
+  Slovak, Swedish, and Ukrainian: panel headings and state summaries,
+  sensor labels, the multi-selects, the clock and past-source
+  dropdowns, unit labels, and the long hints. Terminology follows each
+  language's Home Assistant frontend and national weather-service
+  conventions, and a new parity test keeps every language complete
+  (and placeholders intact) from now on.
+
 ### Changed
 
 - **The visual editor collapses into expansion panels — from a ~4,200 px
@@ -65,8 +86,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **The units section speaks your language.** The three unit labels
   ("Show pressure in", …) were hardcoded English — the only
   unlocalized strings in the editor. They now come from the locale
-  files (English/German shipped; other languages fall back to English
-  until translated).
+  files.
+
+- **Three locale slips.** The Slovak file said Czech "Slunce" for
+  sunshine (now "Slnko"); Ukrainian and Bulgarian carried the Russian
+  "Солнце" (now "Сонце" / "Слънце").
 
 - **Precipitation bars rescale as the rain develops — no reload needed.**
   The chart's y-axis ceilings were computed once when the chart was

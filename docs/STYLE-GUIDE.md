@@ -11,7 +11,7 @@ docs **scannable, current, and TL;DR-resistant** — every addition must earn it
 | --- | --- | --- |
 | `ALL-CAPS.md` at repo root | Top-level meta-docs | `README.md`, `CONTRIBUTING.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, `MIGRATION.md`, `TESTING.md`, `LICENSE.md` |
 | `ALL-CAPS.md` in `docs/` | User reference docs | `docs/CONFIGURATION.md`, `docs/CONDITIONS.md`, `docs/SENSORS.md`, `docs/TROUBLESHOOTING.md` |
-| Lowercase | Special-purpose | `info.md` (HACS install dialog), `README.md` (GitHub) |
+| Lowercase | Special-purpose | `README.md` (GitHub; HACS renders it in the store via `render_readme`) |
 
 ## Header pattern
 
@@ -86,7 +86,6 @@ These limits exist to prevent doc-bloat:
 | --- | --- | --- |
 | `README.md` | 300 | First impression. Anything more = users skim, miss the pitch |
 | `docs/*.md` | 250 | Reference docs benefit from depth, but past 250 lines you stop scanning |
-| `info.md` | 50 | HACS dialog has a narrow column — long descriptions wrap badly |
 
 If a single section approaches ~150 lines, **split it** into a new doc rather
 than extending the existing one. See "When to split" below.

@@ -67,7 +67,7 @@ From [`ARCHITECTURE.md`](../../../ARCHITECTURE.md) and [`.dependency-cruiser.cjs
 
 From [`docs/STYLE-GUIDE.md`](../../../docs/STYLE-GUIDE.md):
 
-- **Doc file naming.** New top-level meta-docs use `ALL-CAPS.md`. New user-reference docs in `docs/` likewise. Lowercase is reserved for `info.md` (HACS install dialog) and `README.md`.
+- **Doc file naming.** New top-level meta-docs use `ALL-CAPS.md`. New user-reference docs in `docs/` likewise. Lowercase is reserved for `README.md` (HACS renders it in the store via `render_readme`).
 - **"Back to README" anchor.** Every new `.md` file under `docs/` must include the navigation anchor at the top.
 
 Build / quality gates (silent failures to prevent):

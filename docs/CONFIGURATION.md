@@ -4,26 +4,62 @@ This document describes every YAML key supported by the card.
 
 → Back to [README](../README.md)
 
+## Minimal examples
+
+Three typical starting points — every other key below is optional.
+(Adding the card through the UI pre-fills the sensors via ranked
+auto-detect, so most cards never need hand-written YAML at all.)
+
+**Combination** (the default: past station history + forecast):
+
+```yaml
+type: custom:weather-station-card
+weather_entity: weather.home
+sensors:
+  temperature: sensor.outdoor_temperature
+```
+
+**Station only** (no `weather.*` entity needed):
+
+```yaml
+type: custom:weather-station-card
+show_forecast: false
+sensors:
+  temperature: sensor.outdoor_temperature
+  precipitation: sensor.rain_counter
+```
+
+**Forecast only, no station** (the past half of the chart comes from
+Open-Meteo — see [SENSORS.md](SENSORS.md#open-meteo-past-block-no-station-sensors)):
+
+```yaml
+type: custom:weather-station-card
+weather_entity: weather.home
+forecast:
+  openmeteo_history: true
+```
+
 ## Editor-section mapping
 
-Since v1.9.x the visual editor groups options into seven user-intent
-clusters. The reference below stays organised by config-key category
-(easier when you're searching for a specific YAML key); this table
-maps each editor section to where its keys live in the reference.
+The visual editor (redesigned in the v2.3 cycle, ADR-0023) shows the
+basics directly and collapses everything else into five panels. The
+reference below stays organised by config-key category (easier when
+you're searching for a specific YAML key); this table maps each editor
+block to where its keys live in the reference.
 
-| Editor section | Where the keys are documented |
+| Editor block | Where the keys are documented |
 | --- | --- |
-| 1. Karte einrichten / Card setup | [General](#general) — `show_station`, `show_forecast`, `forecast.type`, `title` |
-| 2. Wettervorhersage / Weather forecast | [General](#general) — `weather_entity` |
-| 3. Sensoren / Sensors | [Sensors](#sensors) — `sensors.*`, `days` |
-| 4. Diagramm / Chart | [Layout & Display](#layout--display) (chart rows) and [Chart appearance](#chart-appearance) |
-| 5. Live-Anzeige / Live panel | [Layout & Display](#layout--display) (main panel + attributes row) |
-| 6. Einheiten / Units | [Units](#units) |
-| 7. Aktionen / Actions | [Actions](#actions) |
+| Basics (always visible) | [General](#general) — `show_station` + `show_forecast` (the mode dropdown), `forecast.type`, `title`, `weather_entity` |
+| Your weather station's sensors | [Sensors](#sensors) — `sensors.*`; the "Past data" source dropdown drives `forecast.openmeteo_history` |
+| Chart | [General](#general) (`days`, `forecast_days`) and [Chart appearance](#chart-appearance) (`forecast.number_of_forecasts`, `forecast.chart_height`, the chart-row toggles, `forecast.style`) |
+| Live panel | [Layout & Display](#layout--display) — the main-panel elements, the clock dropdown (`show_time`, `show_time_seconds`, `use_12hour_format`), and the attribute cells |
+| Units | [Units](#units) |
+| Actions | [Actions](#actions) |
 
-Some keys (chart sizes, individual colour overrides, font sizes) are
-no longer surfaced in the editor in v1.9.x but remain working YAML
-keys — see the relevant tables below for "YAML-only" markers.
+Some keys (label/precip-bar sizes, individual colour overrides, font
+sizes, `locale`, `condition_mapping`, `debug`) are not surfaced in the
+editor but remain working YAML keys — see the relevant tables below
+for "YAML-only" markers.
 
 ## General
 

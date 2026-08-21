@@ -15,6 +15,7 @@
   <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=chriguschneider&category=frontend&repository=weather-station-card"><img alt="HACS installs" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriguschneider%2Fweather-station-card%2Fbadges%2Finstalls.json" /></a>
   <a href="https://github.com/chriguschneider/weather-station-card/stargazers"><img alt="Stars" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriguschneider%2Fweather-station-card%2Fbadges%2Fstars.json" /></a>
   <a href="https://github.com/chriguschneider/weather-station-card/commits/master"><img alt="Last commit" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriguschneider%2Fweather-station-card%2Fbadges%2Flastcommit.json" /></a>
+  <a href="#configuration"><img alt="Translated into 23 languages" src="https://img.shields.io/badge/translated-23_languages-41BDF5.svg" /></a>
   <a href="https://buymeacoffee.com/chriguschneider"><img alt="Buy Me a Coffee" src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00.svg" /></a>
   <a href="#ai-assisted-development"><img alt="AI Assisted" src="https://img.shields.io/badge/AI-assisted-2196F3.svg" /></a>
 </p>
@@ -82,6 +83,10 @@ reflects the live readings of those same sensors. This card does both:
   needed. All values derive from current sensor states, not from a
   forecast; every sensor-backed value is clickable and opens its
   more-info dialog.
+- A **compact visual editor** — everything is configurable without
+  YAML, and the whole card fits one editor screen (see
+  [below](#configuration)).
+- **Fully translated** — UI *and* editor — into 23 languages.
 
 Conditions are derived by a deterministic, meteorologically-grounded
 classifier (see [docs/CONDITIONS.md](docs/CONDITIONS.md#how-conditions-are-determined)
@@ -203,7 +208,19 @@ Or manually:
 3. Hard-refresh your browser (Ctrl-F5 or equivalent) so the new resource
    loads.
 4. Add the card to your dashboard via the Lovelace UI ("Add Card → Custom:
-   Weather Station Card") or paste the YAML below.
+   Weather Station Card") — the editor pre-fills your most likely weather
+   sensors via ranked auto-detect — or start from this minimal YAML:
+
+```yaml
+type: custom:weather-station-card
+weather_entity: weather.home
+sensors:
+  temperature: sensor.outdoor_temperature
+```
+
+Every other key is optional — see
+[docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the full reference
+and more starting points.
 
 ### Manual
 
@@ -218,19 +235,32 @@ Or manually:
 
 New cards default to **combination mode** — past station history on
 the left, forecast on the right — pre-populated with your most likely
-weather sensors via ranked auto-detect. Want station-only or
-forecast-only? Switch the mode in section 1 of the editor.
+weather sensors via ranked auto-detect.
 
-The visual editor groups options into seven sections, clustered by
-user intent:
+The **visual editor fits one screen**: the four basics (mode, chart
+type, title, weather entity) stay directly visible, everything else
+lives in five collapsible panels whose headers summarise the current
+configuration — readable without opening anything. The editor is fully
+translated into 23 languages.
 
-1. **Karte einrichten** / Card setup — mode, chart type, title
-2. **Wettervorhersage** / Weather forecast — `weather_entity` picker
-3. **Sensoren** / Sensors — your station's sensors + past-data window
-4. **Diagramm** / Chart — time range, chart rows, appearance
-5. **Live-Anzeige** / Live panel — "now" panel + attributes row
-6. **Einheiten** / Units — pressure / wind-speed / precipitation display units
-7. **Aktionen** / Actions — tap, hold, and double-tap behaviour
+<table>
+<tr>
+<td><img alt="Visual editor, light theme" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/images/editor-light.png"></td>
+<td><img alt="Visual editor, dark theme" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/images/editor-dark.png"></td>
+</tr>
+</table>
+
+- **Basics** (always visible) — mode, chart type, title, weather entity
+- **Your weather station's sensors** — a "Past data" source choice
+  (station sensors, or Open-Meteo history when you have no station) and
+  the sensor pickers in a two-column grid
+- **Chart** — days / visible columns / chart height, the chart rows as
+  one multi-select, style
+- **Live panel** — main-panel elements and attribute cells as
+  multi-selects, plus a single clock dropdown (off / 24h / 12h,
+  with-seconds variants)
+- **Units** — pressure / wind-speed / precipitation display units
+- **Actions** — tap, hold, and double-tap behaviour
 
 Every YAML key is documented in **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**
 with type, default, and effect.
@@ -258,10 +288,11 @@ model, the chart-plugin contract), read [ARCHITECTURE.md](ARCHITECTURE.md).
 For doc-writing conventions (length targets, voice, cross-linking), see
 [docs/STYLE-GUIDE.md](docs/STYLE-GUIDE.md).
 
-**Translations** are a well-bounded first contribution. Strings live in
-`src/locale.ts`; English and German ship with a complete editor block,
-other languages fall through to English at runtime. Add yours via a PR —
-see CONTRIBUTING.md.
+**Translations** are a well-bounded first contribution. The card ships
+fully translated — UI and editor — in 23 languages (one file per
+language under `src/locales/`). Corrections from native speakers and
+entirely new languages are equally welcome; a parity test guides you to
+every key a language must provide. See CONTRIBUTING.md.
 
 ## AI-assisted development
 
