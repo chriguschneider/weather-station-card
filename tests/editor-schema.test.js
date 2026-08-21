@@ -1,29 +1,36 @@
 // @vitest-environment jsdom
 //
-// Schema-driven editor smoketests for the chart + live-panel sections
-// after the v1.10.2 #87 migration. The other 5 sections (units / mode /
-// sensors / forecast / tap) were already schema-driven before v1.10.2;
-// this file consolidates the new chart + live-panel coverage that
-// replaced editor-render-chart.test.js + editor-render-live-panel.test.js.
+// Schema-driven editor smoketests for the redesigned (v2.4, ADR-0023)
+// basics / sensors / chart / live-panel sections.
 //
 // Pattern: render the section into a jsdom <div>, then read each
 // <ha-form>'s `.schema` property (lit's property binding) to assert
 // that the schema-driven field set matches what the section should
 // expose for the given config / sensor presence. Custom elements
 // render as unknown HTMLElements; we only read their properties.
+// Grid containers ({type: 'grid', schema: [...]}) are flattened.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, html } from 'lit';
+import { renderBasicsSection } from '../src/editor/render-basics.js';
+import { renderSensorsSection } from '../src/editor/render-sensors.js';
 import { renderChartSection } from '../src/editor/render-chart.js';
 import { renderLivePanelSection } from '../src/editor/render-live-panel.js';
 import { DEFAULTS, DEFAULTS_FORECAST } from '../src/defaults.js';
 
-function makeEditor() {
+function makeEditor(overrides = {}) {
   return {
     hass: null,
     _config: null,
     _mode: 'combination',
+    _pastSource: 'station',
+    _clockMode: 'off',
     _setMode: vi.fn(),
+    _setPastSource: vi.fn(),
+    _setClockMode: vi.fn(),
+    _applyTogglePaths: vi.fn(),
+    _isPanelExpanded: vi.fn(() => true),
+    _setPanelExpanded: vi.fn(),
     _valueChanged: vi.fn(),
     _sensorsChanged: vi.fn(),
     _sensorPickerChanged: vi.fn(),
@@ -32,12 +39,13 @@ function makeEditor() {
     _chartForecastChanged: vi.fn(),
     _livePanelChanged: vi.fn(),
     _actionChanged: vi.fn(),
-    _conditionMappingChanged: vi.fn(),
+    _resetSection: vi.fn(),
     _renderSunshineAvailabilityHint: vi.fn(
       () => html`<span class="sunshine-availability-mock">availability info</span>`,
     ),
     configChanged: vi.fn(),
     requestUpdate: vi.fn(),
+    ...overrides,
   };
 }
 
@@ -50,12 +58,12 @@ function makeCtx({ cfg = {}, fcfg = {}, ...overrides } = {}) {
     fcfg: mergedFcfg,
     sensorsConfig: {},
     unitsConfig: {},
-    cmap: {},
     mode: 'combination',
     showsStation: true,
     showsForecast: true,
     hasSensor: () => false,
     hasLiveValue: () => false,
+    pastDataAvailable: true,
     ...overrides,
   };
 }
@@ -66,19 +74,127 @@ function renderInto(renderFn, editor, ctx) {
   return container;
 }
 
-// Pull the .schema property off every <ha-form> element in the
-// rendered tree. Returns an array of arrays (one inner array per form).
-function collectFormSchemas(container) {
-  return Array.from(container.querySelectorAll('ha-form'))
-    .map((form) => /** @type {Array<{name: string}>} */ (form.schema) || []);
+// Flatten one form's schema, recursing into grid containers.
+function flattenSchema(fields, out = []) {
+  for (const field of fields || []) {
+    if (field.type === 'grid' && Array.isArray(field.schema)) {
+      flattenSchema(field.schema, out);
+    } else {
+      out.push(field);
+    }
+  }
+  return out;
 }
 
-// Flatten all field names across every form in the section. Useful when
-// the test only cares that a field exists somewhere, not which form
-// owns it.
+function collectFormSchemas(container) {
+  return Array.from(container.querySelectorAll('ha-form'))
+    .map((form) => flattenSchema(form.schema || []));
+}
+
 function allFieldNames(container) {
   return collectFormSchemas(container).flatMap((schema) => schema.map((f) => f.name));
 }
+
+// Find the (form, field) pair for a given flattened field name.
+function findField(container, name) {
+  for (const form of container.querySelectorAll('ha-form')) {
+    for (const field of flattenSchema(form.schema || [])) {
+      if (field.name === name) return { form, field };
+    }
+  }
+  return null;
+}
+
+function selectOptionValues(field) {
+  return (field.selector?.select?.options || []).map((o) => (typeof o === 'string' ? o : o.value));
+}
+
+// ── renderBasicsSection ───────────────────────────────────────────────
+
+describe('renderBasicsSection (schema-driven)', () => {
+  let editor;
+  beforeEach(() => {
+    editor = makeEditor();
+  });
+
+  it('renders without throwing on default config', () => {
+    expect(() => renderInto(renderBasicsSection, editor, makeCtx())).not.toThrow();
+  });
+
+  it('exposes mode, chart type, and title fields', () => {
+    const names = allFieldNames(renderInto(renderBasicsSection, editor, makeCtx()));
+    expect(names).toContain('mode');
+    expect(names).toContain('type');
+    expect(names).toContain('title');
+  });
+
+  it('shows the weather entity while a forecast is shown', () => {
+    const names = allFieldNames(renderInto(renderBasicsSection, editor, makeCtx()));
+    expect(names).toContain('weather_entity');
+  });
+
+  it('hides the weather entity in station-only mode', () => {
+    const container = renderInto(
+      renderBasicsSection,
+      editor,
+      makeCtx({ mode: 'station', showsForecast: false }),
+    );
+    expect(allFieldNames(container)).not.toContain('weather_entity');
+  });
+});
+
+// ── renderSensorsSection ──────────────────────────────────────────────
+
+describe('renderSensorsSection (schema-driven)', () => {
+  it('exposes the past-source dropdown plus the 11 pickers for station source', () => {
+    const container = renderInto(renderSensorsSection, makeEditor(), makeCtx());
+    const names = allFieldNames(container);
+    expect(names).toContain('past_source');
+    for (const key of [
+      'temperature', 'humidity', 'illuminance', 'precipitation', 'pressure',
+      'wind_speed', 'gust_speed', 'wind_direction', 'uv_index', 'dew_point',
+      'sunshine_duration',
+    ]) {
+      expect(names).toContain(key);
+    }
+  });
+
+  it('wraps the pickers in a 2-column grid container', () => {
+    const container = renderInto(renderSensorsSection, makeEditor(), makeCtx());
+    const gridForms = Array.from(container.querySelectorAll('ha-form'))
+      .filter((form) => (form.schema || []).some((f) => f.type === 'grid'));
+    expect(gridForms.length).toBe(1);
+  });
+
+  it('hides the pickers entirely when the source is Open-Meteo', () => {
+    const container = renderInto(
+      renderSensorsSection,
+      makeEditor({ _pastSource: 'openmeteo' }),
+      makeCtx(),
+    );
+    const names = allFieldNames(container);
+    expect(names).toContain('past_source');
+    expect(names).not.toContain('temperature');
+  });
+
+  it('is hidden in forecast-only mode while past data is available', () => {
+    const container = renderInto(
+      renderSensorsSection,
+      makeEditor(),
+      makeCtx({ showsStation: false, mode: 'forecast', pastDataAvailable: true }),
+    );
+    expect(container.querySelectorAll('ha-form').length).toBe(0);
+  });
+
+  it('stays reachable (recovery controls) when no past data exists', () => {
+    const container = renderInto(
+      renderSensorsSection,
+      makeEditor(),
+      makeCtx({ showsStation: false, mode: 'forecast', pastDataAvailable: false }),
+    );
+    expect(allFieldNames(container)).toContain('past_source');
+  });
+});
 
 // ── renderChartSection ────────────────────────────────────────────────
 
@@ -92,9 +208,9 @@ describe('renderChartSection (schema-driven)', () => {
     expect(() => renderInto(renderChartSection, editor, makeCtx())).not.toThrow();
   });
 
-  it('shows the chart section heading', () => {
+  it('titles its panel with the chart heading', () => {
     const container = renderInto(renderChartSection, editor, makeCtx());
-    expect(container.querySelector('h3.section')?.textContent?.trim()).toBe('chart_section_heading');
+    expect(container.querySelector('.panel-title')?.textContent?.trim()).toBe('chart_section_heading');
   });
 
   it('emits the three subsection headings (time-range, rows, appearance)', () => {
@@ -109,27 +225,41 @@ describe('renderChartSection (schema-driven)', () => {
     ]);
   });
 
-  it('exposes the chart-row toggles via schema (icons, wind_arrow, wind_speed, date, sunshine)', () => {
+  it('collapses the six chart rows into one multi-select', () => {
     const container = renderInto(renderChartSection, editor, makeCtx());
-    const names = allFieldNames(container);
-    expect(names).toContain('condition_icons');
-    expect(names).toContain('show_wind_arrow');
-    expect(names).toContain('show_wind_speed');
-    expect(names).toContain('show_date');
-    expect(names).toContain('show_sunshine');
+    const found = findField(container, 'chart_rows');
+    expect(found).toBeTruthy();
+    expect(found.field.selector.select.multiple).toBe(true);
+    expect(selectOptionValues(found.field)).toEqual([
+      'condition_icons', 'show_wind_arrow', 'show_wind_speed',
+      'show_date', 'show_sunshine', 'show_mode_toggle',
+    ]);
   });
 
-  it('exposes the appearance toggles via schema (round_temp, disable_animation, style)', () => {
+  it('pre-selects the rows that are on (opt-out rows on, sunshine off by default)', () => {
     const container = renderInto(renderChartSection, editor, makeCtx());
-    const names = allFieldNames(container);
+    const { form } = findField(container, 'chart_rows');
+    expect(form.data.chart_rows).toEqual([
+      'condition_icons', 'show_wind_arrow', 'show_wind_speed',
+      'show_date', 'show_mode_toggle',
+    ]);
+  });
+
+  it('exposes the appearance fields (style, round_temp, disable_animation)', () => {
+    const names = allFieldNames(renderInto(renderChartSection, editor, makeCtx()));
+    expect(names).toContain('style');
     expect(names).toContain('round_temp');
     expect(names).toContain('disable_animation');
-    expect(names).toContain('style');
   });
 
-  it('renders multiple ha-form blocks (one per logical group)', () => {
-    const container = renderInto(renderChartSection, editor, makeCtx());
-    expect(container.querySelectorAll('ha-form').length).toBeGreaterThanOrEqual(4);
+  it('exposes number_of_forecasts and the (formerly YAML-only) chart_height', () => {
+    const names = allFieldNames(renderInto(renderChartSection, editor, makeCtx()));
+    expect(names).toContain('number_of_forecasts');
+    expect(names).toContain('chart_height');
+  });
+
+  it('no longer owns the title field (moved to basics)', () => {
+    expect(allFieldNames(renderInto(renderChartSection, editor, makeCtx()))).not.toContain('title');
   });
 
   it('does NOT call the sunshine availability hint when show_sunshine is off', () => {
@@ -166,15 +296,9 @@ describe('renderChartSection (schema-driven)', () => {
   });
 
   it('shows both days and forecast_days in combination mode', () => {
-    const container = renderInto(renderChartSection, editor, makeCtx());
-    const names = allFieldNames(container);
+    const names = allFieldNames(renderInto(renderChartSection, editor, makeCtx()));
     expect(names).toContain('days');
     expect(names).toContain('forecast_days');
-  });
-
-  it('exposes a title field via schema', () => {
-    const container = renderInto(renderChartSection, editor, makeCtx({ cfg: { title: 'Living Room' } }));
-    expect(allFieldNames(container)).toContain('title');
   });
 });
 
@@ -190,90 +314,55 @@ describe('renderLivePanelSection (schema-driven)', () => {
     expect(() => renderInto(renderLivePanelSection, editor, makeCtx())).not.toThrow();
   });
 
-  it('shows the live-panel section heading', () => {
+  it('titles its panel with the live-panel heading', () => {
     const container = renderInto(renderLivePanelSection, editor, makeCtx());
-    expect(container.querySelector('h3.section')?.textContent?.trim()).toBe('live_panel_heading');
-  });
-
-  it('emits the two subsection headings (main panel, attributes)', () => {
-    const container = renderInto(renderLivePanelSection, editor, makeCtx());
-    const subs = Array.from(container.querySelectorAll('h4.subsection')).map(
-      (h) => h.textContent?.trim(),
-    );
-    expect(subs).toEqual(['main_panel_heading', 'attributes_heading']);
+    expect(container.querySelector('.panel-title')?.textContent?.trim()).toBe('live_panel_heading');
   });
 
   it('exposes show_main and show_attributes master toggles in default state', () => {
-    const container = renderInto(renderLivePanelSection, editor, makeCtx());
-    const names = allFieldNames(container);
+    const names = allFieldNames(renderInto(renderLivePanelSection, editor, makeCtx()));
     expect(names).toContain('show_main');
     expect(names).toContain('show_attributes');
   });
 
-  it('reveals main-panel sub-toggles when show_main is enabled', () => {
+  it('hides the element multi-select and clock while show_main is off', () => {
+    const names = allFieldNames(renderInto(
+      renderLivePanelSection,
+      editor,
+      makeCtx({ cfg: { show_main: false } }),
+    ));
+    expect(names).not.toContain('main_elements');
+    expect(names).not.toContain('clock_mode');
+  });
+
+  it('reveals the element multi-select and the clock dropdown when show_main is on', () => {
     const container = renderInto(
       renderLivePanelSection,
       editor,
       makeCtx({ cfg: { show_main: true } }),
     );
-    const names = allFieldNames(container);
-    expect(names).toContain('show_temperature');
-    expect(names).toContain('show_current_condition');
-    expect(names).toContain('show_time');
-    expect(names).toContain('show_day');
-    expect(names).toContain('show_date');
+    const elements = findField(container, 'main_elements');
+    expect(elements).toBeTruthy();
+    expect(selectOptionValues(elements.field)).toEqual([
+      'show_temperature', 'show_current_condition', 'show_day', 'show_date',
+    ]);
+    const clock = findField(container, 'clock_mode');
+    expect(selectOptionValues(clock.field)).toEqual([
+      'off', '24h', '24h_seconds', '12h', '12h_seconds',
+    ]);
   });
 
-  it('hides main-panel sub-toggles when show_main is off', () => {
+  it('offers only sun + moon attribute options when no sensors / live values report', () => {
     const container = renderInto(
       renderLivePanelSection,
       editor,
-      makeCtx({ cfg: { show_main: false } }),
+      makeCtx({ cfg: { show_attributes: true } }),
     );
-    const names = allFieldNames(container);
-    expect(names).toContain('show_main');
-    expect(names).not.toContain('show_temperature');
+    const { field } = findField(container, 'attributes');
+    expect(selectOptionValues(field)).toEqual(['show_sun', 'show_moon']);
   });
 
-  it('reveals time-format sub-toggles only when show_time is enabled', () => {
-    const offContainer = renderInto(
-      renderLivePanelSection,
-      editor,
-      makeCtx({ cfg: { show_main: true, show_time: false } }),
-    );
-    expect(allFieldNames(offContainer)).not.toContain('show_time_seconds');
-
-    const onContainer = renderInto(
-      renderLivePanelSection,
-      editor,
-      makeCtx({ cfg: { show_main: true, show_time: true } }),
-    );
-    const names = allFieldNames(onContainer);
-    expect(names).toContain('show_time_seconds');
-    expect(names).toContain('use_12hour_format');
-  });
-
-  it('hides attribute sub-toggles when show_attributes is on but no sensors / live values report', () => {
-    const container = renderInto(
-      renderLivePanelSection,
-      editor,
-      makeCtx({
-        cfg: { show_attributes: true },
-        hasLiveValue: () => false,
-        hasSensor: () => false,
-      }),
-    );
-    const names = allFieldNames(container);
-    // Master + show_sun + show_moon (always shown — the moon line is
-    // computed in-card, no sensor gate) + nothing else.
-    expect(names).toContain('show_attributes');
-    expect(names).toContain('show_sun');
-    expect(names).toContain('show_moon');
-    expect(names).not.toContain('show_humidity');
-    expect(names).not.toContain('show_pressure');
-  });
-
-  it('reveals only the sub-toggles whose backing sensor / live value is present', () => {
+  it('offers exactly the attribute options whose backing value is present', () => {
     const container = renderInto(
       renderLivePanelSection,
       editor,
@@ -283,50 +372,51 @@ describe('renderLivePanelSection (schema-driven)', () => {
         hasSensor: (k) => k === 'precipitation',
       }),
     );
-    const names = allFieldNames(container);
-    expect(names).toContain('show_humidity');
-    expect(names).toContain('show_pressure');
-    expect(names).toContain('show_precipitation');
-    expect(names).not.toContain('show_uv_index');
-    expect(names).not.toContain('show_illuminance');
+    const values = selectOptionValues(findField(container, 'attributes').field);
+    expect(values).toContain('show_humidity');
+    expect(values).toContain('show_pressure');
+    expect(values).toContain('show_precipitation');
+    expect(values).not.toContain('show_uv_index');
+    expect(values).not.toContain('show_illuminance');
   });
 
-  it('humidity is opt-in and its toggle follows show_dew_point (shared line since v2.3)', () => {
-    const hasLiveValue = (k) => k === 'humidity' || k === 'dew_point';
-    const container = renderInto(
-      renderLivePanelSection,
-      editor,
-      makeCtx({ cfg: { show_attributes: true }, hasLiveValue }),
-    );
-    const attrNames = collectFormSchemas(container)[1].map((f) => f.name);
-    expect(attrNames.indexOf('show_humidity')).toBe(attrNames.indexOf('show_dew_point') + 1);
-
-    // Key at its DEFAULTS value (false) → toggle off: opt-in semantics.
-    const attrForm = container.querySelectorAll('ha-form')[1];
-    expect(attrForm.data.show_humidity).toBe(false);
-
-    // Explicit true → toggle on.
-    const onContainer = renderInto(
-      renderLivePanelSection,
-      editor,
-      makeCtx({ cfg: { show_attributes: true, show_humidity: true }, hasLiveValue }),
-    );
-    expect(onContainer.querySelectorAll('ha-form')[1].data.show_humidity).toBe(true);
-  });
-
-  it('shows the wind sub-toggles when their respective live values are present', () => {
+  it('lists humidity right after dew_point (shared line since v2.3)', () => {
     const container = renderInto(
       renderLivePanelSection,
       editor,
       makeCtx({
         cfg: { show_attributes: true },
-        hasLiveValue: (k) =>
-          k === 'wind_direction' || k === 'wind_speed' || k === 'gust_speed',
+        hasLiveValue: (k) => k === 'humidity' || k === 'dew_point',
       }),
     );
-    const names = allFieldNames(container);
-    expect(names).toContain('show_wind_direction');
-    expect(names).toContain('show_wind_speed');
-    expect(names).toContain('show_wind_gust_speed');
+    const values = selectOptionValues(findField(container, 'attributes').field);
+    expect(values.indexOf('show_humidity')).toBe(values.indexOf('show_dew_point') + 1);
+  });
+
+  it('pre-selects humidity only when explicitly opted in', () => {
+    const hasLiveValue = (k) => k === 'humidity' || k === 'dew_point';
+    const off = renderInto(
+      renderLivePanelSection,
+      editor,
+      makeCtx({ cfg: { show_attributes: true }, hasLiveValue }),
+    );
+    expect(findField(off, 'attributes').form.data.attributes).not.toContain('show_humidity');
+
+    const on = renderInto(
+      renderLivePanelSection,
+      editor,
+      makeCtx({ cfg: { show_attributes: true, show_humidity: true }, hasLiveValue }),
+    );
+    expect(findField(on, 'attributes').form.data.attributes).toContain('show_humidity');
+  });
+
+  it('hides the attributes multi-select when show_attributes is off', () => {
+    const names = allFieldNames(renderInto(
+      renderLivePanelSection,
+      editor,
+      makeCtx({ cfg: { show_attributes: false } }),
+    ));
+    expect(names).toContain('show_attributes');
+    expect(names).not.toContain('attributes');
   });
 });

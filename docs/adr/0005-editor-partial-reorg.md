@@ -1,6 +1,9 @@
 # 0005: Editor partial reorganisation around user intent
 
-**Status:** Accepted
+**Status:** Accepted — section structure superseded by
+[ADR-0023](0023-editor-expansion-panels.md) (expansion panels; the
+user-intent clustering and the thin-orchestrator/partial pattern
+decided here carry over)
 
 **Date:** 2026-05-09
 

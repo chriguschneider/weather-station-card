@@ -1,173 +1,198 @@
-// Editor render partial — Section 5: "Live-Anzeige" (Live panel).
+// Editor render partial — "Live-Anzeige" (Live panel).
 // The now-panel that sits above the chart: current temperature,
-// condition, time, and the attributes row.
+// condition, clock, and the attributes row.
+//
+// v2.4 redesign (ADR-0023): the former walls of toggles (8 main-panel
+// + 13 attribute switches) collapse into two multi-select fields under
+// their on/off gates, and the three clock booleans (show_time,
+// show_time_seconds, use_12hour_format) project onto a single "clock"
+// dropdown — the same UI-only-abstraction pattern the mode dropdown
+// uses for show_station / show_forecast.
 //
 // Font-size knobs (current_temp_size, icons_size, time_size,
-// day_date_size) are not exposed in the editor — they live in DEFAULTS
-// + YAML only. Most users never touch them; the editor surface stays
-// cleaner without them.
-//
-// Always visible — show_main is the gate for the panel itself; users
-// can keep it off in pure forecast mode if they prefer the chart alone.
-//
-// Schema-driven via <ha-form>. Two ha-form blocks split the section
-// visually:
-//   - Main panel: show_main + 6 sub-toggles (time-related toggles
-//     conditionally appear)
-//   - Attributes: show_attributes + 10 sub-toggles (each conditional
-//     on hasLiveValue / hasSensor for the matching metric)
+// day_date_size) stay in DEFAULTS + YAML only.
 
 import { html, type TemplateResult } from 'lit';
-import type { EditorLike, EditorContext } from './types.js';
-import { renderSectionHeader } from './section-header.js';
+import type { EditorLike, EditorContext, TogglePath } from './types.js';
+import { renderEditorPanel } from './expansion-panel.js';
 
-interface SchemaField {
-  name: string;
-  selector: object;
+// Main-panel elements. `def` mirrors the editor-visible defaults the
+// old toggle bags used (`!== false` → true, `=== true` → false).
+const MAIN_ELEMENT_PATHS: ReadonlyArray<TogglePath> = [
+  { path: 'show_temperature',       def: true },
+  { path: 'show_current_condition', def: true },
+  { path: 'show_day',               def: false },
+  { path: 'show_date',              def: false },
+];
+
+// Attribute cells, in display order (humidity right after dew_point —
+// it renders on the dew-point line, opt-in since v2.3). `gate` names
+// which availability predicate controls whether the option is offered.
+const ATTRIBUTE_PATHS: ReadonlyArray<TogglePath & { gate?: 'live' | 'sensor'; gateKey?: string }> = [
+  { path: 'show_pressure',          def: true,  gate: 'live',   gateKey: 'pressure' },
+  { path: 'show_dew_point',         def: false, gate: 'live',   gateKey: 'dew_point' },
+  { path: 'show_humidity',          def: false, gate: 'live',   gateKey: 'humidity' },
+  { path: 'show_precipitation',     def: false, gate: 'sensor', gateKey: 'precipitation' },
+  { path: 'show_uv_index',          def: true,  gate: 'live',   gateKey: 'uv_index' },
+  { path: 'show_illuminance',       def: false, gate: 'sensor', gateKey: 'illuminance' },
+  { path: 'show_sunshine_duration', def: false, gate: 'sensor', gateKey: 'sunshine_duration' },
+  { path: 'show_wind_direction',    def: true,  gate: 'live',   gateKey: 'wind_direction' },
+  { path: 'show_wind_speed',        def: true,  gate: 'live',   gateKey: 'wind_speed' },
+  { path: 'show_wind_gust_speed',   def: false, gate: 'live',   gateKey: 'gust_speed' },
+  // Sun/moon have no sensor gate — sun uses sun.sun, the moon line is
+  // computed in-card (ADR-0022).
+  { path: 'show_sun',               def: false },
+  { path: 'show_moon',              def: true },
+];
+
+const CLOCK_OPTIONS = ['off', '24h', '24h_seconds', '12h', '12h_seconds'] as const;
+
+function selectedLeaves(
+  cfg: Record<string, unknown>,
+  paths: ReadonlyArray<TogglePath>,
+): string[] {
+  return paths
+    .filter(({ path, def }) => (def ? cfg[path] !== false : cfg[path] === true))
+    .map(({ path }) => path);
 }
 
-// Gate for the whole panel. Sub-toggles only appear when show_main is on.
-// `show_time` further gates two sub-toggles for seconds / 12-hour format.
-function buildMainPanelSchema(showMain: boolean, showTime: boolean): SchemaField[] {
-  const schema: SchemaField[] = [
-    { name: 'show_main', selector: { boolean: {} } },
-  ];
-  if (!showMain) return schema;
-  schema.push(
-    { name: 'show_temperature', selector: { boolean: {} } },
-    { name: 'show_current_condition', selector: { boolean: {} } },
-    { name: 'show_time', selector: { boolean: {} } },
-  );
-  if (showTime) {
-    schema.push(
-      { name: 'show_time_seconds', selector: { boolean: {} } },
-      { name: 'use_12hour_format', selector: { boolean: {} } },
-    );
-  }
-  schema.push(
-    { name: 'show_day', selector: { boolean: {} } },
-    { name: 'show_date', selector: { boolean: {} } },
-  );
-  return schema;
-}
-
-// Attributes-row gate + 10 sub-toggles. Each metric only appears in the
-// schema when its backing sensor (or weather-entity attribute, for
-// hasLiveValue) is configured — keeps the editor focused on what the
-// user can actually control.
-function buildAttributesSchema(
-  showAttrs: boolean,
+/** Attribute options currently available for this config — shared with
+ *  the panel summary (count of enabled among available). */
+export function availableAttributePaths(
   hasLiveValue: (key: string) => boolean,
   hasSensor: (key: string) => boolean,
-): SchemaField[] {
-  const schema: SchemaField[] = [
-    { name: 'show_attributes', selector: { boolean: {} } },
-  ];
-  if (!showAttrs) return schema;
-  if (hasLiveValue('pressure')) {
-    schema.push({ name: 'show_pressure', selector: { boolean: {} } });
-  }
-  if (hasLiveValue('dew_point')) {
-    schema.push({ name: 'show_dew_point', selector: { boolean: {} } });
-  }
-  // Humidity renders on the dew-point line (opt-in) — the toggle sits
-  // right after show_dew_point to mirror that.
-  if (hasLiveValue('humidity')) {
-    schema.push({ name: 'show_humidity', selector: { boolean: {} } });
-  }
-  if (hasSensor('precipitation')) {
-    schema.push({ name: 'show_precipitation', selector: { boolean: {} } });
-  }
-  if (hasLiveValue('uv_index')) {
-    schema.push({ name: 'show_uv_index', selector: { boolean: {} } });
-  }
-  if (hasSensor('illuminance')) {
-    schema.push({ name: 'show_illuminance', selector: { boolean: {} } });
-  }
-  if (hasSensor('sunshine_duration')) {
-    schema.push({ name: 'show_sunshine_duration', selector: { boolean: {} } });
-  }
-  if (hasLiveValue('wind_direction')) {
-    schema.push({ name: 'show_wind_direction', selector: { boolean: {} } });
-  }
-  if (hasLiveValue('wind_speed')) {
-    schema.push({ name: 'show_wind_speed', selector: { boolean: {} } });
-  }
-  if (hasLiveValue('gust_speed')) {
-    schema.push({ name: 'show_wind_gust_speed', selector: { boolean: {} } });
-  }
-  schema.push({ name: 'show_sun', selector: { boolean: {} } });
-  // Computed in-card (ADR-0022) — no sensor gate, always offered.
-  schema.push({ name: 'show_moon', selector: { boolean: {} } });
-  return schema;
+): Array<TogglePath> {
+  return ATTRIBUTE_PATHS.filter(({ gate, gateKey }) => {
+    if (!gate || !gateKey) return true;
+    return gate === 'live' ? hasLiveValue(gateKey) : hasSensor(gateKey);
+  });
 }
 
 export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): TemplateResult {
   const { t, cfg, hasSensor, hasLiveValue } = ctx;
   const showMain = cfg.show_main === true;
-  const showTime = cfg.show_time === true;
   const showAttrs = cfg.show_attributes === true;
 
-  const mainPanelSchema = buildMainPanelSchema(showMain, showTime);
-  const attributesSchema = buildAttributesSchema(showAttrs, hasLiveValue, hasSensor);
+  const gateSchema = (name: string): Array<{ name: string; selector: object }> =>
+    [{ name, selector: { boolean: {} } }];
 
-  const mainPanelData = {
-    show_main: showMain,
-    show_temperature: cfg.show_temperature !== false,
-    show_current_condition: cfg.show_current_condition !== false,
-    show_time: showTime,
-    show_time_seconds: cfg.show_time_seconds === true,
-    use_12hour_format: cfg.use_12hour_format === true,
-    show_day: cfg.show_day === true,
-    show_date: cfg.show_date === true,
+  const mainElementsSchema = [{
+    name: 'main_elements',
+    selector: {
+      select: {
+        mode: 'dropdown',
+        multiple: true,
+        options: MAIN_ELEMENT_PATHS.map(({ path }) => ({ value: path, label: t(path) })),
+      },
+    },
+  }];
+
+  const clockSchema = [{
+    name: 'clock_mode',
+    selector: {
+      select: {
+        mode: 'dropdown',
+        options: CLOCK_OPTIONS.map((value) => ({ value, label: t(`clock_${value}`) })),
+      },
+    },
+  }];
+
+  const availableAttrs = availableAttributePaths(hasLiveValue, hasSensor);
+  const attributesSchema = [{
+    name: 'attributes',
+    selector: {
+      select: {
+        mode: 'dropdown',
+        multiple: true,
+        options: availableAttrs.map(({ path }) => ({ value: path, label: t(path) })),
+      },
+    },
+  }];
+
+  const handleMainElements = (event: CustomEvent<{ value: { main_elements?: string[] } }>): void => {
+    editor._applyTogglePaths(MAIN_ELEMENT_PATHS, event.detail.value?.main_elements ?? []);
   };
-  const attributesData = {
-    show_attributes: showAttrs,
-    // Opt-in since the dew-point line merge (v2.3) — matches
-    // DEFAULTS.show_humidity: false and the renderer's `=== true` gate.
-    show_humidity: cfg.show_humidity === true,
-    show_pressure: cfg.show_pressure !== false,
-    show_dew_point: cfg.show_dew_point === true,
-    show_precipitation: cfg.show_precipitation === true,
-    show_uv_index: cfg.show_uv_index !== false,
-    show_illuminance: cfg.show_illuminance === true,
-    show_sunshine_duration: cfg.show_sunshine_duration === true,
-    show_wind_direction: cfg.show_wind_direction !== false,
-    show_wind_speed: cfg.show_wind_speed !== false,
-    show_wind_gust_speed: cfg.show_wind_gust_speed === true,
-    show_sun: cfg.show_sun === true,
-    show_moon: cfg.show_moon !== false,
+  const handleClock = (event: CustomEvent<{ value: { clock_mode?: string } }>): void => {
+    const next = event.detail.value?.clock_mode;
+    if (next && next !== editor._clockMode) editor._setClockMode(next);
+  };
+  const handleAttributes = (event: CustomEvent<{ value: { attributes?: string[] } }>): void => {
+    editor._applyTogglePaths(availableAttrs, event.detail.value?.attributes ?? []);
   };
 
-  const labelFor = (schema: { name: string }): string => t(schema.name);
+  const labelFor = (schema: { name: string }): string => {
+    const map: Record<string, string> = {
+      show_main: t('show_main'),
+      show_attributes: t('show_attributes'),
+      main_elements: t('main_elements_label'),
+      clock_mode: t('clock_label'),
+      attributes: t('attributes_heading'),
+    };
+    return map[schema.name] || t(schema.name);
+  };
 
-  return html`
-    ${renderSectionHeader({ editor, title: t('live_panel_heading'), sectionKey: 'live_panel', resetLabel: t('reset_section') })}
+  const enabledAttrs = selectedLeaves(cfg, availableAttrs);
+  const summary = `${t('main_panel_heading')} ${showMain ? t('summary_on') : t('summary_off')}`
+    + ` · ${showAttrs ? `${enabledAttrs.length} ${t('summary_attributes')}` : `${t('attributes_heading')} ${t('summary_off')}`}`;
 
-    <h4 class="subsection">${t('main_panel_heading')}</h4>
+  const body = html`
     <div class="textfield-container">
       <ha-form
-        .data=${mainPanelData}
-        .schema=${mainPanelSchema}
+        .data=${{ show_main: showMain }}
+        .schema=${gateSchema('show_main')}
         .hass=${editor.hass}
         .computeLabel=${labelFor}
         @value-changed=${editor._livePanelChanged}
       ></ha-form>
-    </div>
+      ${showMain ? html`
+        <div class="gated">
+          <ha-form
+            .data=${{ main_elements: selectedLeaves(cfg, MAIN_ELEMENT_PATHS) }}
+            .schema=${mainElementsSchema}
+            .hass=${editor.hass}
+            .computeLabel=${labelFor}
+            @value-changed=${handleMainElements}
+          ></ha-form>
+          <ha-form
+            .data=${{ clock_mode: editor._clockMode }}
+            .schema=${clockSchema}
+            .hass=${editor.hass}
+            .computeLabel=${labelFor}
+            @value-changed=${handleClock}
+          ></ha-form>
+        </div>
+      ` : ''}
 
-    <h4 class="subsection">${t('attributes_heading')}</h4>
-    <div class="textfield-container">
+      <div class="divider"></div>
+
       <ha-form
-        .data=${attributesData}
-        .schema=${attributesSchema}
+        .data=${{ show_attributes: showAttrs }}
+        .schema=${gateSchema('show_attributes')}
         .hass=${editor.hass}
         .computeLabel=${labelFor}
         @value-changed=${editor._livePanelChanged}
       ></ha-form>
+      ${showAttrs ? html`
+        <div class="gated">
+          <ha-form
+            .data=${{ attributes: enabledAttrs }}
+            .schema=${attributesSchema}
+            .hass=${editor.hass}
+            .computeLabel=${labelFor}
+            @value-changed=${handleAttributes}
+          ></ha-form>
+        </div>
+      ` : ''}
     </div>
-
-    <!-- Font-size knobs (current_temp_size, icons_size, time_size,
-         day_date_size) live in DEFAULTS + YAML only — most users never
-         change them and the editor surface is cleaner without them. -->
   `;
+
+  return renderEditorPanel({
+    editor,
+    sectionKey: 'live_panel',
+    icon: 'mdi:clock-outline',
+    title: t('live_panel_heading'),
+    summary,
+    resetLabel: t('reset_section'),
+    body,
+  });
 }

@@ -8,14 +8,18 @@
 // addresses cfg.forecast.show_sunshine). The reset implementation walks
 // the dot-path and prunes empty parent objects after deletion.
 //
-// Drift guard: tests/editor-schema.test.js asserts every schema field
+// Drift guard: tests/defaults.test.js asserts every schema field
 // returned by each section's render is present in this map (or in the
 // per-section SCHEMA_KEY_SKIPLIST) — adding a new field to a schema
 // without updating SECTION_KEYS will fail CI.
+//
+// `basics` has no reset button in the UI (the section carries the
+// card's identity — mode, entity, title — where "reset" would be
+// surprising), but its key inventory stays here so the drift guards
+// cover its schema fields.
 
 export type SectionKey =
-  | 'card_setup'
-  | 'weather_forecast'
+  | 'basics'
   | 'sensors'
   | 'chart'
   | 'live_panel'
@@ -23,26 +27,25 @@ export type SectionKey =
   | 'actions';
 
 export const SECTION_KEYS: Record<SectionKey, ReadonlyArray<string>> = {
-  card_setup: [
+  basics: [
     // mode is a UI-only abstraction backed by show_station + show_forecast.
     'show_station',
     'show_forecast',
     'forecast.type',
-  ],
-  weather_forecast: [
+    'title',
     'weather_entity',
   ],
   sensors: [
     'sensors',
-    // The Open-Meteo no-station past-block opt-in (ADR-0015) is shown
-    // as a toggle in this section, so resetting the section clears it.
+    // The Open-Meteo no-station past-block opt-in (ADR-0015), driven by
+    // the past-source dropdown in this section.
     'forecast.openmeteo_history',
   ],
   chart: [
-    'title',
     'days',
     'forecast_days',
     'forecast.number_of_forecasts',
+    'forecast.chart_height',
     'forecast.condition_icons',
     'forecast.show_wind_arrow',
     'forecast.show_wind_speed',

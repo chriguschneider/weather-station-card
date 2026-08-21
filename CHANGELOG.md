@@ -8,6 +8,26 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The visual editor collapses into expansion panels — from a ~4,200 px
+  scroll to one screen.** (ADR-0023) The four basics (mode, chart type,
+  title, weather entity) stay directly visible; everything else lives
+  in five collapsed panels whose headers summarise the current state
+  ("4+7 days · 8 columns · 5 rows"), so the closed editor reads as a
+  configuration overview. Inside the panels: the sensor pickers sit in
+  a two-column grid ordered as thematic pairs (temperature | pressure,
+  humidity | dew point, wind | gusts, …); the six chart rows, the
+  main-panel elements, and the attribute cells each become one
+  multi-select field; the three clock booleans project onto a single
+  clock dropdown; number fields and unit dropdowns pair up in
+  two-column grids. A new "Past data" source dropdown replaces the
+  buried Open-Meteo opt-in toggle — the runtime always prefers station
+  sensors, so the choice is now explicit, and picking Open-Meteo hides
+  the pickers (and drops `sensors:` from the config so editor and card
+  agree). `forecast.chart_height` is now editable in the editor. The
+  YAML schema is unchanged — every existing key keeps its meaning; the
+  removed `condition_mapping` editor plumbing was dead code (the keys
+  remain YAML-configurable).
+
 - **Sunrise and sunset share one line again.** v2.2 cut the sun row
   down to only the next event; the row now shows both times side by
   side (rise first, set second), each with its own icon, while the
@@ -40,6 +60,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   v2.2 configs keep validating).
 
 ### Fixed
+
+- **The units section speaks your language.** The three unit labels
+  ("Show pressure in", …) were hardcoded English — the only
+  unlocalized strings in the editor. They now come from the locale
+  files (English/German shipped; other languages fall back to English
+  until translated).
 
 - **Precipitation bars rescale as the rain develops — no reload needed.**
   The chart's y-axis ceilings were computed once when the chart was

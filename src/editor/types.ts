@@ -46,11 +46,32 @@ interface ValueChangedTarget {
  *  shows and which sources the data layer subscribes to. */
 export type EditorMode = 'station' | 'forecast' | 'combination';
 
+/** Where the past half of the chart gets its data (ADR-0015): station
+ *  sensors via the recorder, or the Open-Meteo history opt-in. */
+export type PastSource = 'station' | 'openmeteo';
+
+/** Toggle-path descriptor for the multi-select (chips) fields. `def`
+ *  is the *editor-visible* default for the key — the same truthiness
+ *  the data bags use (`!== false` → def true, `=== true` → def false).
+ *  Writing deletes keys that land back on their default so the YAML
+ *  stays terse. */
+export interface TogglePath {
+  path: string;
+  def: boolean;
+}
+
 export interface EditorLike {
   hass: HomeAssistant | null;
   _config: Record<string, unknown> | null;
   _mode: EditorMode;
   _setMode(value: EditorMode): void;
+  _pastSource: PastSource;
+  _setPastSource(value: PastSource): void;
+  _clockMode: string;
+  _setClockMode(value: string): void;
+  _applyTogglePaths(items: ReadonlyArray<TogglePath>, selectedLeaves: ReadonlyArray<string>): void;
+  _isPanelExpanded(sectionKey: string): boolean;
+  _setPanelExpanded(sectionKey: string, expanded: boolean): void;
   _valueChanged(event: { target: ValueChangedTarget }, key: string): void;
   _sensorsChanged(event: Event): void;
   _sensorPickerChanged(key: string, value: unknown): void;
@@ -60,7 +81,6 @@ export interface EditorLike {
   _livePanelChanged(event: Event): void;
   _resetSection(sectionKey: string): void;
   _actionChanged(key: string, value: unknown): void;
-  _conditionMappingChanged(event: { target: { value?: string } }, key: string): void;
   _renderSunshineAvailabilityHint(cfg: Record<string, unknown>, t: TFn): unknown;
   configChanged(newConfig: Record<string, unknown>): void;
   requestUpdate(): void;

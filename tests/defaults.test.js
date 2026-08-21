@@ -19,9 +19,8 @@ import { render, html } from 'lit';
 import '../src/main.js';
 import { DEFAULTS, DEFAULTS_FORECAST, DEFAULTS_UNITS } from '../src/defaults.js';
 import { SECTION_KEYS } from '../src/editor/section-keys.js';
-import { renderModeSection } from '../src/editor/render-mode.js';
+import { renderBasicsSection } from '../src/editor/render-basics.js';
 import { renderSensorsSection } from '../src/editor/render-sensors.js';
-import { renderForecastSection } from '../src/editor/render-forecast.js';
 import { renderChartSection } from '../src/editor/render-chart.js';
 import { renderLivePanelSection } from '../src/editor/render-live-panel.js';
 import { renderUnitsSection } from '../src/editor/render-units.js';
@@ -122,10 +121,17 @@ const DELETE_ONLY_PATHS = new Set([
 // Schema field names a render-*.ts treats as UI-only (not config-backed)
 // or that map to a SECTION_KEYS parent-path block (see CHILDREN_OF map).
 const SCHEMA_KEY_SKIPLIST = new Set([
-  'mode',  // render-mode.ts exposes the UI-level abstraction; backed by
-           // show_station + show_forecast in SECTION_KEYS card_setup.
-  'type',  // render-mode.ts chart-type schema field; bound to forecast.type
-           // (which IS in SECTION_KEYS card_setup).
+  'mode',  // render-basics.ts exposes the UI-level abstraction; backed by
+           // show_station + show_forecast in SECTION_KEYS basics.
+  'type',  // render-basics.ts chart-type schema field; bound to forecast.type
+           // (which IS in SECTION_KEYS basics).
+  // v2.4 (ADR-0023) UI-only abstractions: each is backed by config keys
+  // that ARE listed per-section in SECTION_KEYS.
+  'past_source',    // sensors + forecast.openmeteo_history (sensors section)
+  'chart_rows',     // six forecast.* row booleans (chart section)
+  'main_elements',  // four show_* booleans (live_panel section)
+  'clock_mode',     // show_time / show_time_seconds / use_12hour_format
+  'attributes',     // the attribute show_* booleans (live_panel section)
 ]);
 
 // Sections whose SECTION_KEYS list contains a parent-path (no dots) —
@@ -137,7 +143,18 @@ const PARENT_KEY_SECTIONS = {
 };
 
 // Render a section into jsdom and pull every <ha-form>'s .schema field
-// names. Returns a flat array of names.
+// names, recursing into grid containers ({type: 'grid'}) so their
+// children count as fields (the container's own name is layout-only).
+function collectSchemaNames(fields, out) {
+  for (const field of fields || []) {
+    if (field.type === 'grid' && Array.isArray(field.schema)) {
+      collectSchemaNames(field.schema, out);
+    } else {
+      out.push(field.name);
+    }
+  }
+}
+
 function schemaFieldsFromSection(renderFn, ctx) {
   const editor = makeEditorMock();
   const fullCtx = { ...defaultCtx(), ...ctx };
@@ -145,9 +162,7 @@ function schemaFieldsFromSection(renderFn, ctx) {
   render(renderFn(editor, fullCtx), container);
   const names = [];
   for (const form of container.querySelectorAll('ha-form')) {
-    for (const field of (form.schema || [])) {
-      names.push(field.name);
-    }
+    collectSchemaNames(form.schema || [], names);
   }
   return names;
 }
@@ -157,7 +172,14 @@ function makeEditorMock() {
     hass: null,
     _config: null,
     _mode: 'combination',
+    _pastSource: 'station',
+    _clockMode: 'off',
     _setMode: vi.fn(),
+    _setPastSource: vi.fn(),
+    _setClockMode: vi.fn(),
+    _applyTogglePaths: vi.fn(),
+    _isPanelExpanded: vi.fn(() => true),
+    _setPanelExpanded: vi.fn(),
     _valueChanged: vi.fn(),
     _sensorsChanged: vi.fn(),
     _sensorPickerChanged: vi.fn(),
@@ -166,7 +188,6 @@ function makeEditorMock() {
     _chartForecastChanged: vi.fn(),
     _livePanelChanged: vi.fn(),
     _actionChanged: vi.fn(),
-    _conditionMappingChanged: vi.fn(),
     _resetSection: vi.fn(),
     _renderSunshineAvailabilityHint: vi.fn(() => html``),
     configChanged: vi.fn(),
@@ -219,8 +240,7 @@ describe('SECTION_KEYS ↔ DEFAULTS drift guard', () => {
 
 describe('Editor schema fields ↔ SECTION_KEYS drift guard', () => {
   const cases = [
-    { name: 'card_setup', renderFn: renderModeSection },
-    { name: 'weather_forecast', renderFn: renderForecastSection },
+    { name: 'basics', renderFn: renderBasicsSection },
     { name: 'sensors', renderFn: renderSensorsSection },
     { name: 'chart', renderFn: renderChartSection },
     { name: 'live_panel', renderFn: renderLivePanelSection },

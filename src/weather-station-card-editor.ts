@@ -2,15 +2,14 @@ import { LitElement, html, type TemplateResult } from 'lit';
 import type { HomeAssistant } from './editor/types.js';
 import locale, { ensureLocaleLoaded } from './locale.js';
 import { readCachedAvailability } from './openmeteo-source.js';
-import { renderModeSection } from './editor/render-mode.js';
+import { renderBasicsSection } from './editor/render-basics.js';
 import { renderSensorsSection } from './editor/render-sensors.js';
-import { renderForecastSection } from './editor/render-forecast.js';
 import { renderChartSection } from './editor/render-chart.js';
 import { renderLivePanelSection } from './editor/render-live-panel.js';
 import { renderUnitsSection } from './editor/render-units.js';
 import { renderTapSection } from './editor/render-tap.js';
 import { SECTION_KEYS, type SectionKey } from './editor/section-keys.js';
-import type { EditorContext, EditorLike, TFn } from './editor/types.js';
+import type { EditorContext, EditorLike, PastSource, TFn, TogglePath } from './editor/types.js';
 
 type EditorMode = 'station' | 'forecast' | 'combination';
 
@@ -96,6 +95,118 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     }
     this.configChanged(newConfig);
     this.requestUpdate();
+  }
+
+  // ── Past-data source (UI-only abstraction, ADR-0015 / ADR-0023) ──────
+  // The runtime always prefers station sensors over the Open-Meteo
+  // history opt-in, so the editor presents the two as one exclusive
+  // dropdown. Reading: any configured sensor wins; otherwise the
+  // opt-in decides. Writing "openmeteo" drops the sensors block so the
+  // editor and the card agree (reversible until the user saves).
+  get _pastSource(): PastSource {
+    const sensors = (this._config?.sensors as Record<string, string>) || {};
+    const hasSensor = Object.values(sensors).some(
+      (v) => typeof v === 'string' && v.trim() !== '',
+    );
+    if (hasSensor) return 'station';
+    const fc = this._config?.forecast as { openmeteo_history?: boolean } | undefined;
+    return fc?.openmeteo_history === true ? 'openmeteo' : 'station';
+  }
+
+  _setPastSource = (value: PastSource): void => {
+    if (!this._config) return;
+    const newConfig: Record<string, unknown> = { ...this._config };
+    const fc: Record<string, unknown> = { ...(newConfig.forecast as Record<string, unknown> ?? {}) };
+    if (value === 'openmeteo') {
+      fc.openmeteo_history = true;
+      newConfig.forecast = fc;
+      delete newConfig.sensors;
+    } else {
+      delete fc.openmeteo_history;
+      if (Object.keys(fc).length === 0) {
+        delete newConfig.forecast;
+      } else {
+        newConfig.forecast = fc;
+      }
+    }
+    this.configChanged(newConfig);
+    this.requestUpdate();
+  };
+
+  // ── Clock mode (UI-only abstraction over three booleans) ─────────────
+  // show_time / show_time_seconds / use_12hour_format project onto one
+  // dropdown: off | 24h | 24h_seconds | 12h | 12h_seconds.
+  get _clockMode(): string {
+    const c = this._config ?? {};
+    if (c.show_time !== true) return 'off';
+    const twelve = c.use_12hour_format === true;
+    const seconds = c.show_time_seconds === true;
+    return (twelve ? '12h' : '24h') + (seconds ? '_seconds' : '');
+  }
+
+  _setClockMode = (value: string): void => {
+    const selected: string[] = [];
+    if (value !== 'off') selected.push('show_time');
+    if (value.endsWith('_seconds')) selected.push('show_time_seconds');
+    if (value.startsWith('12h')) selected.push('use_12hour_format');
+    this._applyTogglePaths(
+      [
+        { path: 'show_time', def: false },
+        { path: 'show_time_seconds', def: false },
+        { path: 'use_12hour_format', def: false },
+      ],
+      selected,
+    );
+  };
+
+  // ── Multi-select (chips) plumbing ────────────────────────────────────
+  // Maps a multi-select value array back onto individual boolean config
+  // keys. Each item carries its editor-visible default; keys that land
+  // back on their default are deleted so the YAML stays terse.
+  _applyTogglePaths = (
+    items: ReadonlyArray<TogglePath>,
+    selectedLeaves: ReadonlyArray<string>,
+  ): void => {
+    if (!this._config) return;
+    const selected = new Set(selectedLeaves);
+    const newConfig = JSON.parse(JSON.stringify(this._config)) as Record<string, unknown>;
+    for (const { path, def } of items) {
+      const leaf = path.split('.').pop() as string;
+      const desired = selected.has(leaf);
+      if (desired === def) {
+        this._deleteByPath(newConfig, path);
+      } else {
+        this._setByPath(newConfig, path, desired);
+      }
+    }
+    this.configChanged(newConfig);
+    this.requestUpdate();
+  };
+
+  _setByPath(obj: Record<string, unknown>, path: string, value: unknown): void {
+    const parts = path.split('.');
+    let cursor = obj;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const next = cursor[parts[i]];
+      if (!next || typeof next !== 'object') {
+        cursor[parts[i]] = {};
+      }
+      cursor = cursor[parts[i]] as Record<string, unknown>;
+    }
+    cursor[parts[parts.length - 1]] = value;
+  }
+
+  // ── Expansion-panel state (UI-only, not persisted to config) ─────────
+  _expandedPanels: Record<string, boolean> = {};
+
+  _isPanelExpanded(sectionKey: string): boolean {
+    return this._expandedPanels[sectionKey] === true;
+  }
+
+  _setPanelExpanded(sectionKey: string, expanded: boolean): void {
+    // No requestUpdate — ha-expansion-panel animates its own state;
+    // the stored flag only keeps re-renders from collapsing panels.
+    this._expandedPanels[sectionKey] = expanded;
   }
 
   // True when the card can render a past chart block: a station sensor
@@ -345,28 +456,6 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     this.requestUpdate();
   };
 
-  // condition_mapping override editor: empty input = use default (key
-  // removed from the YAML); any value coerces to a number.
-  _conditionMappingChanged = (event: { target: { value?: string } }, key: string): void => {
-    if (!this._config) return;
-    const raw = event.target.value;
-    const newMapping: Record<string, number> = { ...((this._config.condition_mapping as Record<string, number>) || {}) };
-    if (raw === '' || raw === null || raw === undefined) {
-      delete newMapping[key];
-    } else {
-      const n = parseFloat(raw);
-      if (Number.isFinite(n)) newMapping[key] = n;
-    }
-    const newConfig: Record<string, unknown> = { ...this._config };
-    if (Object.keys(newMapping).length === 0) {
-      delete newConfig.condition_mapping;
-    } else {
-      newConfig.condition_mapping = newMapping;
-    }
-    this.configChanged(newConfig);
-    this.requestUpdate();
-  };
-
   // ── Render ────────────────────────────────────────────────────────────
   // Thin orchestrator. Each section A–F lives in its own partial under
   // src/editor/. The styles below are global to the whole editor surface
@@ -425,93 +514,76 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
 
     return html`
       <style>
-        h3.section {
-          font-size: 1rem;
-          font-weight: 500;
-          color: var(--primary-text-color, #212121);
-          margin: 24px 0 12px;
-          padding-bottom: 4px;
-          border-bottom: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
-        }
-        h3.section:first-of-type { margin-top: 0; }
-        /* Section headers with the reset-to-defaults icon button.
-           The button right-aligns in the heading; clicking it
-           drops every key the section owns from this._config so DEFAULTS
-           take over. */
-        h3.section.section-header-with-reset {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 8px;
-        }
-        h3.section.section-header-with-reset .section-title {
-          flex: 1;
-        }
-        h3.section.section-header-with-reset .section-reset {
-          --mdc-icon-button-size: 32px;
-          --mdc-icon-size: 18px;
-          color: var(--secondary-text-color, #727272);
-          opacity: 0.7;
-        }
-        h3.section.section-header-with-reset .section-reset:hover {
-          opacity: 1;
-          color: var(--primary-text-color, #212121);
-        }
         h4.subsection {
           font-size: 0.9rem;
           font-weight: 500;
           color: var(--secondary-text-color, #727272);
           margin: 18px 0 8px;
         }
-        details.advanced {
-          margin-top: 8px;
-          border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
-          border-radius: 4px;
-          padding: 8px 12px;
-        }
-        details.advanced > summary {
-          cursor: pointer;
-          color: var(--primary-text-color, #212121);
-          font-weight: 500;
-        }
-        details.advanced[open] > summary {
-          margin-bottom: 12px;
-        }
-        details.expert-section { margin-top: 24px; }
-        details.expert-section > summary {
-          cursor: pointer;
-          list-style: none;
-        }
-        details.expert-section > summary::-webkit-details-marker { display: none; }
-        details.expert-section > summary > h3.section-summary {
-          display: inline-block;
-          margin: 0;
-          padding-bottom: 4px;
-        }
-        details.expert-section > summary::before {
-          content: '▶';
-          display: inline-block;
-          width: 1em;
-          font-size: 0.85em;
-          transition: transform 0.15s;
-        }
-        details.expert-section[open] > summary::before { transform: rotate(90deg); }
-        details.expert-section[open] > summary { margin-bottom: 12px; }
-        .switch-label { padding-left: 14px; }
-        .switch-container { margin-bottom: 12px; display: flex; align-items: center; }
+        h4.subsection:first-child { margin-top: 4px; }
         .textfield-container {
           display: flex; flex-direction: column; margin-bottom: 10px; gap: 16px;
         }
-        .flex-container { display: flex; flex-direction: row; gap: 20px; }
-        .flex-container ha-textfield { flex-basis: 50%; flex-grow: 1; }
-        .radio-group { display: flex; gap: 16px; align-items: center; margin-bottom: 12px; }
-        .radio-item { display: flex; align-items: center; }
-        .radio-item label { margin-left: 4px; }
+        .grid2 {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 16px;
+        }
+        .gated { margin-left: 12px; display: flex; flex-direction: column; gap: 16px; }
+        .divider {
+          border-top: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+          margin: 4px 0;
+        }
         .hint {
           font-size: 0.85rem;
           color: var(--secondary-text-color, #727272);
           margin: 4px 0 12px;
         }
+        /* Collapsible section panels (ADR-0023). The header slot holds
+           icon + title + state summary + reset; ha-expansion-panel
+           draws its own chevron and manages expand/collapse. */
+        ha-expansion-panel.editor-panel {
+          display: block;
+          margin-bottom: 12px;
+        }
+        .panel-header {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          flex: 1;
+          min-width: 0;
+          padding: 2px 0;
+        }
+        .panel-icon {
+          color: var(--secondary-text-color, #727272);
+          flex: none;
+        }
+        .panel-titles { flex: 1; min-width: 0; }
+        .panel-title {
+          font-size: 0.95rem;
+          font-weight: 500;
+          color: var(--primary-text-color, #212121);
+        }
+        .panel-summary {
+          font-size: 0.8rem;
+          color: var(--secondary-text-color, #727272);
+          margin-top: 1px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .panel-reset {
+          --mdc-icon-button-size: 32px;
+          --mdc-icon-size: 18px;
+          color: var(--secondary-text-color, #727272);
+          opacity: 0.7;
+          flex: none;
+        }
+        .panel-reset:hover {
+          opacity: 1;
+          color: var(--primary-text-color, #212121);
+        }
+        .panel-body { padding: 12px 4px 4px; }
         .editor-footer {
           margin-top: 24px;
           padding-top: 12px;
@@ -527,8 +599,7 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
       </style>
 
       <div>
-        ${renderModeSection(this, ctx)}
-        ${showsForecast ? renderForecastSection(this, ctx) : ''}
+        ${renderBasicsSection(this, ctx)}
         ${renderSensorsSection(this, ctx)}
         ${renderChartSection(this, ctx)}
         ${renderLivePanelSection(this, ctx)}

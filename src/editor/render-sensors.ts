@@ -1,23 +1,26 @@
-// Editor render partial — Section 3: "Sensoren deiner Wetterstation".
+// Editor render partial — "Sensoren deiner Wetterstation" panel.
 //
-// Per-metric sensor field list. Most filter by `device_class`; wind
+// v2.4 redesign (ADR-0023): a source dropdown at the top decides where
+// the past half of the chart comes from — the user's station sensors,
+// or Open-Meteo history (ADR-0015). The runtime always prefers station
+// sensors when any are configured, so the two sources are mutually
+// exclusive in practice; the dropdown makes that explicit instead of
+// the former buried opt-in toggle. Choosing Open-Meteo hides the
+// picker grid entirely (and _setPastSource drops configured sensors so
+// the editor and the card agree).
+//
+// The 11 pickers render in a 2-column ha-form grid — each full-width
+// row was half empty anyway, and entity names elide gracefully.
+//
+// Per-metric selector filtering: most filter by `device_class`; wind
 // direction has no canonical class but a stable unit (degrees) so it
-// gets a runtime predicate. UV index has neither a class nor a universal
-// unit and gets a name/id pattern match. Each entry's `key` is the
-// YAML key under `sensors:` and doubles as the i18n key (see locale.js
-// `editor` blocks).
-//
-// Renders via <ha-form> with one `entity` selector per field — same
-// pattern as the unit dropdowns (render-units.ts) and the weather-
-// entity picker (render-forecast.ts), so all data-source fields share
-// one declarative shape. ha-form delegates to <ha-entity-picker>
-// internally, which is hardcoded to render its label as an external
-// header above the box (use-top-label) — that's an HA-frontend design
-// choice we can't override without fighting the framework.
+// gets a runtime predicate. UV index has neither a class nor a
+// universal unit and gets a name/id pattern match. Each entry's `key`
+// is the YAML key under `sensors:` and doubles as the i18n key.
 
 import { html, type TemplateResult } from 'lit';
 import type { EditorLike, EditorContext, HomeAssistant } from './types.js';
-import { renderSectionHeader } from './section-header.js';
+import { renderEditorPanel } from './expansion-panel.js';
 
 interface SensorState {
   state: string;
@@ -59,50 +62,78 @@ function buildSensorFields(hass: HassWithStates | null): Array<{ key: string; ca
     })
     .map(([id]) => id);
 
+  // Ordered as logical 2-column rows (the grid flows row-wise):
+  //   temperature    | pressure       — the two base climate values
+  //   humidity       | dew_point      — the moisture pair
+  //   wind_speed     | gust_speed     — the wind-speed pair
+  //   wind_direction | precipitation
+  //   illuminance    | uv_index       — the light pair
+  //   sunshine_duration               — rarest, last (odd slot)
   return [
     { key: 'temperature',         candidates: byDeviceClass(['temperature']) },
-    { key: 'humidity',            candidates: byDeviceClass(['humidity']) },
-    // Solar-irradiance sensors (W/m²) share the slot — the card
-    // converts them to lux internally (community post 15, point 5).
-    { key: 'illuminance',         candidates: byDeviceClass(['illuminance', 'irradiance']) },
-    { key: 'precipitation',       candidates: byDeviceClass(['precipitation']) },
     { key: 'pressure',            candidates: byDeviceClass(['atmospheric_pressure', 'pressure']) },
+    { key: 'humidity',            candidates: byDeviceClass(['humidity']) },
+    { key: 'dew_point',           candidates: byDeviceClass(['temperature']) },
     { key: 'wind_speed',          candidates: byDeviceClass(['wind_speed', 'speed']) },
     { key: 'gust_speed',          candidates: byDeviceClass(['wind_speed', 'speed']) },
     { key: 'wind_direction',      candidates: directionEntities },
+    { key: 'precipitation',       candidates: byDeviceClass(['precipitation']) },
+    // Solar-irradiance sensors (W/m²) share the slot — the card
+    // converts them to lux internally (community post 15, point 5).
+    { key: 'illuminance',         candidates: byDeviceClass(['illuminance', 'irradiance']) },
     { key: 'uv_index',            candidates: uvEntities },
-    { key: 'dew_point',           candidates: byDeviceClass(['temperature']) },
     { key: 'sunshine_duration',   candidates: [] },
   ];
 }
 
-function buildSensorsSchema(hass: HassWithStates | null): Array<{ name: string; required?: boolean; selector: object }> {
-  return buildSensorFields(hass).map((f) => ({
-    name: f.key,
-    required: REQUIRED_KEYS.has(f.key),
-    selector: {
-      entity: f.candidates.length > 0
-        ? { include_entities: f.candidates }
-        : { domain: 'sensor' },
-    },
-  }));
+// One 2-column grid container wrapping every per-metric entity
+// selector. ha-form grids are transparent for data — the value bag
+// keeps the flat { temperature: ..., humidity: ... } shape that
+// _sensorsChanged already consumes.
+function buildSensorsSchema(hass: HassWithStates | null): Array<Record<string, unknown>> {
+  return [{
+    name: '',
+    type: 'grid',
+    schema: buildSensorFields(hass).map((f) => ({
+      name: f.key,
+      required: REQUIRED_KEYS.has(f.key),
+      selector: {
+        entity: f.candidates.length > 0
+          ? { include_entities: f.candidates }
+          : { domain: 'sensor' },
+      },
+    })),
+  }];
 }
 
-// forecast.* boolean: the Open-Meteo no-station past-block opt-in
-// (ADR-0015). Lives in the sensors section because it is the
-// recorder-free alternative to wiring station sensors.
-const OPENMETEO_HISTORY_SCHEMA = [
-  { name: 'openmeteo_history', selector: { boolean: {} } },
-];
-
 export function renderSensorsSection(editor: EditorLike, ctx: EditorContext): TemplateResult {
-  const { t, sensorsConfig, fcfg, pastDataAvailable, showsStation } = ctx;
+  const { t, sensorsConfig, pastDataAvailable, showsStation } = ctx;
 
-  // The section shows whenever a past block is — or should become —
+  // The panel shows whenever a past block is — or should become —
   // configurable: in station / combination mode, or (regardless of
   // mode) when there is no past data yet, so the recovery controls
-  // (the Open-Meteo opt-in, the sensor pickers) stay reachable.
+  // stay reachable.
   if (!showsStation && pastDataAvailable) return html``;
+
+  const source = editor._pastSource;
+
+  const sourceSchema = [{
+    name: 'past_source',
+    selector: {
+      select: {
+        mode: 'dropdown',
+        options: [
+          { value: 'station', label: t('past_source_station') },
+          { value: 'openmeteo', label: t('past_source_openmeteo') },
+        ],
+      },
+    },
+  }];
+
+  const handleSourceChanged = (event: CustomEvent<{ value: { past_source: 'station' | 'openmeteo' } }>): void => {
+    const next = event.detail.value?.past_source;
+    if (next && next !== source) editor._setPastSource(next);
+  };
 
   // Append "(required)" to required-field labels. ha-form also draws a
   // Material asterisk via the schema's `required: true` flag; the
@@ -113,32 +144,49 @@ export function renderSensorsSection(editor: EditorLike, ctx: EditorContext): Te
     return schema.required ? `${base} (${t('required_marker')})` : base;
   };
 
-  return html`
-    ${renderSectionHeader({ editor, title: t('station_sensors_heading'), sectionKey: 'sensors', resetLabel: t('reset_section') })}
+  const connectedCount = Object.values(sensorsConfig)
+    .filter((v) => typeof v === 'string' && v.trim() !== '').length;
+  const summary = source === 'openmeteo'
+    ? t('summary_openmeteo')
+    : (connectedCount > 0
+      ? t('summary_connected').replace('{n}', String(connectedCount))
+      : t('summary_no_sensors'));
 
+  const body = html`
     ${!pastDataAvailable ? html`
       <div class="hint">${t('openmeteo_history_unavailable')}</div>
     ` : ''}
 
     <div class="textfield-container">
       <ha-form
-        .data=${{ openmeteo_history: fcfg.openmeteo_history === true }}
-        .schema=${OPENMETEO_HISTORY_SCHEMA}
+        .data=${{ past_source: source }}
+        .schema=${sourceSchema}
         .hass=${editor.hass}
-        .computeLabel=${() => t('openmeteo_history')}
-        @value-changed=${editor._chartForecastChanged}
+        .computeLabel=${() => t('past_source_label')}
+        @value-changed=${handleSourceChanged}
       ></ha-form>
-      <div class="hint" style="padding-left:20px;">${t('openmeteo_history_hint')}</div>
-    </div>
 
-    <div class="textfield-container">
-      <ha-form
-        .data=${sensorsConfig}
-        .schema=${buildSensorsSchema(editor.hass)}
-        .hass=${editor.hass}
-        .computeLabel=${computeLabel}
-        @value-changed=${editor._sensorsChanged}
-      ></ha-form>
+      ${source === 'openmeteo' ? html`
+        <div class="hint">${t('openmeteo_history_hint')}</div>
+      ` : html`
+        <ha-form
+          .data=${sensorsConfig}
+          .schema=${buildSensorsSchema(editor.hass)}
+          .hass=${editor.hass}
+          .computeLabel=${computeLabel}
+          @value-changed=${editor._sensorsChanged}
+        ></ha-form>
+      `}
     </div>
   `;
+
+  return renderEditorPanel({
+    editor,
+    sectionKey: 'sensors',
+    icon: 'mdi:thermometer',
+    title: t('station_sensors_heading'),
+    summary,
+    resetLabel: t('reset_section'),
+    body,
+  });
 }
