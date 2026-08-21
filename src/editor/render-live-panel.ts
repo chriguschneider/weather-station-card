@@ -64,14 +64,16 @@ function buildAttributesSchema(
     { name: 'show_attributes', selector: { boolean: {} } },
   ];
   if (!showAttrs) return schema;
-  if (hasLiveValue('humidity')) {
-    schema.push({ name: 'show_humidity', selector: { boolean: {} } });
-  }
   if (hasLiveValue('pressure')) {
     schema.push({ name: 'show_pressure', selector: { boolean: {} } });
   }
   if (hasLiveValue('dew_point')) {
     schema.push({ name: 'show_dew_point', selector: { boolean: {} } });
+  }
+  // Humidity renders on the dew-point line (opt-in) — the toggle sits
+  // right after show_dew_point to mirror that.
+  if (hasLiveValue('humidity')) {
+    schema.push({ name: 'show_humidity', selector: { boolean: {} } });
   }
   if (hasSensor('precipitation')) {
     schema.push({ name: 'show_precipitation', selector: { boolean: {} } });
@@ -121,7 +123,9 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
   };
   const attributesData = {
     show_attributes: showAttrs,
-    show_humidity: cfg.show_humidity !== false,
+    // Opt-in since the dew-point line merge (v2.3) — matches
+    // DEFAULTS.show_humidity: false and the renderer's `=== true` gate.
+    show_humidity: cfg.show_humidity === true,
     show_pressure: cfg.show_pressure !== false,
     show_dew_point: cfg.show_dew_point === true,
     show_precipitation: cfg.show_precipitation === true,

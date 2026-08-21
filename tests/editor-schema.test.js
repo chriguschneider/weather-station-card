@@ -291,6 +291,29 @@ describe('renderLivePanelSection (schema-driven)', () => {
     expect(names).not.toContain('show_illuminance');
   });
 
+  it('humidity is opt-in and its toggle follows show_dew_point (shared line since v2.3)', () => {
+    const hasLiveValue = (k) => k === 'humidity' || k === 'dew_point';
+    const container = renderInto(
+      renderLivePanelSection,
+      editor,
+      makeCtx({ cfg: { show_attributes: true }, hasLiveValue }),
+    );
+    const attrNames = collectFormSchemas(container)[1].map((f) => f.name);
+    expect(attrNames.indexOf('show_humidity')).toBe(attrNames.indexOf('show_dew_point') + 1);
+
+    // Key at its DEFAULTS value (false) → toggle off: opt-in semantics.
+    const attrForm = container.querySelectorAll('ha-form')[1];
+    expect(attrForm.data.show_humidity).toBe(false);
+
+    // Explicit true → toggle on.
+    const onContainer = renderInto(
+      renderLivePanelSection,
+      editor,
+      makeCtx({ cfg: { show_attributes: true, show_humidity: true }, hasLiveValue }),
+    );
+    expect(onContainer.querySelectorAll('ha-form')[1].data.show_humidity).toBe(true);
+  });
+
   it('shows the wind sub-toggles when their respective live values are present', () => {
     const container = renderInto(
       renderLivePanelSection,
