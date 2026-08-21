@@ -76,7 +76,7 @@ reflects the live readings of those same sensors. This card does both:
   semi-transparent so predicted values read distinctly from measured
   ones. Span is configurable separately (`forecast_days:`).
 - A **live main panel** showing the current temperature, condition icon,
-  and (optionally) clock, weather attributes, next sun event and the
+  and (optionally) clock, weather attributes, sunrise/sunset and the
   moon — exact illumination percentage on a dynamically drawn disc plus
   the next moonrise/moonset, computed in-card with no Moon integration
   needed. All values derive from current sensor states, not from a
