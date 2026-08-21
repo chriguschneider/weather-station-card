@@ -8,7 +8,7 @@
 //     hasn't committed it yet
 //   - destroy any previous chart instance so we don't leak handles
 //   - read live theme tokens from getComputedStyle(document.body)
-//   - compute precip max, station/forecast gap framing, sunshine
+//   - resolve the precip-axis floor, station/forecast gap framing, sunshine
 //     fraction data, dataset segment-options (transparent boundary
 //     at daily combination, dashed at hourly combination), per-bar
 //     colour palettes
@@ -29,7 +29,7 @@ import { isDarkColor, lightenColor } from '../format-utils.js';
 import { resolveCssVar } from '../utils/resolve-css-var.js';
 import { getThemeTokens } from '../utils/theme-tokens.js';
 import { sunshineFractions } from '../sunshine-source.js';
-import { buildChart, type UplotChart } from './draw.js';
+import { buildChart, precipCeiling, type UplotChart } from './draw.js';
 import { coerceNumericSeries } from './sanitize.js';
 import {
   createSeparatorPlugin,
@@ -160,6 +160,18 @@ interface SegmentHelpers {
   };
 }
 
+/** Mode/unit-static floor for the precipitation y-axis ceiling.
+ *  Hourly/today 4 mm (metric) / 1 in; daily 20 mm / 1 in. Resolved
+ *  here (the wiring layer interprets config/units) and handed to
+ *  buildChart, which derives the actual ceiling from the data — at
+ *  build time AND on every in-place update(), so intensifying rain
+ *  rescales the bars without waiting for a full rebuild. */
+export function precipAxisFloor(isHourlyish: boolean, lengthUnit: string): number {
+  return isHourlyish
+    ? (lengthUnit === 'km' ? 4 : 1)
+    : (lengthUnit === 'km' ? 20 : 1);
+}
+
 /** Precipitation y-axis ceiling.
  *
  *  The fixed per-mode value acts as a FLOOR, not a hard cap: it keeps a
@@ -174,20 +186,16 @@ interface SegmentHelpers {
  *  full height and read as equally tall, which is exactly the bug this
  *  fixes. Daily totals likewise overrun the 20 mm floor on a stormy day.
  *
- *  Floors: hourly/today 4 mm (metric) / 1 in; daily 20 mm / 1 in. */
+ *  The live chart derives this same ceiling itself via precipCeiling
+ *  in chart/draw.ts (fed with precipAxisFloor above) so the update()
+ *  path can rescale without the orchestrator. This composite stays as
+ *  the canonical statement of the rule and the unit-test surface. */
 export function computePrecipMax(
   isHourlyish: boolean,
   lengthUnit: string,
   precip: ReadonlyArray<number | null | undefined> = [],
 ): number {
-  const floor = isHourlyish
-    ? (lengthUnit === 'km' ? 4 : 1)
-    : (lengthUnit === 'km' ? 20 : 1);
-  let dataMax = 0;
-  for (const v of precip) {
-    if (typeof v === 'number' && Number.isFinite(v) && v > dataMax) dataMax = v;
-  }
-  return Math.max(floor, dataMax);
+  return precipCeiling(precipAxisFloor(isHourlyish, lengthUnit), precip);
 }
 
 /** uPlot has no equivalent of Chart.js's global defaults — series
@@ -485,7 +493,7 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
   // 'today' is hourly granularity (per-hour bars), same precip scale
   // as 'hourly'. 'daily' aggregates over the full day, scale is wider.
   const isHourlyish = config.forecast.type === 'hourly' || config.forecast.type === 'today';
-  const precipMax = computePrecipMax(isHourlyish, lengthUnit, data.precip);
+  const precipFloor = precipAxisFloor(isHourlyish, lengthUnit);
 
   applyChartDefaults(textColor, dividerColor);
 
@@ -615,7 +623,7 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
     backgroundColor,
     dividerColor,
     chartTextColor: chart_text_color,
-    precipMax,
+    precipFloor,
     precipUnit,
     tempUnit,
     doubledToday,
