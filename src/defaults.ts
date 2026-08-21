@@ -83,6 +83,10 @@ export const DEFAULTS = {
   show_wind_direction: true,
   show_wind_speed: true,
   show_sun: false,
+  // Computed moon line inside the sun cell (ADR-0022) — opt-out
+  // sub-toggle: it renders whenever the sun cell does, no entity or
+  // Moon integration required.
+  show_moon: true,
   show_dew_point: false,
   show_wind_gust_speed: false,
   // UV index defaults to true to preserve the original behaviour where

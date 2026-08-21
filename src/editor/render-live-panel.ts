@@ -95,6 +95,8 @@ function buildAttributesSchema(
     schema.push({ name: 'show_wind_gust_speed', selector: { boolean: {} } });
   }
   schema.push({ name: 'show_sun', selector: { boolean: {} } });
+  // Computed in-card (ADR-0022) — no sensor gate, always offered.
+  schema.push({ name: 'show_moon', selector: { boolean: {} } });
   return schema;
 }
 
@@ -130,6 +132,7 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
     show_wind_speed: cfg.show_wind_speed !== false,
     show_wind_gust_speed: cfg.show_wind_gust_speed === true,
     show_sun: cfg.show_sun === true,
+    show_moon: cfg.show_moon !== false,
   };
 
   const labelFor = (schema: { name: string }): string => t(schema.name);
