@@ -3666,10 +3666,10 @@ renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, la
   `;
 }
 
-// Only the NEXT sun event is shown (2026-08): during the day that's
-// the sunset, at night the sunrise — the other one is hours of stale
-// information. The freed second line carries the moon phase (see
-// _renderMoonLine).
+// Both sun events share one line (rise first, set second) — the pre-v2.2
+// two-line layout compressed so the second line stays free for the moon
+// phase (see _renderMoonLine). sun.sun only exposes the NEXT rise/set,
+// so during the day the rise column is tomorrow's sunrise.
 renderSun({ sun, language } = this) {
   if (sun == undefined) {
     return html``;
@@ -3685,19 +3685,19 @@ const timeOptions = {
   const timeFmt = getDateTimeFormat(language, timeOptions);
   const rising = new Date(sun.attributes.next_rising);
   const setting = new Date(sun.attributes.next_setting);
-  const nextIsRise = rising.getTime() <= setting.getTime();
-  const next = nextIsRise ? rising : setting;
   return html`
-    <ha-icon icon="${nextIsRise ? 'mdi:weather-sunset-up' : 'mdi:weather-sunset-down'}"></ha-icon>
-      ${timeFmt.format(next)}
+    <ha-icon icon="mdi:weather-sunset-up"></ha-icon>
+      ${timeFmt.format(rising)}
+    <ha-icon icon="mdi:weather-sunset-down"></ha-icon>
+      ${timeFmt.format(setting)}
   `;
 }
 
 // Moon line — computed in-card (src/moon.ts, ADR-0022), no Moon
 // integration or entity needed. Shows the exact illuminated fraction
 // as a dynamically drawn disc + percentage, followed by the NEXT
-// moonrise/moonset (same next-event-only policy as the sun line
-// above). The line is text-free by design, so it needs no locale
+// moonrise/moonset (only the next horizon crossing is computed).
+// The line is text-free by design, so it needs no locale
 // strings. `show_moon: false` opts out.
 _renderMoonLine(language: string) {
   if (this.config?.show_moon === false) return html``;
