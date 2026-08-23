@@ -37,3 +37,12 @@ Install the Claude GitHub App and add the repo secret
 `CLAUDE_CODE_OAUTH_TOKEN` (`claude setup-token`). The agent reads AGENTS.md
 and the ADRs, and does not regenerate the GHA-pinned E2E baselines
 (ADR-0003).
+
+## Known limitations
+
+**The agent cannot push changes to `.github/workflows/` files.**
+GitHub enforces a separate `workflows` permission that is distinct from
+`contents: write`. The Claude GitHub App token only has `contents: write`,
+so any fix that requires modifying a workflow file will be blocked at
+`git push` / `gh api PUT`. The PR will be opened as "Blocked / needs
+maintainer action" with the exact patch to apply manually.
