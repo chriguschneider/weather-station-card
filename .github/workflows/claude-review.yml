@@ -1,0 +1,86 @@
+name: "Claude (review + auto-merge)"
+
+# Independent reviewer for agent PRs (branches `claude/*`). Opus reviews the
+# PR adversarially, runs the build, fixes substantive problems on the branch
+# (bounded), then either enables auto-merge (green + solid) or hands it to a
+# human (needs verification). Opt-in stays: you still pick issues via agent:go;
+# this only automates review + merge. No autopilot here (idea-driven repo).
+#
+# Runs only on PR open / ready — NOT on every push — so the reviewer's own fix
+# commits don't re-trigger it.
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number to review"
+        required: true
+
+jobs:
+  review:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (startsWith(github.event.pull_request.head.ref, 'claude/') &&
+       github.event.pull_request.draft == true)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    concurrency:
+      group: claude-review-${{ github.event.pull_request.number || github.event.inputs.pr }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Review, fix (bounded), decide
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # The author agent opens the PR as claude[bot]; allow that bot to
+          # trigger this reviewer (default guard blocks bot-initiated runs).
+          allowed_bots: "claude"
+          claude_args: "--model claude-opus-4-8 --max-turns 60 --dangerously-skip-permissions"
+          prompt: |
+            You are an INDEPENDENT, adversarial reviewer for pull request
+            #${{ github.event.pull_request.number || github.event.inputs.pr }}
+            of this repository. You did NOT write it. Your job is to make one
+            call: is this safe to auto-merge, or does it need a human?
+
+            Set PR=${{ github.event.pull_request.number || github.event.inputs.pr }}.
+            First run `gh pr checkout $PR` to get onto the PR branch, then read
+            AGENTS.md, ARCHITECTURE.md, docs/adr/ and the linked issue.
+
+            1. REVIEW the diff adversarially: correctness bugs, regressions,
+               missed edge cases, and whether it actually resolves the linked
+               issue. Run the repo's gate: `npm ci && npm run build` (lint +
+               typecheck + vitest + coverage). If `src/` changed, rebuild the
+               committed bundle with `npm run build` (dist is committed,
+               ADR-0001).
+            2. FIX substantive problems yourself on the PR branch (commit +
+               push). Re-run the build. **At most 3 fix rounds.** Do not fix
+               pure style nits. Never push to the default branch.
+            3. Do NOT regenerate E2E visual baselines — they are pinned to the
+               GHA runner (ADR-0003). Leave `tests-e2e/snapshots/` untouched.
+            4. DECIDE (exactly one):
+               a. HOLD for a human if ANY of these is true: the change needs
+                  live Home Assistant / visual verification that tests cannot
+                  cover; OR the PR or its linked issue has the
+                  `needs-verification` label; OR after 3 rounds it is still not
+                  solid. Then add the `needs-verification` label
+                  (`gh pr edit $PR --add-label needs-verification`), post a
+                  comment (`gh pr comment $PR`) listing exactly what a human must
+                  check, and STOP. Do NOT merge.
+               b. AUTO-MERGE if the build is green and you found no substantive
+                  issue and no verification is required: mark it ready
+                  (`gh pr ready $PR`), post a short comment ("LGTM" + one-line
+                  rationale + what you fixed, if anything), and enable auto-merge
+                  (`gh pr merge $PR --auto --squash`). Do NOT use `--approve`
+                  (you cannot approve the app's own PR) and do NOT force a merge.
+
+            Never bypass required checks. When in doubt, HOLD for a human.
