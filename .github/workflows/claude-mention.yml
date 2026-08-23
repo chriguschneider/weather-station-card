@@ -12,7 +12,12 @@ on:
 
 jobs:
   claude:
-    if: contains(github.event.comment.body, '@claude')
+    # Only the owner / collaborators can trigger this. Comment events carry
+    # secrets even from strangers, so gate the @claude path on author role.
+    if: >-
+      contains(github.event.comment.body, '@claude') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
+               github.event.comment.author_association)
     runs-on: ubuntu-latest
     permissions:
       contents: write
