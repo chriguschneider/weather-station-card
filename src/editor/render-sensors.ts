@@ -9,7 +9,7 @@
 // picker grid entirely (and _setPastSource drops configured sensors so
 // the editor and the card agree).
 //
-// The 11 pickers render in a 2-column ha-form grid — each full-width
+// The 12 pickers render in a 2-column ha-form grid — each full-width
 // row was half empty anyway, and entity names elide gracefully.
 //
 // Per-metric selector filtering: most filter by `device_class`; wind
@@ -63,12 +63,12 @@ function buildSensorFields(hass: HassWithStates | null): Array<{ key: string; ca
     .map(([id]) => id);
 
   // Ordered as logical 2-column rows (the grid flows row-wise):
-  //   temperature    | pressure       — the two base climate values
-  //   humidity       | dew_point      — the moisture pair
-  //   wind_speed     | gust_speed     — the wind-speed pair
-  //   wind_direction | precipitation
-  //   illuminance    | uv_index       — the light pair
-  //   sunshine_duration               — rarest, last (odd slot)
+  //   temperature    | pressure          — the two base climate values
+  //   humidity       | dew_point         — the moisture pair
+  //   wind_speed     | gust_speed        — the wind-speed pair
+  //   precipitation  | precipitation_rate — the rain pair (#253)
+  //   wind_direction | illuminance
+  //   uv_index       | sunshine_duration — rarest, last
   return [
     { key: 'temperature',         candidates: byDeviceClass(['temperature']) },
     { key: 'pressure',            candidates: byDeviceClass(['atmospheric_pressure', 'pressure']) },
@@ -76,8 +76,11 @@ function buildSensorFields(hass: HassWithStates | null): Array<{ key: string; ca
     { key: 'dew_point',           candidates: byDeviceClass(['temperature']) },
     { key: 'wind_speed',          candidates: byDeviceClass(['wind_speed', 'speed']) },
     { key: 'gust_speed',          candidates: byDeviceClass(['wind_speed', 'speed']) },
-    { key: 'wind_direction',      candidates: directionEntities },
+    // The counter feeds the chart bars, the rate feeds the live cell and
+    // the condition classifier — a station that exposes both wires both.
     { key: 'precipitation',       candidates: byDeviceClass(['precipitation']) },
+    { key: 'precipitation_rate',  candidates: byDeviceClass(['precipitation_intensity']) },
+    { key: 'wind_direction',      candidates: directionEntities },
     // Solar-irradiance sensors (W/m²) share the slot — the card
     // converts them to lux internally (community post 15, point 5).
     { key: 'illuminance',         candidates: byDeviceClass(['illuminance', 'irradiance']) },

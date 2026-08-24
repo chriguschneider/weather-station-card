@@ -42,6 +42,7 @@ const hu: LocaleEntry = {
     'humidity': 'Páratartalom',
     'illuminance': 'Megvilágítás',
     'precipitation': 'Csapadék',
+    'precipitation_rate': 'Csapadékintenzitás',
     'pressure': 'Légnyomás',
     'wind_speed': 'Szélsebesség',
     'gust_speed': 'Széllökés',

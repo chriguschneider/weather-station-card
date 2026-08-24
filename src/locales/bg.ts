@@ -42,6 +42,7 @@ const bg: LocaleEntry = {
     'humidity': 'Влажност',
     'illuminance': 'Осветеност',
     'precipitation': 'Валежи',
+    'precipitation_rate': 'Интензивност на валежите',
     'pressure': 'Налягане',
     'wind_speed': 'Скорост на вятъра',
     'gust_speed': 'Пориви на вятъра',

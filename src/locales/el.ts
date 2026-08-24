@@ -42,6 +42,7 @@ const el: LocaleEntry = {
     'humidity': 'Υγρασία',
     'illuminance': 'Φωτεινότητα',
     'precipitation': 'Υετός',
+    'precipitation_rate': 'Ένταση υετού',
     'pressure': 'Πίεση',
     'wind_speed': 'Ταχύτητα ανέμου',
     'gust_speed': 'Ριπές ανέμου',

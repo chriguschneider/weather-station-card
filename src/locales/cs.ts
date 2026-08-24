@@ -42,6 +42,7 @@ const cs: LocaleEntry = {
     'humidity': 'Vlhkost',
     'illuminance': 'Osvětlení',
     'precipitation': 'Srážky',
+    'precipitation_rate': 'Intenzita srážek',
     'pressure': 'Tlak',
     'wind_speed': 'Rychlost větru',
     'gust_speed': 'Nárazy větru',

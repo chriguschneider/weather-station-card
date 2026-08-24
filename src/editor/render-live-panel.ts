@@ -28,11 +28,17 @@ const MAIN_ELEMENT_PATHS: ReadonlyArray<TogglePath> = [
 // Attribute cells, in display order (humidity right after dew_point —
 // it renders on the dew-point line, opt-in since v2.3). `gate` names
 // which availability predicate controls whether the option is offered.
-const ATTRIBUTE_PATHS: ReadonlyArray<TogglePath & { gate?: 'live' | 'sensor'; gateKey?: string }> = [
+// `gateKey` takes a list when more than one sensor slot can satisfy the
+// row — precipitation is offered for a cumulative counter OR a dedicated
+// rate sensor (#253), either of which produces a live value.
+const ATTRIBUTE_PATHS: ReadonlyArray<
+  TogglePath & { gate?: 'live' | 'sensor'; gateKey?: string | readonly string[] }
+> = [
   { path: 'show_pressure',          def: true,  gate: 'live',   gateKey: 'pressure' },
   { path: 'show_dew_point',         def: false, gate: 'live',   gateKey: 'dew_point' },
   { path: 'show_humidity',          def: false, gate: 'live',   gateKey: 'humidity' },
-  { path: 'show_precipitation',     def: false, gate: 'sensor', gateKey: 'precipitation' },
+  { path: 'show_precipitation',     def: false, gate: 'sensor',
+    gateKey: ['precipitation', 'precipitation_rate'] },
   { path: 'show_uv_index',          def: true,  gate: 'live',   gateKey: 'uv_index' },
   { path: 'show_illuminance',       def: false, gate: 'sensor', gateKey: 'illuminance' },
   { path: 'show_sunshine_duration', def: false, gate: 'sensor', gateKey: 'sunshine_duration' },
@@ -64,7 +70,9 @@ export function availableAttributePaths(
 ): Array<TogglePath> {
   return ATTRIBUTE_PATHS.filter(({ gate, gateKey }) => {
     if (!gate || !gateKey) return true;
-    return gate === 'live' ? hasLiveValue(gateKey) : hasSensor(gateKey);
+    const keys = typeof gateKey === 'string' ? [gateKey] : gateKey;
+    const has = gate === 'live' ? hasLiveValue : hasSensor;
+    return keys.some(has);
   });
 }
 

@@ -42,6 +42,7 @@ const sv: LocaleEntry = {
     'humidity': 'Luftfuktighet',
     'illuminance': 'Ljusstyrka',
     'precipitation': 'Nederbörd',
+    'precipitation_rate': 'Nedbördsintensitet',
     'pressure': 'Lufttryck',
     'wind_speed': 'Vindhastighet',
     'gust_speed': 'Byvind',

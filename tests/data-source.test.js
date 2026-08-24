@@ -1083,3 +1083,28 @@ describe('MeasuredDataSource lifecycle', () => {
     expect(errorEvents.length).toBe(0);
   });
 });
+
+// Sensor slots that must never reach the recorder. Both would produce
+// statistics the chart layer cannot interpret: moon_phase is an enum,
+// and precipitation_rate is an instantaneous mm/h reading that
+// bucketPrecipitation would diff into a bogus "rainfall per day" (#253).
+describe('MeasuredDataSource._fetchAggregates statistic_ids', () => {
+  it('omits precipitation_rate and moon_phase from the stats request', async () => {
+    const callWS = vi.fn().mockResolvedValue({});
+    const ds = new MeasuredDataSource({ config: {}, callWS }, {
+      days: 3,
+      sensors: {
+        temperature: 'sensor.excl_temp',
+        precipitation: 'sensor.excl_rain_total',
+        precipitation_rate: 'sensor.excl_rain_rate',
+        moon_phase: 'sensor.excl_moon',
+      },
+    });
+    await ds._fetchAggregates();
+    const ids = callWS.mock.calls[0][0].statistic_ids;
+    expect(ids).toContain('sensor.excl_temp');
+    expect(ids).toContain('sensor.excl_rain_total');
+    expect(ids).not.toContain('sensor.excl_rain_rate');
+    expect(ids).not.toContain('sensor.excl_moon');
+  });
+});

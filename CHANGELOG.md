@@ -6,6 +6,28 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Feed the card your station's rain rate directly** (#253) — a new
+  `sensors.precipitation_rate` slot next to `sensors.precipitation`. If
+  your station publishes rate and daily total as two separate entities
+  (ESPHome rain gauges, Ecowitt's `*_rain_rate` next to `*_rain_today`,
+  WeatherFlow Tempest, or your own Derivative helper), wire both: the
+  counter keeps drawing the chart bars, and the rate sensor now drives
+  the live precipitation cell instead of the card reconstructing a rate
+  from the counter. Two things get better as a result. Your measured
+  `mm/h` replaces a 15-minute reconstruction, and the card stops keeping
+  the sample buffer, the `localStorage` write and the 30-second
+  recompute timer that the reconstruction needed. More importantly, the
+  **live weather icon can finally show rain on a counter-based setup** —
+  it was never able to, because a cumulative total is not a rate and the
+  classifier refuses to guess one. `in/h` sensors are converted before
+  the rain thresholds are applied, the display unit still follows
+  `units.precipitation`, and if the rate entity goes unavailable the card
+  falls back to deriving a rate from the counter. The new slot appears in
+  the visual editor next to the precipitation picker, and is never
+  queried from the recorder.
+
 ## [2.3.0] — 2026-08-21
 
 > **Highlights** — the visual editor was redesigned from a ~4,200 px

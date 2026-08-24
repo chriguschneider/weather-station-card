@@ -146,17 +146,24 @@ describe('renderBasicsSection (schema-driven)', () => {
 // ── renderSensorsSection ──────────────────────────────────────────────
 
 describe('renderSensorsSection (schema-driven)', () => {
-  it('exposes the past-source dropdown plus the 11 pickers for station source', () => {
+  it('exposes the past-source dropdown plus the 12 pickers for station source', () => {
     const container = renderInto(renderSensorsSection, makeEditor(), makeCtx());
     const names = allFieldNames(container);
     expect(names).toContain('past_source');
     for (const key of [
-      'temperature', 'humidity', 'illuminance', 'precipitation', 'pressure',
+      'temperature', 'humidity', 'illuminance', 'precipitation',
+      'precipitation_rate', 'pressure',
       'wind_speed', 'gust_speed', 'wind_direction', 'uv_index', 'dew_point',
       'sunshine_duration',
     ]) {
       expect(names).toContain(key);
     }
+  });
+
+  it('pairs the rate picker with the precipitation counter (#253)', () => {
+    const container = renderInto(renderSensorsSection, makeEditor(), makeCtx());
+    const names = allFieldNames(container);
+    expect(names.indexOf('precipitation_rate')).toBe(names.indexOf('precipitation') + 1);
   });
 
   it('wraps the pickers in a 2-column grid container', () => {
@@ -378,6 +385,19 @@ describe('renderLivePanelSection (schema-driven)', () => {
     expect(values).toContain('show_precipitation');
     expect(values).not.toContain('show_uv_index');
     expect(values).not.toContain('show_illuminance');
+  });
+
+  it('offers precipitation when only the rate sensor is wired (#253)', () => {
+    const container = renderInto(
+      renderLivePanelSection,
+      editor,
+      makeCtx({
+        cfg: { show_attributes: true },
+        hasSensor: (k) => k === 'precipitation_rate',
+      }),
+    );
+    const values = selectOptionValues(findField(container, 'attributes').field);
+    expect(values).toContain('show_precipitation');
   });
 
   it('lists humidity right after dew_point (shared line since v2.3)', () => {

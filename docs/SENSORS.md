@@ -14,10 +14,12 @@ out right. The data layer also accepts `total` counters and `measurement`
 sensors that already represent "today's rain" (e.g. via a daily
 `utility_meter`).
 
-Note: for the **live "now" condition icon** to show rain, the sensor's
-`unit_of_measurement` must be a *rate* (`mm/h`, `mm/hr`, `mm/hour`, `in/h`).
-A cumulative counter still feeds the daily chart correctly, but the live
-icon falls through to cloud/wind/fog. See
+Note: for the **live "now" condition icon** to show rain, the card needs
+a *rate*. Either the `sensors.precipitation` unit itself is a rate
+(`mm/h`, `mm/hr`, `mm/hour`, `in/h`), or you wire a separate rate entity
+into [`sensors.precipitation_rate`](#station-exposes-rate-and-total-separately).
+A cumulative counter alone still feeds the daily chart correctly, but the
+live icon falls through to cloud/wind/fog. See
 [CONDITIONS.md → Precipitation in the live condition needs a *rate* unit](CONDITIONS.md#precipitation-in-the-live-condition-needs-a-rate-unit)
 for the mechanic.
 
@@ -57,8 +59,49 @@ buffering.
 > Settings → Devices & services → Helpers → **Create helper** →
 > **Derivative sensor**, source = your cumulative counter, Unit Time =
 > `h`, Time Window = `00:05:00`. Wire the resulting
-> `sensor.*_rain_rate` into `sensors.precipitation` and the card
-> passes it through.
+> `sensor.*_rain_rate` into `sensors.precipitation_rate` (see below)
+> and the card uses it as-is.
+
+### Station exposes rate and total separately
+
+Some stations publish **both** channels as their own entities — an
+ESPHome rain gauge that computes mm/h alongside a daily total, Ecowitt's
+`*_rain_rate` next to `*_rain_today`, WeatherFlow Tempest, or a hand-built
+Derivative helper next to the counter it derives from. Wire both:
+
+```yaml
+sensors:
+  precipitation: sensor.rain_today       # mm — chart bars
+  precipitation_rate: sensor.rain_rate   # mm/h — live cell + condition
+```
+
+Who uses which:
+
+| Slot | Feeds | Needs |
+| --- | --- | --- |
+| `sensors.precipitation` | precipitation bars in the chart, daily/hourly totals | a **cumulative** counter (or a "today's rain" measurement sensor) |
+| `sensors.precipitation_rate` | the live attribute-row cell and the live condition classification | an **instantaneous rate** (`mm/h`, `in/h`) |
+
+Notes:
+
+- Keep the counter wired. It is the more important of the two — the
+  chart bars have no other source, and a rate cannot be integrated back
+  into a daily total.
+- With the rate slot filled, the card skips the 15-minute derivation
+  entirely: no sample buffer, no `localStorage` write, no 30-second
+  recompute timer. A measured rate beats a reconstructed one.
+- This is what makes the **live condition** react to rain when your
+  precipitation sensor is a cumulative counter. Counter-only configs
+  never classify rain (there is no rate to compare against the
+  threshold); adding the rate entity fixes that.
+- The rate slot may be used **alone**, without a counter — you get the
+  live cell and the rain-aware condition, but no precipitation bars.
+- Display unit follows the sensor's own base (`mm/h` or `in/h`) and is
+  overridable via [`units.precipitation`](CONFIGURATION.md#units), same
+  as the derived rate. An `in/h` sensor is converted before the
+  classifier compares it against mm thresholds.
+- If the rate entity goes `unavailable`, the card falls back to deriving
+  a rate from the counter rather than blanking the cell.
 
 ## Sunshine duration
 

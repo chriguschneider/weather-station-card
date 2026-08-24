@@ -48,7 +48,8 @@ const LOCALES = {
 // are intentionally absent.
 const REQUIRED_EDITOR_KEYS = [
   // sensor field labels (double as live-panel vocabulary)
-  'temperature', 'humidity', 'illuminance', 'precipitation', 'pressure',
+  'temperature', 'humidity', 'illuminance', 'precipitation',
+  'precipitation_rate', 'pressure',
   'wind_speed', 'gust_speed', 'wind_direction', 'uv_index', 'dew_point',
   'sunshine_duration',
   // basics

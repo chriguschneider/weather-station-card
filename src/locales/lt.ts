@@ -42,6 +42,7 @@ const lt: LocaleEntry = {
     'humidity': 'Drėgmė',
     'illuminance': 'Apšvieta',
     'precipitation': 'Krituliai',
+    'precipitation_rate': 'Kritulių intensyvumas',
     'pressure': 'Slėgis',
     'wind_speed': 'Vėjo greitis',
     'gust_speed': 'Gūsių greitis',

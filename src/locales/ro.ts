@@ -42,6 +42,7 @@ const ro: LocaleEntry = {
     'humidity': 'Umiditate',
     'illuminance': 'Luminozitate',
     'precipitation': 'Precipitații',
+    'precipitation_rate': 'Intensitatea precipitațiilor',
     'pressure': 'Presiune',
     'wind_speed': 'Viteza vântului',
     'gust_speed': 'Rafale',

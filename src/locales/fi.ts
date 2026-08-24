@@ -42,6 +42,7 @@ const fi: LocaleEntry = {
     'humidity': 'Ilmankosteus',
     'illuminance': 'Valaistusvoimakkuus',
     'precipitation': 'Sademäärä',
+    'precipitation_rate': 'Sateen voimakkuus',
     'pressure': 'Ilmanpaine',
     'wind_speed': 'Tuulen nopeus',
     'gust_speed': 'Puuskat',

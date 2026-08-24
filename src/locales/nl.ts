@@ -42,6 +42,7 @@ const nl: LocaleEntry = {
     'humidity': 'Luchtvochtigheid',
     'illuminance': 'Lichtsterkte',
     'precipitation': 'Neerslag',
+    'precipitation_rate': 'Neerslagintensiteit',
     'pressure': 'Luchtdruk',
     'wind_speed': 'Windsnelheid',
     'gust_speed': 'Windstoten',

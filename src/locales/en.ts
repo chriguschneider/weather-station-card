@@ -73,6 +73,7 @@ const en: LocaleEntry = {
     'humidity': 'Humidity',
     'illuminance': 'Illuminance',
     'precipitation': 'Precipitation',
+    'precipitation_rate': 'Precipitation rate',
     'pressure': 'Pressure',
     'wind_speed': 'Wind speed',
     'gust_speed': 'Gust speed',
