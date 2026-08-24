@@ -6,6 +6,67 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.4.0] — 2026-08-24
+
+> **Highlights** — stations that publish rain rate and daily total as
+> two separate entities can now feed both, which also lets the live
+> weather icon show rain on a counter-based setup for the first time;
+> every option in the editor's chart-row, element and attribute lists is
+> visible again instead of hiding behind an add-dropdown; and a
+> long-standing mismatch that made one attribute switch another one off
+> is fixed.
+
+### Fixed
+
+- **Switching one attribute on could switch another one off.** Turning
+  on humidity made the pressure row disappear — and nothing about
+  pressure had been touched. The editor and the card disagreed about
+  which values count as "default": the editor treated pressure as on by
+  default, the card as off. Because the editor deletes any setting that
+  sits on its default instead of writing it out, the explicit
+  "pressure: on" your card was created with got dropped, and the card
+  then fell back to off. The same mismatch existed for the condition
+  text under the current temperature. Both are fixed, and a new test
+  compares every editor default against the card's on every build, so
+  the two cannot drift apart again. If you had worked around this by
+  setting `show_pressure: true` by hand, that keeps working — nothing
+  in your YAML needs to change.
+
+### Changed
+
+- **Every editor option is visible again.** The chart rows, main-panel
+  elements and attribute cells were multi-select fields that showed only
+  what you had already switched on, as chips with a small ×; everything
+  else hid behind an add-dropdown. If you didn't know the card had a
+  sunshine bar, you never found it. All three are now rows of toggle
+  pills — filled means on, outlined means off, one click either way. The
+  full option set is on screen at all times, adding and removing take the
+  same single click, and the row no longer reflows under your pointer as
+  you toggle. The YAML is untouched: same keys, same defaults, and a key
+  that returns to its default is still dropped from the config.
+
+### Added
+
+- **Feed the card your station's rain rate directly** (#253) — a new
+  `sensors.precipitation_rate` slot next to `sensors.precipitation`. If
+  your station publishes rate and daily total as two separate entities
+  (ESPHome rain gauges, Ecowitt's `*_rain_rate` next to `*_rain_today`,
+  WeatherFlow Tempest, or your own Derivative helper), wire both: the
+  counter keeps drawing the chart bars, and the rate sensor now drives
+  the live precipitation cell instead of the card reconstructing a rate
+  from the counter. Two things get better as a result. Your measured
+  `mm/h` replaces a 15-minute reconstruction, and the card stops keeping
+  the sample buffer, the `localStorage` write and the 30-second
+  recompute timer that the reconstruction needed. More importantly, the
+  **live weather icon can finally show rain on a counter-based setup** —
+  it was never able to, because a cumulative total is not a rate and the
+  classifier refuses to guess one. `in/h` sensors are converted before
+  the rain thresholds are applied, the display unit still follows
+  `units.precipitation`, and if the rate entity goes unavailable the card
+  falls back to deriving a rate from the counter. The new slot appears in
+  the visual editor next to the precipitation picker, and is never
+  queried from the recorder.
+
 ## [2.3.0] — 2026-08-21
 
 > **Highlights** — the visual editor was redesigned from a ~4,200 px

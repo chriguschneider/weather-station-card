@@ -42,6 +42,7 @@ const fr: LocaleEntry = {
     'humidity': 'Humidité',
     'illuminance': 'Luminosité',
     'precipitation': 'Précipitations',
+    'precipitation_rate': 'Intensité des précipitations',
     'pressure': 'Pression',
     'wind_speed': 'Vitesse du vent',
     'gust_speed': 'Rafales',

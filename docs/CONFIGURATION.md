@@ -147,15 +147,16 @@ classifier, and (where relevant) the attribute readouts. Only
 | Key | Used for |
 | --- | --- |
 | `sensors.temperature` | Temperature curves (high/low), main-panel temperature, classifier |
-| `sensors.humidity` | Humidity attribute, fog detection |
-| `sensors.illuminance` | Cloud-cover ratio for live + daily conditions, and the lux-derived station sunshine. Accepts a plain illuminance sensor (lx) **or a solar-irradiance sensor (W/m², `device_class: irradiance`)** — irradiance readings are converted internally at 120 lm/W (daylight luminous efficacy); tune via `condition_mapping.sunshine_lux_ratio` if needed. *(irradiance support since v2.2.3)* |
-| `sensors.precipitation` | Precipitation bars, rainy/pouring/snowy classification |
 | `sensors.pressure` | Pressure attribute |
+| `sensors.humidity` | Humidity attribute, fog detection |
+| `sensors.dew_point` | Fog detection (combined with humidity) |
+| `sensors.precipitation` | Precipitation bars, rainy/pouring/snowy classification. A cumulative counter is what the bars need; the live rate is derived from it |
+| `sensors.precipitation_rate` | Optional dedicated **rate** entity (`mm/h`, `in/h`) for the live cell and the live condition. Use it when your station publishes rate and total as separate entities — the counter keeps feeding the bars, this replaces the card-side rate derivation and lets a counter-based setup classify rain. Never queried from the recorder. See [SENSORS.md → Station exposes rate and total separately](SENSORS.md#station-exposes-rate-and-total-separately). *(since v2.4)* |
 | `sensors.wind_speed` | Mean-wind classification, attribute readout |
 | `sensors.gust_speed` | Gust-based windy/exceptional classification |
 | `sensors.wind_direction` | Wind direction attribute & arrow |
+| `sensors.illuminance` | Cloud-cover ratio for live + daily conditions, and the lux-derived station sunshine. Accepts a plain illuminance sensor (lx) **or a solar-irradiance sensor (W/m², `device_class: irradiance`)** — irradiance readings are converted internally at 120 lm/W (daylight luminous efficacy); tune via `condition_mapping.sunshine_lux_ratio` if needed. *(irradiance support since v2.2.3)* |
 | `sensors.uv_index` | UV attribute |
-| `sensors.dew_point` | Fog detection (combined with humidity) |
 | `sensors.sunshine_duration` | Today's live sunshine value (scalar, seconds or hours auto-detected at the `≥ 30` threshold). Past columns fall back to the recorder's daily-max for this same sensor. Only used when `forecast.show_sunshine: true`. *(since v0.9; fully wired in daily fetch since v1.4.)* |
 | `sensors.moon_phase` | **Deprecated (v2.3, ADR-0022)** — the moon line is now computed in-card and reads no entity, so [HA's Moon integration](https://www.home-assistant.io/integrations/moon/) is no longer needed. The key is accepted and ignored so older configs keep validating. Use [`show_moon`](#layout--display) to control the line. *(entity-fed v2.2 only)* |
 
@@ -200,7 +201,7 @@ matching attribute on `weather_entity`)
 | `show_dew_point` | bool | `false` | Dew-point attribute (opt-in). |
 | `show_uv_index` | bool | opt-out (`true` when value present) | UV index attribute. |
 | `show_illuminance` | bool | `false` | Illuminance attribute (opt-in, requires `sensors.illuminance`). |
-| `show_precipitation` | bool | `false` | Precipitation attribute (opt-in, requires `sensors.precipitation`). A rate sensor shows its live rate; a cumulative counter is turned into a live rate. The display unit follows the sensor's own unit (`mm`/`mm/h` or `in`/`in/h`) and can be overridden via [`units.precipitation`](#units). See [SENSORS.md → Setting up a precipitation sensor](SENSORS.md#setting-up-a-precipitation-sensor) for live-rate guidance. |
+| `show_precipitation` | bool | opt-out (`true` when a value is present) | Precipitation attribute (requires `sensors.precipitation` or `sensors.precipitation_rate`). A dedicated rate sensor is used as-is; otherwise a rate sensor in the `precipitation` slot shows its live rate and a cumulative counter is turned into one. The display unit follows the sensor's own unit (`mm`/`mm/h` or `in`/`in/h`) and can be overridden via [`units.precipitation`](#units). See [SENSORS.md → Setting up a precipitation sensor](SENSORS.md#setting-up-a-precipitation-sensor) for live-rate guidance. |
 | `show_sunshine_duration` | bool | `false` | Sunshine-duration attribute (opt-in, requires `sensors.sunshine_duration`). |
 | `show_wind_direction` | bool | opt-out (`true` when value present) | Wind-direction arrow. |
 | `show_wind_speed` | bool | opt-out (`true` when value present) | Wind-speed value. |

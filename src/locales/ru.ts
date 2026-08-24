@@ -42,6 +42,7 @@ const ru: LocaleEntry = {
     'humidity': 'Влажность',
     'illuminance': 'Освещённость',
     'precipitation': 'Осадки',
+    'precipitation_rate': 'Интенсивность осадков',
     'pressure': 'Давление',
     'wind_speed': 'Скорость ветра',
     'gust_speed': 'Порывы ветра',

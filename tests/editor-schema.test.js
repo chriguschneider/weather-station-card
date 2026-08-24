@@ -109,6 +109,24 @@ function selectOptionValues(field) {
   return (field.selector?.select?.options || []).map((o) => (typeof o === 'string' ? o : o.value));
 }
 
+// Toggle-pill rows are hand-built DOM, not ha-form schema — query them
+// by the data-group handle renderTogglePills stamps on the row.
+function pillRow(container, group) {
+  return container.querySelector(`.pills[data-group="${group}"]`);
+}
+
+// Every option the row offers, in render order. null when absent.
+function pillValues(container, group) {
+  const row = pillRow(container, group);
+  return row ? Array.from(row.querySelectorAll('.pill')).map((b) => b.dataset.value) : null;
+}
+
+// Only the options currently switched on.
+function pillsOn(container, group) {
+  const row = pillRow(container, group);
+  return row ? Array.from(row.querySelectorAll('.pill.on')).map((b) => b.dataset.value) : null;
+}
+
 // ── renderBasicsSection ───────────────────────────────────────────────
 
 describe('renderBasicsSection (schema-driven)', () => {
@@ -146,12 +164,13 @@ describe('renderBasicsSection (schema-driven)', () => {
 // ── renderSensorsSection ──────────────────────────────────────────────
 
 describe('renderSensorsSection (schema-driven)', () => {
-  it('exposes the past-source dropdown plus the 11 pickers for station source', () => {
+  it('exposes the past-source dropdown plus the 12 pickers for station source', () => {
     const container = renderInto(renderSensorsSection, makeEditor(), makeCtx());
     const names = allFieldNames(container);
     expect(names).toContain('past_source');
     for (const key of [
-      'temperature', 'humidity', 'illuminance', 'precipitation', 'pressure',
+      'temperature', 'humidity', 'illuminance', 'precipitation',
+      'precipitation_rate', 'pressure',
       'wind_speed', 'gust_speed', 'wind_direction', 'uv_index', 'dew_point',
       'sunshine_duration',
     ]) {
@@ -159,6 +178,51 @@ describe('renderSensorsSection (schema-driven)', () => {
     }
   });
 
+  it('pairs the rate picker with the precipitation counter (#253)', () => {
+    const container = renderInto(renderSensorsSection, makeEditor(), makeCtx());
+    const names = allFieldNames(container);
+    expect(names.indexOf('precipitation_rate')).toBe(names.indexOf('precipitation') + 1);
+  });
+
+  // Z-Wave POPP rain sensors (and hand-rolled ESPHome templates) ship
+  // mm/h with no device_class at all. Filtering on the class alone hid
+  // the only working rate entity behind an unavailable one that had it.
+  it('offers rate entities by unit as well as by device_class (#253)', () => {
+    const hass = {
+      states: {
+        'sensor.popp_rain_rate': { state: '0.0', attributes: { unit_of_measurement: 'mm/h' } },
+        'sensor.classy_rate': {
+          state: '0.0',
+          attributes: { device_class: 'precipitation_intensity', unit_of_measurement: 'mm/h' },
+        },
+        'sensor.imperial_rate': { state: '0.0', attributes: { unit_of_measurement: 'in/h' } },
+        'sensor.counter': { state: '5.2', attributes: { unit_of_measurement: 'mm' } },
+      },
+    };
+    const container = renderInto(renderSensorsSection, makeEditor({ hass }), makeCtx());
+    const { field } = findField(container, 'precipitation_rate');
+    const offered = field.selector.entity.include_entities;
+    expect(offered).toContain('sensor.popp_rain_rate');
+    expect(offered).toContain('sensor.classy_rate');
+    expect(offered).toContain('sensor.imperial_rate');
+    expect(offered).not.toContain('sensor.counter');
+  });
+
+  // Row-wise 2-column grid. Twelve slots, themes of 2+2+2+3+3, so one
+  // row must straddle two themes — pin the order that keeps it at
+  // exactly one and leaves every even group intact.
+  it('keeps the thematic 2-column row order', () => {
+    const container = renderInto(renderSensorsSection, makeEditor(), makeCtx());
+    const names = allFieldNames(container).filter((n) => n !== 'past_source');
+    expect(names).toEqual([
+      'temperature', 'pressure',
+      'humidity', 'dew_point',
+      'precipitation', 'precipitation_rate',
+      'wind_speed', 'gust_speed',
+      'wind_direction', 'illuminance',
+      'uv_index', 'sunshine_duration',
+    ]);
+  });
   it('wraps the pickers in a 2-column grid container', () => {
     const container = renderInto(renderSensorsSection, makeEditor(), makeCtx());
     const gridForms = Array.from(container.querySelectorAll('ha-form'))
@@ -225,12 +289,9 @@ describe('renderChartSection (schema-driven)', () => {
     ]);
   });
 
-  it('collapses the six chart rows into one multi-select', () => {
+  it('collapses the six chart rows into one pill row', () => {
     const container = renderInto(renderChartSection, editor, makeCtx());
-    const found = findField(container, 'chart_rows');
-    expect(found).toBeTruthy();
-    expect(found.field.selector.select.multiple).toBe(true);
-    expect(selectOptionValues(found.field)).toEqual([
+    expect(pillValues(container, 'chart_rows')).toEqual([
       'condition_icons', 'show_wind_arrow', 'show_wind_speed',
       'show_date', 'show_sunshine', 'show_mode_toggle',
     ]);
@@ -238,8 +299,7 @@ describe('renderChartSection (schema-driven)', () => {
 
   it('pre-selects the rows that are on (opt-out rows on, sunshine off by default)', () => {
     const container = renderInto(renderChartSection, editor, makeCtx());
-    const { form } = findField(container, 'chart_rows');
-    expect(form.data.chart_rows).toEqual([
+    expect(pillsOn(container, 'chart_rows')).toEqual([
       'condition_icons', 'show_wind_arrow', 'show_wind_speed',
       'show_date', 'show_mode_toggle',
     ]);
@@ -325,25 +385,23 @@ describe('renderLivePanelSection (schema-driven)', () => {
     expect(names).toContain('show_attributes');
   });
 
-  it('hides the element multi-select and clock while show_main is off', () => {
-    const names = allFieldNames(renderInto(
+  it('hides the element pills and clock while show_main is off', () => {
+    const container = renderInto(
       renderLivePanelSection,
       editor,
       makeCtx({ cfg: { show_main: false } }),
-    ));
-    expect(names).not.toContain('main_elements');
-    expect(names).not.toContain('clock_mode');
+    );
+    expect(pillRow(container, 'main_elements')).toBeNull();
+    expect(allFieldNames(container)).not.toContain('clock_mode');
   });
 
-  it('reveals the element multi-select and the clock dropdown when show_main is on', () => {
+  it('reveals the element pills and the clock dropdown when show_main is on', () => {
     const container = renderInto(
       renderLivePanelSection,
       editor,
       makeCtx({ cfg: { show_main: true } }),
     );
-    const elements = findField(container, 'main_elements');
-    expect(elements).toBeTruthy();
-    expect(selectOptionValues(elements.field)).toEqual([
+    expect(pillValues(container, 'main_elements')).toEqual([
       'show_temperature', 'show_current_condition', 'show_day', 'show_date',
     ]);
     const clock = findField(container, 'clock_mode');
@@ -358,8 +416,7 @@ describe('renderLivePanelSection (schema-driven)', () => {
       editor,
       makeCtx({ cfg: { show_attributes: true } }),
     );
-    const { field } = findField(container, 'attributes');
-    expect(selectOptionValues(field)).toEqual(['show_sun', 'show_moon']);
+    expect(pillValues(container, 'attributes')).toEqual(['show_sun', 'show_moon']);
   });
 
   it('offers exactly the attribute options whose backing value is present', () => {
@@ -372,12 +429,25 @@ describe('renderLivePanelSection (schema-driven)', () => {
         hasSensor: (k) => k === 'precipitation',
       }),
     );
-    const values = selectOptionValues(findField(container, 'attributes').field);
+    const values = pillValues(container, 'attributes');
     expect(values).toContain('show_humidity');
     expect(values).toContain('show_pressure');
     expect(values).toContain('show_precipitation');
     expect(values).not.toContain('show_uv_index');
     expect(values).not.toContain('show_illuminance');
+  });
+
+  it('offers precipitation when only the rate sensor is wired (#253)', () => {
+    const container = renderInto(
+      renderLivePanelSection,
+      editor,
+      makeCtx({
+        cfg: { show_attributes: true },
+        hasSensor: (k) => k === 'precipitation_rate',
+      }),
+    );
+    const values = pillValues(container, 'attributes');
+    expect(values).toContain('show_precipitation');
   });
 
   it('lists humidity right after dew_point (shared line since v2.3)', () => {
@@ -389,7 +459,7 @@ describe('renderLivePanelSection (schema-driven)', () => {
         hasLiveValue: (k) => k === 'humidity' || k === 'dew_point',
       }),
     );
-    const values = selectOptionValues(findField(container, 'attributes').field);
+    const values = pillValues(container, 'attributes');
     expect(values.indexOf('show_humidity')).toBe(values.indexOf('show_dew_point') + 1);
   });
 
@@ -400,23 +470,23 @@ describe('renderLivePanelSection (schema-driven)', () => {
       editor,
       makeCtx({ cfg: { show_attributes: true }, hasLiveValue }),
     );
-    expect(findField(off, 'attributes').form.data.attributes).not.toContain('show_humidity');
+    expect(pillsOn(off, 'attributes')).not.toContain('show_humidity');
 
     const on = renderInto(
       renderLivePanelSection,
       editor,
       makeCtx({ cfg: { show_attributes: true, show_humidity: true }, hasLiveValue }),
     );
-    expect(findField(on, 'attributes').form.data.attributes).toContain('show_humidity');
+    expect(pillsOn(on, 'attributes')).toContain('show_humidity');
   });
 
-  it('hides the attributes multi-select when show_attributes is off', () => {
-    const names = allFieldNames(renderInto(
+  it('hides the attribute pills when show_attributes is off', () => {
+    const container = renderInto(
       renderLivePanelSection,
       editor,
       makeCtx({ cfg: { show_attributes: false } }),
-    ));
-    expect(names).toContain('show_attributes');
-    expect(names).not.toContain('attributes');
+    );
+    expect(allFieldNames(container)).toContain('show_attributes');
+    expect(pillRow(container, 'attributes')).toBeNull();
   });
 });

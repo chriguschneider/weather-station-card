@@ -60,16 +60,23 @@ export type StatsResponse = Record<string, StatBucket[] | undefined>;
 /** Sensor-id config bag. All keys optional — the user can wire only
  *  the sensors they have. Each value is a HA entity id (or undefined
  *  when the user hasn't picked one). */
+// Key order mirrors the editor's picker grid (render-sensors.ts) so the
+// type, the stub config, the docs table and the UI all read the same.
 export interface SensorMap {
   temperature?: string;
-  humidity?: string;
   pressure?: string;
-  wind_speed?: string;
-  wind_direction?: string;
-  gust_speed?: string;
-  illuminance?: string;
+  humidity?: string;
   dew_point?: string;
   precipitation?: string;
+  /** Dedicated live rate entity (mm/h · in/h). Live-panel and
+   *  live-classifier only — the chart bars need bucket accumulation,
+   *  which only `precipitation` can supply, so this key is EXCLUDED
+   *  from the recorder statistics fetch below. */
+  precipitation_rate?: string;
+  wind_speed?: string;
+  gust_speed?: string;
+  wind_direction?: string;
+  illuminance?: string;
   uv_index?: string;
   /** Sunshine duration entity (handled by the sunshine overlay, not
    *  this module — listed so config-typing stays accurate). */
@@ -454,11 +461,15 @@ export class MeasuredDataSource {
     const days = cfgDays;
     const sensors: SensorMap = this.config.sensors ?? {};
 
-    // Legacy ≤v2.2 configs may still carry sensors.moon_phase (an enum
-    // entity with no recorder statistics) — keep it out of the stats
-    // request even though the card itself no longer reads it.
-    const { moon_phase: _moonPhase, ...chartSensors } = sensors;
+    // Two keys never reach the recorder:
+    //   - moon_phase: legacy ≤v2.2 configs may still carry it (an enum
+    //     entity with no statistics); the card itself no longer reads it.
+    //   - precipitation_rate: a live-only mm/h reading. Its statistics
+    //     are mean/max of a rate, which bucketPrecipitation would
+    //     happily diff into a meaningless "rainfall per day".
+    const { moon_phase: _moonPhase, precipitation_rate: _precipRate, ...chartSensors } = sensors;
     void _moonPhase;
+    void _precipRate;
     const entityIds = Object.values(chartSensors).filter(Boolean) as string[];
     if (entityIds.length === 0) return [];
 

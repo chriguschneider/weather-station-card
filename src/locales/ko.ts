@@ -42,6 +42,7 @@ const ko: LocaleEntry = {
     'humidity': '습도',
     'illuminance': '조도',
     'precipitation': '강수량',
+    'precipitation_rate': '강수 강도',
     'pressure': '기압',
     'wind_speed': '풍속',
     'gust_speed': '돌풍',

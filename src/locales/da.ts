@@ -42,6 +42,7 @@ const da: LocaleEntry = {
     'humidity': 'Luftfugtighed',
     'illuminance': 'Lysstyrke',
     'precipitation': 'Nedbør',
+    'precipitation_rate': 'Nedbørsintensitet',
     'pressure': 'Lufttryk',
     'wind_speed': 'Vindhastighed',
     'gust_speed': 'Vindstød',

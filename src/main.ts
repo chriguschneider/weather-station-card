@@ -137,6 +137,34 @@ interface HassEntityState {
   attributes?: Record<string, unknown>;
 }
 
+/** Precipitation input for the live-condition classifier: an
+ *  instantaneous rate plus the unit to normalise it with, or a null
+ *  rate when the configured sensor cannot express one.
+ *
+ *  A dedicated `sensors.precipitation_rate` entity (#253) is
+ *  authoritative — it measures mm/h, so precipitation can drive the
+ *  live condition even when `sensors.precipitation` is a cumulative
+ *  counter. A counter on its own yields null: turning it into an
+ *  instantaneous rate needs history, and reading its total as a rate
+ *  would classify a dry day as 'rainy'.
+ *
+ *  The rate slot's contract is mm/h, so it counts as a rate even when
+ *  the integration ships a bare `mm` unit — `toMillimeters` downstream
+ *  only reads the length base, so the missing suffix costs nothing. */
+function resolvePrecipRateInput(
+  rateState: HassEntityState | null | undefined,
+  counterState: HassEntityState | null | undefined,
+): { precipRateNow: number | null; precipUnit: string } {
+  const state = rateState ?? counterState;
+  const unitRaw = state?.attributes?.unit_of_measurement;
+  const precipUnit = typeof unitRaw === 'string' ? unitRaw : '';
+  const isRate = rateState ? true : isPrecipRateUnit(precipUnit);
+  return {
+    precipRateNow: isRate ? parseNumericSafe(state?.state) : null,
+    precipUnit,
+  };
+}
+
 /** Augment the global Window so `window.customCards` (HA's card-list
  *  registry) is typed wherever main.ts touches it. */
 declare global {
@@ -506,25 +534,33 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
       ...DEFAULTS_FORECAST,
       show_sunshine: true,
     },
+    // Key order mirrors the editor's picker grid (render-sensors.ts).
     sensors: {
       temperature: findByClass('temperature') || '',
+      pressure: findByClass('atmospheric_pressure') || findByClass('pressure') || '',
       humidity: findByClass('humidity') || '',
-      // Solar-irradiance sensors (W/m²) work in the same slot — the
-      // card converts them to lux internally.
-      illuminance: findByClass('illuminance') || findByClass('irradiance') || '',
+      dew_point: findByPattern(/dew/) || '',
       // Prefer a daily-reset sensor (e.g. utility_meter cycle: daily) so the
       // statistics max-per-day equals the day's rainfall. A cumulative
       // (lifetime) sensor would yield the running total, not daily mm.
+      // The loose fallback excludes `*_precipitation_rate` (Pirateweather
+      // and friends) — a rate in the counter slot draws garbage bars; it
+      // belongs in precipitation_rate below.
       precipitation: findByPattern(/precipitation_today/)
         || findByPattern(/precipitation_daily/)
-        || findByPattern(/precipitation/)
+        || findByPattern(/precipitation(?!_rate)/)
         || '',
-      pressure: findByClass('atmospheric_pressure') || findByClass('pressure') || '',
+      // The rate channel most stations ship next to the counter (#253).
+      precipitation_rate: findByClass('precipitation_intensity')
+        || findByPattern(/(precipitation_rate|rain_rate)/)
+        || '',
       wind_speed: findByClass('wind_speed') || '',
       gust_speed: findByPattern(/gust/) || '',
       wind_direction: findByPattern(/(direction|bearing|wind.?dir)/) || '',
+      // Solar-irradiance sensors (W/m²) work in the same slot — the
+      // card converts them to lux internally.
+      illuminance: findByClass('illuminance') || findByClass('irradiance') || '',
       uv_index: findByPattern(/uv/) || '',
-      dew_point: findByPattern(/dew/) || '',
     },
   };
 }
@@ -777,8 +813,13 @@ _extractSensorReadings(hass: HassMain): void {
     || 'm/s';
   const sourcePressureUnit = attrOf(sensors.pressure, 'unit_of_measurement') || 'hPa';
   const sourceTempUnit = attrOf(sensors.temperature, 'unit_of_measurement') || '°C';
+  // Counter first, dedicated rate sensor second: a rate-only config
+  // (no cumulative counter, so no chart bars) must still default its
+  // display unit to the station's own base, or an in/h sensor would
+  // read as mm/h. Same source-fallback shape as sourceWindUnit.
   const sourcePrecipBase = precipBaseUnit(
-    attrOf(sensors.precipitation, 'unit_of_measurement') as string | undefined,
+    (attrOf(sensors.precipitation, 'unit_of_measurement')
+      || attrOf(sensors.precipitation_rate, 'unit_of_measurement')) as string | undefined,
   );
 
   this.unitSpeed = this.config.units.speed || sourceWindUnit;
@@ -834,19 +875,21 @@ _extractSensorReadings(hass: HassMain): void {
   this.precipitation = valueOf(sensors.precipitation);
   const rawPrecipUnit = (attrOf(sensors.precipitation, 'unit_of_measurement') as string | undefined) || undefined;
   this.precipitation_unit = rawPrecipUnit;
-  // Two precip shapes, both gated on whether the row is actually
+  // Three precip shapes, all gated on whether the row is actually
   // rendered (show_precipitation). When the row is hidden the
   // derivation alone would still cost a buffer-prune + localStorage
   // write + a 30-second recompute interval per set hass, so skipping
   // it entirely matters; the raw state is written above either way, so
   // re-enabling hot-loads from the existing localStorage buffer.
   //
+  //   - Dedicated `sensors.precipitation_rate` (#253): a measured mm/h
+  //     reading wins over both paths below — nothing to reconstruct.
   //   - Native rate sensor (unit ends in /h): convert the live value to
   //     the configured display unit (mm ↔ in) and relabel.
   //   - Cumulative counter (everything else): derive a rate from the
   //     sliding-anchor buffer; the derivation handles display
   //     conversion internally.
-  if (this.config.show_precipitation !== false) {
+  if (this.config.show_precipitation !== false && !this._applyLivePrecipRateSensor(hass)) {
     if (isPrecipRateUnit(rawPrecipUnit)) {
       const num = parseNumericSafe(this.precipitation);
       if (num != null) {
@@ -868,6 +911,53 @@ _extractSensorReadings(hass: HassMain): void {
   } else {
     this.windDirection = undefined;
   }
+}
+
+// A dedicated `sensors.precipitation_rate` entity (#253) short-circuits
+// both `sensors.precipitation` shapes: the value already IS a rate, so
+// there is nothing to pass through or reconstruct. Stations that expose
+// rate and daily total as separate entities (ESPHome rain gauges,
+// Ecowitt, WeatherFlow) can now feed both — the counter keeps driving
+// the chart bars, this drives the live cell and the classifier.
+//
+// Returns false when no rate sensor is configured or its state isn't
+// numeric (unavailable / unknown / not yet in hass.states), so the
+// caller falls back to the `sensors.precipitation` paths.
+_applyLivePrecipRateSensor(hass: HassMain): boolean {
+  const eid = this.config.sensors?.precipitation_rate;
+  if (!eid) return false;
+  const state = hass.states?.[eid];
+  const num = parseNumericSafe(state?.state);
+  if (num == null) return false;
+
+  // The cumulative derivation may have been running before the user
+  // added the rate sensor. Its 30-s tick would keep overwriting
+  // `precipitation` from the now-orphaned buffer, so release it here —
+  // at the point we actually take over, not on every miss.
+  this._stopPrecipDerivation();
+
+  const rawUnit = (state?.attributes?.unit_of_measurement as string | undefined) || undefined;
+  // The slot's contract is a rate, so a bare `mm` from an integration
+  // that forgot the `/h` still gets the rate label — formatPrecipDisplay
+  // decides the suffix from the source unit alone.
+  const sourceUnit = isPrecipRateUnit(rawUnit) ? rawUnit : `${precipBaseUnit(rawUnit)}/h`;
+  const { value, unit } = formatPrecipDisplay(num, sourceUnit, this.unitPrecip);
+  this.precipitation = value;
+  this.precipitation_unit = unit;
+  return true;
+}
+
+// Release the cumulative→rate machinery: the wall-clock tick and the
+// per-entity buffer identity. localStorage is deliberately left alone —
+// dropping the rate sensor again rehydrates from it (loadBuffer prunes
+// by age), so a temporary reconfiguration doesn't cost a 15-min warm-up.
+_stopPrecipDerivation(): void {
+  if (this._precipRecomputeTimer) {
+    clearInterval(this._precipRecomputeTimer);
+    this._precipRecomputeTimer = null;
+  }
+  this._precipBuffer = [];
+  this._precipBufferEntity = undefined;
 }
 
 // When the configured precipitation sensor is a cumulative counter
@@ -1016,12 +1106,12 @@ _weatherSynthesisEquals(a: any, b: any): boolean {
 _resolveLiveClassifierInputs(hass: HassMain): any {
   const sensors = this.config.sensors || {};
   const wxEntity = this.config.weather_entity ? hass.states?.[this.config.weather_entity] : null;
-  const precipState = sensors.precipitation ? hass.states?.[sensors.precipitation] : null;
   const illuminanceState = sensors.illuminance ? hass.states?.[sensors.illuminance] : null;
   const dewState = sensors.dew_point ? hass.states?.[sensors.dew_point] : null;
-  const precipUnitRaw = precipState?.attributes?.unit_of_measurement;
-  const precipUnit = typeof precipUnitRaw === 'string' ? precipUnitRaw : '';
-  const precipIsRate = /\/(h|hr|hour)$/i.test(precipUnit);
+  const { precipRateNow, precipUnit } = resolvePrecipRateInput(
+    sensors.precipitation_rate ? hass.states?.[sensors.precipitation_rate] : null,
+    sensors.precipitation ? hass.states?.[sensors.precipitation] : null,
+  );
   const dewUnitRaw = dewState?.attributes?.unit_of_measurement;
 
   return {
@@ -1037,7 +1127,7 @@ _resolveLiveClassifierInputs(hass: HassMain): any {
         illuminanceState?.attributes?.device_class,
       );
     })(),
-    precipRateNow: precipIsRate ? parseNumericSafe(precipState?.state) : null,
+    precipRateNow,
     // Source units so the classifier can normalise to its canonical
     // °C / mm before comparing against thresholds. Dew point falls back
     // to the temperature unit (same station, same scale in practice).
@@ -3467,7 +3557,13 @@ _climateRow_precip(show: boolean, hasValue: boolean, precipitation: unknown, pre
   const isRate = isPrecipRateUnit(unitStr);
   const rateMm = isRate ? toMillimeters(parseFloat(String(precipitation)), unitStr) : null;
   const icon = rateMm != null && Number.isFinite(rateMm) ? precipIcon(rateMm) : 'hass:weather-rainy';
-  return html`${this._entityLink(this._attrEntity('precipitation', false),
+  // Link to whichever entity produced the number on screen: the
+  // dedicated rate sensor when configured (#253), else the
+  // precipitation slot. Tapping the cell should open the entity the
+  // user can sanity-check the value against.
+  const linkEid = this._attrEntity('precipitation_rate', false)
+    || this._attrEntity('precipitation', false);
+  return html`${this._entityLink(linkEid,
     html`<ha-icon icon="${icon}"></ha-icon> ${precipitation}${unitSuffix}`)}<br>`;
 }
 

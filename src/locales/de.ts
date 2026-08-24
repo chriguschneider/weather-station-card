@@ -69,6 +69,7 @@ const de: LocaleEntry = {
     'humidity': 'Luftfeuchtigkeit',
     'illuminance': 'Helligkeit',
     'precipitation': 'Niederschlag',
+    'precipitation_rate': 'Niederschlagsrate',
     'pressure': 'Luftdruck',
     'wind_speed': 'Windgeschwindigkeit',
     'gust_speed': 'Böen',
@@ -166,7 +167,7 @@ const de: LocaleEntry = {
     'number_of_forecasts': 'Sichtbare Spalten',
     'number_of_forecasts_hint': 'Wie viele Balken auf einmal sichtbar sind (Default 8 — passt sowohl für 7 Tage täglich als auch für eine Stunden-Auswahl bei stündlich). 0 = alles zeigen ohne Scrollen. Wenn weniger Spalten sichtbar als Daten geladen sind, kann man horizontal scrollen.',
     'locale': 'Sprache (Override)',
-    // v2.4 Editor-Redesign (ADR-0023) — Panel-Zusammenfassungen,
+    // v2.3 Editor-Redesign (ADR-0023) — Panel-Zusammenfassungen,
     // Quellen-Dropdown, Uhr-Dropdown, Einheiten-Labels, Helper-Texte.
     'past_source_label': 'Vergangenheits-Daten',
     'past_source_station': 'Von meiner Wetterstation (Sensoren)',

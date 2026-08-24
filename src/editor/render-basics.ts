@@ -2,7 +2,7 @@
 // expansion panel: mode, chart type, title, and the weather entity are
 // what every user touches when creating the card, so they stay
 // directly visible at the top. Replaces the former render-mode.ts +
-// render-forecast.ts pair (v2.4 editor redesign, ADR-0023).
+// render-forecast.ts pair (v2.3 editor redesign, ADR-0023).
 //
 //   • Mode — UI-only abstraction over show_station / show_forecast
 //     (the YAML keeps the two booleans for backwards compatibility);

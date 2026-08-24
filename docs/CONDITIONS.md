@@ -19,31 +19,35 @@ horizon, `sunny` and `partlycloudy` swap to their night variants
 ### Precipitation in the live condition needs a *rate* unit
 
 Turning a cumulative precipitation counter into an instantaneous rainfall
-rate requires extra history that the live condition classifier does
-not consult. (Since v1.12.0 the attribute-row precip cell *does* keep
-its own buffer to derive a `mm/h` rate from a cumulative counter — see
+rate requires extra history that the live condition classifier does not
+consult. (Since v1.12.0 the attribute-row precip cell *does* keep its own
+buffer to derive a `mm/h` rate from a cumulative counter — see
 [SENSORS.md → Live precipitation rate from a cumulative sensor](SENSORS.md#live-precipitation-rate-from-a-cumulative-sensor)
-— but that buffer is not currently wired into the main weather-icon
-classifier.) Therefore **precipitation only contributes to the live
-"now" condition when the sensor's `unit_of_measurement` ends in `/h`,
-`/hr`, or `/hour`**:
+— but that buffer is deliberately not wired into the weather-icon
+classifier: a reconstructed rate carries a 15-minute lag and would flip
+the main icon on buffer noise.) Therefore **precipitation contributes to
+the live "now" condition only when the card has a genuine rate**:
 
-| Sensor `unit_of_measurement`                      | Used for live rain? |
-| ------------------------------------------------- | ------------------- |
-| `mm/h`, `mm/hr`, `mm/hour`, `in/h`                | ✅ yes               |
-| `mm`, `in` (cumulative counter or daily total)    | ❌ falls through to cloud / wind / fog |
-| _missing_                                         | ❌ falls through |
+| Configuration                                                      | Used for live rain? |
+| ------------------------------------------------------------------ | ------------------- |
+| `sensors.precipitation_rate` set *(since v2.4)*                    | ✅ yes — the measured rate is used directly |
+| `sensors.precipitation` in `mm/h`, `mm/hr`, `mm/hour`, `in/h`      | ✅ yes               |
+| `sensors.precipitation` in `mm`, `in` (counter or daily total)     | ❌ falls through to cloud / wind / fog |
+| _unit missing_                                                     | ❌ falls through |
 
 The **daily chart** has no such restriction — it derives daily totals via
 the recorder's statistics regardless of unit (see [SENSORS.md → Setting up a precipitation sensor](SENSORS.md#setting-up-a-precipitation-sensor)),
 and the worst-of-day classification uses those totals directly.
 
-If you only have a cumulative counter, the live "now" icon will not show
-rain even while it is raining; the daily chart still reports the day's
-total correctly. To get a true live rain icon, expose a `mm/h` rate sensor
-(many integrations provide one alongside the counter — e.g. Pirateweather's
-`*_precipitation_rate`, Ecowitt's `*_rain_rate`, ESPHome
-`pulse_meter`-derived rate templates).
+So if you only have a cumulative counter, the live "now" icon will not
+show rain even while it is raining; the daily chart still reports the
+day's total correctly. The fix is to give the card a rate entity as well.
+Many integrations ship one alongside the counter — Pirateweather's
+`*_precipitation_rate`, Ecowitt's `*_rain_rate`, WeatherFlow Tempest, or
+an ESPHome `pulse_meter`-derived rate template. Wire it into
+`sensors.precipitation_rate` and keep the counter in
+`sensors.precipitation`; both channels then do the job they are suited
+for. See [SENSORS.md → Station exposes rate and total separately](SENSORS.md#station-exposes-rate-and-total-separately).
 
 ## How conditions are determined
 

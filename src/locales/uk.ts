@@ -42,6 +42,7 @@ const uk: LocaleEntry = {
     'humidity': 'Вологість',
     'illuminance': 'Освітленість',
     'precipitation': 'Опади',
+    'precipitation_rate': 'Інтенсивність опадів',
     'pressure': 'Тиск',
     'wind_speed': 'Швидкість вітру',
     'gust_speed': 'Пориви вітру',
