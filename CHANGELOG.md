@@ -6,6 +6,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Switching one attribute on could switch another one off.** Turning
+  on humidity made the pressure row disappear — and nothing about
+  pressure had been touched. The editor and the card disagreed about
+  which values count as "default": the editor treated pressure as on by
+  default, the card as off. Because the editor deletes any setting that
+  sits on its default instead of writing it out, the explicit
+  "pressure: on" your card was created with got dropped, and the card
+  then fell back to off. The same mismatch existed for the condition
+  text under the current temperature. Both are fixed, and a new test
+  compares every editor default against the card's on every build, so
+  the two cannot drift apart again. If you had worked around this by
+  setting `show_pressure: true` by hand, that keeps working — nothing
+  in your YAML needs to change.
+
 ### Changed
 
 - **Every editor option is visible again.** The chart rows, main-panel

@@ -79,7 +79,7 @@ export const DEFAULTS = {
   show_day: false,
   show_date: false,
   show_humidity: false,
-  show_pressure: false,
+  show_pressure: true,
   show_wind_direction: true,
   show_wind_speed: true,
   show_sun: false,

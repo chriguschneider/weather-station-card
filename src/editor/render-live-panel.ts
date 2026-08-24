@@ -19,9 +19,9 @@ import { renderTogglePills } from './toggle-pills.js';
 
 // Main-panel elements. `def` mirrors the editor-visible defaults the
 // old toggle bags used (`!== false` → true, `=== true` → false).
-const MAIN_ELEMENT_PATHS: ReadonlyArray<TogglePath> = [
+export const MAIN_ELEMENT_PATHS: ReadonlyArray<TogglePath> = [
   { path: 'show_temperature',       def: true },
-  { path: 'show_current_condition', def: true },
+  { path: 'show_current_condition', def: false },
   { path: 'show_day',               def: false },
   { path: 'show_date',              def: false },
 ];
@@ -32,13 +32,15 @@ const MAIN_ELEMENT_PATHS: ReadonlyArray<TogglePath> = [
 // `gateKey` takes a list when more than one sensor slot can satisfy the
 // row — precipitation is offered for a cumulative counter OR a dedicated
 // rate sensor (#253), either of which produces a live value.
-const ATTRIBUTE_PATHS: ReadonlyArray<
+export const ATTRIBUTE_PATHS: ReadonlyArray<
   TogglePath & { gate?: 'live' | 'sensor'; gateKey?: string | readonly string[] }
 > = [
   { path: 'show_pressure',          def: true,  gate: 'live',   gateKey: 'pressure' },
   { path: 'show_dew_point',         def: false, gate: 'live',   gateKey: 'dew_point' },
   { path: 'show_humidity',          def: false, gate: 'live',   gateKey: 'humidity' },
-  { path: 'show_precipitation',     def: false, gate: 'sensor',
+  // Opt-out, matching DEFAULTS: the cell only renders when a precip
+  // value actually exists, so a card with a rain sensor wired wants it.
+  { path: 'show_precipitation',     def: true,  gate: 'sensor',
     gateKey: ['precipitation', 'precipitation_rate'] },
   { path: 'show_uv_index',          def: true,  gate: 'live',   gateKey: 'uv_index' },
   { path: 'show_illuminance',       def: false, gate: 'sensor', gateKey: 'illuminance' },

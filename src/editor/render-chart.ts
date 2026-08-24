@@ -17,7 +17,7 @@ import { renderTogglePills } from './toggle-pills.js';
 
 // The six auxiliary chart rows, as multi-select entries. `def` mirrors
 // DEFAULTS_FORECAST (opt-out rows are true, sunshine is opt-in).
-const CHART_ROW_PATHS: ReadonlyArray<TogglePath & { labelKey: string }> = [
+export const CHART_ROW_PATHS: ReadonlyArray<TogglePath & { labelKey: string }> = [
   { path: 'forecast.condition_icons',  def: true,  labelKey: 'show_chart_icons' },
   { path: 'forecast.show_wind_arrow',  def: true,  labelKey: 'show_chart_wind_direction' },
   { path: 'forecast.show_wind_speed',  def: true,  labelKey: 'show_chart_wind_speed' },

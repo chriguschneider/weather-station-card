@@ -201,7 +201,7 @@ matching attribute on `weather_entity`)
 | `show_dew_point` | bool | `false` | Dew-point attribute (opt-in). |
 | `show_uv_index` | bool | opt-out (`true` when value present) | UV index attribute. |
 | `show_illuminance` | bool | `false` | Illuminance attribute (opt-in, requires `sensors.illuminance`). |
-| `show_precipitation` | bool | `false` | Precipitation attribute (opt-in, requires `sensors.precipitation` or `sensors.precipitation_rate`). A dedicated rate sensor is used as-is; otherwise a rate sensor in the `precipitation` slot shows its live rate and a cumulative counter is turned into one. The display unit follows the sensor's own unit (`mm`/`mm/h` or `in`/`in/h`) and can be overridden via [`units.precipitation`](#units). See [SENSORS.md → Setting up a precipitation sensor](SENSORS.md#setting-up-a-precipitation-sensor) for live-rate guidance. |
+| `show_precipitation` | bool | opt-out (`true` when a value is present) | Precipitation attribute (requires `sensors.precipitation` or `sensors.precipitation_rate`). A dedicated rate sensor is used as-is; otherwise a rate sensor in the `precipitation` slot shows its live rate and a cumulative counter is turned into one. The display unit follows the sensor's own unit (`mm`/`mm/h` or `in`/`in/h`) and can be overridden via [`units.precipitation`](#units). See [SENSORS.md → Setting up a precipitation sensor](SENSORS.md#setting-up-a-precipitation-sensor) for live-rate guidance. |
 | `show_sunshine_duration` | bool | `false` | Sunshine-duration attribute (opt-in, requires `sensors.sunshine_duration`). |
 | `show_wind_direction` | bool | opt-out (`true` when value present) | Wind-direction arrow. |
 | `show_wind_speed` | bool | opt-out (`true` when value present) | Wind-speed value. |
