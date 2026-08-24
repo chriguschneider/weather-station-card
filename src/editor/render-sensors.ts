@@ -1,6 +1,6 @@
 // Editor render partial — "Sensoren deiner Wetterstation" panel.
 //
-// v2.4 redesign (ADR-0023): a source dropdown at the top decides where
+// v2.3 redesign (ADR-0023): a source dropdown at the top decides where
 // the past half of the chart comes from — the user's station sensors,
 // or Open-Meteo history (ADR-0015). The runtime always prefers station
 // sensors when any are configured, so the two sources are mutually

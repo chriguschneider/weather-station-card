@@ -1,6 +1,6 @@
 // Editor render partial — "Einheiten" (Units) panel.
 // One ha-form with a 2-column grid of unit dropdowns. Labels come from
-// the locale files (v2.4 — they were hardcoded English before).
+// the locale files (v2.3 — they were hardcoded English before).
 
 import { html, type TemplateResult } from 'lit';
 import type { EditorLike, EditorContext } from './types.js';

@@ -1,6 +1,6 @@
 // Editor render partial — "Diagramm" (Chart) panel.
 //
-// v2.4 redesign (ADR-0023): number fields and dropdowns pair up in
+// v2.3 redesign (ADR-0023): number fields and dropdowns pair up in
 // 2-column ha-form grids, the six chart-row toggles collapse into one
 // multi-select field, and the long visible hints became one-line
 // helper texts. `title` moved to the basics section; `chart_height`

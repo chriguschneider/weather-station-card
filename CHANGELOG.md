@@ -6,6 +6,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.4.0] — 2026-08-24
+
+> **Highlights** — stations that publish rain rate and daily total as
+> two separate entities can now feed both, which also lets the live
+> weather icon show rain on a counter-based setup for the first time;
+> every option in the editor's chart-row, element and attribute lists is
+> visible again instead of hiding behind an add-dropdown; and a
+> long-standing mismatch that made one attribute switch another one off
+> is fixed.
+
 ### Fixed
 
 - **Switching one attribute on could switch another one off.** Turning

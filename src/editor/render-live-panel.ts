@@ -2,7 +2,7 @@
 // The now-panel that sits above the chart: current temperature,
 // condition, clock, and the attributes row.
 //
-// v2.4 redesign (ADR-0023): the former walls of toggles (8 main-panel
+// v2.3 redesign (ADR-0023): the former walls of toggles (8 main-panel
 // + 13 attribute switches) collapse into two multi-select fields under
 // their on/off gates, and the three clock booleans (show_time,
 // show_time_seconds, use_12hour_format) project onto a single "clock"
