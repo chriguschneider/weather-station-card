@@ -255,10 +255,10 @@ translated into 23 languages.
   (station sensors, or Open-Meteo history when you have no station) and
   the sensor pickers in a two-column grid
 - **Chart** — days / visible columns / chart height, the chart rows as
-  one multi-select, style
-- **Live panel** — main-panel elements and attribute cells as
-  multi-selects, plus a single clock dropdown (off / 24h / 12h,
-  with-seconds variants)
+  one row of toggle pills, style
+- **Live panel** — main-panel elements and attribute cells as toggle
+  pills, plus a single clock dropdown (off / 24h / 12h, with-seconds
+  variants)
 - **Units** — pressure / wind-speed / precipitation display units
 - **Actions** — tap, hold, and double-tap behaviour
 

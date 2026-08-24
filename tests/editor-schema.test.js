@@ -109,6 +109,24 @@ function selectOptionValues(field) {
   return (field.selector?.select?.options || []).map((o) => (typeof o === 'string' ? o : o.value));
 }
 
+// Toggle-pill rows are hand-built DOM, not ha-form schema — query them
+// by the data-group handle renderTogglePills stamps on the row.
+function pillRow(container, group) {
+  return container.querySelector(`.pills[data-group="${group}"]`);
+}
+
+// Every option the row offers, in render order. null when absent.
+function pillValues(container, group) {
+  const row = pillRow(container, group);
+  return row ? Array.from(row.querySelectorAll('.pill')).map((b) => b.dataset.value) : null;
+}
+
+// Only the options currently switched on.
+function pillsOn(container, group) {
+  const row = pillRow(container, group);
+  return row ? Array.from(row.querySelectorAll('.pill.on')).map((b) => b.dataset.value) : null;
+}
+
 // ── renderBasicsSection ───────────────────────────────────────────────
 
 describe('renderBasicsSection (schema-driven)', () => {
@@ -271,12 +289,9 @@ describe('renderChartSection (schema-driven)', () => {
     ]);
   });
 
-  it('collapses the six chart rows into one multi-select', () => {
+  it('collapses the six chart rows into one pill row', () => {
     const container = renderInto(renderChartSection, editor, makeCtx());
-    const found = findField(container, 'chart_rows');
-    expect(found).toBeTruthy();
-    expect(found.field.selector.select.multiple).toBe(true);
-    expect(selectOptionValues(found.field)).toEqual([
+    expect(pillValues(container, 'chart_rows')).toEqual([
       'condition_icons', 'show_wind_arrow', 'show_wind_speed',
       'show_date', 'show_sunshine', 'show_mode_toggle',
     ]);
@@ -284,8 +299,7 @@ describe('renderChartSection (schema-driven)', () => {
 
   it('pre-selects the rows that are on (opt-out rows on, sunshine off by default)', () => {
     const container = renderInto(renderChartSection, editor, makeCtx());
-    const { form } = findField(container, 'chart_rows');
-    expect(form.data.chart_rows).toEqual([
+    expect(pillsOn(container, 'chart_rows')).toEqual([
       'condition_icons', 'show_wind_arrow', 'show_wind_speed',
       'show_date', 'show_mode_toggle',
     ]);
@@ -371,25 +385,23 @@ describe('renderLivePanelSection (schema-driven)', () => {
     expect(names).toContain('show_attributes');
   });
 
-  it('hides the element multi-select and clock while show_main is off', () => {
-    const names = allFieldNames(renderInto(
+  it('hides the element pills and clock while show_main is off', () => {
+    const container = renderInto(
       renderLivePanelSection,
       editor,
       makeCtx({ cfg: { show_main: false } }),
-    ));
-    expect(names).not.toContain('main_elements');
-    expect(names).not.toContain('clock_mode');
+    );
+    expect(pillRow(container, 'main_elements')).toBeNull();
+    expect(allFieldNames(container)).not.toContain('clock_mode');
   });
 
-  it('reveals the element multi-select and the clock dropdown when show_main is on', () => {
+  it('reveals the element pills and the clock dropdown when show_main is on', () => {
     const container = renderInto(
       renderLivePanelSection,
       editor,
       makeCtx({ cfg: { show_main: true } }),
     );
-    const elements = findField(container, 'main_elements');
-    expect(elements).toBeTruthy();
-    expect(selectOptionValues(elements.field)).toEqual([
+    expect(pillValues(container, 'main_elements')).toEqual([
       'show_temperature', 'show_current_condition', 'show_day', 'show_date',
     ]);
     const clock = findField(container, 'clock_mode');
@@ -404,8 +416,7 @@ describe('renderLivePanelSection (schema-driven)', () => {
       editor,
       makeCtx({ cfg: { show_attributes: true } }),
     );
-    const { field } = findField(container, 'attributes');
-    expect(selectOptionValues(field)).toEqual(['show_sun', 'show_moon']);
+    expect(pillValues(container, 'attributes')).toEqual(['show_sun', 'show_moon']);
   });
 
   it('offers exactly the attribute options whose backing value is present', () => {
@@ -418,7 +429,7 @@ describe('renderLivePanelSection (schema-driven)', () => {
         hasSensor: (k) => k === 'precipitation',
       }),
     );
-    const values = selectOptionValues(findField(container, 'attributes').field);
+    const values = pillValues(container, 'attributes');
     expect(values).toContain('show_humidity');
     expect(values).toContain('show_pressure');
     expect(values).toContain('show_precipitation');
@@ -435,7 +446,7 @@ describe('renderLivePanelSection (schema-driven)', () => {
         hasSensor: (k) => k === 'precipitation_rate',
       }),
     );
-    const values = selectOptionValues(findField(container, 'attributes').field);
+    const values = pillValues(container, 'attributes');
     expect(values).toContain('show_precipitation');
   });
 
@@ -448,7 +459,7 @@ describe('renderLivePanelSection (schema-driven)', () => {
         hasLiveValue: (k) => k === 'humidity' || k === 'dew_point',
       }),
     );
-    const values = selectOptionValues(findField(container, 'attributes').field);
+    const values = pillValues(container, 'attributes');
     expect(values.indexOf('show_humidity')).toBe(values.indexOf('show_dew_point') + 1);
   });
 
@@ -459,23 +470,23 @@ describe('renderLivePanelSection (schema-driven)', () => {
       editor,
       makeCtx({ cfg: { show_attributes: true }, hasLiveValue }),
     );
-    expect(findField(off, 'attributes').form.data.attributes).not.toContain('show_humidity');
+    expect(pillsOn(off, 'attributes')).not.toContain('show_humidity');
 
     const on = renderInto(
       renderLivePanelSection,
       editor,
       makeCtx({ cfg: { show_attributes: true, show_humidity: true }, hasLiveValue }),
     );
-    expect(findField(on, 'attributes').form.data.attributes).toContain('show_humidity');
+    expect(pillsOn(on, 'attributes')).toContain('show_humidity');
   });
 
-  it('hides the attributes multi-select when show_attributes is off', () => {
-    const names = allFieldNames(renderInto(
+  it('hides the attribute pills when show_attributes is off', () => {
+    const container = renderInto(
       renderLivePanelSection,
       editor,
       makeCtx({ cfg: { show_attributes: false } }),
-    ));
-    expect(names).toContain('show_attributes');
-    expect(names).not.toContain('attributes');
+    );
+    expect(allFieldNames(container)).toContain('show_attributes');
+    expect(pillRow(container, 'attributes')).toBeNull();
   });
 });

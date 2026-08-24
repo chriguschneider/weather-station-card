@@ -6,6 +6,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Every editor option is visible again.** The chart rows, main-panel
+  elements and attribute cells were multi-select fields that showed only
+  what you had already switched on, as chips with a small ×; everything
+  else hid behind an add-dropdown. If you didn't know the card had a
+  sunshine bar, you never found it. All three are now rows of toggle
+  pills — filled means on, outlined means off, one click either way. The
+  full option set is on screen at all times, adding and removing take the
+  same single click, and the row no longer reflows under your pointer as
+  you toggle. The YAML is untouched: same keys, same defaults, and a key
+  that returns to its default is still dropped from the config.
+
 ### Added
 
 - **Feed the card your station's rain rate directly** (#253) — a new

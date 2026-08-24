@@ -530,6 +530,39 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
           gap: 16px;
         }
         .gated { margin-left: 12px; display: flex; flex-direction: column; gap: 16px; }
+        /* Toggle pills (src/editor/toggle-pills.ts) — every option is
+           always visible, filled = on. The label mirrors ha-form's own
+           field labels so a pill row reads as one more form field. */
+        .pill-field { display: flex; flex-direction: column; gap: 8px; }
+        .pill-label {
+          font-size: 0.9rem;
+          color: var(--secondary-text-color, #727272);
+        }
+        .pills { display: flex; flex-wrap: wrap; gap: 8px; }
+        .pill {
+          border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+          border-radius: 16px;
+          padding: 7px 14px;
+          font-size: 13px;
+          font-family: inherit;
+          line-height: 1;
+          color: var(--primary-text-color, #212121);
+          background: transparent;
+          cursor: pointer;
+          user-select: none;
+        }
+        .pill:hover { border-color: var(--primary-color, #03a9f4); }
+        .pill:focus-visible {
+          outline: 2px solid var(--primary-color, #03a9f4);
+          outline-offset: 2px;
+        }
+        .pill.on {
+          background: var(--primary-color, #03a9f4);
+          border-color: var(--primary-color, #03a9f4);
+          /* HA's "text on an accent fill" token — not a hardcoded white,
+             which some themes make unreadable on a light accent. */
+          color: var(--text-primary-color, #fff);
+        }
         .divider {
           border-top: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
           margin: 4px 0;

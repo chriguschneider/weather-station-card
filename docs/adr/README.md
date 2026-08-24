@@ -66,3 +66,5 @@ status line.
 - [0020 — Cross-card request dedup and persistent stale-while-revalidate caches](./0020-cross-card-request-dedup-and-persistent-caches.md) (Accepted)
 - [0021 — 'today' mode is a day pager over calendar-aligned 3-hour blocks](./0021-today-mode-day-pager.md) (Accepted)
 - [0022 — Computed moon line: in-card astronomy instead of the Moon integration](./0022-computed-moon-line.md) (Accepted)
+- [0023 — Editor collapses into expansion panels with state summaries](./0023-editor-expansion-panels.md) (Accepted)
+- [0024 — Toggle pills replace `ha-form` multi-selects in the editor](./0024-toggle-pills-for-editor-multi-selects.md) (Accepted)

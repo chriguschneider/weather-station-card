@@ -13,6 +13,7 @@
 import { html, type TemplateResult } from 'lit';
 import type { EditorLike, EditorContext, TogglePath } from './types.js';
 import { renderEditorPanel } from './expansion-panel.js';
+import { renderTogglePills } from './toggle-pills.js';
 
 // The six auxiliary chart rows, as multi-select entries. `def` mirrors
 // DEFAULTS_FORECAST (opt-out rows are true, sunshine is opt-in).
@@ -59,21 +60,6 @@ export function renderChartSection(editor: EditorLike, ctx: EditorContext): Temp
     ],
   }];
 
-  // ── Rows: one multi-select over the six auxiliary chart rows ──────
-  const rowsSchema = [{
-    name: 'chart_rows',
-    selector: {
-      select: {
-        mode: 'dropdown',
-        multiple: true,
-        options: CHART_ROW_PATHS.map(({ path, labelKey }) => ({
-          value: leafOf(path),
-          label: t(labelKey),
-        })),
-      },
-    },
-  }];
-
   // ── Appearance: style dropdown + two booleans ─────────────────────
   const appearanceSchema = [
     { name: 'style', selector: {
@@ -94,15 +80,14 @@ export function renderChartSection(editor: EditorLike, ctx: EditorContext): Temp
     forecast_days: t('forecast_days'),
     number_of_forecasts: t('number_of_forecasts'),
     chart_height: t('chart_height'),
-    chart_rows: t('chart_rows_heading'),
     style: t('chart_style'),
     round_temp: t('round_temp'),
     disable_animation: t('disable_animation'),
   };
   const labelFor = (schema: { name: string }): string => labelMap[schema.name] || t(schema.name);
 
-  const handleRowsChanged = (event: CustomEvent<{ value: { chart_rows?: string[] } }>): void => {
-    editor._applyTogglePaths(CHART_ROW_PATHS, event.detail.value?.chart_rows ?? []);
+  const handleRowsChanged = (next: string[]): void => {
+    editor._applyTogglePaths(CHART_ROW_PATHS, next);
   };
 
   const selectedRows = activeChartRows(fcfg);
@@ -136,13 +121,16 @@ export function renderChartSection(editor: EditorLike, ctx: EditorContext): Temp
 
     <h4 class="subsection">${t('chart_rows_heading')}</h4>
     <div class="textfield-container">
-      <ha-form
-        .data=${{ chart_rows: selectedRows }}
-        .schema=${rowsSchema}
-        .hass=${editor.hass}
-        .computeLabel=${labelFor}
-        @value-changed=${handleRowsChanged}
-      ></ha-form>
+      ${renderTogglePills({
+        label: t('chart_rows_heading'),
+        group: 'chart_rows',
+        options: CHART_ROW_PATHS.map(({ path, labelKey }) => ({
+          value: leafOf(path),
+          label: t(labelKey),
+        })),
+        selected: selectedRows,
+        onChange: handleRowsChanged,
+      })}
       ${fcfg.show_sunshine === true ? html`
         <div class="hint">${t('show_chart_sunshine_hint')}</div>
         <div>${editor._renderSunshineAvailabilityHint(cfg, t)}</div>
