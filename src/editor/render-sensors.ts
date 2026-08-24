@@ -77,23 +77,30 @@ function buildSensorFields(hass: HassWithStates | null): Array<{ key: string; ca
     .map(([id]) => id);
 
   // Ordered as logical 2-column rows (the grid flows row-wise):
-  //   temperature    | pressure          — the two base climate values
-  //   humidity       | dew_point         — the moisture pair
-  //   wind_speed     | gust_speed        — the wind-speed pair
-  //   precipitation  | precipitation_rate — the rain pair (#253)
-  //   wind_direction | illuminance
-  //   uv_index       | sunshine_duration — rarest, last
+  //   temperature    | pressure           — base climate
+  //   humidity       | dew_point          — moisture in the air
+  //   precipitation  | precipitation_rate — moisture coming down (#253)
+  //   wind_speed     | gust_speed         ┐ wind
+  //   wind_direction | illuminance        ┘ the one mixed row
+  //   uv_index       | sunshine_duration  — light; rarest slot last
+  //
+  // Twelve slots in two columns is six rows, but the themes are
+  // 2+2+2+3+3 — wind and light have three members each, so ONE row has
+  // to straddle two themes. Placing the two odd groups next to each
+  // other keeps it at exactly one (wind_direction | illuminance) and
+  // leaves every even group intact. `temperature` stays top-left as the
+  // only required slot.
   return [
     { key: 'temperature',         candidates: byDeviceClass(['temperature']) },
     { key: 'pressure',            candidates: byDeviceClass(['atmospheric_pressure', 'pressure']) },
     { key: 'humidity',            candidates: byDeviceClass(['humidity']) },
     { key: 'dew_point',           candidates: byDeviceClass(['temperature']) },
-    { key: 'wind_speed',          candidates: byDeviceClass(['wind_speed', 'speed']) },
-    { key: 'gust_speed',          candidates: byDeviceClass(['wind_speed', 'speed']) },
     // The counter feeds the chart bars, the rate feeds the live cell and
     // the condition classifier — a station that exposes both wires both.
     { key: 'precipitation',       candidates: byDeviceClass(['precipitation']) },
     { key: 'precipitation_rate',  candidates: rateEntities },
+    { key: 'wind_speed',          candidates: byDeviceClass(['wind_speed', 'speed']) },
+    { key: 'gust_speed',          candidates: byDeviceClass(['wind_speed', 'speed']) },
     { key: 'wind_direction',      candidates: directionEntities },
     // Solar-irradiance sensors (W/m²) share the slot — the card
     // converts them to lux internally (community post 15, point 5).

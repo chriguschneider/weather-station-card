@@ -534,12 +534,12 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
       ...DEFAULTS_FORECAST,
       show_sunshine: true,
     },
+    // Key order mirrors the editor's picker grid (render-sensors.ts).
     sensors: {
       temperature: findByClass('temperature') || '',
+      pressure: findByClass('atmospheric_pressure') || findByClass('pressure') || '',
       humidity: findByClass('humidity') || '',
-      // Solar-irradiance sensors (W/m²) work in the same slot — the
-      // card converts them to lux internally.
-      illuminance: findByClass('illuminance') || findByClass('irradiance') || '',
+      dew_point: findByPattern(/dew/) || '',
       // Prefer a daily-reset sensor (e.g. utility_meter cycle: daily) so the
       // statistics max-per-day equals the day's rainfall. A cumulative
       // (lifetime) sensor would yield the running total, not daily mm.
@@ -554,12 +554,13 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
       precipitation_rate: findByClass('precipitation_intensity')
         || findByPattern(/(precipitation_rate|rain_rate)/)
         || '',
-      pressure: findByClass('atmospheric_pressure') || findByClass('pressure') || '',
       wind_speed: findByClass('wind_speed') || '',
       gust_speed: findByPattern(/gust/) || '',
       wind_direction: findByPattern(/(direction|bearing|wind.?dir)/) || '',
+      // Solar-irradiance sensors (W/m²) work in the same slot — the
+      // card converts them to lux internally.
+      illuminance: findByClass('illuminance') || findByClass('irradiance') || '',
       uv_index: findByPattern(/uv/) || '',
-      dew_point: findByPattern(/dew/) || '',
     },
   };
 }

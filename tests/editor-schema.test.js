@@ -190,6 +190,21 @@ describe('renderSensorsSection (schema-driven)', () => {
     expect(offered).not.toContain('sensor.counter');
   });
 
+  // Row-wise 2-column grid. Twelve slots, themes of 2+2+2+3+3, so one
+  // row must straddle two themes — pin the order that keeps it at
+  // exactly one and leaves every even group intact.
+  it('keeps the thematic 2-column row order', () => {
+    const container = renderInto(renderSensorsSection, makeEditor(), makeCtx());
+    const names = allFieldNames(container).filter((n) => n !== 'past_source');
+    expect(names).toEqual([
+      'temperature', 'pressure',
+      'humidity', 'dew_point',
+      'precipitation', 'precipitation_rate',
+      'wind_speed', 'gust_speed',
+      'wind_direction', 'illuminance',
+      'uv_index', 'sunshine_duration',
+    ]);
+  });
   it('wraps the pickers in a 2-column grid container', () => {
     const container = renderInto(renderSensorsSection, makeEditor(), makeCtx());
     const gridForms = Array.from(container.querySelectorAll('ha-form'))

@@ -60,14 +60,12 @@ export type StatsResponse = Record<string, StatBucket[] | undefined>;
 /** Sensor-id config bag. All keys optional — the user can wire only
  *  the sensors they have. Each value is a HA entity id (or undefined
  *  when the user hasn't picked one). */
+// Key order mirrors the editor's picker grid (render-sensors.ts) so the
+// type, the stub config, the docs table and the UI all read the same.
 export interface SensorMap {
   temperature?: string;
-  humidity?: string;
   pressure?: string;
-  wind_speed?: string;
-  wind_direction?: string;
-  gust_speed?: string;
-  illuminance?: string;
+  humidity?: string;
   dew_point?: string;
   precipitation?: string;
   /** Dedicated live rate entity (mm/h · in/h). Live-panel and
@@ -75,6 +73,10 @@ export interface SensorMap {
    *  which only `precipitation` can supply, so this key is EXCLUDED
    *  from the recorder statistics fetch below. */
   precipitation_rate?: string;
+  wind_speed?: string;
+  gust_speed?: string;
+  wind_direction?: string;
+  illuminance?: string;
   uv_index?: string;
   /** Sunshine duration entity (handled by the sunshine overlay, not
    *  this module — listed so config-typing stays accurate). */
