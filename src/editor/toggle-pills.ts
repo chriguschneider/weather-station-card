@@ -28,8 +28,10 @@ export interface PillOption {
 }
 
 export interface TogglePillsArgs {
-  /** Field label, rendered above the row like `ha-form` labels. */
-  label: string;
+  /** Field label, rendered above the row like `ha-form` labels. Omit
+   *  where an `h4.subsection` heading already names the row — a label
+   *  there would just repeat the heading one line below it. */
+  label?: string;
   options: ReadonlyArray<PillOption>;
   /** Leaves currently on. */
   selected: ReadonlyArray<string>;
@@ -55,7 +57,7 @@ export function renderTogglePills(args: TogglePillsArgs): TemplateResult {
 
   return html`
     <div class="pill-field">
-      <div class="pill-label">${label}</div>
+      ${label ? html`<div class="pill-label">${label}</div>` : ''}
       <div class="pills" data-group=${group}>
         ${options.map((option) => {
           const isOn = on.has(option.value);

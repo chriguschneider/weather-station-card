@@ -1,4 +1,4 @@
-import{b as e,i as t,e as a,r as s,l as o}from"./main-DdGAvxwo.js";const i=[{name:"weather_entity",required:!0,selector:{entity:{domain:"weather"}}}];function n(t){const{editor:a,sectionKey:s,icon:o,title:i,summary:n,resetLabel:r,body:c}=t;return e`
+import{b as e,i as t,e as a,r as s,l as o}from"./main-BgtZYiXW.js";const i=[{name:"weather_entity",required:!0,selector:{entity:{domain:"weather"}}}];function n(t){const{editor:a,sectionKey:s,icon:o,title:i,summary:n,resetLabel:r,body:c}=t;return e`
     <ha-expansion-panel
       outlined
       class="editor-panel"
@@ -22,7 +22,7 @@ import{b as e,i as t,e as a,r as s,l as o}from"./main-DdGAvxwo.js";const i=[{nam
     </ha-expansion-panel>
   `}const r=new Set(["temperature"]);function c(e){const t=e?.states?Object.entries(e.states).filter(([,e])=>!!e):[],a=e=>t.filter(([t,a])=>t.startsWith("sensor.")&&e.includes(a.attributes?.device_class||"")).map(([e])=>e),s=t.filter(([e,t])=>e.startsWith("sensor.")&&("°"===t.attributes?.unit_of_measurement||"deg"===t.attributes?.unit_of_measurement)).map(([e])=>e),o=/^(mm|in|inch|inches|")\/(h|hr|hour)$/i,i=t.filter(([e,t])=>e.startsWith("sensor.")&&("precipitation_intensity"===t.attributes?.device_class||o.test(t.attributes?.unit_of_measurement||""))).map(([e])=>e),n=/(?:^|[._-])uv(?:[._-]|index|$)/i,r=/\buv[\s_-]?index\b|\buv\b/i,c=t.filter(([e,t])=>{if(!e.startsWith("sensor."))return!1;const a=t.attributes?.friendly_name||"";return n.test(e)||r.test(a)}).map(([e])=>e);return[{key:"temperature",candidates:a(["temperature"])},{key:"pressure",candidates:a(["atmospheric_pressure","pressure"])},{key:"humidity",candidates:a(["humidity"])},{key:"dew_point",candidates:a(["temperature"])},{key:"precipitation",candidates:a(["precipitation"])},{key:"precipitation_rate",candidates:i},{key:"wind_speed",candidates:a(["wind_speed","speed"])},{key:"gust_speed",candidates:a(["wind_speed","speed"])},{key:"wind_direction",candidates:s},{key:"illuminance",candidates:a(["illuminance","irradiance"])},{key:"uv_index",candidates:c},{key:"sunshine_duration",candidates:[]}]}function l(t){const{label:a,options:s,selected:o,onChange:i,group:n}=t,r=new Set(o);return e`
     <div class="pill-field">
-      <div class="pill-label">${a}</div>
+      ${a?e`<div class="pill-label">${a}</div>`:""}
       <div class="pills" data-group=${n}>
         ${s.map(t=>{const a=r.has(t.value);return e`
             <button
@@ -251,7 +251,7 @@ import{b as e,i as t,e as a,r as s,l as o}from"./main-DdGAvxwo.js";const i=[{nam
 
     <h4 class="subsection">${s("chart_rows_heading")}</h4>
     <div class="textfield-container">
-      ${l({label:s("chart_rows_heading"),group:"chart_rows",options:d.map(({path:e,labelKey:t})=>({value:h(e),label:s(t)})),selected:m,onChange:e=>{t._applyTogglePaths(d,e)}})}
+      ${l({group:"chart_rows",options:d.map(({path:e,labelKey:t})=>({value:h(e),label:s(t)})),selected:m,onChange:e=>{t._applyTogglePaths(d,e)}})}
       ${!0===i.show_sunshine?e`
         <div class="hint">${s("show_chart_sunshine_hint")}</div>
         <div>${t._renderSunshineAvailabilityHint(o,s)}</div>

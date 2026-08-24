@@ -122,7 +122,9 @@ export function renderChartSection(editor: EditorLike, ctx: EditorContext): Temp
     <h4 class="subsection">${t('chart_rows_heading')}</h4>
     <div class="textfield-container">
       ${renderTogglePills({
-        label: t('chart_rows_heading'),
+        // No label — the `h4.subsection` right above already says
+        // "Chart rows"; the old ha-form buried its duplicate inside the
+        // dropdown control, the pill row would print it in plain text.
         group: 'chart_rows',
         options: CHART_ROW_PATHS.map(({ path, labelKey }) => ({
           value: leafOf(path),

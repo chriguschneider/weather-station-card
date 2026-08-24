@@ -109,3 +109,16 @@ describe('renderTogglePills — accessibility', () => {
     expect(byValue('a').getAttribute('aria-checked')).toBe('false');
   });
 });
+
+describe('renderTogglePills — optional label', () => {
+  it('omits the label element when no label is given', () => {
+    // The chart-rows row sits under an h4 that already names it.
+    const container = document.createElement('div');
+    render(
+      renderTogglePills({ group: 'rows', options: OPTIONS, selected: [], onChange: vi.fn() }),
+      container,
+    );
+    expect(container.querySelector('.pill-label')).toBeNull();
+    expect(container.querySelectorAll('.pill').length).toBe(3);
+  });
+});
