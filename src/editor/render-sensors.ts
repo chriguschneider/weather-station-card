@@ -14,9 +14,11 @@
 //
 // Per-metric selector filtering: most filter by `device_class`; wind
 // direction has no canonical class but a stable unit (degrees) so it
-// gets a runtime predicate. UV index has neither a class nor a
-// universal unit and gets a name/id pattern match. Each entry's `key`
-// is the YAML key under `sensors:` and doubles as the i18n key.
+// gets a runtime predicate. Precipitation rate unions its class with a
+// rate-unit predicate — integrations often ship mm/h and no class. UV
+// index has neither a class nor a universal unit and gets a name/id
+// pattern match. Each entry's `key` is the YAML key under `sensors:`
+// and doubles as the i18n key.
 
 import { html, type TemplateResult } from 'lit';
 import type { EditorLike, EditorContext, HomeAssistant } from './types.js';
@@ -52,6 +54,18 @@ function buildSensorFields(hass: HassWithStates | null): Array<{ key: string; ca
        (s.attributes?.unit_of_measurement) === 'deg'))
     .map(([id]) => id);
 
+  // Precipitation-rate candidates: `device_class: precipitation_intensity`
+  // is the canonical marker, but plenty of integrations (Z-Wave POPP,
+  // hand-rolled ESPHome templates) ship the right unit and no class at
+  // all. Union both so a working mm/h entity is never hidden behind a
+  // class the integration forgot to set.
+  const rateUnitRegex = /^(mm|in|inch|inches|")\/(h|hr|hour)$/i;
+  const rateEntities = all
+    .filter(([id, s]) => id.startsWith('sensor.') &&
+      ((s.attributes?.device_class) === 'precipitation_intensity' ||
+       rateUnitRegex.test((s.attributes?.unit_of_measurement) || '')))
+    .map(([id]) => id);
+
   const uvRegex = /(?:^|[._-])uv(?:[._-]|index|$)/i;
   const uvNameRegex = /\buv[\s_-]?index\b|\buv\b/i;
   const uvEntities = all
@@ -79,7 +93,7 @@ function buildSensorFields(hass: HassWithStates | null): Array<{ key: string; ca
     // The counter feeds the chart bars, the rate feeds the live cell and
     // the condition classifier — a station that exposes both wires both.
     { key: 'precipitation',       candidates: byDeviceClass(['precipitation']) },
-    { key: 'precipitation_rate',  candidates: byDeviceClass(['precipitation_intensity']) },
+    { key: 'precipitation_rate',  candidates: rateEntities },
     { key: 'wind_direction',      candidates: directionEntities },
     // Solar-irradiance sensors (W/m²) share the slot — the card
     // converts them to lux internally (community post 15, point 5).

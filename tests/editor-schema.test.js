@@ -166,6 +166,30 @@ describe('renderSensorsSection (schema-driven)', () => {
     expect(names.indexOf('precipitation_rate')).toBe(names.indexOf('precipitation') + 1);
   });
 
+  // Z-Wave POPP rain sensors (and hand-rolled ESPHome templates) ship
+  // mm/h with no device_class at all. Filtering on the class alone hid
+  // the only working rate entity behind an unavailable one that had it.
+  it('offers rate entities by unit as well as by device_class (#253)', () => {
+    const hass = {
+      states: {
+        'sensor.popp_rain_rate': { state: '0.0', attributes: { unit_of_measurement: 'mm/h' } },
+        'sensor.classy_rate': {
+          state: '0.0',
+          attributes: { device_class: 'precipitation_intensity', unit_of_measurement: 'mm/h' },
+        },
+        'sensor.imperial_rate': { state: '0.0', attributes: { unit_of_measurement: 'in/h' } },
+        'sensor.counter': { state: '5.2', attributes: { unit_of_measurement: 'mm' } },
+      },
+    };
+    const container = renderInto(renderSensorsSection, makeEditor({ hass }), makeCtx());
+    const { field } = findField(container, 'precipitation_rate');
+    const offered = field.selector.entity.include_entities;
+    expect(offered).toContain('sensor.popp_rain_rate');
+    expect(offered).toContain('sensor.classy_rate');
+    expect(offered).toContain('sensor.imperial_rate');
+    expect(offered).not.toContain('sensor.counter');
+  });
+
   it('wraps the pickers in a 2-column grid container', () => {
     const container = renderInto(renderSensorsSection, makeEditor(), makeCtx());
     const gridForms = Array.from(container.querySelectorAll('ha-form'))
