@@ -23,7 +23,8 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (startsWith(github.event.pull_request.head.ref, 'claude/') &&
-       github.event.pull_request.draft == true)
+       (github.event.action == 'ready_for_review' ||
+        github.event.pull_request.draft == true))
     runs-on: ubuntu-latest
     permissions:
       contents: write
