@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.4.1] — 2026-08-28
+
 ### Removed
 
 - **The sunshine-duration row is gone from the live panel.** The daily
