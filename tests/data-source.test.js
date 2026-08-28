@@ -275,6 +275,112 @@ describe('MeasuredDataSource._buildForecast', () => {
     expect(out[0].sunshine).toBe(1440);
   });
 
+  it("uses today's live state, not the daily max carrying yesterday's total", () => {
+    // A sunshine-duration counter resets at local midnight, but the reset
+    // lands a beat AFTER the hour rolls over, so HA records the 00:00
+    // hourly bucket as `min 0, max <yesterday's final>` — and today's
+    // DAILY max is therefore yesterday's total. Observed on a live
+    // instance 2026-08-28: Aug 27 ended at 10.9375 h, Aug 28's daily
+    // bucket reported max 10.9375 (mean 0.0035) while the sensor itself
+    // read 0.50 h. The card drew "11h" over today.
+    const sensorsWithSunshine = { ...sensors, sunshine_duration: 'sensor.sun' };
+    const hass = {
+      ...fakeHass,
+      states: { 'sensor.sun': { state: '0.501444', attributes: { unit_of_measurement: 'h' } } },
+    };
+    const ds = new MeasuredDataSource(hass, { sensors: sensorsWithSunshine, days: 3 });
+    const stats = {
+      'sensor.sun': [
+        // Yesterday: its own genuine end-of-day total.
+        { start: dayMs(2).date.toISOString(), max: 10.9375 },
+        // Today: the same number, but it is the pre-reset carry-over.
+        { start: dayMs(3).date.toISOString(), max: 10.9375 },
+      ],
+    };
+    const out = ds._buildForecast(stats, sensorsWithSunshine, startDay, 3);
+    // Today (the last emitted day) reads the sensor, not the bucket.
+    expect(out[2].sunshine).toBeCloseTo(0.501444, 6);
+    // Completed days keep the recorder value — the fold is today-only.
+    expect(out[1].sunshine).toBe(10.9375);
+  });
+
+  it("_fetchSunshineDailyTotals reads the 00:00 bucket's min, not its max", async () => {
+    // The midnight bucket straddles the reset, so its max belongs to
+    // YESTERDAY and its min is the post-reset floor. Taking min there
+    // and max everywhere else recovers the day's own total. Bucket
+    // shapes copied from a live recorder (2026-08-27).
+    const sensorsWithSunshine = { ...sensors, sunshine_duration: 'sensor.sun' };
+    const day = dayMs(2).date;
+    const hour = (h) => {
+      const d = new Date(day);
+      d.setHours(h, 0, 0, 0);
+      return d.toISOString();
+    };
+    const hass = {
+      ...fakeHass,
+      callWS: vi.fn().mockResolvedValue({
+        'sensor.sun': [
+          { start: hour(0), min: 0, max: 10.3992 }, // carry-over in max
+          { start: hour(10), min: 2, max: 3 },
+          { start: hour(20), min: 3.25, max: 3.25 }, // the day's real end
+        ],
+      }),
+    };
+    const ds = new MeasuredDataSource(hass, { sensors: sensorsWithSunshine, days: 3 });
+    const map = await ds._fetchSunshineDailyTotals(
+      sensorsWithSunshine, day, new Date(day.getTime() + 24 * 3600_000),
+    );
+    const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+    expect(map.get(key)).toBe(3.25);
+  });
+
+  it('_fetchSunshineDailyTotals is a no-op without a sunshine sensor', async () => {
+    const ds = new MeasuredDataSource(fakeHass, { sensors, days: 3 });
+    const day = dayMs(2).date;
+    await expect(
+      ds._fetchSunshineDailyTotals(sensors, day, new Date(day.getTime() + 24 * 3600_000)),
+    ).resolves.toBe(null);
+  });
+
+  it("recovers a completed day's own total when the daily max is the previous day's", () => {
+    // The reported bug's other half: a day DIMMER than the one before
+    // it inherits its neighbour's total, because the midnight reset
+    // leaves yesterday's final value in this day's 00:00 bucket. Here
+    // the day itself only reached 3 h but its daily max reads 10.94.
+    const sensorsWithSunshine = { ...sensors, sunshine_duration: 'sensor.sun' };
+    const ds = new MeasuredDataSource(fakeHass, { sensors: sensorsWithSunshine, days: 3 });
+    const day = dayMs(2).date;
+    const stats = {
+      'sensor.sun': [{ start: day.toISOString(), max: 10.9375 }],
+    };
+    const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+    const sunshineByDate = new Map([[key, 3]]);
+    const out = ds._buildForecast(stats, sensorsWithSunshine, startDay, 3, null, sunshineByDate);
+    expect(out[1].sunshine).toBe(3);
+  });
+
+  it('keeps the daily max when the hourly recovery has no entry for a day', () => {
+    const sensorsWithSunshine = { ...sensors, sunshine_duration: 'sensor.sun' };
+    const ds = new MeasuredDataSource(fakeHass, { sensors: sensorsWithSunshine, days: 3 });
+    const stats = {
+      'sensor.sun': [{ start: dayMs(2).date.toISOString(), max: 7.5 }],
+    };
+    const out = ds._buildForecast(stats, sensorsWithSunshine, startDay, 3, null, new Map());
+    expect(out[1].sunshine).toBe(7.5);
+  });
+
+  it('falls back to the daily max on today when the sensor has no live state', () => {
+    // No `states` entry (entity unavailable / not yet loaded): the fold
+    // is skipped rather than blanking the column.
+    const sensorsWithSunshine = { ...sensors, sunshine_duration: 'sensor.sun' };
+    const ds = new MeasuredDataSource(fakeHass, { sensors: sensorsWithSunshine, days: 3 });
+    const stats = {
+      'sensor.sun': [{ start: dayMs(3).date.toISOString(), max: 8.25 }],
+    };
+    const out = ds._buildForecast(stats, sensorsWithSunshine, startDay, 3);
+    expect(out[2].sunshine).toBe(8.25);
+  });
+
   it('falls back to the lux-derivation map when no sunshine_duration sensor is set (#66 B2)', () => {
     const ds = new MeasuredDataSource(fakeHass, { sensors, days: 3 });
     const stats = {};

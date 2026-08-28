@@ -6,7 +6,28 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [2.4.1] — 2026-08-28
+## [2.4.2] — 2026-08-28
+
+### Fixed
+
+- **The sunshine bar over today showed yesterday's total.** A morning
+  with half an hour of sun was drawn as yesterday's 11 h. A
+  sunshine-duration sensor is a counter that resets at local midnight,
+  but the reset lands a moment *after* the hour rolls over, so Home
+  Assistant records the 00:00 hour as "lowest 0, highest <yesterday's
+  final>" — and the card was reading the day's highest value. Today
+  now reads the sensor directly, which is also fresher: daily
+  statistics only summarise completed hours, so they lag by up to an
+  hour and are empty entirely just after midnight.
+- **The same leftover could land on any past day.** A day that was
+  dimmer than the one before it inherited its neighbour's total —
+  yesterday 11 h, today 3 h, and both bars said 11 h. It stayed
+  invisible whenever the week kept getting sunnier, because a rising
+  series is its own highest value, which is why this went unnoticed for
+  so long. Past days are now recovered from hourly data, where the
+  leftover can only ever sit in the midnight hour. Costs one extra
+  recorder request, only when a sunshine sensor is configured, and it
+  shares the same request de-duplication as everything else.
 
 ### Removed
 
