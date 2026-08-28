@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.4.2] — 2026-08-28
+
 ### Fixed
 
 - **The sunshine bar over today showed yesterday's total.** A morning
