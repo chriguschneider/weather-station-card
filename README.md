@@ -62,10 +62,10 @@ forecast — driven by sensor data, not a `weather.*` entity.
 ## What this card does
 
 Most Lovelace weather cards visualise a forecast served by a `weather.*`
-entity. If you actually run a weather station on-site (Shelly Plus H&T,
-BTHome, ESPHome, Pirateweather receiver, …), the more interesting view is
-*what happened over the past N days* — and the most useful "now" panel
-reflects the live readings of those same sensors. This card does both:
+entity. If you actually run a weather station on-site, the more interesting
+view is *what happened over the past N days* — and whether the forecast got
+it right — while the most useful "now" panel reflects the live readings of
+those same sensors. This card does both:
 
 - A **past chart** with high / low temperature curves and daily
   precipitation bars, plus an icon row of the worst-of-day weather
@@ -91,6 +91,15 @@ reflects the live readings of those same sensors. This card does both:
 Conditions are derived by a deterministic, meteorologically-grounded
 classifier (see [docs/CONDITIONS.md](docs/CONDITIONS.md#how-conditions-are-determined)
 — every threshold is tied to a WMO / NWS / AMS / IES source).
+
+**Works with any station that reaches Home Assistant as sensors.** The card
+never asks which hardware you own — it reads plain `sensor.*` entities, so an
+Ecowitt gateway, a WeatherFlow Tempest, Netatmo, Froggit, Davis, Ambient
+Weather, BTHome sensors, a Shelly Plus H&T or your own ESPHome build all feed
+it the same way. Stations that publish rain rate and daily total as separate
+entities can wire both, and solar-irradiance sensors (W/m²) work in the
+illuminance slot alongside lux. A `weather.*` entity is optional — you only
+need one for the forecast half of the chart.
 
 ## Modes and chart resolutions
 
