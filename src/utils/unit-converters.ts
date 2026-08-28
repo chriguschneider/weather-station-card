@@ -188,24 +188,6 @@ export function convertPressure(
     : Math.round(converted);
 }
 
-/** Format a sunshine-duration sensor reading as decimal hours. The
- *  sensor may report seconds (`s` / `sec*` unit) or minutes (`min`);
- *  unknown units fall through as already-hours. Returns undefined when
- *  the input is missing / non-numeric. */
-export function formatSunshineHours(
-  raw: unknown,
-  unit: unknown,
-): number | undefined {
-  if (raw === undefined || raw === null || raw === '') return undefined;
-  const num = parseFloat(String(raw));
-  if (!Number.isFinite(num)) return undefined;
-  const u = (typeof unit === 'string' ? unit : '').toLowerCase();
-  let divisor = 1;
-  if (u === 's' || u.startsWith('sec')) divisor = 3600;
-  else if (u === 'min') divisor = 60;
-  return Math.round((num / divisor) * 10) / 10;
-}
-
 // ── Solar irradiance → illuminance (community post 15, point 5) ──────
 //
 // Many stations (SWS-12500-class, Ecowitt solar sensors) report solar

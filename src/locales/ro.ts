@@ -91,7 +91,6 @@ const ro: LocaleEntry = {
     'show_uv_index': 'Indice UV',
     'show_illuminance': 'Luminozitate',
     'show_precipitation': 'Precipitații',
-    'show_sunshine_duration': 'Ore de soare',
     'show_sun': 'Soare (răsărit / apus)',
     'show_moon': 'Lună (iluminare / răsărit / apus)',
     'show_day': 'Ziua săptămânii',

@@ -14,7 +14,6 @@ import {
   PRESSURE_CONVERSION,
   convertWindSpeed,
   convertPressure,
-  formatSunshineHours,
   toMetersPerSecond,
   toCelsius,
   toMillimeters,
@@ -243,60 +242,6 @@ describe('convertPressure', () => {
 
   it('handles undefined units as same-unit (no conversion)', () => {
     expect(convertPressure(1013.4, undefined, undefined)).toBe(1013.4);
-  });
-});
-
-// ── formatSunshineHours ─────────────────────────────────────────────
-
-describe('formatSunshineHours', () => {
-  it('passes hour-valued input through (assumed unit "h")', () => {
-    expect(formatSunshineHours(5.36, 'h')).toBe(5.4);
-  });
-
-  it('converts seconds to hours', () => {
-    // 3600 s = 1 h
-    expect(formatSunshineHours(3600, 's')).toBe(1);
-    // 1800 s = 0.5 h
-    expect(formatSunshineHours(1800, 's')).toBe(0.5);
-  });
-
-  it('treats "sec*" prefixes as seconds', () => {
-    expect(formatSunshineHours(3600, 'seconds')).toBe(1);
-  });
-
-  it('converts minutes to hours', () => {
-    // 60 min = 1 h
-    expect(formatSunshineHours(60, 'min')).toBe(1);
-    // 30 min = 0.5 h
-    expect(formatSunshineHours(30, 'min')).toBe(0.5);
-  });
-
-  it('rounds to one decimal', () => {
-    expect(formatSunshineHours(5.36, 'h')).toBe(5.4);
-    expect(formatSunshineHours(5.34, 'h')).toBe(5.3);
-  });
-
-  it('returns undefined for missing input', () => {
-    expect(formatSunshineHours(undefined, 's')).toBeUndefined();
-    expect(formatSunshineHours(null, 's')).toBeUndefined();
-    expect(formatSunshineHours('', 's')).toBeUndefined();
-  });
-
-  it('returns undefined for non-numeric input', () => {
-    expect(formatSunshineHours('not-a-number', 's')).toBeUndefined();
-    expect(formatSunshineHours('abc', 'h')).toBeUndefined();
-  });
-
-  it('parses string-numeric input', () => {
-    expect(formatSunshineHours('3600', 's')).toBe(1);
-  });
-
-  it('treats unknown unit as hours (no conversion)', () => {
-    expect(formatSunshineHours(2.5, 'parsec')).toBe(2.5);
-  });
-
-  it('treats undefined unit as hours', () => {
-    expect(formatSunshineHours(2.5, undefined)).toBe(2.5);
   });
 });
 

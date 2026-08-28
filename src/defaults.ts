@@ -95,7 +95,6 @@ export const DEFAULTS = {
   show_uv_index: true,
   show_illuminance: false,
   show_precipitation: true,
-  show_sunshine_duration: false,
   use_12hour_format: false,
 
   // Sizing

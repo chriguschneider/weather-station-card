@@ -91,7 +91,6 @@ const lt: LocaleEntry = {
     'show_uv_index': 'UV indeksas',
     'show_illuminance': 'Apšvieta',
     'show_precipitation': 'Krituliai',
-    'show_sunshine_duration': 'Saulės spindėjimo trukmė',
     'show_sun': 'Saulė (saulėtekis / saulėlydis)',
     'show_moon': 'Mėnulis (apšviestumas / patekėjimas / nusileidimas)',
     'show_day': 'Savaitės diena',

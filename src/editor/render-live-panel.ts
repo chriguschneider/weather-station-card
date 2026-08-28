@@ -44,7 +44,6 @@ export const ATTRIBUTE_PATHS: ReadonlyArray<
     gateKey: ['precipitation', 'precipitation_rate'] },
   { path: 'show_uv_index',          def: true,  gate: 'live',   gateKey: 'uv_index' },
   { path: 'show_illuminance',       def: false, gate: 'sensor', gateKey: 'illuminance' },
-  { path: 'show_sunshine_duration', def: false, gate: 'sensor', gateKey: 'sunshine_duration' },
   { path: 'show_wind_direction',    def: true,  gate: 'live',   gateKey: 'wind_direction' },
   { path: 'show_wind_speed',        def: true,  gate: 'live',   gateKey: 'wind_speed' },
   { path: 'show_wind_gust_speed',   def: false, gate: 'live',   gateKey: 'gust_speed' },

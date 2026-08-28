@@ -91,7 +91,6 @@ const hu: LocaleEntry = {
     'show_uv_index': 'UV-index',
     'show_illuminance': 'Megvilágítás',
     'show_precipitation': 'Csapadék',
-    'show_sunshine_duration': 'Napsütés időtartama',
     'show_sun': 'Nap (napkelte / napnyugta)',
     'show_moon': 'Hold (megvilágítottság / kelte / nyugta)',
     'show_day': 'A hét napja',

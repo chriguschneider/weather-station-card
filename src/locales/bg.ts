@@ -91,7 +91,6 @@ const bg: LocaleEntry = {
     'show_uv_index': 'UV индекс',
     'show_illuminance': 'Осветеност',
     'show_precipitation': 'Валежи',
-    'show_sunshine_duration': 'Слънчево греене',
     'show_sun': 'Слънце (изгрев / залез)',
     'show_moon': 'Луна (осветеност / изгрев / залез)',
     'show_day': 'Ден от седмицата',

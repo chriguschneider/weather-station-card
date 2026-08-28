@@ -91,7 +91,6 @@ const sk: LocaleEntry = {
     'show_uv_index': 'UV index',
     'show_illuminance': 'Osvetlenie',
     'show_precipitation': 'Zrážky',
-    'show_sunshine_duration': 'Trvanie slnečného svitu',
     'show_sun': 'Slnko (východ / západ)',
     'show_moon': 'Mesiac (osvetlenie / východ / západ)',
     'show_day': 'Deň v týždni',

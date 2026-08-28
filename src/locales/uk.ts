@@ -91,7 +91,6 @@ const uk: LocaleEntry = {
     'show_uv_index': 'УФ-індекс',
     'show_illuminance': 'Освітленість',
     'show_precipitation': 'Опади',
-    'show_sunshine_duration': 'Тривалість сонячного сяйва',
     'show_sun': 'Сонце (схід / захід)',
     'show_moon': 'Місяць (освітленість / схід / захід)',
     'show_day': 'День тижня',

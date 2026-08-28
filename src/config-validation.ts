@@ -34,6 +34,15 @@ const EXTRA_TOP_LEVEL_KEYS = [
   'visibility',
 ] as const;
 
+// Retired keys: options the card no longer reads. They are still
+// ACCEPTED silently so an existing dashboard doesn't start warning
+// about YAML that used to be valid — the key just does nothing now.
+const RETIRED_TOP_LEVEL_KEYS = [
+  // v2.4.1 — the live-panel sunshine-duration row was removed; the
+  // daily total is already legible in the chart's sunshine bars.
+  'show_sunshine_duration',
+] as const;
+
 // Keys whose VALUES are free-form objects we deliberately do not
 // descend into. `sensors` slots are entity ids (open-ended set);
 // `condition_mapping` is a documented threshold table; the action
@@ -56,6 +65,7 @@ const EXTRA_UNITS_KEYS = ['speed', 'precipitation'] as const;
 const TOP_LEVEL_KEYS = new Set<string>([
   ...Object.keys(DEFAULTS),
   ...EXTRA_TOP_LEVEL_KEYS,
+  ...RETIRED_TOP_LEVEL_KEYS,
 ]);
 const FORECAST_KEYS = new Set<string>(Object.keys(DEFAULTS_FORECAST));
 const UNITS_KEYS = new Set<string>([

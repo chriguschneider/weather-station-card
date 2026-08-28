@@ -91,7 +91,6 @@ const ca: LocaleEntry = {
     'show_uv_index': 'Índex UV',
     'show_illuminance': 'Lluminositat',
     'show_precipitation': 'Precipitació',
-    'show_sunshine_duration': 'Hores de sol',
     'show_sun': 'Sol (sortida / posta de sol)',
     'show_moon': 'Lluna (il·luminació / sortida / posta)',
     'show_day': 'Dia de la setmana',

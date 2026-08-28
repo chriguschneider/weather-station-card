@@ -91,7 +91,6 @@ const it: LocaleEntry = {
     'show_uv_index': 'Indice UV',
     'show_illuminance': 'Luminosità',
     'show_precipitation': 'Precipitazioni',
-    'show_sunshine_duration': 'Durata del soleggiamento',
     'show_sun': 'Sole (alba / tramonto)',
     'show_moon': 'Luna (illuminazione / sorgere / tramonto)',
     'show_day': 'Giorno della settimana',
