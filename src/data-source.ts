@@ -528,8 +528,13 @@ export class MeasuredDataSource {
     // lux/clearsky_lux ratio. Skipped silently if either input is
     // missing — Open-Meteo overlay or F3 then fills the row.
     const luxByDate = await this._fetchLuxSunshine(sensors, start, end);
+    // Hourly recovery of the sunshine column (see the helper): the
+    // daily bucket's max carries the previous day's midnight leftover.
+    // Only fires when a sunshine sensor is configured, and rides the
+    // same dedup as every other stats call.
+    const sunshineByDate = await this._fetchSunshineDailyTotals(sensors, start, end);
 
-    return this._buildForecast(stats, sensors, start, days, luxByDate);
+    return this._buildForecast(stats, sensors, start, days, luxByDate, sunshineByDate);
   }
 
   /** Recorder statistics call routed through the module-level request
@@ -544,6 +549,63 @@ export class MeasuredDataSource {
       STATS_DEDUPE_TTL_MS,
       () => hass.callWS<StatsResponse>(msg),
     );
+  }
+
+  /** Recover each day's true sunshine total from HOURLY statistics.
+   *
+   *  A sunshine-duration sensor is a counter that resets at local
+   *  midnight, but the reset lands a beat AFTER the hour rolls over, so
+   *  HA records the 00:00 bucket as `min 0, max <yesterday's final>`.
+   *  The DAILY max is therefore `max(yesterday, today)` — correct only
+   *  while the series happens to rise, and silently wrong the first
+   *  time a day is dimmer than the one before it: that day's bar shows
+   *  its neighbour's total. (Verified against a live recorder on
+   *  2026-08-28: Aug 27's 00:00 bucket carried Aug 26's 10.3992.)
+   *
+   *  Hours 01:00–23:00 cannot hold a carry-over, so their max is the
+   *  day's own running total. The 00:00 hour is not dropped blindly —
+   *  its `min` is the post-reset floor, which keeps genuine small-hours
+   *  accumulation (polar summer) from being thrown away.
+   *
+   *  Returns `null` when inapplicable (no sensor, no data, failed call)
+   *  so the caller falls back to the daily bucket. */
+  private async _fetchSunshineDailyTotals(
+    sensors: SensorMap,
+    start: Date,
+    end: Date,
+  ): Promise<Map<string, number> | null> {
+    if (!this.hass) return null;
+    const eid = sensors.sunshine_duration;
+    if (!eid) return null;
+
+    let stats: StatsResponse;
+    try {
+      stats = await this._callStatsDeduped({
+        type: 'recorder/statistics_during_period',
+        start_time: start.toISOString(),
+        end_time: end.toISOString(),
+        statistic_ids: [eid],
+        period: 'hour',
+        types: ['min', 'max'],
+      });
+    } catch (err) {
+      console.debug('[weather-station-card] sunshine hourly fetch failed', err);
+      return null;
+    }
+
+    const series = stats?.[eid];
+    if (!series || series.length === 0) return null;
+
+    const byDay = new Map<string, number>();
+    for (const b of series) {
+      const d = new Date(b.start);
+      const v = d.getHours() === 0 ? b.min : b.max;
+      if (v == null || !Number.isFinite(v)) continue;
+      const key = localDayKey(d);
+      const prev = byDay.get(key);
+      if (prev === undefined || v > prev) byDay.set(key, v);
+    }
+    return byDay.size ? byDay : null;
   }
 
   /** B2 past-tier helper: fetch the configured illuminance sensor's
@@ -689,6 +751,7 @@ export class MeasuredDataSource {
     start: Date,
     days: number,
     luxByDate: Map<string, number> | null = null,
+    sunshineByDate: Map<string, number> | null = null,
   ): ForecastEntry[] {
     // Index each entity's series by midnight-of-day so day alignment doesn't
     // depend on positional indices (the API omits entries for empty days).
@@ -782,6 +845,25 @@ export class MeasuredDataSource {
       let sunshineRaw = sensors.sunshine_duration
         ? at(sensors.sunshine_duration, 'max')
         : null;
+      // Prefer the hourly-recovered total: the daily max above reports
+      // `max(yesterday, this day)` because the midnight reset leaves the
+      // previous day's final value inside this day's 00:00 bucket.
+      if (sensors.sunshine_duration && sunshineByDate) {
+        const recovered = sunshineByDate.get(localDayKey(dayStart));
+        if (recovered != null) sunshineRaw = recovered;
+      }
+      // On TODAY the live state beats both. Statistics roll up
+      // COMPLETED hours only, so even the carry-over-free hourly total
+      // lags by up to an hour — and in the first hour after midnight
+      // there is nothing rolled up at all. Note this REPLACES rather
+      // than max()-ing the way the temperature fold above does: on an
+      // uncorrected daily bucket max() would just re-elect the stale
+      // carry-over, which is exactly the reported symptom (a 30-minute
+      // morning drawn as yesterday's 11 h).
+      if (isToday && sensors.sunshine_duration) {
+        const live = this._liveNumber(sensors.sunshine_duration);
+        if (live != null) sunshineRaw = live;
+      }
       // B2 fallback: when no recorder sunshine sensor resolved
       // a value, look up the per-day total from the lux-derivation
       // map computed from the illuminance sensor's history. The
