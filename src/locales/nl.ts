@@ -91,7 +91,6 @@ const nl: LocaleEntry = {
     'show_uv_index': 'UV-index',
     'show_illuminance': 'Lichtsterkte',
     'show_precipitation': 'Neerslag',
-    'show_sunshine_duration': 'Zonneschijnduur',
     'show_sun': 'Zon (op-/ondergang)',
     'show_moon': 'Maan (verlichting / op-/ondergang)',
     'show_day': 'Dagnaam',

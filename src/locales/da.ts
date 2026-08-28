@@ -91,7 +91,6 @@ const da: LocaleEntry = {
     'show_uv_index': 'UV-indeks',
     'show_illuminance': 'Lysstyrke',
     'show_precipitation': 'Nedbør',
-    'show_sunshine_duration': 'Solskinstimer',
     'show_sun': 'Sol (op-/nedgang)',
     'show_moon': 'Måne (belysning / op-/nedgang)',
     'show_day': 'Ugedag',

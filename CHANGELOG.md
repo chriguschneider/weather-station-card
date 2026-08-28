@@ -6,6 +6,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.4.1] — 2026-08-28
+
+### Removed
+
+- **The sunshine-duration row is gone from the live panel.** The daily
+  sunshine total was printed as its own attribute cell next to UV and
+  the sun times, while the chart below already shows the same number as
+  a labelled bar per day — the panel row was saying twice what one
+  glance at the bars tells you. The `show_sunshine_duration` option and
+  its editor switch are removed with it. Nothing needs to change in
+  your YAML: the key is still accepted and simply ignored, so no
+  "unknown option" warning appears. `sensors.sunshine_duration` is
+  untouched and keeps feeding the chart's sunshine bars.
+
 ## [2.4.0] — 2026-08-24
 
 > **Highlights** — stations that publish rain rate and daily total as

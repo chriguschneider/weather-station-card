@@ -89,7 +89,6 @@ import {
 import {
   convertWindSpeed,
   convertPressure,
-  formatSunshineHours,
   toMetersPerSecond,
   toCelsius,
   toMillimeters,
@@ -247,10 +246,6 @@ class WeatherStationCard extends LitElement {
   // sensor never burn a timer. Cleared from the TeardownRegistry
   // closure on disconnect, matching the `_clockTimer` pattern.
   _precipRecomputeTimer: ReturnType<typeof setInterval> | null = null;
-  // deno-lint-ignore no-explicit-any
-  sunshine_duration: any;
-  // deno-lint-ignore no-explicit-any
-  sunshine_duration_unit: string | undefined;
   unitSpeed: string | undefined;
   unitPressure: string | undefined;
   unitPrecip: string | undefined;
@@ -597,8 +592,6 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
       illuminance: { attribute: false },
       precipitation: { attribute: false },
       precipitation_unit: { attribute: false },
-      sunshine_duration: { attribute: false },
-      sunshine_duration_unit: { attribute: false },
       unitSpeed: { attribute: false },
       unitPressure: { attribute: false },
       unitPrecip: { attribute: false },
@@ -840,9 +833,9 @@ _extractSensorReadings(hass: HassMain): void {
   // standard current attributes (temperature, humidity, pressure,
   // wind_speed, wind_bearing, wind_gust_speed; uv_index / dew_point
   // when the integration provides them). Read the live entity state
-  // once and let any missing sensor fall back to it. illuminance,
-  // precipitation rate, and sunshine_duration have no weather-entity
-  // counterpart and stay sensor-only.
+  // once and let any missing sensor fall back to it. illuminance and
+  // precipitation rate have no weather-entity counterpart and stay
+  // sensor-only.
   const wxEntity = this.config.weather_entity ? hass.states?.[this.config.weather_entity] : null;
   const wxAttrs = wxEntity?.attributes ?? {};
   const fromWxIfMissing = (sensorValue: string | undefined, key: string): string | undefined => {
@@ -901,8 +894,6 @@ _extractSensorReadings(hass: HassMain): void {
       this._maybeDerivePrecipRate(hass);
     }
   }
-  this.sunshine_duration = valueOf(sensors.sunshine_duration);
-  this.sunshine_duration_unit = (attrOf(sensors.sunshine_duration, 'unit_of_measurement') as string | undefined) || undefined;
 
   if (sensors.wind_direction && hass.states?.[sensors.wind_direction]) {
     this.windDirection = parseFloat(hass.states[sensors.wind_direction]!.state);
@@ -3410,11 +3401,6 @@ _convertDisplayPressure(pressure: any): any {
   );
 }
 
-// deno-lint-ignore no-explicit-any
-_formatSunshineHours(sunshine_duration: any, sunshine_duration_unit: any): number | undefined {
-  return formatSunshineHours(sunshine_duration, sunshine_duration_unit);
-}
-
 // Entity-link wrapper: clicking a live-panel value opens HA's
 // more-info dialog for the sensor behind it — the same affordance
 // HA's own entities card gives every row. `role="button"` doubles as
@@ -3628,11 +3614,6 @@ _sunRow_sunStrength(
   return html`<div title=${title} aria-label=${title}>${this._entityLink(strengthEntity,
     html`<ha-icon icon="hass:${out.iconShape}"></ha-icon> ${valueText}`)}</div>`;
 }
-_sunRow_sunshine(show: boolean, sunshineHours: number | undefined) {
-  if (!show || sunshineHours === undefined) return html``;
-  return html`<div>${this._entityLink(this._attrEntity('sunshine_duration', false),
-    html`<ha-icon icon="hass:weather-sunny"></ha-icon> ${sunshineHours} h`)}</div>`;
-}
 // deno-lint-ignore no-explicit-any
 _sunRow_sunPanel(show: boolean, sun: any, language: string) {
   if (!show || sun === undefined) return html``;
@@ -3679,15 +3660,15 @@ _renderClimateGroup({ showHumidity, humidity, showPressure, dPressure, pressureD
   `;
 }
 
-// Sun / UV / illuminance / sunshine-duration group.
+// Sun / UV / illuminance group. The daily sunshine total is not a row
+// here — the chart's sunshine bars already carry it (v2.4.1).
 // deno-lint-ignore no-explicit-any
-_renderSunGroup({ showSun, sun, showUvIndex, uv_index, showIlluminance, illuminance, showSunshineDuration, sunshineHours, language, lat, lon }: any) {
-  const anyVisible = (showSun && sun !== undefined) || (showUvIndex && uv_index !== undefined && uv_index !== '') || (showIlluminance && illuminance !== undefined && illuminance !== '') || (showSunshineDuration && sunshineHours !== undefined);
+_renderSunGroup({ showSun, sun, showUvIndex, uv_index, showIlluminance, illuminance, language, lat, lon }: any) {
+  const anyVisible = (showSun && sun !== undefined) || (showUvIndex && uv_index !== undefined && uv_index !== '') || (showIlluminance && illuminance !== undefined && illuminance !== '');
   if (!anyVisible) return html``;
   return html`
     <div>
       ${this._sunRow_sunStrength(showUvIndex, showIlluminance, uv_index, illuminance, lat, lon)}
-      ${this._sunRow_sunshine(showSunshineDuration, sunshineHours)}
       ${this._sunRow_sunPanel(showSun, sun, language)}
     </div>
   `;
@@ -3707,7 +3688,7 @@ _renderWindGroup({ showWindDirection, windDirection, showWindSpeed, dWindSpeed, 
   `;
 }
 
-renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, language, uv_index, dew_point, wind_gust_speed, illuminance, precipitation, precipitation_unit, sunshine_duration, sunshine_duration_unit } = this) {
+renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, language, uv_index, dew_point, wind_gust_speed, illuminance, precipitation, precipitation_unit } = this) {
   const dWindSpeed = this._convertDisplayWindSpeed(windSpeed);
   const dPressure = this._convertDisplayPressure(pressure);
 
@@ -3743,9 +3724,7 @@ renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, la
     showUvIndex: config.show_uv_index !== false,
     showIlluminance: config.show_illuminance !== false,
     showPrecipitation: config.show_precipitation !== false,
-    showSunshineDuration: config.show_sunshine_duration !== false,
     hasPrecipValue: precipitation !== undefined && precipitation !== '',
-    sunshineHours: this._formatSunshineHours(sunshine_duration, sunshine_duration_unit),
     humidity, dPressure, dew_point, precipitation, precipitation_unit,
     pressureDelta3h: this._pressureDelta3h,
     sun, uv_index, illuminance, language,

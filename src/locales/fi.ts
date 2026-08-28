@@ -91,7 +91,6 @@ const fi: LocaleEntry = {
     'show_uv_index': 'UV-indeksi',
     'show_illuminance': 'Valaistusvoimakkuus',
     'show_precipitation': 'Sademäärä',
-    'show_sunshine_duration': 'Auringonpaisteaika',
     'show_sun': 'Aurinko (nousu / lasku)',
     'show_moon': 'Kuu (valaistus / nousu / lasku)',
     'show_day': 'Viikonpäivä',

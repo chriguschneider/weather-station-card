@@ -69,7 +69,7 @@ const REQUIRED_EDITOR_KEYS = [
   'show_attributes', 'show_humidity', 'show_pressure', 'show_dew_point',
   'show_wind_direction', 'show_wind_speed', 'show_wind_gust_speed',
   'show_uv_index', 'show_illuminance', 'show_precipitation',
-  'show_sunshine_duration', 'show_sun', 'show_moon', 'show_day', 'show_date',
+  'show_sun', 'show_moon', 'show_day', 'show_date',
   // chart rows + hints
   'show_chart_icons', 'show_chart_wind_direction', 'show_chart_wind_speed',
   'show_chart_date', 'show_chart_sunshine', 'show_chart_sunshine_hint',

@@ -91,7 +91,6 @@ const ru: LocaleEntry = {
     'show_uv_index': 'УФ-индекс',
     'show_illuminance': 'Освещённость',
     'show_precipitation': 'Осадки',
-    'show_sunshine_duration': 'Продолжительность солнечного сияния',
     'show_sun': 'Солнце (восход / закат)',
     'show_moon': 'Луна (освещённость / восход / заход)',
     'show_day': 'День недели',

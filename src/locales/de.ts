@@ -137,7 +137,6 @@ const de: LocaleEntry = {
     'show_uv_index': 'UV-Index',
     'show_illuminance': 'Helligkeit',
     'show_precipitation': 'Niederschlag',
-    'show_sunshine_duration': 'Sonnenscheindauer',
     'show_sun': 'Sonne (Auf-/Untergang)',
     'show_moon': 'Mond (Beleuchtung / Auf-/Untergang)',
     'show_time': 'Uhr anzeigen',

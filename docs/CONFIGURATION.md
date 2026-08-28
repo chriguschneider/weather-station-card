@@ -190,8 +190,8 @@ matching attribute on `weather_entity`)
 > `cfg.show_x !== false`, so omitting the key keeps the attribute
 > visible. Set `show_x: false` explicitly to hide.
 > `show_humidity`, `show_dew_point`, `show_wind_gust_speed`,
-> `show_illuminance`, `show_precipitation`, `show_sunshine_duration`,
-> and `show_sun` are opt-in (require an explicit `true`).
+> `show_illuminance`, `show_precipitation`, and `show_sun` are opt-in
+> (require an explicit `true`).
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -202,7 +202,6 @@ matching attribute on `weather_entity`)
 | `show_uv_index` | bool | opt-out (`true` when value present) | UV index attribute. |
 | `show_illuminance` | bool | `false` | Illuminance attribute (opt-in, requires `sensors.illuminance`). |
 | `show_precipitation` | bool | opt-out (`true` when a value is present) | Precipitation attribute (requires `sensors.precipitation` or `sensors.precipitation_rate`). A dedicated rate sensor is used as-is; otherwise a rate sensor in the `precipitation` slot shows its live rate and a cumulative counter is turned into one. The display unit follows the sensor's own unit (`mm`/`mm/h` or `in`/`in/h`) and can be overridden via [`units.precipitation`](#units). See [SENSORS.md → Setting up a precipitation sensor](SENSORS.md#setting-up-a-precipitation-sensor) for live-rate guidance. |
-| `show_sunshine_duration` | bool | `false` | Sunshine-duration attribute (opt-in, requires `sensors.sunshine_duration`). |
 | `show_wind_direction` | bool | opt-out (`true` when value present) | Wind-direction arrow. |
 | `show_wind_speed` | bool | opt-out (`true` when value present) | Wind-speed value. |
 | `show_wind_gust_speed` | bool | `false` | Gust speed (opt-in, requires `sensors.gust_speed` or weather-entity attribute). |

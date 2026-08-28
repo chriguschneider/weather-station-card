@@ -91,7 +91,6 @@ const pl: LocaleEntry = {
     'show_uv_index': 'Indeks UV',
     'show_illuminance': 'Natężenie oświetlenia',
     'show_precipitation': 'Opady',
-    'show_sunshine_duration': 'Czas nasłonecznienia',
     'show_sun': 'Słońce (wschód / zachód)',
     'show_moon': 'Księżyc (oświetlenie / wschód / zachód)',
     'show_day': 'Dzień tygodnia',

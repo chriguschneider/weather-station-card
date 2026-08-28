@@ -91,7 +91,6 @@ const ko: LocaleEntry = {
     'show_uv_index': '자외선 지수',
     'show_illuminance': '조도',
     'show_precipitation': '강수량',
-    'show_sunshine_duration': '일조 시간',
     'show_sun': '태양 (일출 / 일몰)',
     'show_moon': '달 (밝기 / 월출 / 월몰)',
     'show_day': '요일',

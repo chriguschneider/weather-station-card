@@ -91,7 +91,6 @@ const el: LocaleEntry = {
     'show_uv_index': 'Δείκτης UV',
     'show_illuminance': 'Φωτεινότητα',
     'show_precipitation': 'Υετός',
-    'show_sunshine_duration': 'Διάρκεια ηλιοφάνειας',
     'show_sun': 'Ήλιος (ανατολή / δύση)',
     'show_moon': 'Σελήνη (φωτισμός / ανατολή / δύση)',
     'show_day': 'Ημέρα της εβδομάδας',
