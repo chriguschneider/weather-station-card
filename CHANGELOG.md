@@ -6,6 +6,24 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Wind from the weather entity showed the wrong unit.** With no
+  station wind sensor, the card takes wind speed and gusts from
+  `weather_entity`, but still assumed the values were in m/s. A
+  PirateWeather breeze of 13 mph was shown as "13 m/s", and the
+  inflated value turned the live icon to *windy*. Values taken from the
+  weather entity now use its `wind_speed_unit`, `pressure_unit` and
+  `temperature_unit`. If a sensor of the same pair is wired (wind +
+  gust, temperature + dew point), the entity value is converted to that
+  sensor's unit ([#253](https://github.com/chriguschneider/weather-station-card/discussions/253)).
+- **Without an illuminance sensor, the live icon was always cloudy.**
+  The card can only measure cloud cover from a lux sensor, so without
+  one the live icon stuck at *cloudy*. It now takes the sky state
+  (sunny / clear night / partly cloudy / cloudy) from `weather_entity`
+  when one is configured. Rain, fog and wind still come from the
+  station ([#253](https://github.com/chriguschneider/weather-station-card/discussions/253)).
+
 ## [2.4.2] — 2026-08-28
 
 ### Fixed

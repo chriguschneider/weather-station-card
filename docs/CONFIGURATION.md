@@ -74,7 +74,11 @@ for a single-block card.
 **Forecast-only mode without station sensors** is supported: the card
 falls back to the configured `weather_entity`'s attributes for live
 values (`humidity`, `pressure`, `dew_point`, `uv_index`, `wind_speed`,
-`wind_bearing`, `wind_gust_speed`). The attributes row in the live
+`wind_bearing`, `wind_gust_speed`), in the entity's own units
+(`wind_speed_unit`, `pressure_unit`, `temperature_unit`). The same
+fallback fills single gaps in a station setup — e.g. no wind sensor —
+and rescales the value to match a wired sensor of the same pair
+(wind + gust, temperature + dew point). The attributes row in the live
 panel only surfaces toggles for keys that have a backing value — a
 sensor under `sensors.*` or an attribute on the weather entity.
 

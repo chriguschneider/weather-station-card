@@ -12,6 +12,12 @@ any sensor updates). The same classifier is used as for the daily forecast
 columns, fed with instantaneous values and an instantaneous clear-sky
 reference (zenith from latitude + longitude + current UTC time).
 
+Cloud cover needs an illuminance sensor. Without one, the live icon
+takes the sky state (`sunny` / `clear-night` / `partlycloudy` /
+`cloudy`) from `weather_entity` instead of always showing `cloudy`.
+Rain, fog and wind still come from your station. The daily columns are
+unaffected.
+
 Day/night-aware icons are still automatic: when `sun.sun` is below the
 horizon, `sunny` and `partlycloudy` swap to their night variants
 (`clear-night`, `partlycloudy-night`).
@@ -73,7 +79,7 @@ typical weather station does not provide.
 | 4     | `windy`         | (gust ≥ 10.8 m/s OR wind_mean ≥ 8.0 m/s) AND cloud_ratio ≥ 0.70                                      | Beaufort 6 / Bft 5 (WMO No. 306)                      |
 | 5     | `sunny`         | cloud_ratio ≥ 0.70                                                                                   | WMO oktas 0–2/8                                       |
 | 5     | `partlycloudy`  | 0.30 ≤ cloud_ratio < 0.70                                                                            | WMO oktas 3–6/8                                       |
-| 5     | `cloudy`        | cloud_ratio < 0.30 (or illuminance sensor missing)                                                   | WMO oktas 7–8/8                                       |
+| 5     | `cloudy`        | cloud_ratio < 0.30 (or illuminance sensor missing — live panel: `weather_entity` sky state if set)    | WMO oktas 7–8/8                                       |
 
 `cloud_ratio` is `lux_max / clearsky_lux`, where `clearsky_lux ≈ 110 000 lx
 × cos(zenith)` (IES Lighting Handbook §3 for the sea-level clear-sky
