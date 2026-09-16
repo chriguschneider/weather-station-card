@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.4.3] — 2026-09-16
+
 ### Fixed
 
 - **Wind from the weather entity showed the wrong unit.** With no
@@ -23,6 +25,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (sunny / clear night / partly cloudy / cloudy) from `weather_entity`
   when one is configured. Rain, fog and wind still come from the
   station ([#253](https://github.com/chriguschneider/weather-station-card/discussions/253)).
+
+### Under the hood
+
+- Development tooling updated (Playwright, ESLint, Rollup,
+  typescript-eslint). No effect on the card.
 
 ## [2.4.2] — 2026-08-28
 
