@@ -62,6 +62,12 @@ export function toCelsius(
   return (fromUnit === '°F' || fromUnit === 'F') ? (temp - 32) * 5 / 9 : temp;
 }
 
+/** Inverse of `toCelsius`: express a °C value in `toUnit`. Only °F
+ *  converts; anything else passes through. */
+export function fromCelsius(tempC: number, toUnit: string | undefined): number {
+  return (toUnit === '°F' || toUnit === 'F') ? tempC * 9 / 5 + 32 : tempC;
+}
+
 /** Normalise a precipitation length — a total in mm or a mm/h rate — to
  *  millimetres for the condition classifier, whose rain thresholds
  *  (`rainy_threshold_mm`, `pouring_threshold_mm`, …) are in mm. Inches

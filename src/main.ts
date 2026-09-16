@@ -91,6 +91,8 @@ import {
   convertPressure,
   toMetersPerSecond,
   toCelsius,
+  fromCelsius,
+  WIND_CONVERSION,
   toMillimeters,
   isPrecipRateUnit,
   precipBaseUnit,
@@ -172,6 +174,10 @@ declare global {
     customCards?: any[];
   }
 }
+
+// Weather-entity states the live panel may borrow when the station has
+// no illuminance sensor to measure cloud cover itself.
+const SKY_STATES = new Set(['sunny', 'clear-night', 'partlycloudy', 'cloudy']);
 
 // In-bundle icon sprite (ADR-0018), built ONCE at module load. MDI_PATHS
 // is a static import, so the symbol list can never change at runtime —
@@ -801,11 +807,20 @@ _extractSensorReadings(hass: HassMain): void {
   // _convertWindSpeed / pressure conversion compare against — feeding the
   // target into both ends silently skips the conversion and the displayed
   // numbers stay in source units under a target-unit label.
-  const sourceWindUnit = attrOf(sensors.wind_speed, 'unit_of_measurement')
-    || attrOf(sensors.gust_speed, 'unit_of_measurement')
-    || 'm/s';
-  const sourcePressureUnit = attrOf(sensors.pressure, 'unit_of_measurement') || 'hPa';
-  const sourceTempUnit = attrOf(sensors.temperature, 'unit_of_measurement') || '°C';
+  //
+  // Readings without a station sensor fall back to the weather entity
+  // (see below), so a quantity with no sensor wired takes the entity's
+  // own unit (#253: PirateWeather mph read as m/s, which also tripped
+  // the windy classification).
+  const wxEntity = this.config.weather_entity ? hass.states?.[this.config.weather_entity] : null;
+  const wxAttrs = wxEntity?.attributes ?? {};
+  const sensorWindUnit = (attrOf(sensors.wind_speed, 'unit_of_measurement')
+    || attrOf(sensors.gust_speed, 'unit_of_measurement')) as string | undefined;
+  const sensorTempUnit = attrOf(sensors.temperature, 'unit_of_measurement') as string | undefined;
+  const sourceWindUnit = sensorWindUnit || wxAttrs.wind_speed_unit || 'm/s';
+  const sourcePressureUnit = attrOf(sensors.pressure, 'unit_of_measurement')
+    || wxAttrs.pressure_unit || 'hPa';
+  const sourceTempUnit = sensorTempUnit || wxAttrs.temperature_unit || '°C';
   // Counter first, dedicated rate sensor second: a rate-only config
   // (no cumulative counter, so no chart bars) must still default its
   // display unit to the station's own base, or an in/h sensor would
@@ -836,22 +851,37 @@ _extractSensorReadings(hass: HassMain): void {
   // once and let any missing sensor fall back to it. illuminance and
   // precipitation rate have no weather-entity counterpart and stay
   // sensor-only.
-  const wxEntity = this.config.weather_entity ? hass.states?.[this.config.weather_entity] : null;
-  const wxAttrs = wxEntity?.attributes ?? {};
-  const fromWxIfMissing = (sensorValue: string | undefined, key: string): string | undefined => {
+  // Wind speed + gust and temperature + dew point each share one source
+  // unit, so when only one of a pair comes from the entity and the
+  // units disagree, rescale the entity value into the sensor's unit.
+  const fromWxIfMissing = (
+    sensorValue: string | undefined,
+    key: string,
+    rescale?: (v: number) => number,
+  ): string | undefined => {
     if (sensorValue !== undefined && sensorValue !== '') return sensorValue;
     const v = wxAttrs[key];
     if (v === undefined || v === null) return undefined;
-    return String(v);
+    const num = Number(v);
+    return rescale && Number.isFinite(num) ? String(rescale(num)) : String(v);
   };
+  const wxWindUnit = wxAttrs.wind_speed_unit as string | undefined;
+  const windFactor = sensorWindUnit && wxWindUnit && sensorWindUnit !== wxWindUnit
+    ? WIND_CONVERSION[`${sensorWindUnit}->${wxWindUnit}`]
+    : undefined;
+  const rescaleWind = windFactor !== undefined ? (v: number) => v * windFactor : undefined;
+  const wxTempUnit = wxAttrs.temperature_unit as string | undefined;
+  const rescaleTemp = sensorTempUnit && wxTempUnit && sensorTempUnit !== wxTempUnit
+    ? (v: number) => fromCelsius(toCelsius(v, wxTempUnit) ?? v, sensorTempUnit)
+    : undefined;
 
   this.temperature = fromWxIfMissing(valueOf(sensors.temperature), 'temperature');
   this.humidity = fromWxIfMissing(valueOf(sensors.humidity), 'humidity');
   this.pressure = fromWxIfMissing(valueOf(sensors.pressure), 'pressure');
   this.uv_index = fromWxIfMissing(valueOf(sensors.uv_index), 'uv_index');
-  this.windSpeed = fromWxIfMissing(valueOf(sensors.wind_speed), 'wind_speed');
-  this.dew_point = fromWxIfMissing(valueOf(sensors.dew_point), 'dew_point');
-  this.wind_gust_speed = fromWxIfMissing(valueOf(sensors.gust_speed), 'wind_gust_speed');
+  this.windSpeed = fromWxIfMissing(valueOf(sensors.wind_speed), 'wind_speed', rescaleWind);
+  this.dew_point = fromWxIfMissing(valueOf(sensors.dew_point), 'dew_point', rescaleTemp);
+  this.wind_gust_speed = fromWxIfMissing(valueOf(sensors.gust_speed), 'wind_gust_speed', rescaleWind);
   // Irradiance sensors (W/m², community post 15 point 5) convert to
   // lux at extraction so EVERY downstream consumer — sun-strength row,
   // live classifier, formatLux display — sees the pipeline's native
@@ -1145,7 +1175,7 @@ _pickLiveCondition(inputs: any): string | undefined {
   const conditionKey =
     nowTemp + '|' + luxNow + '|' + precipRateNow + '|' +
     this.humidity + '|' + this.windSpeed + '|' + this.wind_gust_speed + '|' +
-    this.dew_point + '|' + minuteKey;
+    this.dew_point + '|' + wxState + '|' + minuteKey;
   if (this._liveConditionKey === conditionKey) return this._liveCondition;
 
   // No station temperature sensor — defer to the weather entity's own
@@ -1177,9 +1207,16 @@ _pickLiveCondition(inputs: any): string | undefined {
     dew_point_mean: toCelsius(parseNumericSafe(this.dew_point), dewUnit),
     clearsky_lux: clearskyNow,
   }, this.config.condition_mapping || {}, 'hour');
+  // Without an illuminance sensor the classifier cannot measure cloud
+  // cover and bottoms out at 'cloudy'. The weather entity's own sky
+  // state is a better guess than a permanent overcast (#253); rain,
+  // fog and wind stay station-measured.
+  const result = condition === 'cloudy' && luxNow == null && SKY_STATES.has(wxState)
+    ? wxState
+    : condition;
   this._liveConditionKey = conditionKey;
-  this._liveCondition = condition;
-  return condition;
+  this._liveCondition = result;
+  return result;
 }
 
 // Synthesized stand-in for the original weather entity. The *_unit
