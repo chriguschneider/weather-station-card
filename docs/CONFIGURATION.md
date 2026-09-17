@@ -52,7 +52,7 @@ block to where its keys live in the reference.
 | Basics (always visible) | [General](#general) — `show_station` + `show_forecast` (the mode dropdown), `forecast.type`, `title`, `weather_entity` |
 | Your weather station's sensors | [Sensors](#sensors) — `sensors.*`; the "Past data" source dropdown drives `forecast.openmeteo_history` |
 | Chart | [General](#general) (`days`, `forecast_days`) and [Chart appearance](#chart-appearance) (`forecast.number_of_forecasts`, `forecast.chart_height`, the chart-row toggles, `forecast.style`) |
-| Live panel | [Layout & Display](#layout--display) — the main-panel elements, the clock dropdown (`show_time`, `show_time_seconds`, `use_12hour_format`), and the attribute cells |
+| Live panel | [Layout & Display](#layout--display) — the main-panel elements, the clock dropdown (`show_time`, `show_time_seconds`, `use_12hour_format`), the attribute pills and the *Arrangement* board (`attributes_layout`) |
 | Units | [Units](#units) |
 | Actions | [Actions](#actions) |
 

@@ -266,8 +266,9 @@ translated into 23 languages.
 - **Chart** — days / visible columns / chart height, the chart rows as
   one row of toggle pills, style
 - **Live panel** — main-panel elements and attribute cells as toggle
-  pills, plus a single clock dropdown (off / 24h / 12h, with-seconds
-  variants)
+  pills, a single clock dropdown (off / 24h / 12h, with-seconds
+  variants), and an *Arrangement* board to drag the attribute rows
+  into the columns you want (saved as `attributes_layout`)
 - **Units** — pressure / wind-speed / precipitation display units
 - **Actions** — tap, hold, and double-tap behaviour
 
