@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.5.0] — 2026-09-17
+
 ### Added
 
 - **Arrange the attribute row yourself.** A new `attributes_layout` key
