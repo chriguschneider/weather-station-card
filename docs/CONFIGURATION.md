@@ -161,6 +161,7 @@ classifier, and (where relevant) the attribute readouts. Only
 | `sensors.wind_direction` | Wind direction attribute & arrow |
 | `sensors.illuminance` | Cloud-cover ratio for live + daily conditions, and the lux-derived station sunshine. Accepts a plain illuminance sensor (lx) **or a solar-irradiance sensor (W/m², `device_class: irradiance`)** — irradiance readings are converted internally at 120 lm/W (daylight luminous efficacy); tune via `condition_mapping.sunshine_lux_ratio` if needed. *(irradiance support since v2.2.3)* |
 | `sensors.uv_index` | UV attribute |
+| `sensors.zero_degree_level` | Zero-degree level row (altitude of the 0 °C isotherm — the snow line). A forecast-derived sensor, e.g. the MeteoSwiss integration's *Zero-degree level* (disabled by default there; needs its hourly option). Unit follows the entity (m or ft). No weather-entity fallback. *(since v2.5)* |
 | `sensors.sunshine_duration` | Today's live sunshine value (scalar, seconds or hours auto-detected at the `≥ 30` threshold). Past columns fall back to the recorder's daily-max for this same sensor. Only used when `forecast.show_sunshine: true`. *(since v0.9; fully wired in daily fetch since v1.4.)* |
 | `sensors.moon_phase` | **Deprecated (v2.3, ADR-0022)** — the moon line is now computed in-card and reads no entity, so [HA's Moon integration](https://www.home-assistant.io/integrations/moon/) is no longer needed. The key is accepted and ignored so older configs keep validating. Use [`show_moon`](#layout--display) to control the line. *(entity-fed v2.2 only)* |
 
@@ -209,8 +210,67 @@ matching attribute on `weather_entity`)
 | `show_wind_direction` | bool | opt-out (`true` when value present) | Wind-direction arrow. |
 | `show_wind_speed` | bool | opt-out (`true` when value present) | Wind-speed value. |
 | `show_wind_gust_speed` | bool | `false` | Gust speed (opt-in, requires `sensors.gust_speed` or weather-entity attribute). |
+| `show_zero_degree_level` | bool | `false` | Zero-degree level (opt-in, requires `sensors.zero_degree_level`). Renders in the climate column after precipitation; use `attributes_layout` to place it elsewhere. Formatted through HA's entity formatter (display precision, number locale) when available. *(since v2.5)* |
+| `show_dew_point_humidity` | bool | `false` | Force the combined dew point + humidity line. Without it the two share a line whenever both `show_dew_point` and `show_humidity` are on. *(since v2.5)* |
+| `show_uv_illuminance` | bool | `false` | Force the combined UV + illuminance line. Without it the two share a line whenever both `show_uv_index` and `show_illuminance` are on. *(since v2.5)* |
 | `show_sun` | bool | `false` | Sunrise / sunset row (opt-in). |
 | `show_moon` | bool | `true` (renders with the sun cell) | Moon line inside the sun cell: dynamically drawn disc showing the exact illuminated fraction, the percentage, and the next moonrise/moonset. Computed in-card (ADR-0022) — no sensor or Moon integration required; rise/set times come from HA's configured location and are omitted when it has none. On the southern hemisphere the disc is mirrored to match the local view. Set `false` to keep the sun cell sun-only. *(since v2.3)* |
+
+**Attribute layout** (`attributes_layout`, *since v2.5*, ADR-0025)
+
+By default the attribute row is three columns — climate, sun, wind —
+filtered by the `show_*` toggles above. `attributes_layout` replaces
+that arrangement with your own: a list of columns, each a list of rows,
+top to bottom.
+
+```yaml
+attributes_layout:
+  - [pressure, dew_point_humidity, precipitation]
+  - [uv_index, sun, moon]
+  - [zero_degree_level, wind_speed, wind_gust_speed]   # zero-degree level where wind direction was
+```
+
+Rules:
+
+- **The layout wins.** When it is set (non-empty), it decides *which* rows
+  render and *where*. The `show_*` row toggles are ignored — the card
+  warns once, naming the ignored keys. Leave the key out (or `[]`) to
+  get the automatic arrangement back.
+- **A row is a line.** Every token is one line in its column. Rows
+  without a value still vanish, exactly as with the toggles; a column with
+  nothing to show is dropped.
+- **Combined lines.** `dew_point_humidity` draws dew point and humidity on
+  one line, `uv_illuminance` draws UV index and illuminance on one line —
+  what the card has always shown when both were on. The singles
+  (`dew_point`, `humidity`, `uv_index`, `illuminance`) give each value its
+  own line. Listing `moon` without `sun` is allowed here (in automatic
+  mode the moon only shows with the sun).
+- **Editor.** The attribute pills edit the layout: a pill switched on
+  lands next to its nearest default neighbour (or opens a new column),
+  switched off it is removed; the first toggle on a card that still runs
+  on `show_*` keys starts from the arrangement those keys resolve to and
+  replaces them. Below the pills, the *Arrangement* board shows the
+  columns; drag a row between them (or use the arrow keys on a focused
+  row) to reorder or move it, drop it on *New column* to open one. *Back
+  to the automatic arrangement* removes the layout again and keeps the
+  rows that are on.
+
+| Row token | Shows | Needs |
+| --- | --- | --- |
+| `pressure` | Pressure + 3-h trend icon | `sensors.pressure` or weather entity |
+| `dew_point_humidity` | Dew point + comfort icon and humidity on one line | both of the next two |
+| `dew_point` | Dew point + comfort icon | `sensors.dew_point` or weather entity |
+| `humidity` | Humidity | `sensors.humidity` or weather entity |
+| `precipitation` | Live precipitation rate | `sensors.precipitation` / `sensors.precipitation_rate` |
+| `zero_degree_level` | Zero-degree level | `sensors.zero_degree_level` |
+| `uv_illuminance` | UV index and illuminance on one sun-strength line | both of the next two |
+| `uv_index` | UV index with sun-strength icon | `sensors.uv_index` or weather entity |
+| `illuminance` | Illuminance with sun-strength icon | `sensors.illuminance` |
+| `sun` | Sunrise / sunset | `sun.sun` |
+| `moon` | Moon disc, illumination, next rise/set | nothing (computed) |
+| `wind_direction` | Wind-direction arrow + cardinal | `sensors.wind_direction` or weather entity |
+| `wind_speed` | Wind speed | `sensors.wind_speed` or weather entity |
+| `wind_gust_speed` | Gust speed | `sensors.gust_speed` or weather entity |
 
 **Chart rows**
 

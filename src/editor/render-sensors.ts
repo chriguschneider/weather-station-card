@@ -66,6 +66,14 @@ function buildSensorFields(hass: HassWithStates | null): Array<{ key: string; ca
        rateUnitRegex.test((s.attributes?.unit_of_measurement) || '')))
     .map(([id]) => id);
 
+  // Zero-degree level: no device_class, and the metre unit alone would
+  // sweep in every altitude / distance sensor — match on the name.
+  const zeroDegreeRegex = /zero[._ -]?degree|freezing[._ -]?level|nullgrad|snow[._ -]?line/i;
+  const zeroDegreeEntities = all
+    .filter(([id, s]) => id.startsWith('sensor.') &&
+      (zeroDegreeRegex.test(id) || zeroDegreeRegex.test((s.attributes?.friendly_name) || '')))
+    .map(([id]) => id);
+
   const uvRegex = /(?:^|[._-])uv(?:[._-]|index|$)/i;
   const uvNameRegex = /\buv[\s_-]?index\b|\buv\b/i;
   const uvEntities = all
@@ -83,13 +91,15 @@ function buildSensorFields(hass: HassWithStates | null): Array<{ key: string; ca
   //   wind_speed     | gust_speed         ┐ wind
   //   wind_direction | illuminance        ┘ the one mixed row
   //   uv_index       | sunshine_duration  — light; rarest slot last
+  //   zero_degree_level                   — forecast-derived, own row
   //
-  // Twelve slots in two columns is six rows, but the themes are
+  // Twelve station slots in two columns is six rows, but the themes are
   // 2+2+2+3+3 — wind and light have three members each, so ONE row has
   // to straddle two themes. Placing the two odd groups next to each
   // other keeps it at exactly one (wind_direction | illuminance) and
   // leaves every even group intact. `temperature` stays top-left as the
-  // only required slot.
+  // only required slot. The zero-degree level is not a station reading
+  // (it comes from a forecast model) and takes a seventh row on its own.
   return [
     { key: 'temperature',         candidates: byDeviceClass(['temperature']) },
     { key: 'pressure',            candidates: byDeviceClass(['atmospheric_pressure', 'pressure']) },
@@ -107,6 +117,7 @@ function buildSensorFields(hass: HassWithStates | null): Array<{ key: string; ca
     { key: 'illuminance',         candidates: byDeviceClass(['illuminance', 'irradiance']) },
     { key: 'uv_index',            candidates: uvEntities },
     { key: 'sunshine_duration',   candidates: [] },
+    { key: 'zero_degree_level',   candidates: zeroDegreeEntities },
   ];
 }
 

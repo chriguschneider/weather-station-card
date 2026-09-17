@@ -164,7 +164,7 @@ describe('renderBasicsSection (schema-driven)', () => {
 // ── renderSensorsSection ──────────────────────────────────────────────
 
 describe('renderSensorsSection (schema-driven)', () => {
-  it('exposes the past-source dropdown plus the 12 pickers for station source', () => {
+  it('exposes the past-source dropdown plus the 13 pickers for station source', () => {
     const container = renderInto(renderSensorsSection, makeEditor(), makeCtx());
     const names = allFieldNames(container);
     expect(names).toContain('past_source');
@@ -172,7 +172,7 @@ describe('renderSensorsSection (schema-driven)', () => {
       'temperature', 'humidity', 'illuminance', 'precipitation',
       'precipitation_rate', 'pressure',
       'wind_speed', 'gust_speed', 'wind_direction', 'uv_index', 'dew_point',
-      'sunshine_duration',
+      'sunshine_duration', 'zero_degree_level',
     ]) {
       expect(names).toContain(key);
     }
@@ -221,7 +221,26 @@ describe('renderSensorsSection (schema-driven)', () => {
       'wind_speed', 'gust_speed',
       'wind_direction', 'illuminance',
       'uv_index', 'sunshine_duration',
+      'zero_degree_level',
     ]);
+  });
+
+  // The zero-degree level has no device_class and shares its metre
+  // unit with every altitude sensor, so the picker matches on the name.
+  it('offers zero-degree-level entities by name', () => {
+    const hass = {
+      states: {
+        'sensor.meteoswiss_bern_zero_degree_level': { state: '2450', attributes: { unit_of_measurement: 'm' } },
+        'sensor.snowline': { state: '1800', attributes: { unit_of_measurement: 'm', friendly_name: 'Freezing level' } },
+        'sensor.elevation': { state: '540', attributes: { unit_of_measurement: 'm' } },
+      },
+    };
+    const container = renderInto(renderSensorsSection, makeEditor({ hass }), makeCtx());
+    const { field } = findField(container, 'zero_degree_level');
+    const offered = field.selector.entity.include_entities;
+    expect(offered).toContain('sensor.meteoswiss_bern_zero_degree_level');
+    expect(offered).toContain('sensor.snowline');
+    expect(offered).not.toContain('sensor.elevation');
   });
   it('wraps the pickers in a 2-column grid container', () => {
     const container = renderInto(renderSensorsSection, makeEditor(), makeCtx());

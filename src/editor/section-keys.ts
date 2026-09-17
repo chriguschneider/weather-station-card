@@ -77,6 +77,12 @@ export const SECTION_KEYS: Record<SectionKey, ReadonlyArray<string>> = {
     'show_wind_gust_speed',
     'show_sun',
     'show_moon',
+    'show_zero_degree_level',
+    'show_dew_point_humidity',
+    'show_uv_illuminance',
+    // YAML-only row arrangement (ADR-0025); the attribute pills write
+    // into it when set, so a section reset must clear it too.
+    'attributes_layout',
   ],
   units: [
     'units',

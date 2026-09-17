@@ -16,6 +16,13 @@ import { html, type TemplateResult } from 'lit';
 import type { EditorLike, EditorContext, TogglePath } from './types.js';
 import { renderEditorPanel } from './expansion-panel.js';
 import { renderTogglePills } from './toggle-pills.js';
+import { renderLayoutBoard } from './layout-board.js';
+import {
+  hasExplicitLayout,
+  resolveAttributesLayout,
+  tokenOfShowKey,
+  type AttributeToken,
+} from '../attributes-layout.js';
 
 // Main-panel elements. `def` mirrors the editor-visible defaults the
 // old toggle bags used (`!== false` → true, `=== true` → false).
@@ -32,16 +39,21 @@ export const MAIN_ELEMENT_PATHS: ReadonlyArray<TogglePath> = [
 // `gateKey` takes a list when more than one sensor slot can satisfy the
 // row — precipitation is offered for a cumulative counter OR a dedicated
 // rate sensor (#253), either of which produces a live value.
+// `requireAll` flips the gate from "any of the keys" to "all of them" —
+// a combined line needs both of its values.
 export const ATTRIBUTE_PATHS: ReadonlyArray<
-  TogglePath & { gate?: 'live' | 'sensor'; gateKey?: string | readonly string[] }
+  TogglePath & { gate?: 'live' | 'sensor'; gateKey?: string | readonly string[]; requireAll?: boolean }
 > = [
   { path: 'show_pressure',          def: true,  gate: 'live',   gateKey: 'pressure' },
+  { path: 'show_dew_point_humidity', def: false, gate: 'live',  gateKey: ['dew_point', 'humidity'], requireAll: true },
   { path: 'show_dew_point',         def: false, gate: 'live',   gateKey: 'dew_point' },
   { path: 'show_humidity',          def: false, gate: 'live',   gateKey: 'humidity' },
   // Opt-out, matching DEFAULTS: the cell only renders when a precip
   // value actually exists, so a card with a rain sensor wired wants it.
   { path: 'show_precipitation',     def: true,  gate: 'sensor',
     gateKey: ['precipitation', 'precipitation_rate'] },
+  { path: 'show_zero_degree_level', def: false, gate: 'sensor', gateKey: 'zero_degree_level' },
+  { path: 'show_uv_illuminance',    def: false, gate: 'live',   gateKey: ['uv_index', 'illuminance'], requireAll: true },
   { path: 'show_uv_index',          def: true,  gate: 'live',   gateKey: 'uv_index' },
   { path: 'show_illuminance',       def: false, gate: 'sensor', gateKey: 'illuminance' },
   { path: 'show_wind_direction',    def: true,  gate: 'live',   gateKey: 'wind_direction' },
@@ -64,17 +76,71 @@ function selectedLeaves(
     .map(({ path }) => path);
 }
 
+// Attribute pills mirror the resolved layout (ADR-0025): a pill is on
+// when its row token is in the columns the card renders — the explicit
+// `attributes_layout` when set, else the show_* keys folded into the
+// automatic arrangement (both singles of a pair on → the combined pill).
+function selectedAttributeLeaves(
+  cfg: Record<string, unknown>,
+  paths: ReadonlyArray<TogglePath>,
+): string[] {
+  const on = new Set<string>(resolveAttributesLayout(cfg).flat());
+  return paths
+    .filter(({ path }) => {
+      const token = tokenOfShowKey(path);
+      return token !== undefined && on.has(token);
+    })
+    .map(({ path }) => path);
+}
+
+// Pill / board label for a row. The combined lines are named from
+// their parts so no locale needs an extra string for them.
+export function attributeLabel(t: (key: string) => string, path: string): string {
+  const leaf = path.split('.').pop() ?? path;
+  if (leaf === 'show_dew_point_humidity') return `${t('show_dew_point')} + ${t('show_humidity')}`;
+  if (leaf === 'show_uv_illuminance') return `${t('show_uv_index')} + ${t('show_illuminance')}`;
+  return t(leaf);
+}
+
 /** Attribute options currently available for this config — shared with
  *  the panel summary (count of enabled among available). */
 export function availableAttributePaths(
   hasLiveValue: (key: string) => boolean,
   hasSensor: (key: string) => boolean,
 ): Array<TogglePath> {
-  return ATTRIBUTE_PATHS.filter(({ gate, gateKey }) => {
+  return ATTRIBUTE_PATHS.filter(({ gate, gateKey, requireAll }) => {
     if (!gate || !gateKey) return true;
     const keys = typeof gateKey === 'string' ? [gateKey] : gateKey;
     const has = gate === 'live' ? hasLiveValue : hasSensor;
-    return keys.some(has);
+    return requireAll ? keys.every(has) : keys.some(has);
+  });
+}
+
+// The layout board under the attribute pills (ADR-0025). Its input is
+// the resolved columns narrowed to the rows the pill row offers AND has
+// on — a default-on row with no sensor behind it is not rendered by the
+// card, so it has no place to be arranged either.
+function renderAttributesBoard(
+  editor: EditorLike,
+  ctx: EditorContext,
+  enabledAttrs: ReadonlyArray<string>,
+): TemplateResult {
+  const { t, cfg } = ctx;
+  const enabledTokens = new Set<string>(
+    enabledAttrs.map(tokenOfShowKey).filter((tok): tok is AttributeToken => tok !== undefined),
+  );
+  const layout = resolveAttributesLayout(cfg)
+    .map((column) => column.filter((tok) => enabledTokens.has(tok)))
+    .filter((column) => column.length > 0);
+  if (layout.length === 0) return html``;
+  return renderLayoutBoard({
+    layout,
+    explicit: hasExplicitLayout(cfg),
+    labelFor: (token) => attributeLabel(t, `show_${token}`),
+    t,
+    onChange: (next) => editor._setAttributesLayout(next),
+    onReset: () => editor._setAttributesLayout(null),
+    rerender: () => editor.requestUpdate(),
   });
 }
 
@@ -112,7 +178,8 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
     return map[schema.name] || t(schema.name);
   };
 
-  const enabledAttrs = selectedLeaves(cfg, availableAttrs);
+  const enabledAttrs = selectedAttributeLeaves(cfg, availableAttrs);
+  const board = renderAttributesBoard(editor, ctx, enabledAttrs);
   const summary = `${t('main_panel_heading')} ${showMain ? t('summary_on') : t('summary_off')}`
     + ` · ${showAttrs ? `${enabledAttrs.length} ${t('summary_attributes')}` : `${t('attributes_heading')} ${t('summary_off')}`}`;
 
@@ -158,10 +225,11 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
           ${renderTogglePills({
             label: t('attributes_heading'),
             group: 'attributes',
-            options: availableAttrs.map(({ path }) => ({ value: path, label: t(path) })),
+            options: availableAttrs.map(({ path }) => ({ value: path, label: attributeLabel(t, path) })),
             selected: enabledAttrs,
-            onChange: (next) => editor._applyTogglePaths(availableAttrs, next),
+            onChange: (next) => editor._applyAttributeToggles(availableAttrs, next),
           })}
+          ${board}
         </div>
       ` : ''}
     </div>

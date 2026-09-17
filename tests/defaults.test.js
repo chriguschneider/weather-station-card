@@ -178,6 +178,7 @@ function makeEditorMock() {
     _setPastSource: vi.fn(),
     _setClockMode: vi.fn(),
     _applyTogglePaths: vi.fn(),
+    _applyAttributeToggles: vi.fn(),
     _isPanelExpanded: vi.fn(() => true),
     _setPanelExpanded: vi.fn(),
     _valueChanged: vi.fn(),

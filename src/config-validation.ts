@@ -16,6 +16,12 @@
 // those are listed explicitly below.
 
 import { DEFAULTS, DEFAULTS_FORECAST, DEFAULTS_UNITS } from './defaults.js';
+import {
+  ATTRIBUTE_TOKENS,
+  hasExplicitLayout,
+  isAttributeToken,
+  showKeyOf,
+} from './attributes-layout.js';
 
 // Top-level keys that are valid YAML but intentionally have no DEFAULTS
 // entry — see the drift-guard test's DELETE_ONLY_PATHS and main.ts.
@@ -227,8 +233,62 @@ export function validateConfig(rawConfig: unknown): string[] {
   for (const [key, value] of Object.entries(rawConfig)) {
     validateTopLevelEntry(key, value, problems);
   }
+  validateLayoutOverridesToggles(rawConfig, problems);
 
   return problems;
+}
+
+// `attributes_layout` (ADR-0025): a list of columns, each a list of row
+// tokens. A bare token in place of a column is accepted by the renderer
+// (one-row column) so it is not flagged; unknown tokens get the same
+// "did you mean" treatment as unknown keys.
+function validateAttributesLayout(value: unknown, problems: string[]): void {
+  if (value === undefined || value === null) return;
+  if (!Array.isArray(value)) {
+    problems.push(
+      `Wrong type for \`attributes_layout\`: expected a list of columns, got ${typeName(value)}`,
+    );
+    return;
+  }
+  const checkToken = (token: unknown, where: string): void => {
+    if (isAttributeToken(token)) return;
+    if (typeof token !== 'string') {
+      problems.push(
+        `Wrong type for \`${where}\`: expected a row name, got ${typeName(token)}`,
+      );
+      return;
+    }
+    const hint = suggest(token, ATTRIBUTE_TOKENS);
+    const suffix = hint ? ` — did you mean \`${hint}\`?` : '';
+    problems.push(`Unknown row in \`${where}\`: \`${token}\`${suffix}`);
+  };
+  value.forEach((column, ci) => {
+    if (Array.isArray(column)) {
+      column.forEach((token, ri) => checkToken(token, `attributes_layout[${ci}][${ri}]`));
+    } else {
+      checkToken(column, `attributes_layout[${ci}]`);
+    }
+  });
+}
+
+// An explicit layout decides row visibility by itself; a `show_*` row
+// toggle sitting next to it does nothing. One combined hint keeps a
+// UI-created card (which writes every toggle explicitly) from raising
+// a dozen lines the moment a layout is added.
+function validateLayoutOverridesToggles(
+  rawConfig: Record<string, unknown>,
+  problems: string[],
+): void {
+  if (!hasExplicitLayout(rawConfig)) return;
+  const ignored = ATTRIBUTE_TOKENS
+    .map(showKeyOf)
+    .filter((key) => rawConfig[key] !== undefined);
+  if (ignored.length === 0) return;
+  const list = ignored.map((k) => '`' + k + '`').join(', ');
+  problems.push(
+    '`attributes_layout` is set, so ' + list
+    + ' will be ignored — the layout decides which attribute rows are shown',
+  );
 }
 
 // Validate a single top-level config entry. Split out of validateConfig
@@ -248,6 +308,10 @@ function validateTopLevelEntry(
   }
   if (key === 'units') {
     validateNestedSection('units', value, UNITS_KEYS, DEFAULTS_UNITS, problems);
+    return;
+  }
+  if (key === 'attributes_layout') {
+    validateAttributesLayout(value, problems);
     return;
   }
   // Opaque object containers: type-check the container only, never

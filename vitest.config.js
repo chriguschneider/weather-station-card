@@ -56,6 +56,7 @@ export default {
         'src/dew-point-comfort.ts',
         'src/sun-strength.ts',
         'src/moon.ts',
+        'src/attributes-layout.ts',
       ],
       thresholds: {
         statements: 80,
