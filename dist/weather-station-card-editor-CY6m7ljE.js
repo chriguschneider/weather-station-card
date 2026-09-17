@@ -1,4 +1,4 @@
-import{b as e,A as t,n as a,r as o,t as s,h as n,i,a as r,c as l,d as c,s as d,e as h,f as p,D as u,l as _}from"./main-Ce8_2HbY.js";const f=[{name:"weather_entity",required:!0,selector:{entity:{domain:"weather"}}}];function m(t){const{editor:a,sectionKey:o,icon:s,title:n,summary:i,resetLabel:r,body:l}=t;return e`
+import{b as e,A as t,n as a,r as o,t as s,h as n,i,a as r,c as l,d as c,s as d,e as h,f as p,D as u,l as _}from"./main-AfFaMnZb.js";const f=[{name:"weather_entity",required:!0,selector:{entity:{domain:"weather"}}}];function m(t){const{editor:a,sectionKey:o,icon:s,title:n,summary:i,resetLabel:r,body:l}=t;return e`
     <ha-expansion-panel
       outlined
       class="editor-panel"
