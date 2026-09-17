@@ -11,12 +11,16 @@ import { renderTapSection } from './editor/render-tap.js';
 import { SECTION_KEYS, type SectionKey } from './editor/section-keys.js';
 import type { EditorContext, EditorLike, PastSource, TFn, TogglePath } from './editor/types.js';
 import {
+  ATTRIBUTE_TOKENS,
   addTokenToLayout,
   hasExplicitLayout,
   normalizeLayout,
   removeTokenFromLayout,
+  resolveAttributesLayout,
+  showKeyOf,
   tokenOfShowKey,
 } from './attributes-layout.js';
+import { DEFAULTS } from './defaults.js';
 
 type EditorMode = 'station' | 'forecast' | 'combination';
 
@@ -218,6 +222,33 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
       this._deleteByPath(newConfig, path);
     }
     newConfig.attributes_layout = layout;
+    this.configChanged(newConfig);
+    this.requestUpdate();
+  };
+
+  // Layout board (ADR-0025). A drop or an arrow-key move writes the
+  // whole arrangement; the show_* row keys go, the layout decides now.
+  // `null` returns to automatic mode without losing which rows are on:
+  // the current membership is projected back onto the show_* keys
+  // (deleting the ones that land on their default, as _applyTogglePaths
+  // does) and the layout key is removed.
+  _setAttributesLayout = (layout: ReadonlyArray<ReadonlyArray<string>> | null): void => {
+    if (!this._config) return;
+    const newConfig = JSON.parse(JSON.stringify(this._config)) as Record<string, unknown>;
+    if (layout === null) {
+      const on = new Set<string>(resolveAttributesLayout(this._config).flat());
+      delete newConfig.attributes_layout;
+      for (const token of ATTRIBUTE_TOKENS) {
+        const key = showKeyOf(token);
+        const def = (DEFAULTS as Record<string, unknown>)[key] === true;
+        const desired = on.has(token);
+        if (desired === def) delete newConfig[key];
+        else newConfig[key] = desired;
+      }
+    } else {
+      newConfig.attributes_layout = normalizeLayout(layout);
+      for (const token of ATTRIBUTE_TOKENS) delete newConfig[showKeyOf(token)];
+    }
     this.configChanged(newConfig);
     this.requestUpdate();
   };
@@ -601,6 +632,64 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
           /* HA's "text on an accent fill" token — not a hardcoded white,
              which some themes make unreadable on a light accent. */
           color: var(--text-primary-color, #fff);
+        }
+        /* Layout board (src/editor/layout-board.ts): one dashed drop
+           zone per attribute column plus a "new column" zone; pills are
+           the rows, dragged with pointer events. touch-action: none on
+           the pills keeps a touch drag from scrolling the dialog. */
+        .layout-board {
+          display: flex;
+          align-items: stretch;
+          gap: 8px;
+        }
+        .layout-col {
+          flex: 1 1 0;
+          min-width: 0;
+          min-height: 44px;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          padding: 6px;
+          border: 1px dashed var(--divider-color, rgba(0, 0, 0, 0.2));
+          border-radius: 8px;
+        }
+        .layout-col.new {
+          flex: 0 0 auto;
+          justify-content: center;
+          align-items: center;
+          padding: 6px 10px;
+          font-size: 12px;
+          color: var(--secondary-text-color, #727272);
+          writing-mode: vertical-rl;
+        }
+        .layout-pill {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          text-align: left;
+          white-space: normal;
+          line-height: 1.2;
+          cursor: grab;
+          touch-action: none;
+        }
+        .layout-pill ha-icon {
+          --mdc-icon-size: 16px;
+          flex: none;
+          opacity: 0.7;
+        }
+        .layout-pill.dragging {
+          opacity: 0.35;
+          border-style: dashed;
+        }
+        .link-button {
+          align-self: flex-start;
+          background: none;
+          border: none;
+          padding: 0;
+          font: inherit;
+          font-size: 0.85rem;
+          color: var(--primary-color, #03a9f4);
+          cursor: pointer;
         }
         .divider {
           border-top: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));

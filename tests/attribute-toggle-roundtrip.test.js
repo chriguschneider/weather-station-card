@@ -203,3 +203,53 @@ describe('attributes_layout round-trip', () => {
     expect(written).not.toHaveProperty('attributes_layout');
   });
 });
+
+// The layout board writes the whole arrangement (ADR-0025); "back to
+// automatic" must keep the rows that were on.
+describe('editor._setAttributesLayout', () => {
+  const SENSORS_ALL = { ...SENSORS, wind_speed: 'sensor.wspd', zero_degree_level: 'sensor.zero' };
+
+  function editorFor(cfg) {
+    const editor = document.createElement('weather-station-card-editor');
+    const out = { written: null };
+    editor.setConfig(cfg);
+    editor.addEventListener('config-changed', (e) => { out.written = e.detail.config; });
+    return { editor, out };
+  }
+
+  it('writes a normalised layout and drops every show_* row key', () => {
+    const { editor, out } = editorFor({
+      show_attributes: true, show_pressure: true, show_humidity: true, show_main: true,
+      sensors: SENSORS_ALL,
+    });
+    editor._setAttributesLayout([['zero_degree_level', 'wind_speed'], [], ['pressure']]);
+    expect(out.written.attributes_layout).toEqual([['zero_degree_level', 'wind_speed'], ['pressure']]);
+    expect(out.written).not.toHaveProperty('show_pressure');
+    expect(out.written).not.toHaveProperty('show_humidity');
+    expect(out.written.show_main).toBe(true); // not a row key — untouched
+  });
+
+  it('null returns to automatic mode, projecting the membership onto show_* keys', () => {
+    const { editor, out } = editorFor({
+      show_attributes: true,
+      sensors: SENSORS_ALL,
+      attributes_layout: [['humidity'], ['zero_degree_level', 'wind_speed']],
+    });
+    editor._setAttributesLayout(null);
+    expect(out.written).not.toHaveProperty('attributes_layout');
+    // Opt-in rows that were on → explicit true; opt-out rows that were
+    // off → explicit false; everything on its default is left out.
+    expect(out.written.show_humidity).toBe(true);
+    expect(out.written.show_zero_degree_level).toBe(true);
+    expect(out.written.show_pressure).toBe(false);
+    expect(out.written.show_wind_direction).toBe(false);
+    expect(out.written.show_uv_index).toBe(false);
+    expect(out.written).not.toHaveProperty('show_wind_speed'); // default on, still on
+    expect(out.written).not.toHaveProperty('show_dew_point');  // default off, still off
+
+    const markup = renderCard({ ...out.written, sensors: SENSORS_ALL });
+    expect(markup).toContain('75 %');
+    expect(markup).toContain('snowflake-thermometer');
+    expect(markup).not.toContain('946');
+  });
+});

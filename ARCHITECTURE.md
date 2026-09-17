@@ -239,9 +239,16 @@ src/
 │   │                          chart-rows multi-select, appearance.
 │   ├── render-live-panel.ts   "Live-Anzeige" panel. Main-panel gate +
 │   │                          element multi-select + clock dropdown;
-│   │                          attributes gate + pills. The pills read
-│   │                          from / write into `attributes_layout`
-│   │                          when one is set (ADR-0025).
+│   │                          attributes gate + pills + layout board.
+│   │                          The pills read from / write into
+│   │                          `attributes_layout` when one is set.
+│   ├── layout-board.ts        (v2.5)  Attribute-row layout board
+│   │                          (ADR-0025): drop zones per column,
+│   │                          pointer-event drag with a preview
+│   │                          layout + body-level ghost, arrow-key
+│   │                          moves. Pure helpers (previewLayout,
+│   │                          dropTargetFor, moveToken) + one render
+│   │                          function.
 │   ├── render-units.ts        "Einheiten" panel (localized labels).
 │   └── render-tap.ts          "Aktionen" panel. Tap / hold /
 │                              double-tap selectors.
@@ -250,7 +257,8 @@ src/
                                mutator methods (_valueChanged,
                                _sensorsChanged, _setMode, _setPastSource,
                                _setClockMode, _applyTogglePaths,
-                               _applyAttributeToggles, _resetSection,
+                               _applyAttributeToggles,
+                               _setAttributesLayout, _resetSection,
                                _renderSunshineAvailabilityHint, etc.);
                                render() delegates to the six partials
                                above. Lazy-loaded as its own chunk

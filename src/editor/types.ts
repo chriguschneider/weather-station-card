@@ -71,6 +71,10 @@ export interface EditorLike {
   _setClockMode(value: string): void;
   _applyTogglePaths(items: ReadonlyArray<TogglePath>, selectedLeaves: ReadonlyArray<string>): void;
   _applyAttributeToggles(items: ReadonlyArray<TogglePath>, selectedLeaves: ReadonlyArray<string>): void;
+  /** Write an explicit `attributes_layout` (null = back to automatic,
+   *  keeping the current rows on via their show_* keys). */
+  _setAttributesLayout(layout: ReadonlyArray<ReadonlyArray<string>> | null): void;
+  requestUpdate(): void;
   _isPanelExpanded(sectionKey: string): boolean;
   _setPanelExpanded(sectionKey: string, expanded: boolean): void;
   _valueChanged(event: { target: ValueChangedTarget }, key: string): void;

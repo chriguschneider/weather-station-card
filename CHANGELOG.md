@@ -13,9 +13,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `humidity`, `precipitation`, `zero_degree_level`, `uv_index`,
   `illuminance`, `sun`, `moon`, `wind_direction`, `wind_speed`,
   `wind_gust_speed`). When set, it decides which rows show and where;
-  the `show_*` toggles keep working for cards without one. The editor's
-  attribute pills follow the layout. YAML only for the ordering itself —
-  see [docs/CONFIGURATION.md → Attribute layout](docs/CONFIGURATION.md#layout--display)
+  the `show_*` toggles keep working for cards without one. In the
+  editor, an *Arrangement* board under the attribute pills shows the
+  columns: drag a row between them (arrow keys work too), drop it on
+  *New column* to open one, or go back to the automatic arrangement
+  with one click. See
+  [docs/CONFIGURATION.md → Attribute layout](docs/CONFIGURATION.md#layout--display)
   (ADR-0025).
 - **Zero-degree level row.** Wire `sensors.zero_degree_level` (for
   example the MeteoSwiss integration's *Zero-degree level* sensor) and

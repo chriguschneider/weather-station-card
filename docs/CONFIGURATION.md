@@ -214,7 +214,7 @@ matching attribute on `weather_entity`)
 | `show_sun` | bool | `false` | Sunrise / sunset row (opt-in). |
 | `show_moon` | bool | `true` (renders with the sun cell) | Moon line inside the sun cell: dynamically drawn disc showing the exact illuminated fraction, the percentage, and the next moonrise/moonset. Computed in-card (ADR-0022) — no sensor or Moon integration required; rise/set times come from HA's configured location and are omitted when it has none. On the southern hemisphere the disc is mirrored to match the local view. Set `false` to keep the sun cell sun-only. *(since v2.3)* |
 
-**Attribute layout** (`attributes_layout`, YAML only, *since v2.5*, ADR-0025)
+**Attribute layout** (`attributes_layout`, *since v2.5*, ADR-0025)
 
 By default the attribute row is three columns — climate, sun, wind —
 filtered by the `show_*` toggles above. `attributes_layout` replaces
@@ -243,7 +243,11 @@ Rules:
   (in automatic mode the moon only shows with the sun).
 - **Editor.** The attribute pills reflect the layout and edit it: a pill
   switched on lands next to its nearest default neighbour (or opens a new
-  column), switched off it is removed. Reordering is YAML only.
+  column), switched off it is removed. Below the pills, the *Arrangement*
+  board shows the columns; drag a row between them (or use the arrow keys
+  on a focused row) to reorder or move it, drop it on *New column* to open
+  one. The first move writes `attributes_layout`; *Back to the automatic
+  arrangement* removes it again and keeps the rows that are on.
 
 | Row token | Shows | Needs |
 | --- | --- | --- |

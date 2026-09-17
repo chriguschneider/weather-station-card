@@ -55,11 +55,17 @@ Rules, implemented in `src/attributes-layout.ts` (pure, no Lit):
    appears first in a column (`LINE_OF` / `columnLines`).
 4. **Rows without a value vanish**, as before; a column with nothing
    to show is dropped and the remaining columns spread across the width.
-5. **The editor edits the layout when one exists.** Attribute pills
-   read their on/off state from the layout; switching a pill on
-   inserts the row next to its nearest default sibling (or opens a new
-   column in default order), switching it off removes it. The pills
-   drop the now-ignored `show_*` key. Reordering itself stays YAML-only.
+5. **The editor edits the layout.** Attribute pills read their on/off
+   state from the layout; switching a pill on inserts the row next to
+   its nearest default sibling (or opens a new column in default
+   order), switching it off removes it. The pills drop the now-ignored
+   `show_*` key. Position is edited on a *layout board* under the
+   pills (`src/editor/layout-board.ts`): one drop zone per column plus
+   a "new column" zone, rows dragged with pointer events (HTML5
+   drag-and-drop does not fire on touch), arrow keys as the keyboard
+   path. A drop writes the whole arrangement; "back to automatic"
+   projects the current membership onto the `show_*` keys and removes
+   the layout key, so nothing that was on disappears.
 
 `renderAttributes` in `main.ts` iterates the resolved layout and maps
 line ids onto the existing row helpers via a single switch. The three
@@ -91,8 +97,10 @@ picker for free.
 - Two ways to express visibility. Documented and hinted, but a
   `show_pressure: false` next to a layout listing `pressure` will
   surprise someone once.
-- The editor cannot reorder; a user who wants order must touch YAML.
-- Editor insert position is a heuristic (nearest default sibling).
+- The board is the editor's second hand-built control after the toggle
+  pills (ADR-0024) — no HA selector arranges items in columns.
+- Editor insert position for a pill switched on is a heuristic
+  (nearest default sibling).
   Deterministic and tested, but not always what the user would pick.
 
 **Tradeoffs**

@@ -16,7 +16,14 @@ import { html, type TemplateResult } from 'lit';
 import type { EditorLike, EditorContext, TogglePath } from './types.js';
 import { renderEditorPanel } from './expansion-panel.js';
 import { renderTogglePills } from './toggle-pills.js';
-import { hasExplicitLayout, normalizeLayout, tokenOfShowKey } from '../attributes-layout.js';
+import { renderLayoutBoard } from './layout-board.js';
+import {
+  hasExplicitLayout,
+  normalizeLayout,
+  resolveAttributesLayout,
+  tokenOfShowKey,
+  type AttributeToken,
+} from '../attributes-layout.js';
 
 // Main-panel elements. `def` mirrors the editor-visible defaults the
 // old toggle bags used (`!== false` → true, `=== true` → false).
@@ -97,6 +104,34 @@ export function availableAttributePaths(
   });
 }
 
+// The layout board under the attribute pills (ADR-0025). Its input is
+// the resolved columns narrowed to the rows the pill row offers AND has
+// on — a default-on row with no sensor behind it is not rendered by the
+// card, so it has no place to be arranged either.
+function renderAttributesBoard(
+  editor: EditorLike,
+  ctx: EditorContext,
+  enabledAttrs: ReadonlyArray<string>,
+): TemplateResult {
+  const { t, cfg } = ctx;
+  const enabledTokens = new Set<string>(
+    enabledAttrs.map(tokenOfShowKey).filter((tok): tok is AttributeToken => tok !== undefined),
+  );
+  const layout = resolveAttributesLayout(cfg)
+    .map((column) => column.filter((tok) => enabledTokens.has(tok)))
+    .filter((column) => column.length > 0);
+  if (layout.length === 0) return html``;
+  return renderLayoutBoard({
+    layout,
+    explicit: hasExplicitLayout(cfg),
+    labelFor: (token) => t(`show_${token}`),
+    t,
+    onChange: (next) => editor._setAttributesLayout(next),
+    onReset: () => editor._setAttributesLayout(null),
+    rerender: () => editor.requestUpdate(),
+  });
+}
+
 export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): TemplateResult {
   const { t, cfg, hasSensor, hasLiveValue } = ctx;
   const showMain = cfg.show_main === true;
@@ -132,6 +167,7 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
   };
 
   const enabledAttrs = selectedAttributeLeaves(cfg, availableAttrs);
+  const board = renderAttributesBoard(editor, ctx, enabledAttrs);
   const summary = `${t('main_panel_heading')} ${showMain ? t('summary_on') : t('summary_off')}`
     + ` · ${showAttrs ? `${enabledAttrs.length} ${t('summary_attributes')}` : `${t('attributes_heading')} ${t('summary_off')}`}`;
 
@@ -181,6 +217,7 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
             selected: enabledAttrs,
             onChange: (next) => editor._applyAttributeToggles(availableAttrs, next),
           })}
+          ${board}
         </div>
       ` : ''}
     </div>
