@@ -255,6 +255,60 @@ describe('validateConfig — non-object input', () => {
   });
 });
 
+describe('validateConfig — attributes_layout (ADR-0025)', () => {
+  it('accepts a well-formed layout', () => {
+    expect(validateConfig({
+      ...validBaseConfig(),
+      attributes_layout: [['pressure', 'dew_point'], ['zero_degree_level', 'wind_speed']],
+    })).toEqual([]);
+  });
+
+  it('accepts a bare token as a one-row column', () => {
+    expect(validateConfig({ ...validBaseConfig(), attributes_layout: ['pressure', ['sun']] })).toEqual([]);
+  });
+
+  it('flags a non-list value', () => {
+    const problems = validateConfig({ ...validBaseConfig(), attributes_layout: 'pressure' });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/attributes_layout.*list of columns.*string/);
+  });
+
+  it('flags an unknown row with a suggestion and its position', () => {
+    const problems = validateConfig({
+      ...validBaseConfig(),
+      attributes_layout: [['pressure'], ['wind_sped']],
+    });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('attributes_layout[1][0]');
+    expect(problems[0]).toContain('`wind_sped`');
+    expect(problems[0]).toContain('did you mean `wind_speed`');
+  });
+
+  it('flags a non-string row entry', () => {
+    const problems = validateConfig({ ...validBaseConfig(), attributes_layout: [[42]] });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/attributes_layout\[0\]\[0\].*row name.*number/);
+  });
+
+  it('warns once that show_* row toggles are ignored next to a layout', () => {
+    const problems = validateConfig({
+      ...validBaseConfig(),
+      show_pressure: true,
+      show_wind_direction: false,
+      show_main: true, // not a row toggle — must not be listed
+      attributes_layout: [['pressure']],
+    });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('`show_pressure`');
+    expect(problems[0]).toContain('`show_wind_direction`');
+    expect(problems[0]).not.toContain('show_main');
+  });
+
+  it('stays quiet for an empty (automatic) layout next to show_* keys', () => {
+    expect(validateConfig({ ...validBaseConfig(), show_pressure: true, attributes_layout: [] })).toEqual([]);
+  });
+});
+
 describe('validateConfig — multiple problems', () => {
   it('reports every problem in one pass', () => {
     const problems = validateConfig({

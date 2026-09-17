@@ -70,6 +70,7 @@ export interface EditorLike {
   _clockMode: string;
   _setClockMode(value: string): void;
   _applyTogglePaths(items: ReadonlyArray<TogglePath>, selectedLeaves: ReadonlyArray<string>): void;
+  _applyAttributeToggles(items: ReadonlyArray<TogglePath>, selectedLeaves: ReadonlyArray<string>): void;
   _isPanelExpanded(sectionKey: string): boolean;
   _setPanelExpanded(sectionKey: string, expanded: boolean): void;
   _valueChanged(event: { target: ValueChangedTarget }, key: string): void;

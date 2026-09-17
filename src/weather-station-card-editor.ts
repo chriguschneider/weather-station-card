@@ -10,6 +10,13 @@ import { renderUnitsSection } from './editor/render-units.js';
 import { renderTapSection } from './editor/render-tap.js';
 import { SECTION_KEYS, type SectionKey } from './editor/section-keys.js';
 import type { EditorContext, EditorLike, PastSource, TFn, TogglePath } from './editor/types.js';
+import {
+  addTokenToLayout,
+  hasExplicitLayout,
+  normalizeLayout,
+  removeTokenFromLayout,
+  tokenOfShowKey,
+} from './attributes-layout.js';
 
 type EditorMode = 'station' | 'forecast' | 'combination';
 
@@ -179,6 +186,38 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
         this._setByPath(newConfig, path, desired);
       }
     }
+    this.configChanged(newConfig);
+    this.requestUpdate();
+  };
+
+  // Attribute pills under an explicit `attributes_layout` (ADR-0025)
+  // edit the layout instead of the show_* keys: switching a pill on
+  // inserts its row at the default position of its default column,
+  // switching it off removes the row. The show_* keys of the affected
+  // rows are dropped — the layout decides, a stale key only misleads.
+  // Without a layout this is plain _applyTogglePaths.
+  _applyAttributeToggles = (
+    items: ReadonlyArray<TogglePath>,
+    selectedLeaves: ReadonlyArray<string>,
+  ): void => {
+    if (!this._config) return;
+    if (!hasExplicitLayout(this._config)) {
+      this._applyTogglePaths(items, selectedLeaves);
+      return;
+    }
+    const selected = new Set(selectedLeaves);
+    const newConfig = JSON.parse(JSON.stringify(this._config)) as Record<string, unknown>;
+    let layout = normalizeLayout(newConfig.attributes_layout);
+    for (const { path } of items) {
+      const token = tokenOfShowKey(path);
+      if (!token) continue;
+      const leaf = path.split('.').pop() as string;
+      layout = selected.has(leaf)
+        ? addTokenToLayout(layout, token)
+        : removeTokenFromLayout(layout, token);
+      this._deleteByPath(newConfig, path);
+    }
+    newConfig.attributes_layout = layout;
     this.configChanged(newConfig);
     this.requestUpdate();
   };

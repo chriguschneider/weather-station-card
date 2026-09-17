@@ -94,6 +94,15 @@ src/
 │                              Meeus/suncalc low-precision series, no
 │                              entity, no dependency. Pure.
 │
+├── attributes-layout.ts       (v2.5)  Attribute-row layout (ADR-0025):
+│                              the row-token vocabulary, the default
+│                              three-column arrangement, the resolver
+│                              (explicit `attributes_layout` wins, else
+│                              default filtered by show_*), the shared-
+│                              line map, and the editor's insert /
+│                              remove helpers. Pure; main.ts maps the
+│                              resolved tokens onto its row helpers.
+│
 ├── forecast-utils.ts          Pure helpers: hourlyTempSeries,
 │                              normalizeForecastMode, startOfTodayMs,
 │                              filterMidnightStaleForecast,
@@ -230,7 +239,9 @@ src/
 │   │                          chart-rows multi-select, appearance.
 │   ├── render-live-panel.ts   "Live-Anzeige" panel. Main-panel gate +
 │   │                          element multi-select + clock dropdown;
-│   │                          attributes gate + multi-select.
+│   │                          attributes gate + pills. The pills read
+│   │                          from / write into `attributes_layout`
+│   │                          when one is set (ADR-0025).
 │   ├── render-units.ts        "Einheiten" panel (localized labels).
 │   └── render-tap.ts          "Aktionen" panel. Tap / hold /
 │                              double-tap selectors.
@@ -239,7 +250,7 @@ src/
                                mutator methods (_valueChanged,
                                _sensorsChanged, _setMode, _setPastSource,
                                _setClockMode, _applyTogglePaths,
-                               _resetSection,
+                               _applyAttributeToggles, _resetSection,
                                _renderSunshineAvailabilityHint, etc.);
                                render() delegates to the six partials
                                above. Lazy-loaded as its own chunk

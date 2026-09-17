@@ -6,6 +6,24 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Arrange the attribute row yourself.** A new `attributes_layout` key
+  takes a list of columns, each a list of rows (`pressure`, `dew_point`,
+  `humidity`, `precipitation`, `zero_degree_level`, `uv_index`,
+  `illuminance`, `sun`, `moon`, `wind_direction`, `wind_speed`,
+  `wind_gust_speed`). When set, it decides which rows show and where;
+  the `show_*` toggles keep working for cards without one. The editor's
+  attribute pills follow the layout. YAML only for the ordering itself —
+  see [docs/CONFIGURATION.md → Attribute layout](docs/CONFIGURATION.md#layout--display)
+  (ADR-0025).
+- **Zero-degree level row.** Wire `sensors.zero_degree_level` (for
+  example the MeteoSwiss integration's *Zero-degree level* sensor) and
+  switch on `show_zero_degree_level` — or place `zero_degree_level` in
+  your layout — to show the snow-line altitude in the live panel. The
+  value is formatted by Home Assistant's own entity formatter, so the
+  integration's display precision applies.
+
 ## [2.4.3] — 2026-09-16
 
 ### Fixed

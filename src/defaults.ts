@@ -95,6 +95,17 @@ export const DEFAULTS = {
   show_uv_index: true,
   show_illuminance: false,
   show_precipitation: true,
+  // Zero-degree level (0 °C isotherm altitude, e.g. from the MeteoSwiss
+  // integration). Opt-in like the other detail rows; needs
+  // `sensors.zero_degree_level`, no weather-entity fallback exists.
+  show_zero_degree_level: false,
+  // Attribute-row layout (ADR-0025): columns of row tokens. Empty means
+  // "automatic" — the built-in three-column arrangement filtered by the
+  // show_* toggles above. A non-empty list wins outright: it decides
+  // both which rows render and where, and the show_* row toggles are
+  // ignored. Tokens = the show_* keys without the prefix; see
+  // src/attributes-layout.ts.
+  attributes_layout: [] as ReadonlyArray<ReadonlyArray<string>>,
   use_12hour_format: false,
 
   // Sizing

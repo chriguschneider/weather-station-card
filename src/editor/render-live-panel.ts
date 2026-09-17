@@ -16,6 +16,7 @@ import { html, type TemplateResult } from 'lit';
 import type { EditorLike, EditorContext, TogglePath } from './types.js';
 import { renderEditorPanel } from './expansion-panel.js';
 import { renderTogglePills } from './toggle-pills.js';
+import { hasExplicitLayout, normalizeLayout, tokenOfShowKey } from '../attributes-layout.js';
 
 // Main-panel elements. `def` mirrors the editor-visible defaults the
 // old toggle bags used (`!== false` → true, `=== true` → false).
@@ -42,6 +43,7 @@ export const ATTRIBUTE_PATHS: ReadonlyArray<
   // value actually exists, so a card with a rain sensor wired wants it.
   { path: 'show_precipitation',     def: true,  gate: 'sensor',
     gateKey: ['precipitation', 'precipitation_rate'] },
+  { path: 'show_zero_degree_level', def: false, gate: 'sensor', gateKey: 'zero_degree_level' },
   { path: 'show_uv_index',          def: true,  gate: 'live',   gateKey: 'uv_index' },
   { path: 'show_illuminance',       def: false, gate: 'sensor', gateKey: 'illuminance' },
   { path: 'show_wind_direction',    def: true,  gate: 'live',   gateKey: 'wind_direction' },
@@ -61,6 +63,23 @@ function selectedLeaves(
 ): string[] {
   return paths
     .filter(({ path, def }) => (def ? cfg[path] !== false : cfg[path] === true))
+    .map(({ path }) => path);
+}
+
+// Attribute pills mirror the layout when one is set (ADR-0025): a pill
+// is on when its row token appears in `attributes_layout`, whatever the
+// (ignored) show_* key says. Without a layout the show_* keys decide.
+function selectedAttributeLeaves(
+  cfg: Record<string, unknown>,
+  paths: ReadonlyArray<TogglePath>,
+): string[] {
+  if (!hasExplicitLayout(cfg)) return selectedLeaves(cfg, paths);
+  const on = new Set<string>(normalizeLayout(cfg.attributes_layout).flat());
+  return paths
+    .filter(({ path }) => {
+      const token = tokenOfShowKey(path);
+      return token !== undefined && on.has(token);
+    })
     .map(({ path }) => path);
 }
 
@@ -112,7 +131,7 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
     return map[schema.name] || t(schema.name);
   };
 
-  const enabledAttrs = selectedLeaves(cfg, availableAttrs);
+  const enabledAttrs = selectedAttributeLeaves(cfg, availableAttrs);
   const summary = `${t('main_panel_heading')} ${showMain ? t('summary_on') : t('summary_off')}`
     + ` · ${showAttrs ? `${enabledAttrs.length} ${t('summary_attributes')}` : `${t('attributes_heading')} ${t('summary_off')}`}`;
 
@@ -160,7 +179,7 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
             group: 'attributes',
             options: availableAttrs.map(({ path }) => ({ value: path, label: t(path) })),
             selected: enabledAttrs,
-            onChange: (next) => editor._applyTogglePaths(availableAttrs, next),
+            onChange: (next) => editor._applyAttributeToggles(availableAttrs, next),
           })}
         </div>
       ` : ''}
