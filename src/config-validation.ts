@@ -284,9 +284,10 @@ function validateLayoutOverridesToggles(
     .map(showKeyOf)
     .filter((key) => rawConfig[key] !== undefined);
   if (ignored.length === 0) return;
+  const list = ignored.map((k) => '`' + k + '`').join(', ');
   problems.push(
-    `\`attributes_layout\` is set, so ${ignored.map((k) => `\`${k}\``).join(', ')} `
-    + 'will be ignored — the layout decides which attribute rows are shown',
+    '`attributes_layout` is set, so ' + list
+    + ' will be ignored — the layout decides which attribute rows are shown',
   );
 }
 
