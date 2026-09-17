@@ -10,13 +10,19 @@
 import { DEFAULTS } from './defaults.js';
 
 // Every attribute the row can show, named after its `show_*` toggle so
-// the YAML vocabulary is one list, not two.
+// the YAML vocabulary is one list, not two. Two pairs also exist as a
+// combined line — dew point + humidity, UV + illuminance — because the
+// card has always drawn those on one line when both are on; the combined
+// token makes that line an explicit, movable row, the singles let the
+// user split it.
 export const ATTRIBUTE_TOKENS = [
   'pressure',
+  'dew_point_humidity',
   'dew_point',
   'humidity',
   'precipitation',
   'zero_degree_level',
+  'uv_illuminance',
   'uv_index',
   'illuminance',
   'sun',
@@ -31,31 +37,24 @@ export type AttributesLayout = AttributeToken[][];
 
 // Built-in arrangement — the three columns the card has always drawn.
 // Also the anchor for the editor's insert position: a pill switched on
-// under an explicit layout lands in its default column, ordered as here.
+// lands next to its nearest sibling from its default column, ordered as
+// here.
 export const DEFAULT_ATTRIBUTES_LAYOUT: ReadonlyArray<ReadonlyArray<AttributeToken>> = [
-  ['pressure', 'dew_point', 'humidity', 'precipitation', 'zero_degree_level'],
-  ['uv_index', 'illuminance', 'sun', 'moon'],
+  ['pressure', 'dew_point_humidity', 'dew_point', 'humidity', 'precipitation', 'zero_degree_level'],
+  ['uv_illuminance', 'uv_index', 'illuminance', 'sun', 'moon'],
   ['wind_direction', 'wind_speed', 'wind_gust_speed'],
 ];
 
-// Some tokens share one rendered line: humidity sits on the dew-point
-// line, UV + illuminance merge into the sun-strength line, the moon
-// rides under the sun times. A line renders at the position of
-// whichever of its members appears first in a column.
-export const LINE_OF: Record<AttributeToken, string> = {
-  pressure: 'pressure',
-  dew_point: 'dew_point',
-  humidity: 'dew_point',
-  precipitation: 'precipitation',
-  zero_degree_level: 'zero_degree_level',
-  uv_index: 'sun_strength',
-  illuminance: 'sun_strength',
-  sun: 'sun',
-  moon: 'sun',
-  wind_direction: 'wind_direction',
-  wind_speed: 'wind_speed',
-  wind_gust_speed: 'wind_gust_speed',
-};
+// A combined line and the two singles it stands for. In automatic mode
+// both singles on → the combined line (the pre-ADR-0025 behaviour); the
+// combined show_* key forces it regardless.
+export const LINE_FAMILIES: ReadonlyArray<{
+  combined: AttributeToken;
+  parts: readonly [AttributeToken, AttributeToken];
+}> = [
+  { combined: 'dew_point_humidity', parts: ['dew_point', 'humidity'] },
+  { combined: 'uv_illuminance', parts: ['uv_index', 'illuminance'] },
+];
 
 const TOKEN_SET: ReadonlySet<string> = new Set(ATTRIBUTE_TOKENS);
 
@@ -110,6 +109,26 @@ function toggledOn(cfg: Record<string, unknown>, token: AttributeToken): boolean
   return def ? cfg[key] !== false : cfg[key] === true;
 }
 
+// Automatic-mode visibility of one token, with the two rules that keep
+// old configs rendering as before: a family's singles fold into the
+// combined line when both are on, and the moon (default on) only shows
+// together with the sun — it used to live inside the sun cell, and
+// every card with the attribute row would otherwise grow a moon line it
+// never asked for. An explicit layout is free of both rules.
+function automaticOn(c: Record<string, unknown>, token: AttributeToken): boolean {
+  for (const family of LINE_FAMILIES) {
+    if (token === family.combined) {
+      return toggledOn(c, family.combined)
+        || (toggledOn(c, family.parts[0]) && toggledOn(c, family.parts[1]));
+    }
+    if (family.parts.includes(token)) {
+      return toggledOn(c, token) && !automaticOn(c, family.combined);
+    }
+  }
+  if (token === 'moon') return toggledOn(c, 'moon') && toggledOn(c, 'sun');
+  return toggledOn(c, token);
+}
+
 /** The layout the card renders: the explicit one when set (it wins
  *  outright — `show_*` row toggles are ignored then), else the default
  *  arrangement filtered by the `show_*` toggles. */
@@ -118,28 +137,12 @@ export function resolveAttributesLayout(
 ): AttributesLayout {
   const c = cfg ?? {};
   if (hasExplicitLayout(c)) return normalizeLayout(c.attributes_layout);
-  // The moon line lives inside the sun cell: `show_moon` (default on)
-  // only takes effect once the sun cell is on, or every card with the
-  // attribute row would grow a moon line it never asked for. An
-  // explicit layout may still list `moon` on its own.
-  const sunOn = toggledOn(c, 'sun');
   const out: AttributesLayout = [];
   for (const column of DEFAULT_ATTRIBUTES_LAYOUT) {
-    const rows = column.filter((token) =>
-      toggledOn(c, token) && (token !== 'moon' || sunOn));
+    const rows = column.filter((token) => automaticOn(c, token));
     if (rows.length > 0) out.push(rows);
   }
   return out;
-}
-
-/** Unique line ids of one column, in order of first appearance. */
-export function columnLines(column: ReadonlyArray<AttributeToken>): string[] {
-  const lines: string[] = [];
-  for (const token of column) {
-    const line = LINE_OF[token];
-    if (!lines.includes(line)) lines.push(line);
-  }
-  return lines;
 }
 
 function defaultPosition(token: AttributeToken): { column: number; rank: number } {

@@ -10,9 +10,8 @@ import { DEFAULTS } from '../src/defaults.js';
 import {
   ATTRIBUTE_TOKENS,
   DEFAULT_ATTRIBUTES_LAYOUT,
-  LINE_OF,
+  LINE_FAMILIES,
   addTokenToLayout,
-  columnLines,
   hasExplicitLayout,
   normalizeLayout,
   removeTokenFromLayout,
@@ -32,8 +31,11 @@ describe('token vocabulary', () => {
     expect([...flat].sort()).toEqual([...ATTRIBUTE_TOKENS].sort());
   });
 
-  it('every token maps to a line', () => {
-    for (const token of ATTRIBUTE_TOKENS) expect(typeof LINE_OF[token]).toBe('string');
+  it('every family names known tokens', () => {
+    for (const { combined, parts } of LINE_FAMILIES) {
+      expect(ATTRIBUTE_TOKENS).toContain(combined);
+      for (const part of parts) expect(ATTRIBUTE_TOKENS).toContain(part);
+    }
   });
 
   it('tokenOfShowKey strips the prefix and rejects strangers', () => {
@@ -62,13 +64,35 @@ describe('resolveAttributesLayout — automatic mode', () => {
       show_zero_degree_level: true,
     });
     expect(layout).toEqual([
-      ['dew_point', 'humidity', 'precipitation', 'zero_degree_level'],
+      ['dew_point_humidity', 'precipitation', 'zero_degree_level'],
       ['uv_index'],
       ['wind_direction', 'wind_speed', 'wind_gust_speed'],
     ]);
   });
 
-  it('only shows the moon together with the sun (it renders inside the sun cell)', () => {
+  it('folds both singles of a pair into the combined line, or forces it via its own key', () => {
+    const both = resolveAttributesLayout({ show_dew_point: true, show_humidity: true }).flat();
+    expect(both).toContain('dew_point_humidity');
+    expect(both).not.toContain('dew_point');
+    expect(both).not.toContain('humidity');
+
+    const one = resolveAttributesLayout({ show_dew_point: true }).flat();
+    expect(one).toContain('dew_point');
+    expect(one).not.toContain('dew_point_humidity');
+
+    const forced = resolveAttributesLayout({ show_dew_point_humidity: true }).flat();
+    expect(forced).toContain('dew_point_humidity');
+    expect(forced).not.toContain('humidity');
+
+    // UV alone is the default; add illuminance → the combined sun line.
+    expect(resolveAttributesLayout({}).flat()).toContain('uv_index');
+    const sun = resolveAttributesLayout({ show_illuminance: true }).flat();
+    expect(sun).toContain('uv_illuminance');
+    expect(sun).not.toContain('uv_index');
+    expect(sun).not.toContain('illuminance');
+  });
+
+  it('only shows the moon together with the sun (automatic mode)', () => {
     expect(resolveAttributesLayout({}).flat()).not.toContain('moon');
     expect(resolveAttributesLayout({ show_sun: true }).flat()).toEqual(
       expect.arrayContaining(['sun', 'moon']),
@@ -104,6 +128,12 @@ describe('resolveAttributesLayout — explicit layout wins', () => {
     expect(resolveAttributesLayout({ attributes_layout: [['moon']] })).toEqual([['moon']]);
   });
 
+  it('lets an explicit layout split a pair into two lines', () => {
+    expect(resolveAttributesLayout({ attributes_layout: [['dew_point'], ['humidity']] })).toEqual([
+      ['dew_point'], ['humidity'],
+    ]);
+  });
+
   it('drops unknown tokens, duplicates and empty columns without throwing', () => {
     expect(normalizeLayout([['pressure', 'bogus'], [], ['pressure', 'sun'], 42, null])).toEqual([
       ['pressure'], ['sun'],
@@ -119,13 +149,6 @@ describe('resolveAttributesLayout — explicit layout wins', () => {
   it('returns nothing for garbage', () => {
     expect(normalizeLayout('pressure')).toEqual([]);
     expect(normalizeLayout({ a: 1 })).toEqual([]);
-  });
-});
-
-describe('columnLines', () => {
-  it('collapses shared-line tokens at the position of their first member', () => {
-    expect(columnLines(['humidity', 'pressure', 'dew_point'])).toEqual(['dew_point', 'pressure']);
-    expect(columnLines(['illuminance', 'sun', 'uv_index', 'moon'])).toEqual(['sun_strength', 'sun']);
   });
 });
 

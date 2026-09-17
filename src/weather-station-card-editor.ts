@@ -13,7 +13,6 @@ import type { EditorContext, EditorLike, PastSource, TFn, TogglePath } from './e
 import {
   ATTRIBUTE_TOKENS,
   addTokenToLayout,
-  hasExplicitLayout,
   normalizeLayout,
   removeTokenFromLayout,
   resolveAttributesLayout,
@@ -194,24 +193,22 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     this.requestUpdate();
   };
 
-  // Attribute pills under an explicit `attributes_layout` (ADR-0025)
-  // edit the layout instead of the show_* keys: switching a pill on
-  // inserts its row at the default position of its default column,
-  // switching it off removes the row. The show_* keys of the affected
-  // rows are dropped — the layout decides, a stale key only misleads.
-  // Without a layout this is plain _applyTogglePaths.
+  // Attribute pills edit `attributes_layout` (ADR-0025), never the
+  // show_* keys: switching a pill on inserts its row next to its
+  // nearest default sibling, switching it off removes the row. The
+  // first toggle on a card that still runs on show_* keys starts from
+  // the arrangement those keys resolve to, so nothing moves — and the
+  // keys go, because the layout decides now and a stale key only
+  // misleads. (Only the layout can express a pair as two separate
+  // lines; the show_* keys always fold both singles into one.)
   _applyAttributeToggles = (
     items: ReadonlyArray<TogglePath>,
     selectedLeaves: ReadonlyArray<string>,
   ): void => {
     if (!this._config) return;
-    if (!hasExplicitLayout(this._config)) {
-      this._applyTogglePaths(items, selectedLeaves);
-      return;
-    }
     const selected = new Set(selectedLeaves);
     const newConfig = JSON.parse(JSON.stringify(this._config)) as Record<string, unknown>;
-    let layout = normalizeLayout(newConfig.attributes_layout);
+    let layout = resolveAttributesLayout(this._config);
     for (const { path } of items) {
       const token = tokenOfShowKey(path);
       if (!token) continue;
@@ -219,11 +216,8 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
       layout = selected.has(leaf)
         ? addTokenToLayout(layout, token)
         : removeTokenFromLayout(layout, token);
-      this._deleteByPath(newConfig, path);
     }
-    newConfig.attributes_layout = layout;
-    this.configChanged(newConfig);
-    this.requestUpdate();
+    this._setAttributesLayout(layout, newConfig);
   };
 
   // Layout board (ADR-0025). A drop or an arrow-key move writes the
@@ -232,9 +226,12 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
   // the current membership is projected back onto the show_* keys
   // (deleting the ones that land on their default, as _applyTogglePaths
   // does) and the layout key is removed.
-  _setAttributesLayout = (layout: ReadonlyArray<ReadonlyArray<string>> | null): void => {
+  _setAttributesLayout = (
+    layout: ReadonlyArray<ReadonlyArray<string>> | null,
+    base?: Record<string, unknown>,
+  ): void => {
     if (!this._config) return;
-    const newConfig = JSON.parse(JSON.stringify(this._config)) as Record<string, unknown>;
+    const newConfig = base ?? JSON.parse(JSON.stringify(this._config)) as Record<string, unknown>;
     if (layout === null) {
       const on = new Set<string>(resolveAttributesLayout(this._config).flat());
       delete newConfig.attributes_layout;

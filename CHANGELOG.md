@@ -9,15 +9,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **Arrange the attribute row yourself.** A new `attributes_layout` key
-  takes a list of columns, each a list of rows (`pressure`, `dew_point`,
-  `humidity`, `precipitation`, `zero_degree_level`, `uv_index`,
-  `illuminance`, `sun`, `moon`, `wind_direction`, `wind_speed`,
-  `wind_gust_speed`). When set, it decides which rows show and where;
+  takes a list of columns, each a list of rows (`pressure`,
+  `dew_point_humidity`, `dew_point`, `humidity`, `precipitation`,
+  `zero_degree_level`, `uv_illuminance`, `uv_index`, `illuminance`,
+  `sun`, `moon`, `wind_direction`, `wind_speed`, `wind_gust_speed`).
+  Every row is one line; the two combined rows keep dew point +
+  humidity and UV + illuminance on one line as before, the singles
+  split them. When set, the layout decides which rows show and where;
   the `show_*` toggles keep working for cards without one. In the
-  editor, an *Arrangement* board under the attribute pills shows the
-  columns: drag a row between them (arrow keys work too), drop it on
-  *New column* to open one, or go back to the automatic arrangement
-  with one click. See
+  editor the attribute pills now edit the layout, and an *Arrangement*
+  board under them shows the columns: drag a row between them (arrow
+  keys work too), drop it on *New column* to open one, or go back to
+  the automatic arrangement with one click. See
   [docs/CONFIGURATION.md → Attribute layout](docs/CONFIGURATION.md#layout--display)
   (ADR-0025).
 - **Zero-degree level row.** Wire `sensors.zero_degree_level` (for

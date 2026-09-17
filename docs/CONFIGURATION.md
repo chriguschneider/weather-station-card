@@ -211,6 +211,8 @@ matching attribute on `weather_entity`)
 | `show_wind_speed` | bool | opt-out (`true` when value present) | Wind-speed value. |
 | `show_wind_gust_speed` | bool | `false` | Gust speed (opt-in, requires `sensors.gust_speed` or weather-entity attribute). |
 | `show_zero_degree_level` | bool | `false` | Zero-degree level (opt-in, requires `sensors.zero_degree_level`). Renders in the climate column after precipitation; use `attributes_layout` to place it elsewhere. Formatted through HA's entity formatter (display precision, number locale) when available. *(since v2.5)* |
+| `show_dew_point_humidity` | bool | `false` | Force the combined dew point + humidity line. Without it the two share a line whenever both `show_dew_point` and `show_humidity` are on. *(since v2.5)* |
+| `show_uv_illuminance` | bool | `false` | Force the combined UV + illuminance line. Without it the two share a line whenever both `show_uv_index` and `show_illuminance` are on. *(since v2.5)* |
 | `show_sun` | bool | `false` | Sunrise / sunset row (opt-in). |
 | `show_moon` | bool | `true` (renders with the sun cell) | Moon line inside the sun cell: dynamically drawn disc showing the exact illuminated fraction, the percentage, and the next moonrise/moonset. Computed in-card (ADR-0022) — no sensor or Moon integration required; rise/set times come from HA's configured location and are omitted when it has none. On the southern hemisphere the disc is mirrored to match the local view. Set `false` to keep the sun cell sun-only. *(since v2.3)* |
 
@@ -223,7 +225,7 @@ top to bottom.
 
 ```yaml
 attributes_layout:
-  - [pressure, dew_point, precipitation]
+  - [pressure, dew_point_humidity, precipitation]
   - [uv_index, sun, moon]
   - [zero_degree_level, wind_speed, wind_gust_speed]   # zero-degree level where wind direction was
 ```
@@ -234,30 +236,36 @@ Rules:
   render and *where*. The `show_*` row toggles are ignored — the card
   warns once, naming the ignored keys. Leave the key out (or `[]`) to
   get the automatic arrangement back.
-- **Rows without a value still vanish**, exactly as with the toggles. A
-  column with nothing to show is dropped.
-- **Shared lines.** `humidity` renders on the dew-point line, `uv_index`
-  and `illuminance` merge into one sun-strength line, `moon` sits under
-  the sun times. Such a line appears at the position of whichever member
-  comes first in its column. Listing `moon` without `sun` is allowed here
-  (in automatic mode the moon only shows with the sun).
-- **Editor.** The attribute pills reflect the layout and edit it: a pill
-  switched on lands next to its nearest default neighbour (or opens a new
-  column), switched off it is removed. Below the pills, the *Arrangement*
-  board shows the columns; drag a row between them (or use the arrow keys
-  on a focused row) to reorder or move it, drop it on *New column* to open
-  one. The first move writes `attributes_layout`; *Back to the automatic
-  arrangement* removes it again and keeps the rows that are on.
+- **A row is a line.** Every token is one line in its column. Rows
+  without a value still vanish, exactly as with the toggles; a column with
+  nothing to show is dropped.
+- **Combined lines.** `dew_point_humidity` draws dew point and humidity on
+  one line, `uv_illuminance` draws UV index and illuminance on one line —
+  what the card has always shown when both were on. The singles
+  (`dew_point`, `humidity`, `uv_index`, `illuminance`) give each value its
+  own line. Listing `moon` without `sun` is allowed here (in automatic
+  mode the moon only shows with the sun).
+- **Editor.** The attribute pills edit the layout: a pill switched on
+  lands next to its nearest default neighbour (or opens a new column),
+  switched off it is removed; the first toggle on a card that still runs
+  on `show_*` keys starts from the arrangement those keys resolve to and
+  replaces them. Below the pills, the *Arrangement* board shows the
+  columns; drag a row between them (or use the arrow keys on a focused
+  row) to reorder or move it, drop it on *New column* to open one. *Back
+  to the automatic arrangement* removes the layout again and keeps the
+  rows that are on.
 
 | Row token | Shows | Needs |
 | --- | --- | --- |
 | `pressure` | Pressure + 3-h trend icon | `sensors.pressure` or weather entity |
+| `dew_point_humidity` | Dew point + comfort icon and humidity on one line | both of the next two |
 | `dew_point` | Dew point + comfort icon | `sensors.dew_point` or weather entity |
-| `humidity` | Humidity (on the dew-point line) | `sensors.humidity` or weather entity |
+| `humidity` | Humidity | `sensors.humidity` or weather entity |
 | `precipitation` | Live precipitation rate | `sensors.precipitation` / `sensors.precipitation_rate` |
 | `zero_degree_level` | Zero-degree level | `sensors.zero_degree_level` |
-| `uv_index` | UV index (sun-strength line) | `sensors.uv_index` or weather entity |
-| `illuminance` | Illuminance (sun-strength line) | `sensors.illuminance` |
+| `uv_illuminance` | UV index and illuminance on one sun-strength line | both of the next two |
+| `uv_index` | UV index with sun-strength icon | `sensors.uv_index` or weather entity |
+| `illuminance` | Illuminance with sun-strength icon | `sensors.illuminance` |
 | `sun` | Sunrise / sunset | `sun.sun` |
 | `moon` | Moon disc, illumination, next rise/set | nothing (computed) |
 | `wind_direction` | Wind-direction arrow + cardinal | `sensors.wind_direction` or weather entity |

@@ -27,6 +27,7 @@ const hass = {
     'sensor.wdir': { state: '225', attributes: { unit_of_measurement: '°' } },
     'sensor.wspd': { state: '12.5', attributes: { unit_of_measurement: 'km/h' } },
     'sensor.zero': { state: '2450.4', attributes: { unit_of_measurement: 'm' } },
+    'sensor.dew': { state: '12.3', attributes: { unit_of_measurement: '°C' } },
     'sun.sun': { state: 'above_horizon', attributes: {} },
   },
   config: { latitude: 46.9, longitude: 7.4 },
@@ -109,15 +110,15 @@ describe('attribute toggles survive a round-trip through the editor', () => {
 describe('attributes_layout round-trip', () => {
   const WIND_SENSORS = {
     ...SENSORS, wind_direction: 'sensor.wdir', wind_speed: 'sensor.wspd', zero_degree_level: 'sensor.zero',
+    dew_point: 'sensor.dew',
   };
 
   // Column order in the rendered markup — each layout column is one
-  // <div> inside .attributes, so the index of a value tells its column.
-  const columnOf = (markup, needle) => {
-    const attrs = markup.slice(markup.indexOf('class="attributes"'));
-    const columns = attrs.split('<div>').slice(1);
-    return columns.findIndex((c) => c.includes(needle));
-  };
+  // <div> of line <div>s inside .attributes, so a column starts with
+  // `<div><div>` and the index of a value tells its column.
+  const columnsOf = (markup) =>
+    markup.slice(markup.indexOf('class="attributes"')).split('<div><div>').slice(1);
+  const columnOf = (markup, needle) => columnsOf(markup).findIndex((c) => c.includes(needle));
 
   it('replaces the wind-direction row with the zero-degree level in the wind column', () => {
     const cfg = {
@@ -192,15 +193,56 @@ describe('attributes_layout round-trip', () => {
     expect(markup).not.toContain('weather-windy');
   });
 
-  it('editor pills keep writing show_* keys when no layout is set', () => {
-    const cfg = { show_station: false, show_forecast: false, show_attributes: true, sensors: WIND_SENSORS };
+  it('the first pill toggle on a show_*-driven card writes the layout it resolved to', () => {
+    const cfg = {
+      show_station: false, show_forecast: false, show_attributes: true,
+      show_pressure: true, show_humidity: true, sensors: WIND_SENSORS,
+    };
     const editor = document.createElement('weather-station-card-editor');
     let written = null;
     editor.setConfig(cfg);
     editor.addEventListener('config-changed', (e) => { written = e.detail.config; });
-    editor._applyAttributeToggles(ATTRIBUTE_PATHS, selectionAfterEnabling(cfg, 'show_zero_degree_level'));
-    expect(written.show_zero_degree_level).toBe(true);
-    expect(written).not.toHaveProperty('attributes_layout');
+    editor._applyAttributeToggles(ATTRIBUTE_PATHS, [
+      'show_pressure', 'show_humidity', 'show_precipitation', 'show_uv_index',
+      'show_wind_direction', 'show_wind_speed', 'show_zero_degree_level',
+    ]);
+    // Same rows as before plus the zero-degree level at its default slot;
+    // the show_* keys are gone, the layout carries them now.
+    expect(written.attributes_layout).toEqual([
+      ['pressure', 'humidity', 'precipitation', 'zero_degree_level'],
+      ['uv_index'],
+      ['wind_direction', 'wind_speed'],
+    ]);
+    expect(written).not.toHaveProperty('show_pressure');
+    expect(written).not.toHaveProperty('show_humidity');
+    expect(written).not.toHaveProperty('show_zero_degree_level');
+  });
+
+  // A row is a line. The combined tokens draw two values on one line,
+  // the singles one each — and the last row of a column no longer
+  // shares its line with whatever comes after it (gusts + zero-degree).
+  it('renders one <div> line per row, combined tokens on one line', () => {
+    const cfg = {
+      show_station: false, show_forecast: false, show_attributes: true,
+      sensors: { ...WIND_SENSORS, gust_speed: 'sensor.wspd' },
+      attributes_layout: [
+        ['dew_point_humidity', 'pressure'],
+        ['wind_gust_speed', 'zero_degree_level'],
+      ],
+    };
+    const markup = renderCard(cfg);
+    const linesOf = (col) => col.split('</div><div>').length;
+    const [climate, wind] = columnsOf(markup);
+    expect(climate).toContain('75 %');
+    expect(climate).toContain('12.3');
+    expect(linesOf(climate)).toBe(2); // dew point + humidity share line 1, pressure is line 2
+    expect(linesOf(wind)).toBe(2);    // gusts and the zero-degree level on separate lines
+    expect(wind).toContain('snowflake-thermometer');
+
+    const [splitCol] = columnsOf(renderCard({ ...cfg, attributes_layout: [['dew_point', 'humidity']] }));
+    expect(linesOf(splitCol)).toBe(2);
+    expect(splitCol).toContain('75 %');
+    expect(splitCol).toContain('12.3');
   });
 });
 

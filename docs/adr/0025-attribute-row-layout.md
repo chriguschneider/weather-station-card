@@ -35,8 +35,9 @@ Alternatives on the table:
 
 A new top-level key `attributes_layout`: a list of columns, each a list
 of row tokens. The tokens are the `show_*` keys without the prefix
-(`pressure`, `dew_point`, `humidity`, `precipitation`, `zero_degree_level`,
-`uv_index`, `illuminance`, `sun`, `moon`, `wind_direction`, `wind_speed`,
+(`pressure`, `dew_point_humidity`, `dew_point`, `humidity`,
+`precipitation`, `zero_degree_level`, `uv_illuminance`, `uv_index`,
+`illuminance`, `sun`, `moon`, `wind_direction`, `wind_speed`,
 `wind_gust_speed`), so the YAML vocabulary is one list, not two.
 
 Rules, implemented in `src/attributes-layout.ts` (pure, no Lit):
@@ -49,17 +50,30 @@ Rules, implemented in `src/attributes-layout.ts` (pure, no Lit):
    `show_*` toggles, byte-for-byte what it rendered before this ADR.
    The moon stays coupled to the sun in this mode (it renders inside
    the sun cell); an explicit layout may list `moon` alone.
-3. **Shared lines.** Some tokens render on one line (`humidity` on the
-   dew-point line, `uv_index` + `illuminance` as sun strength, `moon`
-   under `sun`). The line renders at the position of whichever member
-   appears first in a column (`LINE_OF` / `columnLines`).
+3. **A row is a line.** Every token renders as its own `<div>` line —
+   what the editor's board shows is what the card draws. The two pairs
+   the card has always drawn on one line when both were on (dew point +
+   humidity, UV + illuminance) exist as explicit combined tokens
+   (`dew_point_humidity`, `uv_illuminance`, `LINE_FAMILIES`) next to
+   their singles, so a user can keep the shared line or split it. In
+   automatic mode both singles on still fold into the combined line,
+   and `show_dew_point_humidity` / `show_uv_illuminance` force it.
+   (An earlier cut of this ADR merged singles implicitly at render
+   time — "humidity rides on the dew-point line" — which left the board
+   showing two pills for one line; that is why the pairs are tokens.)
 4. **Rows without a value vanish**, as before; a column with nothing
    to show is dropped and the remaining columns spread across the width.
-5. **The editor edits the layout.** Attribute pills read their on/off
-   state from the layout; switching a pill on inserts the row next to
-   its nearest default sibling (or opens a new column in default
-   order), switching it off removes it. The pills drop the now-ignored
-   `show_*` key. Position is edited on a *layout board* under the
+   Lines are `<div>`s rather than inline + `<br>` — the last row of a
+   column used to carry no break, so a row appended after it shared its
+   line.
+5. **The editor edits the layout, always.** Attribute pills read their
+   on/off state from the resolved layout; switching a pill on inserts
+   the row next to its nearest default sibling (or opens a new column
+   in default order), switching it off removes it. The first toggle on
+   a card still driven by `show_*` keys starts from the arrangement
+   those keys resolve to, writes it as `attributes_layout` and drops
+   the keys — the `show_*` keys become the YAML-only legacy path.
+   Position is edited on a *layout board* under the
    pills (`src/editor/layout-board.ts`): one drop zone per column plus
    a "new column" zone, rows dragged with pointer events (HTML5
    drag-and-drop does not fire on touch), arrow keys as the keyboard

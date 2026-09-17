@@ -31,7 +31,7 @@ import {
 } from './const.js';
 import { DEFAULTS, DEFAULTS_FORECAST, DEFAULTS_UNITS } from './defaults.js';
 import { validateConfig } from './config-validation.js';
-import {LitElement, html, svg, nothing} from 'lit';
+import {LitElement, html, svg} from 'lit';
 import {MDI_PATHS} from './icons/mdi-paths.js';
 import {guard} from 'lit/directives/guard.js';
 import {
@@ -115,7 +115,6 @@ import { getDateTimeFormat, getNumberFormat } from './utils/intl-cache.js';
 import { moonIllumination, nextMoonEvent, litMoonPath } from './moon.js';
 import {
   resolveAttributesLayout,
-  columnLines,
   type AttributeToken,
 } from './attributes-layout.js';
 // Chart library: uPlot. Imported transitively via ./chart/draw.js —
@@ -3522,7 +3521,7 @@ _climateRow_pressure(show: boolean, dPressure: any, deltaHpa: number | null) {
   return html`${this._entityLink(this._attrEntity('pressure'),
     html`<span title=${ariaLabel} aria-label=${ariaLabel}><ha-icon
       icon="hass:${iconName}"
-    ></ha-icon> ${dPressure} ${unitLabel}</span>`)}<br>`;
+    ></ha-icon> ${dPressure} ${unitLabel}</span>`)}`;
 }
 // Dew point and humidity share one line (v2.3): the dew point is the
 // headline value, humidity is an opt-in second segment with its own
@@ -3536,7 +3535,7 @@ _climateRow_dewpoint(show: boolean, dew_point: unknown, showHumidity: boolean, h
     ? this._entityLink(this._attrEntity('humidity'),
         html`<ha-icon icon="hass:water-percent"></ha-icon> ${humidity} %`)
     : html``;
-  if (!dewVisible) return html`${humSegment}<br>`;
+  if (!dewVisible) return humSegment;
   const displayUnit = this.weather.attributes.temperature_unit;
   // Classifier wants pure °C; convert once when the source sensor is in
   // °F. Display values themselves stay in the user's unit.
@@ -3583,8 +3582,8 @@ _climateRow_dewpoint(show: boolean, dew_point: unknown, showHumidity: boolean, h
       icon="hass:${iconName}"
     ></ha-icon> ${dewText} ${displayUnit}</span>`);
   return humVisible
-    ? html`${dewSegment} ${humSegment}<br>`
-    : html`${dewSegment}<br>`;
+    ? html`${dewSegment} ${humSegment}`
+    : dewSegment;
 }
 _climateRow_precip(show: boolean, hasValue: boolean, precipitation: unknown, precipitation_unit: unknown) {
   if (!show || !hasValue) return null;
@@ -3605,7 +3604,7 @@ _climateRow_precip(show: boolean, hasValue: boolean, precipitation: unknown, pre
   const linkEid = this._attrEntity('precipitation_rate', false)
     || this._attrEntity('precipitation', false);
   return html`${this._entityLink(linkEid,
-    html`<ha-icon icon="${icon}"></ha-icon> ${precipitation}${unitSuffix}`)}<br>`;
+    html`<ha-icon icon="${icon}"></ha-icon> ${precipitation}${unitSuffix}`)}`;
 }
 
 _sunRow_sunStrength(
@@ -3666,21 +3665,16 @@ _sunRow_sunStrength(
   const strengthEntity = (showUvSegment && this.config?.sensors?.uv_index)
     || this.config?.sensors?.illuminance
     || this._attrEntity('uv_index');
-  return html`<div title=${title} aria-label=${title}>${this._entityLink(strengthEntity,
-    html`<ha-icon icon="hass:${out.iconShape}"></ha-icon> ${valueText}`)}</div>`;
+  return html`<span title=${title} aria-label=${title}>${this._entityLink(strengthEntity,
+    html`<ha-icon icon="hass:${out.iconShape}"></ha-icon> ${valueText}`)}</span>`;
 }
-// Sun times + moon line share one cell. Under an explicit layout the
-// moon may be listed without the sun (ADR-0025); in automatic mode
-// resolveAttributesLayout only turns the moon on together with the sun.
+// Sunrise / sunset line. The moon is its own line since ADR-0025 (it
+// used to ride inside this cell); in automatic mode
+// resolveAttributesLayout only turns it on together with the sun.
 // deno-lint-ignore no-explicit-any
-_sunRow_sunPanel(showSun: boolean, showMoon: boolean, sun: any, language: string) {
-  const sunVisible = showSun && sun !== undefined && sun !== null;
-  const moon = showMoon ? this._renderMoonLine(language, sunVisible) : null;
-  if (!sunVisible && moon === null) return null;
-  const sunPart = sunVisible
-    ? this._entityLink('sun.sun', this.renderSun({ sun, language } as unknown as this))
-    : null;
-  return html`<div>${sunPart}${moon}</div>`;
+_sunRow_sun(show: boolean, sun: any, language: string) {
+  if (!show || sun === undefined || sun === null) return null;
+  return this._entityLink('sun.sun', this.renderSun({ sun, language } as unknown as this));
 }
 
 // Zero-degree level row: the altitude of the 0 °C isotherm, i.e. the
@@ -3694,7 +3688,7 @@ _climateRow_zeroDegree(show: boolean, value: unknown, unit: string | undefined) 
   const eid = this._attrEntity('zero_degree_level', false);
   const text = this._formatEntityValue(eid, value, unit, 0);
   return html`${this._entityLink(eid,
-    html`<ha-icon icon="mdi:snowflake-thermometer"></ha-icon> ${text}`)}<br>`;
+    html`<ha-icon icon="mdi:snowflake-thermometer"></ha-icon> ${text}`)}`;
 }
 
 // Value + unit for a plain numeric sensor row. Prefers
@@ -3732,7 +3726,7 @@ _formatEntityValue(
 _windRow_direction(show: boolean, windDirection: any) {
   if (!show || windDirection === undefined) return null;
   return html`${this._entityLink(this._attrEntity('wind_direction'),
-    html`<ha-icon icon="hass:${this.getWindDirIcon(windDirection)}"></ha-icon> ${this.getWindDir(windDirection)}`)} <br>`;
+    html`<ha-icon icon="hass:${this.getWindDirIcon(windDirection)}"></ha-icon> ${this.getWindDir(windDirection)}`)}`;
 }
 // deno-lint-ignore no-explicit-any
 _windRow_speed(show: boolean, dWindSpeed: any) {
@@ -3740,7 +3734,7 @@ _windRow_speed(show: boolean, dWindSpeed: any) {
   const unitLabel = this.unitSpeed ? this.ll('units')[this.unitSpeed] : '';
   return html`${this._entityLink(this._attrEntity('wind_speed'),
     html`<ha-icon icon="hass:weather-windy"></ha-icon>
-    ${dWindSpeed} ${unitLabel}`)} <br>`;
+    ${dWindSpeed} ${unitLabel}`)}`;
 }
 // deno-lint-ignore no-explicit-any
 _windRow_gust(show: boolean, wind_gust_speed: any) {
@@ -3752,13 +3746,14 @@ _windRow_gust(show: boolean, wind_gust_speed: any) {
 }
 
 // Attribute row (ADR-0025): the resolved layout is a list of columns,
-// each a list of row tokens. Every column becomes one <div>; tokens that
-// share a line (humidity on the dew-point line, UV + lux, sun + moon)
-// collapse to that line at the position of their first member. A row
-// helper returns null when its toggle is off or its value is missing
-// (Lit renders null as nothing), so a column with nothing to show is
-// dropped and the
-// remaining columns spread across the width as before.
+// each a list of row tokens. Every column becomes one <div>, every row
+// inside it one <div> line — so a row is a line, exactly what the
+// editor's layout board shows. The combined tokens
+// (`dew_point_humidity`, `uv_illuminance`) draw two values on one line;
+// the singles draw one. A row helper returns null when its toggle is
+// off or its value is missing (Lit renders null as nothing), so a
+// column with nothing to show is dropped and the remaining columns
+// spread across the width as before.
 renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, language, uv_index, dew_point, wind_gust_speed, illuminance, precipitation, precipitation_unit, zero_degree_level, zero_degree_unit } = this) {
   const dWindSpeed = this._convertDisplayWindSpeed(windSpeed);
   const dPressure = this._convertDisplayPressure(pressure);
@@ -3786,18 +3781,7 @@ renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, la
   const lon = haCfg && Number.isFinite(haCfg.longitude) ? haCfg.longitude as number : null;
 
   const ctx = {
-    showHumidity: on.has('humidity'),
-    showPressure: on.has('pressure'),
-    showWindDirection: on.has('wind_direction'),
-    showWindSpeed: on.has('wind_speed'),
-    showSun: on.has('sun'),
-    showMoon: on.has('moon'),
-    showDewpoint: on.has('dew_point'),
-    showWindgustspeed: on.has('wind_gust_speed'),
-    showUvIndex: on.has('uv_index'),
-    showIlluminance: on.has('illuminance'),
-    showPrecipitation: on.has('precipitation'),
-    showZeroDegree: on.has('zero_degree_level'),
+    on,
     hasPrecipValue: precipitation !== undefined && precipitation !== '',
     humidity, dPressure, dew_point, precipitation, precipitation_unit,
     pressureDelta3h: this._pressureDelta3h,
@@ -3814,42 +3798,55 @@ renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, la
   `;
 }
 
-// One layout column → one <div> of visible lines, or null when
-// every line in it is off or unwired (the ADR-0010 "any visible" gate,
-// now data-driven).
+// One layout column → one <div> of line <div>s, or null when every
+// row in it is off or unwired (the ADR-0010 "any visible" gate, now
+// data-driven). A line per <div> rather than inline + <br>: the last
+// row of a column used to have no break, so a row appended after it
+// (the zero-degree level under the gusts) shared its line.
 // deno-lint-ignore no-explicit-any
 _renderAttributeColumn(column: ReadonlyArray<AttributeToken>, ctx: any) {
-  const lines = columnLines(column)
-    .map((line) => this._renderAttributeLine(line, ctx))
-    .filter((tpl) => tpl !== null);
+  const lines = column
+    .map((token) => this._renderAttributeLine(token, ctx))
+    .filter((tpl) => tpl !== null)
+    .map((tpl) => html`<div>${tpl}</div>`);
   if (lines.length === 0) return null;
   return html`<div>${lines}</div>`;
 }
 
-// Line id (attributes-layout.ts LINE_OF) → row helper. The helpers keep
-// their own show/value gates so a line listed in the layout but not
-// wired still vanishes cleanly.
+// Row token → row helper. The helpers keep their own value gates so a
+// row listed in the layout but not wired still vanishes cleanly; the
+// `show` argument is true by construction (the token is in the layout).
 // deno-lint-ignore no-explicit-any
-_renderAttributeLine(line: string, ctx: any) {
-  switch (line) {
+_renderAttributeLine(token: AttributeToken, ctx: any) {
+  switch (token) {
     case 'pressure':
-      return this._climateRow_pressure(ctx.showPressure, ctx.dPressure, ctx.pressureDelta3h);
+      return this._climateRow_pressure(true, ctx.dPressure, ctx.pressureDelta3h);
+    case 'dew_point_humidity':
+      return this._climateRow_dewpoint(true, ctx.dew_point, true, ctx.humidity);
     case 'dew_point':
-      return this._climateRow_dewpoint(ctx.showDewpoint, ctx.dew_point, ctx.showHumidity, ctx.humidity);
+      return this._climateRow_dewpoint(true, ctx.dew_point, false, ctx.humidity);
+    case 'humidity':
+      return this._climateRow_dewpoint(false, ctx.dew_point, true, ctx.humidity);
     case 'precipitation':
-      return this._climateRow_precip(ctx.showPrecipitation, ctx.hasPrecipValue, ctx.precipitation, ctx.precipitation_unit);
+      return this._climateRow_precip(true, ctx.hasPrecipValue, ctx.precipitation, ctx.precipitation_unit);
     case 'zero_degree_level':
-      return this._climateRow_zeroDegree(ctx.showZeroDegree, ctx.zero_degree_level, ctx.zero_degree_unit);
-    case 'sun_strength':
-      return this._sunRow_sunStrength(ctx.showUvIndex, ctx.showIlluminance, ctx.uv_index, ctx.illuminance, ctx.lat, ctx.lon);
+      return this._climateRow_zeroDegree(true, ctx.zero_degree_level, ctx.zero_degree_unit);
+    case 'uv_illuminance':
+      return this._sunRow_sunStrength(true, true, ctx.uv_index, ctx.illuminance, ctx.lat, ctx.lon);
+    case 'uv_index':
+      return this._sunRow_sunStrength(true, false, ctx.uv_index, ctx.illuminance, ctx.lat, ctx.lon);
+    case 'illuminance':
+      return this._sunRow_sunStrength(false, true, ctx.uv_index, ctx.illuminance, ctx.lat, ctx.lon);
     case 'sun':
-      return this._sunRow_sunPanel(ctx.showSun, ctx.showMoon, ctx.sun, ctx.language);
+      return this._sunRow_sun(true, ctx.sun, ctx.language);
+    case 'moon':
+      return this._renderMoonLine(ctx.language);
     case 'wind_direction':
-      return this._windRow_direction(ctx.showWindDirection, ctx.windDirection);
+      return this._windRow_direction(true, ctx.windDirection);
     case 'wind_speed':
-      return this._windRow_speed(ctx.showWindSpeed, ctx.dWindSpeed);
+      return this._windRow_speed(true, ctx.dWindSpeed);
     case 'wind_gust_speed':
-      return this._windRow_gust(ctx.showWindgustspeed, ctx.wind_gust_speed);
+      return this._windRow_gust(true, ctx.wind_gust_speed);
     default:
       return null;
   }
@@ -3888,9 +3885,8 @@ const timeOptions = {
 // moonrise/moonset (only the next horizon crossing is computed).
 // The line is text-free by design, so it needs no locale
 // strings. Visibility is the caller's call (the `moon` layout token /
-// `show_moon`); `belowSun` adds the line break that tucks it under the
-// sunrise/sunset times.
-_renderMoonLine(language: string, belowSun: boolean = true) {
+// `show_moon`).
+_renderMoonLine(language: string) {
   const now = new Date();
   const { fraction, waxing } = moonIllumination(now);
 
@@ -3922,7 +3918,7 @@ _renderMoonLine(language: string, belowSun: boolean = true) {
   // (a currentColor fill read as "lit = black" on light themes). Only
   // the thin outline uses currentColor, so the disc edge stays visible
   // on either background.
-  return html`${belowSun ? html`<br>` : nothing}<svg class="wsc-moon" viewBox="0 0 24 24" aria-hidden="true"><circle
+  return html`<svg class="wsc-moon" viewBox="0 0 24 24" aria-hidden="true"><circle
         cx="12" cy="12" r="9.5" fill="#000"></circle><path
         d=${litMoonPath(fraction, litRight)} fill="#fff"></path><circle
         cx="12" cy="12" r="9.5" fill="none" stroke="currentColor"
