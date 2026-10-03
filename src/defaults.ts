@@ -99,6 +99,9 @@ export const DEFAULTS = {
   // integration). Opt-in like the other detail rows; needs
   // `sensors.zero_degree_level`, no weather-entity fallback exists.
   show_zero_degree_level: false,
+  // Next rain (MeteoSwiss radar nowcast, or any timestamp sensor).
+  // Opt-in; needs `sensors.next_rain`.
+  show_next_rain: false,
   // Combined lines (ADR-0025): dew point + humidity and UV + illuminance
   // share one line when both are on; these force the combined line in
   // automatic mode even when only one of the pair is toggled. Mostly

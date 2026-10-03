@@ -57,6 +57,7 @@ export default {
         'src/sun-strength.ts',
         'src/moon.ts',
         'src/attributes-layout.ts',
+        'src/next-rain.ts',
       ],
       thresholds: {
         statements: 80,

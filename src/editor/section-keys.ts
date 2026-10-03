@@ -78,6 +78,7 @@ export const SECTION_KEYS: Record<SectionKey, ReadonlyArray<string>> = {
     'show_sun',
     'show_moon',
     'show_zero_degree_level',
+    'show_next_rain',
     'show_dew_point_humidity',
     'show_uv_illuminance',
     // YAML-only row arrangement (ADR-0025); the attribute pills write
