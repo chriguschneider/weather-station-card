@@ -17,6 +17,7 @@ import type { EditorLike, EditorContext, TogglePath } from './types.js';
 import { renderEditorPanel } from './expansion-panel.js';
 import { renderTogglePills } from './toggle-pills.js';
 import { renderLayoutBoard } from './layout-board.js';
+import { radarNowcastDisabled } from '../next-rain.js';
 import {
   hasExplicitLayout,
   resolveAttributesLayout,
@@ -52,6 +53,7 @@ export const ATTRIBUTE_PATHS: ReadonlyArray<
   // value actually exists, so a card with a rain sensor wired wants it.
   { path: 'show_precipitation',     def: true,  gate: 'sensor',
     gateKey: ['precipitation', 'precipitation_rate'] },
+  { path: 'show_next_rain',         def: false, gate: 'sensor', gateKey: 'next_rain' },
   { path: 'show_zero_degree_level', def: false, gate: 'sensor', gateKey: 'zero_degree_level' },
   { path: 'show_uv_illuminance',    def: false, gate: 'live',   gateKey: ['uv_index', 'illuminance'], requireAll: true },
   { path: 'show_uv_index',          def: true,  gate: 'live',   gateKey: 'uv_index' },
@@ -178,6 +180,10 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
     return map[schema.name] || t(schema.name);
   };
 
+  const nowcastHint = radarNowcastDisabled(editor.hass as Parameters<typeof radarNowcastDisabled>[0])
+    ? html`<div class="hint">${t('next_rain_enable_hint')}</div>`
+    : '';
+
   const enabledAttrs = selectedAttributeLeaves(cfg, availableAttrs);
   const board = renderAttributesBoard(editor, ctx, enabledAttrs);
   const summary = `${t('main_panel_heading')} ${showMain ? t('summary_on') : t('summary_off')}`
@@ -230,6 +236,7 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
             onChange: (next) => editor._applyAttributeToggles(availableAttrs, next),
           })}
           ${board}
+          ${nowcastHint}
         </div>
       ` : ''}
     </div>

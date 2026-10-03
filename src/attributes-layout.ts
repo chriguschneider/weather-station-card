@@ -22,6 +22,7 @@ export const ATTRIBUTE_TOKENS = [
   'humidity',
   'precipitation',
   'zero_degree_level',
+  'next_rain',
   'uv_illuminance',
   'uv_index',
   'illuminance',
@@ -40,7 +41,7 @@ export type AttributesLayout = AttributeToken[][];
 // lands next to its nearest sibling from its default column, ordered as
 // here.
 export const DEFAULT_ATTRIBUTES_LAYOUT: ReadonlyArray<ReadonlyArray<AttributeToken>> = [
-  ['pressure', 'dew_point_humidity', 'dew_point', 'humidity', 'precipitation', 'zero_degree_level'],
+  ['pressure', 'dew_point_humidity', 'dew_point', 'humidity', 'precipitation', 'next_rain', 'zero_degree_level'],
   ['uv_illuminance', 'uv_index', 'illuminance', 'sun', 'moon'],
   ['wind_direction', 'wind_speed', 'wind_gust_speed'],
 ];

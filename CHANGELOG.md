@@ -6,6 +6,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Next rain in the live panel.** A new `next_rain` row (`sensors.next_rain`,
+  `show_next_rain`) shows when rain is expected, from the MeteoSwiss Radar
+  integration's nowcast: a minute countdown while the radar sees it coming,
+  a clock time when the hourly forecast answers, "No rain" otherwise (the
+  tooltip says how far the forecast was checked). The text follows the card's language and keeps
+  counting between the integration's five-minute updates. New cards pick
+  the sensor up automatically (by registry identity, so a renamed entity is
+  still found); the editor points at the integration's nowcast option when
+  the radar is installed without it.
+
 ## [2.5.0] — 2026-09-17
 
 ### Added
@@ -775,7 +787,7 @@ exactly as before.
 - **The card now ships only the language you actually use.**
   Previously every install carried the translation strings for
   all 23 supported languages. Now your browser only fetches your
-  own language; you save roughly 15 kilobytes per fresh load.
+  own language; you savely 15 kilobytes per fresh load.
   No configuration change needed.
 - **The chart should appear faster, especially on phones and tablets.**
   The card uses a smaller, lighter charting library under the hood

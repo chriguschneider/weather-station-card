@@ -23,6 +23,7 @@
 import { html, type TemplateResult } from 'lit';
 import type { EditorLike, EditorContext, HomeAssistant } from './types.js';
 import { renderEditorPanel } from './expansion-panel.js';
+import { findNextRainEntity } from '../next-rain.js';
 
 interface SensorState {
   state: string;
@@ -74,6 +75,16 @@ function buildSensorFields(hass: HassWithStates | null): Array<{ key: string; ca
       (zeroDegreeRegex.test(id) || zeroDegreeRegex.test((s.attributes?.friendly_name) || '')))
     .map(([id]) => id);
 
+  // Next rain: the radar's sensor by registry identity (survives an
+  // entity-id rename), plus anything named like it.
+  const nextRainRegex = /next[._ -]?rain|n[aä]chster[._ -]?regen/i;
+  const registryNextRain = findNextRainEntity(hass as Parameters<typeof findNextRainEntity>[0]);
+  const nextRainEntities = all
+    .filter(([id, s]) => id.startsWith('sensor.') &&
+      (id === registryNextRain || nextRainRegex.test(id) ||
+       nextRainRegex.test((s.attributes?.friendly_name) || '')))
+    .map(([id]) => id);
+
   const uvRegex = /(?:^|[._-])uv(?:[._-]|index|$)/i;
   const uvNameRegex = /\buv[\s_-]?index\b|\buv\b/i;
   const uvEntities = all
@@ -91,15 +102,16 @@ function buildSensorFields(hass: HassWithStates | null): Array<{ key: string; ca
   //   wind_speed     | gust_speed         ┐ wind
   //   wind_direction | illuminance        ┘ the one mixed row
   //   uv_index       | sunshine_duration  — light; rarest slot last
-  //   zero_degree_level                   — forecast-derived, own row
+  //   zero_degree_level | next_rain       — forecast-derived
   //
   // Twelve station slots in two columns is six rows, but the themes are
   // 2+2+2+3+3 — wind and light have three members each, so ONE row has
   // to straddle two themes. Placing the two odd groups next to each
   // other keeps it at exactly one (wind_direction | illuminance) and
   // leaves every even group intact. `temperature` stays top-left as the
-  // only required slot. The zero-degree level is not a station reading
-  // (it comes from a forecast model) and takes a seventh row on its own.
+  // only required slot. The zero-degree level and next rain are not
+  // station readings (they come from forecast / nowcast models) and
+  // share a seventh row.
   return [
     { key: 'temperature',         candidates: byDeviceClass(['temperature']) },
     { key: 'pressure',            candidates: byDeviceClass(['atmospheric_pressure', 'pressure']) },
@@ -118,6 +130,7 @@ function buildSensorFields(hass: HassWithStates | null): Array<{ key: string; ca
     { key: 'uv_index',            candidates: uvEntities },
     { key: 'sunshine_duration',   candidates: [] },
     { key: 'zero_degree_level',   candidates: zeroDegreeEntities },
+    { key: 'next_rain',           candidates: nextRainEntities },
   ];
 }
 

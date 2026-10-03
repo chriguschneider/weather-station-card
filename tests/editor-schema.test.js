@@ -164,7 +164,7 @@ describe('renderBasicsSection (schema-driven)', () => {
 // ── renderSensorsSection ──────────────────────────────────────────────
 
 describe('renderSensorsSection (schema-driven)', () => {
-  it('exposes the past-source dropdown plus the 13 pickers for station source', () => {
+  it('exposes the past-source dropdown plus the 14 pickers for station source', () => {
     const container = renderInto(renderSensorsSection, makeEditor(), makeCtx());
     const names = allFieldNames(container);
     expect(names).toContain('past_source');
@@ -172,7 +172,7 @@ describe('renderSensorsSection (schema-driven)', () => {
       'temperature', 'humidity', 'illuminance', 'precipitation',
       'precipitation_rate', 'pressure',
       'wind_speed', 'gust_speed', 'wind_direction', 'uv_index', 'dew_point',
-      'sunshine_duration', 'zero_degree_level',
+      'sunshine_duration', 'zero_degree_level', 'next_rain',
     ]) {
       expect(names).toContain(key);
     }
@@ -221,7 +221,7 @@ describe('renderSensorsSection (schema-driven)', () => {
       'wind_speed', 'gust_speed',
       'wind_direction', 'illuminance',
       'uv_index', 'sunshine_duration',
-      'zero_degree_level',
+      'zero_degree_level', 'next_rain',
     ]);
   });
 
@@ -241,6 +241,26 @@ describe('renderSensorsSection (schema-driven)', () => {
     expect(offered).toContain('sensor.meteoswiss_bern_zero_degree_level');
     expect(offered).toContain('sensor.snowline');
     expect(offered).not.toContain('sensor.elevation');
+  });
+  // The radar's sensor is found by registry identity, so a renamed
+  // entity id is still offered.
+  it('offers next-rain entities by registry identity and by name', () => {
+    const hass = {
+      entities: {
+        'sensor.regen_bald': { platform: 'meteoswiss_radar', translation_key: 'next_rain' },
+      },
+      states: {
+        'sensor.regen_bald': { state: '12 min', attributes: {} },
+        'sensor.other_next_rain': { state: '17:00', attributes: {} },
+        'sensor.rain_today': { state: '1.2', attributes: { unit_of_measurement: 'mm' } },
+      },
+    };
+    const container = renderInto(renderSensorsSection, makeEditor({ hass }), makeCtx());
+    const { field } = findField(container, 'next_rain');
+    const offered = field.selector.entity.include_entities;
+    expect(offered).toContain('sensor.regen_bald');
+    expect(offered).toContain('sensor.other_next_rain');
+    expect(offered).not.toContain('sensor.rain_today');
   });
   it('wraps the pickers in a 2-column grid container', () => {
     const container = renderInto(renderSensorsSection, makeEditor(), makeCtx());
@@ -391,6 +411,26 @@ describe('renderLivePanelSection (schema-driven)', () => {
 
   it('renders without throwing on default config', () => {
     expect(() => renderInto(renderLivePanelSection, editor, makeCtx())).not.toThrow();
+  });
+
+  // Radar installed for the map, nowcast left at its opt-in default:
+  // point at the switch instead of offering a row that can't fill.
+  it('hints at the radar nowcast option when it is loaded without a next-rain sensor', () => {
+    const cfg = { show_attributes: true };
+    const without = { config: { components: ['meteoswiss_radar'] }, entities: {}, states: {} };
+    const hinted = renderInto(renderLivePanelSection, makeEditor({ hass: without }), makeCtx({ cfg }));
+    expect(hinted.textContent).toContain('next_rain_enable_hint');
+
+    const withSensor = {
+      ...without,
+      entities: { 'sensor.x': { platform: 'meteoswiss_radar', translation_key: 'next_rain' } },
+    };
+    const quiet = renderInto(renderLivePanelSection, makeEditor({ hass: withSensor }), makeCtx({ cfg }));
+    expect(quiet.textContent).not.toContain('next_rain_enable_hint');
+
+    const noRadar = { config: { components: [] }, states: {} };
+    const unrelated = renderInto(renderLivePanelSection, makeEditor({ hass: noRadar }), makeCtx({ cfg }));
+    expect(unrelated.textContent).not.toContain('next_rain_enable_hint');
   });
 
   it('titles its panel with the live-panel heading', () => {

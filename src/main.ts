@@ -113,6 +113,7 @@ import { renderChartSkeleton } from './chart/skeleton.js';
 import { cardStyles } from './chart/styles.js';
 import { getDateTimeFormat, getNumberFormat } from './utils/intl-cache.js';
 import { moonIllumination, nextMoonEvent, litMoonPath } from './moon.js';
+import { classifyNextRain, findNextRainEntity, formatCheckedUntil, formatNextRain, nextRainIcon } from './next-rain.js';
 import {
   resolveAttributesLayout,
   type AttributeToken,
@@ -247,6 +248,13 @@ class WeatherStationCard extends LitElement {
   // deno-lint-ignore no-explicit-any
   zero_degree_level: any;
   zero_degree_unit: string | undefined;
+  // Display-ready strings, not the raw state object: a fresh object per
+  // hass tick would defeat Lit's value comparison (ADR-0017).
+  next_rain_text: string | undefined;
+  next_rain_icon: string | undefined;
+  next_rain_title: string | undefined;
+  // Only runs while the row shows a minute countdown.
+  _nextRainTimer: ReturnType<typeof setInterval> | null = null;
   // Sliding-anchor buffer for deriving a mm/h rate from a cumulative
   // rain counter when the configured precipitation sensor reports a
   // total instead of a rate (unit not ending in /h). Persisted to
@@ -538,6 +546,7 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
     show_wind_gust_speed: true,
     show_illuminance: true,
     show_zero_degree_level: true,
+    show_next_rain: true,
     days: 5,
     forecast_days: 5,
     weather_entity: weatherEntity,
@@ -575,6 +584,8 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
       // Forecast-derived snow-line altitude (MeteoSwiss `zero_degree_level`,
       // Open-Meteo-style `freezing_level_height`). No device_class exists.
       zero_degree_level: findByPattern(/(zero_degree|freezing_level|nullgrad)/) || '',
+      // MeteoSwiss radar nowcast; registry identity first, id pattern second.
+      next_rain: findNextRainEntity(hass as Parameters<typeof findNextRainEntity>[0]) || '',
     },
   };
 }
@@ -613,6 +624,9 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
       precipitation_unit: { attribute: false },
       zero_degree_level: { attribute: false },
       zero_degree_unit: { attribute: false },
+      next_rain_text: { attribute: false },
+      next_rain_icon: { attribute: false },
+      next_rain_title: { attribute: false },
       unitSpeed: { attribute: false },
       unitPressure: { attribute: false },
       unitPrecip: { attribute: false },
@@ -716,8 +730,12 @@ set hass(hass: HassMain) {
     // fallback. The await is a microtask if the chunk is already in
     // the browser cache.
     if (lang !== 'en' && lang.split('-')[0] !== 'en') {
-      void ensureLocaleLoaded(lang).then(() => this.requestUpdate());
+      void ensureLocaleLoaded(lang).then(() => {
+        this._refreshNextRain();
+        this.requestUpdate();
+      });
     }
+    this._refreshNextRain();
   }
 
   // Entity-delta gate (ADR-0017): when none of the entities this card
@@ -735,6 +753,7 @@ set hass(hass: HassMain) {
   this.sun = (hass.states && 'sun.sun' in hass.states) ? hass.states['sun.sun'] : null;
 
   this._extractSensorReadings(hass);
+  this._refreshNextRain();
   this._classifyLiveCondition(hass);
   this._syncDataSources(hass);
   this._watchedStatesSnapshot = this._captureWatchedStates(hass);
@@ -1583,6 +1602,7 @@ async _refreshPressureDelta(): Promise<void> {
         this._actionHandlerTeardown = null;
       }
     });
+    r.add(() => this._stopNextRainTick());
     r.add(() => {
       if (this._clockTimer) {
         clearInterval(this._clockTimer);
@@ -3691,6 +3711,64 @@ _climateRow_zeroDegree(show: boolean, value: unknown, unit: string | undefined) 
     html`<ha-icon icon="mdi:snowflake-thermometer"></ha-icon> ${text}`)}`;
 }
 
+// Next-rain row (`sensors.next_rain`). Text, icon and tooltip are
+// prepared by `_refreshNextRain`; the tooltip names which horizon
+// answered, so a forecast "~17:00" is never read as a radar observation.
+_climateRow_nextRain(text: string | undefined, icon: string | undefined, title: string | undefined) {
+  if (!text) return null;
+  const eid = this._attrEntity('next_rain', false);
+  return html`<span title=${title} aria-label=${title || text}>${this._entityLink(eid,
+    html`<ha-icon icon="${icon}"></ha-icon> ${text}`)}</span>`;
+}
+
+// Recompute the next-rain strings from the entity and the wall clock.
+// Called on every hass pass and by the countdown tick; assigning an
+// unchanged string schedules no render.
+_refreshNextRain(): void {
+  const eid = this.config?.sensors?.next_rain;
+  const stateObj = eid ? this._hass?.states?.[eid] : undefined;
+  const now = Date.now();
+  const view = classifyNextRain(stateObj, now);
+  const str = (k: string) =>
+    (this.ll(k) || (locale.en as Record<string, unknown>)[k] || '') as string;
+
+  let text = '';
+  let icon = '';
+  let title = '';
+  if (view) {
+    const lang = this.language || 'en';
+    const hour12 = this.config?.use_12hour_format;
+    const strings = {
+      now: str('next_rain_now'),
+      none: str('next_rain_none'),
+      checked_until: str('next_rain_checked_until'),
+    };
+    text = formatNextRain(view, lang, hour12, strings);
+    icon = nextRainIcon(view);
+    if (view.kind === 'none') title = formatCheckedUntil(view, now, lang, hour12, strings);
+    else if ('source' in view && view.source) title = str(`next_rain_source_${view.source}`);
+  }
+  this.next_rain_text = text;
+  this.next_rain_icon = icon;
+  this.next_rain_title = title;
+
+  if (view?.kind === 'minutes') this._startNextRainTick();
+  else this._stopNextRainTick();
+}
+
+// The integration refreshes every five minutes; between updates the
+// countdown is ours to keep honest.
+_startNextRainTick(): void {
+  if (this._nextRainTimer) return;
+  this._nextRainTimer = setInterval(() => this._refreshNextRain(), 30_000);
+}
+
+_stopNextRainTick(): void {
+  if (!this._nextRainTimer) return;
+  clearInterval(this._nextRainTimer);
+  this._nextRainTimer = null;
+}
+
 // Value + unit for a plain numeric sensor row. Prefers
 // `hass.formatEntityState` (HA ≥ 2023.9 — honours the entity's display
 // precision and the user's number format, unit included) whenever the
@@ -3788,6 +3866,9 @@ renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, la
     sun, uv_index, illuminance, language,
     windDirection, dWindSpeed, wind_gust_speed,
     zero_degree_level, zero_degree_unit,
+    next_rain_text: this.next_rain_text,
+    next_rain_icon: this.next_rain_icon,
+    next_rain_title: this.next_rain_title,
     lat, lon,
   };
 
@@ -3831,6 +3912,8 @@ _renderAttributeLine(token: AttributeToken, ctx: any) {
       return this._climateRow_precip(true, ctx.hasPrecipValue, ctx.precipitation, ctx.precipitation_unit);
     case 'zero_degree_level':
       return this._climateRow_zeroDegree(true, ctx.zero_degree_level, ctx.zero_degree_unit);
+    case 'next_rain':
+      return this._climateRow_nextRain(ctx.next_rain_text, ctx.next_rain_icon, ctx.next_rain_title);
     case 'uv_illuminance':
       return this._sunRow_sunStrength(true, true, ctx.uv_index, ctx.illuminance, ctx.lat, ctx.lon);
     case 'uv_index':
