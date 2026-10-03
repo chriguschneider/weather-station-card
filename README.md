@@ -83,7 +83,7 @@ those same sensors. This card does both:
   needed. All values derive from current sensor states, not from a
   forecast; every sensor-backed value is clickable and opens its
   more-info dialog. With the MeteoSwiss Radar integration it can also
-  show when rain is next expected.
+  show [when rain is next expected](#next-rain-with-meteoswiss-radar).
 - A **compact visual editor** — everything is configurable without
   YAML, and the whole card fits one editor screen (see
   [below](#configuration)).
@@ -290,6 +290,48 @@ and customisation:
 - **[docs/CONDITIONS.md](docs/CONDITIONS.md)** — decision tree, live-vs-daily classifier, day/night-aware icons.
 - **[docs/SENSORS.md](docs/SENSORS.md)** — precipitation sensor wiring, sunshine duration setup, privacy notes.
 - **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** — error banners, common gotchas (recorder warm-up, HACS cache), known limitations.
+
+## Next rain with MeteoSwiss Radar
+
+The live panel can show when rain is next expected. The value comes from
+the **Next rain** sensor of the
+[MeteoSwiss Radar](https://github.com/chriguschneider/hass-meteoswiss-radar)
+integration. That sensor in turn can draw on the hourly forecast of a
+`weather.*` entity, for example from
+[MeteoSwiss Weather](https://github.com/chriguschneider/hass-meteoswiss-weather):
+
+```
+weather entity ──(hourly forecast)──▶ MeteoSwiss Radar ──(sensor …_next_rain)──▶ this card
+```
+
+Each link is an ordinary Home Assistant entity. The projects never call
+each other directly, so any part can be swapped or left out.
+
+**Setup**
+
+1. Install MeteoSwiss Radar and turn on *Rain sensors for my home* in its
+   options (off by default). If the radar is installed but this is off,
+   the card editor shows a hint pointing there.
+2. Optional: in the same options, pick a *Weather entity for the hourly
+   forecast*. Without one, "next rain" only looks as far as the radar
+   does (2 h).
+3. In the card editor, pick the sensor under *Next rain* and switch on
+   the *Next rain* attribute pill. New cards find the sensor
+   automatically, even if the entity was renamed.
+
+**What the row shows**
+
+| Situation | Row | Icon |
+| --- | --- | --- |
+| Radar sees rain coming within the hour | `in 12 min`, counting down live | radar |
+| Radar or forecast answers further out | `17:00` (radar) or `~17:00` (forecast); weekday added beyond 24 h | radar / cloud-clock |
+| It is raining | `Now` | rain |
+| Nothing in sight | `No rain` (hover to see how far the forecast was checked) | closed umbrella |
+
+The tooltip names which source answered, so a forecast time is never
+mistaken for a radar observation. Any other timestamp sensor works in
+the same slot. See `sensors.next_rain` and `show_next_rain` in
+[docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
 ## Contributing & architecture
 
