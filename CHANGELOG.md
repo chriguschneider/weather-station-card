@@ -6,17 +6,28 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.6.0] — 2026-10-03
+
 ### Added
 
-- **Next rain in the live panel.** A new `next_rain` row (`sensors.next_rain`,
-  `show_next_rain`) shows when rain is expected, from the MeteoSwiss Radar
-  integration's nowcast: a minute countdown while the radar sees it coming,
-  a clock time when the hourly forecast answers, "No rain" otherwise (the
-  tooltip says how far the forecast was checked). The text follows the card's language and keeps
-  counting between the integration's five-minute updates. New cards pick
-  the sensor up automatically (by registry identity, so a renamed entity is
-  still found); the editor points at the integration's nowcast option when
-  the radar is installed without it.
+- **Next rain in the live panel.** A new row tells you when rain is
+  expected, using the nowcast from the
+  [MeteoSwiss Radar](https://github.com/chriguschneider/hass-meteoswiss-radar)
+  integration: *in 12 min* while the radar sees rain coming, *~17:00*
+  when the hourly forecast answers further out, *Now* while it rains and
+  *No rain* otherwise (hover it to see how far the forecast was checked).
+  The text follows the card's language and keeps counting down between
+  the integration's five-minute updates. Turn it on with the *Next rain*
+  sensor and the *Next rain* attribute pill, or in YAML with
+  `sensors.next_rain` and `show_next_rain: true`. Newly added cards find
+  the sensor by themselves; if the radar integration is installed but its
+  nowcast is switched off, the editor tells you where to enable it.
+
+### Under the hood
+
+- The build no longer depends on `rollup-plugin-copy`, whose dependency
+  chain carried a security advisory without a fix; a few lines in the
+  build config copy the icons instead. The published card is unchanged.
 
 ## [2.5.0] — 2026-09-17
 
