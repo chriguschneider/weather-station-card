@@ -1,10 +1,9 @@
 import resolve from 'rollup-plugin-node-resolve';
 import serve from 'rollup-plugin-serve';
-import copy from 'rollup-plugin-copy';
 import terser from '@rollup/plugin-terser';
 import typescript from '@rollup/plugin-typescript';
 import { visualizer } from 'rollup-plugin-visualizer';
-import { readFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf8'));
 const dev = process.env.ROLLUP_WATCH;
@@ -27,6 +26,23 @@ const injectCardVersion = {
     if (!id.endsWith('main.ts')) return null;
     const replaced = code.replaceAll("'__CARD_VERSION__'", JSON.stringify(pkg.version));
     return replaced === code ? null : { code: replaced, map: null };
+  },
+};
+
+// Inline plugin: copies the SVG icons into dist/icons. Replaces
+// rollup-plugin-copy, whose globby → micromatch → braces chain carries
+// a high-severity advisory with no patched release — for one flat
+// directory a glob engine is not worth the audit failure.
+const copySvgIcons = {
+  name: 'copy-svg-icons',
+  writeBundle() {
+    mkdirSync('dist/icons', { recursive: true });
+    // Only the SVG assets — src/icons also hosts the TS sprite module
+    // (mdi-paths.ts, ADR-0018), which compiles into the bundle and
+    // must not be copied verbatim into dist.
+    for (const file of readdirSync('src/icons')) {
+      if (file.endsWith('.svg')) copyFileSync(`src/icons/${file}`, `dist/icons/${file}`);
+    }
   },
 };
 
@@ -96,14 +112,7 @@ export default {
     }),
     resolve(),
     dev && serve(serveopts),
-    copy({
-      targets: [
-        // Only the SVG assets — src/icons also hosts the TS sprite
-        // module (mdi-paths.ts, ADR-0018), which compiles into the
-        // bundle and must not be copied verbatim into dist.
-        { src: 'src/icons/*.svg', dest: 'dist/icons' },
-      ]
-    }),
+    copySvgIcons,
     // Production minification (skipped in dev/watch so source maps stay
     // readable). Drops bundle from ~800 KB unminified to ~250-300 KB —
     // halves bytes-on-the-wire even after HA's gzip layer. Class names

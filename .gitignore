@@ -3,7 +3,7 @@
 # This is a public repo; the file may reference paths and host names
 # from the maintainer's setup that don't belong on GitHub.
 CLAUDE.md
-# rollup-plugin-copy reuses the dist/ tree across runs but never
+# The build reuses the dist/ tree across runs but never
 # regenerates .gz on its own — those are leftovers from local pushes
 # to a Home Assistant instance and should never be committed.
 dist/*.gz
