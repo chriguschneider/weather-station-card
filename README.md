@@ -82,7 +82,8 @@ those same sensors. This card does both:
   the next moonrise/moonset, computed in-card with no Moon integration
   needed. All values derive from current sensor states, not from a
   forecast; every sensor-backed value is clickable and opens its
-  more-info dialog.
+  more-info dialog. With the MeteoSwiss Radar integration it can also
+  show when rain is next expected.
 - A **compact visual editor** — everything is configurable without
   YAML, and the whole card fits one editor screen (see
   [below](#configuration)).
