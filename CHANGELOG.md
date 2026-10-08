@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.7.0] — 2026-10-08
+
 ### Changed
 
 - **Times follow your Home Assistant server's time zone.** The clock,
@@ -21,6 +23,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - West of Greenwich, the Open-Meteo past/forecast day count was off by
   one day.
+
+### Under the hood
+
+- Security update for a build-time dependency (`source-map-js`). The
+  published card is unaffected.
 
 ## [2.6.0] — 2026-10-03
 
