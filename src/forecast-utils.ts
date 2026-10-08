@@ -2,6 +2,8 @@
 // they can be unit-tested without pulling in Lit, Chart.js, or HA — vitest
 // runs in node (no jsdom) and these stay fully exercisable there.
 
+import { addDays, dayKey, hourOf, minuteOf, startOfDay, withHour } from './utils/time-zone.js';
+
 /** Forecast entry shape consumed by the chart. Both data sources
  *  (`MeasuredDataSource`, `ForecastDataSource`) emit objects matching
  *  this contract; the sunshine overlay decorates them with `sunshine`
@@ -100,7 +102,7 @@ export function pickHourlyTickIndices(
       const dt = datetimes[i];
       const d = dt instanceof Date ? dt : new Date(dt);
       if (!Number.isFinite(d.getTime())) continue;
-      if (d.getHours() === 0 && d.getMinutes() === 0) kept.add(i);
+      if (hourOf(d) === 0 && minuteOf(d) === 0) kept.add(i);
     }
   }
 
@@ -321,9 +323,7 @@ export function aggregateThreeHourCalendar<T extends Partial<ForecastEntry>>(
     const d = new Date(e.datetime);
     const t = d.getTime();
     if (!Number.isFinite(t)) continue;
-    const anchor = new Date(d);
-    anchor.setHours(Math.floor(d.getHours() / 3) * 3, 0, 0, 0);
-    const key = anchor.getTime();
+    const key = withHour(d, Math.floor(hourOf(d) / 3) * 3).getTime();
     if (!buckets.has(key)) buckets.set(key, []);
     buckets.get(key)!.push(e);
     if (key < minMs) minMs = key;
@@ -332,22 +332,17 @@ export function aggregateThreeHourCalendar<T extends Partial<ForecastEntry>>(
   if (!Number.isFinite(minMs)) return [];
 
   // Walk whole days from the first entry's day to the last entry's
-  // day, emitting all 8 blocks per day. Date iteration (setDate /
-  // setHours) keeps this DST-correct — a 23/25-hour day still yields
+  // day, emitting all 8 blocks per day. Calendar iteration (addDays /
+  // withHour) keeps this DST-correct — a 23/25-hour day still yields
   // exactly 8 calendar blocks.
   const out: ForecastEntry[] = [];
-  const cursor = new Date(minMs);
-  cursor.setHours(0, 0, 0, 0);
-  const lastDay = new Date(maxMs);
-  lastDay.setHours(0, 0, 0, 0);
-  while (cursor.getTime() <= lastDay.getTime()) {
+  const lastDayMs = startOfDay(maxMs).getTime();
+  for (let cursor = startOfDay(minMs); cursor.getTime() <= lastDayMs; cursor = addDays(cursor, 1)) {
     for (let blk = 0; blk < 8; blk++) {
-      const anchor = new Date(cursor);
-      anchor.setHours(blk * 3, 0, 0, 0);
+      const anchor = withHour(cursor, blk * 3);
       const slice = buckets.get(anchor.getTime()) ?? [];
       out.push(aggregateBlock(slice, anchor.toISOString()));
     }
-    cursor.setDate(cursor.getDate() + 1);
   }
   return out;
 }
@@ -421,7 +416,7 @@ function localDayKeyOf(e: { datetime?: string } | null | undefined): string | nu
   if (!e?.datetime) return null;
   const d = new Date(e.datetime);
   if (!Number.isFinite(d.getTime())) return null;
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  return dayKey(d);
 }
 
 /** Whole-day windowing for the hourly-ish modes (2026-08, user
@@ -441,7 +436,7 @@ export function trimToWholeDayEnd<T extends { datetime?: string }>(
   const last = entries[entries.length - 1];
   const lastKey = localDayKeyOf(last);
   if (lastKey === null) return [...entries];
-  const lastHour = new Date(last.datetime as string).getHours();
+  const lastHour = hourOf(new Date(last.datetime as string));
   if (lastHour >= 23) return [...entries];
   // Find where the incomplete last day begins.
   let cut = entries.length;
@@ -461,7 +456,7 @@ export function trimToWholeDayStart<T extends { datetime?: string }>(
   const first = entries[0];
   const firstKey = localDayKeyOf(first);
   if (firstKey === null) return [...entries];
-  if (new Date(first.datetime as string).getHours() === 0) return [...entries];
+  if (hourOf(new Date(first.datetime as string)) === 0) return [...entries];
   let cut = 0;
   while (cut < entries.length && localDayKeyOf(entries[cut]) === firstKey) cut++;
   if (cut >= entries.length) return [...entries]; // single-day series — keep
@@ -523,9 +518,7 @@ export function computeDayPageScrollLeft(
   now: Date = new Date(),
 ): number | null {
   if (!forecasts?.length || !Number.isFinite(contentWidth) || contentWidth <= 0) return null;
-  const midnight = new Date(now);
-  midnight.setHours(0, 0, 0, 0);
-  const targetMs = midnight.getTime();
+  const targetMs = startOfDay(now).getTime();
   const idx = forecasts.findIndex((e) => {
     if (!e?.datetime) return false;
     return new Date(e.datetime).getTime() === targetMs;
@@ -556,14 +549,12 @@ export function forecastsEqual(
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-/** Returns the local-midnight start-of-today as ms-since-epoch. Pure
- *  helper used by the midnight-transition guards below — kept as a
- *  function (rather than `Date.now() - Date.now() % DAY_MS`) so each
- *  caller picks up the user's local timezone and DST behaviour. */
+/** Returns the start of today (card zone, #285) as ms-since-epoch.
+ *  Used by the midnight-transition guards below — kept as a function
+ *  (rather than `Date.now() - Date.now() % DAY_MS`) so each caller
+ *  picks up the zone's DST behaviour. */
 export function startOfTodayMs(): number {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
+  return startOfDay(Date.now()).getTime();
 }
 
 // Just past local midnight, forecast data can still carry yesterday's

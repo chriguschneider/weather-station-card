@@ -14,6 +14,8 @@
 // crossing) — plenty for a display line, and worth staying
 // dependency-free for.
 
+import { startOfDay } from './utils/time-zone.js';
+
 const RAD = Math.PI / 180;
 const DAY_MS = 86_400_000;
 // Days since J2000.0 — the epoch all series below are anchored to.
@@ -155,12 +157,11 @@ function windowEvents(
   return {};
 }
 
-/** Moonrise/set for the LOCAL calendar day containing `date`. Either
+/** Moonrise/set for the calendar day (card zone, #285) containing `date`. Either
  *  key may be absent: the ~50-minute daily drift produces days with no
  *  rise or no set (and polar latitudes get neither for weeks). */
 export function moonTimes(date: Date, lat: number, lon: number): MoonTimes {
-  const t = new Date(date);
-  t.setHours(0, 0, 0, 0);
+  const t = startOfDay(date);
 
   const hc = 0.133 * RAD; // upper-limb correction (moon's apparent radius)
   let h0 = moonAltitude(t, lat, lon) - hc;

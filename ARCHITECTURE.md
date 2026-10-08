@@ -157,7 +157,7 @@ src/
 │
 ├── icons/                     Bundled SVG weather-condition icons,
 │                              copied verbatim to dist/icons/ by the
-│                              build (rollup-plugin-copy).
+│                              build (inline plugin in rollup.config.mjs).
 │
 ├── utils/
 │   ├── safe-query.ts          shadowRoot?.querySelector helper.
@@ -181,10 +181,16 @@ src/
 │   │                          from sibling cards collapse into one
 │   │                          roundtrip (ADR-0020). Results are
 │   │                          shared references; never mutate.
-│   └── series-cache.ts        (v2.2)  Versioned localStorage
-│                              stale-while-revalidate cache for the
-│                              station / forecast series — instant
-│                              paint after reload (ADR-0020).
+│   ├── series-cache.ts        (v2.2)  Versioned localStorage
+│   │                          stale-while-revalidate cache for the
+│   │                          station / forecast series — instant
+│   │                          paint after reload (ADR-0020).
+│   └── time-zone.ts           (v2.7)  Calendar math in the HA server's
+│                              zone (ADR-0026): start of day, add days,
+│                              hour / day keys. Every day boundary and
+│                              (via intl-cache) every displayed time
+│                              goes through it instead of Date's local
+│                              getters.
 │
 ├── chart/
 │   ├── orchestrator.ts        drawChartUnsafe(card, args) — assembles
@@ -581,7 +587,8 @@ files**):
 - The live-row classifiers — `precip-rate.ts`, `pressure-trend.ts`,
   `dew-point-comfort.ts`, `sun-strength.ts`.
 - `utils/*` — safe-query, numeric, intl-cache, resolve-css-var,
-  theme-tokens, unit-converters, shared-requests, series-cache.
+  theme-tokens, unit-converters, shared-requests, series-cache,
+  time-zone.
 - `defaults.ts` — DEFAULTS shape + schema-drift CI test (issue #93).
 - Editor mutator methods (`tests/editor.test.js`) + per-partial
   render smoketests + the `section-keys.ts` schema-drift guard

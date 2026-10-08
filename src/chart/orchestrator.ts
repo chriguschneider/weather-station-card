@@ -42,6 +42,7 @@ import {
   type PluginCardConfig,
   type PluginRenderData,
 } from './plugins.js';
+import { isSameDay } from '../utils/time-zone.js';
 
 /** Per-render data bag — what `card.computeForecastData()` returns.
  *  All arrays are positional. `tempLowAvailable` lets the caller hide
@@ -125,9 +126,7 @@ export function boundaryIsSameDay(
   const da = new Date(a);
   const db = new Date(b);
   if (!Number.isFinite(da.getTime()) || !Number.isFinite(db.getTime())) return false;
-  da.setHours(0, 0, 0, 0);
-  db.setHours(0, 0, 0, 0);
-  return da.getTime() === db.getTime();
+  return isSameDay(da, db);
 }
 
 /** Picks the lightened bar colour for forecast columns (or for forecast-only

@@ -24,6 +24,7 @@ import type { DailySunshineEntry, HourlySunshineEntry } from './sunshine-source.
 import type { ForecastEntry } from './forecast-utils.js';
 import { wmoToCondition } from './weather-code-map.js';
 import { dedupeRequest } from './utils/shared-requests.js';
+import { startOfDay, zonedDate } from './utils/time-zone.js';
 
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 
@@ -212,27 +213,30 @@ export function parseHourlySunshine(response: OpenMeteoResponse | null | undefin
 }
 
 /** Parse Open-Meteo's "YYYY-MM-DD" civil date (timezone=auto → the
- *  user's local timezone) into a local-midnight ISO string. This
- *  matches `MeasuredDataSource`'s daily `datetime` convention, so the
- *  Open-Meteo past block's columns align with recorder-backed ones. */
+ *  HA location's zone) into a midnight ISO string in the card's zone.
+ *  This matches `MeasuredDataSource`'s daily `datetime` convention, so
+ *  the Open-Meteo past block's columns align with recorder-backed ones. */
 function localMidnightIso(civilDate: string | undefined): string | null {
+  const d = civilMidnight(civilDate);
+  return d ? d.toISOString() : null;
+}
+
+function civilMidnight(civilDate: string | undefined): Date | null {
   if (!civilDate) return null;
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(civilDate);
   if (!m) return null;
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  const d = zonedDate(Number(m[1]), Number(m[2]), Number(m[3]));
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** Parse Open-Meteo's "YYYY-MM-DDTHH:MM" hourly timestamp (local, since
- *  the request uses timezone=auto) into an on-the-hour ISO string,
+/** Parse Open-Meteo's "YYYY-MM-DDTHH:MM" hourly timestamp (HA-location
+ *  time, since the request uses timezone=auto) into an on-the-hour ISO string,
  *  matching `MeasuredDataSource`'s hourly `datetime` convention. */
 function localHourIso(hourString: string | undefined): string | null {
   if (!hourString) return null;
   const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(hourString);
   if (!m) return null;
-  const d = new Date(
-    Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]),
-  );
+  const d = zonedDate(Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4]), Number(m[5]));
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
@@ -395,19 +399,15 @@ export function readCachedAvailability(
   const cached = loadFromStorage(store, latitude, longitude);
   if (!cached) return null;
 
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
-  const todayMs = today.getTime();
+  const todayMs = startOfDay(now).getTime();
 
   const daily = Array.isArray(cached.daily) ? cached.daily : [];
   let pastDays = 0;
   let forecastDays = 0;
   for (const item of daily) {
     if (!item?.date) continue;
-    const d = new Date(item.date);
-    d.setHours(0, 0, 0, 0);
-    const t = d.getTime();
-    if (Number.isNaN(t)) continue;
+    const t = civilMidnight(item.date)?.getTime();
+    if (t === undefined) continue;
     if (t < todayMs) pastDays += 1;
     else forecastDays += 1;
   }

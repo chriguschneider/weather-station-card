@@ -118,6 +118,7 @@ import {
   resolveAttributesLayout,
   type AttributeToken,
 } from './attributes-layout.js';
+import { addDays, dayKey, hourOf, setCardTimeZone, startOfDay, startOfHour, withHour } from './utils/time-zone.js';
 // Chart library: uPlot. Imported transitively via ./chart/draw.js —
 // there is no global registration step (uPlot has no plugin registry;
 // per-instance hooks/plugins are passed directly to the constructor).
@@ -720,6 +721,10 @@ setConfig(config: any) {
 // subscription churn in phase 3.
 set hass(hass: HassMain) {
   this._hass = hass;
+  // Day boundaries and every displayed time follow the HA server's zone
+  // (#285): the station, the forecast and HA's own daily statistics all
+  // belong to that location, wherever the viewer sits.
+  setCardTimeZone((hass.config as { time_zone?: unknown } | undefined)?.time_zone);
   const lang = this.config.locale || hass.selectedLanguage || hass.language || 'en';
   if (lang !== this.language) {
     this.language = lang;
@@ -1821,8 +1826,7 @@ async _refreshPressureDelta(): Promise<void> {
       const lastDt = (station[station.length - 1] as { datetime?: string }).datetime;
       const d = lastDt ? new Date(lastDt) : null;
       if (d && Number.isFinite(d.getTime())) {
-        d.setHours(Math.floor(d.getHours() / 3) * 3, 0, 0, 0);
-        lastStationAnchorMs = d.getTime();
+        lastStationAnchorMs = withHour(d, Math.floor(hourOf(d) / 3) * 3).getTime();
       }
     }
     let stationBlocks = 0;
@@ -1933,10 +1937,7 @@ async _refreshPressureDelta(): Promise<void> {
     if (type === 'daily') {
       if (typeof src.getDailyStationForecast !== 'function') return [];
       const all = src.getDailyStationForecast() || [];
-      const tomorrow = new Date();
-      tomorrow.setHours(0, 0, 0, 0);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const tomorrowMs = tomorrow.getTime();
+      const tomorrowMs = addDays(startOfDay(Date.now()), 1).getTime();
       const past = all.filter((e: { datetime?: string }) => {
         const t = new Date(e.datetime ?? '').getTime();
         return Number.isFinite(t) && t < tomorrowMs;
@@ -1948,9 +1949,7 @@ async _refreshPressureDelta(): Promise<void> {
     // hourly / today — slice the hourly entries up to the current hour.
     if (typeof src.getHourlyStationForecast !== 'function') return [];
     const all = src.getHourlyStationForecast() || [];
-    const nowHour = new Date();
-    nowHour.setMinutes(0, 0, 0);
-    const nowHourMs = nowHour.getTime();
+    const nowHourMs = startOfHour(Date.now()).getTime();
     const past = all.filter((e: { datetime?: string }) => {
       const t = new Date(e.datetime ?? '').getTime();
       return Number.isFinite(t) && t <= nowHourMs;
@@ -2767,12 +2766,10 @@ renderScrollTimeline() {
     if (!dt) continue;
     const d = new Date(dt);
     if (!Number.isFinite(d.getTime())) continue;
-    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const key = dayKey(d);
     if (key !== curKey) {
       curKey = key;
-      const m = new Date(d);
-      m.setHours(0, 0, 0, 0);
-      segs.push({ start: i, count: 0, ms: m.getTime() });
+      segs.push({ start: i, count: 0, ms: startOfDay(d).getTime() });
     }
     segs[segs.length - 1].count++;
   }
