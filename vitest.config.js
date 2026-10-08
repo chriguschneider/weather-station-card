@@ -51,6 +51,7 @@ export default {
         'src/utils/series-cache.ts',
         'src/utils/shared-requests.ts',
         'src/utils/availability-grace.ts',
+        'src/utils/time-zone.ts',
         'src/precip-rate.ts',
         'src/pressure-trend.ts',
         'src/dew-point-comfort.ts',

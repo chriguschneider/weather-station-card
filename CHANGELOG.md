@@ -6,6 +6,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Times follow your Home Assistant server's time zone.** The clock,
+  date, sunrise/sunset, moon and next-rain times, the chart's day and
+  hour labels, and where one day ends and the next begins now use the
+  time zone configured in Home Assistant instead of your browser's.
+  If your server is in Switzerland and you look at the card from the
+  US, you see Swiss time — and the day columns now match Home
+  Assistant's own daily statistics. Nothing changes if you are in the
+  same time zone as your server. (#285)
+
+### Fixed
+
+- West of Greenwich, the Open-Meteo past/forecast day count was off by
+  one day.
+
 ## [2.6.0] — 2026-10-03
 
 ### Added

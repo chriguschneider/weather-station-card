@@ -10,8 +10,8 @@
 // sensor's high-resolution history via the lux/clearsky_lux ratio.
 
 import { clearSkyLuxFactory } from './condition-classifier.js';
+import { dayKey, dayOfYear, hourOf, startOfDay } from './utils/time-zone.js';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Date-input shapes the lookup helpers accept. Strings go through `new
  *  Date(...)`; numbers are treated as ms since epoch. */
@@ -83,11 +83,6 @@ function declinationDeg(dayOfYear: number): number {
   return 23.45 * Math.sin(((360 * (284 + dayOfYear)) / 365) * Math.PI / 180);
 }
 
-function dayOfYearOf(date: Date): number {
-  const start = new Date(date.getFullYear(), 0, 0);
-  return Math.floor((date.getTime() - start.getTime()) / DAY_MS);
-}
-
 /** Astronomical day length in hours for a given latitude and date.
  *  Standard sunrise-equation: cos(H₀) = -tan(φ)·tan(δ), day length =
  *  2 H₀ / 15° per hour. No atmospheric-refraction correction (~6 min
@@ -100,7 +95,7 @@ export function dayLengthHours(latDeg: number | null | undefined, date: DateLike
   if (!Number.isFinite(latDeg)) return 12;
   const d = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(d.getTime())) return 12;
-  const decl = declinationDeg(dayOfYearOf(d)) * Math.PI / 180;
+  const decl = declinationDeg(dayOfYear(d)) * Math.PI / 180;
   const lat = (latDeg as number) * Math.PI / 180;
   const cosH = -Math.tan(lat) * Math.tan(decl);
   if (cosH <= -1) return 24;
@@ -128,17 +123,14 @@ export function normalizeSunshineValue(raw: unknown): number | null {
   return n >= 30 ? n / 3600 : n;
 }
 
-/** Local-date string YYYY-MM-DD for matching daily attribute entries.
- *  Open-Meteo's `daily=…` response uses local civil dates (with
- *  `timezone=auto`), so matching has to be done in the user's local
- *  timezone — not UTC. */
+/** Civil-date string YYYY-MM-DD for matching daily attribute entries.
+ *  Open-Meteo's `daily=…` response uses the civil dates of the
+ *  requested coordinates (`timezone=auto`) — the HA location, so the
+ *  match runs in the card's (server) zone, not UTC or the browser's. */
 export function localDateString(date: DateLike): string | null {
   const d = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(d.getTime())) return null;
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return dayKey(d);
 }
 
 /** Local-hour string YYYY-MM-DDTHH:00 for matching hourly attribute
@@ -148,11 +140,7 @@ export function localDateString(date: DateLike): string | null {
 export function localHourString(date: DateLike): string | null {
   const d = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(d.getTime())) return null;
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const h = String(d.getHours()).padStart(2, '0');
-  return `${y}-${m}-${day}T${h}:00`;
+  return `${dayKey(d)}T${String(hourOf(d)).padStart(2, '0')}:00`;
 }
 
 /** Find an entry by hourly key in an array of {datetime, value} items.
@@ -282,8 +270,7 @@ export function attachSunshine<T extends SunshineForecastEntry>(
       out.day_length = 1;
       cap = 1;
     } else {
-      const entryMidnight = new Date(dt);
-      entryMidnight.setHours(0, 0, 0, 0);
+      const entryMidnight = startOfDay(new Date(dt));
       const dateKey = localDateString(entryMidnight);
       out.day_length = dayLengthHours(latitude, entryMidnight);
       value = findInDateArray(dailyValues, dateKey);
@@ -499,9 +486,7 @@ export function sunshineFromLuxHistory(
     // is rare in practice — when the sun is up across midnight the
     // station is in polar summer, far from this card's typical
     // user; ignore the edge case and let the start day take credit.)
-    const d = new Date(s.ts);
-    d.setHours(0, 0, 0, 0);
-    const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const dateKey = dayKey(s.ts);
     totals.set(dateKey, (totals.get(dateKey) ?? 0) + gap);
   }
 

@@ -19,6 +19,7 @@
 
 import { getDateTimeFormat } from '../../utils/intl-cache.js';
 import type { ChartLike, ChartPlugin, CssStyleLike, PluginCardConfig, PluginRenderData } from './_shared.js';
+import { startOfDay, zonedParts } from '../../utils/time-zone.js';
 
 export interface DailyTickLabelsPluginOpts {
   config: PluginCardConfig;
@@ -163,7 +164,7 @@ function drawDailyDateWeekdayLabels(chart: ChartLike, ctx: RenderContext): void 
   const weekdayColor = ctx.config.forecast.chart_datetime_color || ctx.textColor;
   const dateColor = ctx.style.getPropertyValue('--secondary-text-color') || weekdayColor;
 
-  const todayMs = (() => { const t = new Date(); t.setHours(0, 0, 0, 0); return t.getTime(); })();
+  const todayMs = startOfDay(Date.now()).getTime();
   c.save();
   c.textAlign = 'center';
   c.textBaseline = 'bottom';
@@ -239,9 +240,8 @@ export function createDailyTickLabelsPlugin({
     const datetime = data.dateTime ? data.dateTime[dataIdx] : undefined;
     if (!datetime) return null;
     const d = new Date(datetime);
-    const hour = d.getHours();
-    const minutes = d.getMinutes();
-    const dKeyDate = new Date(d); dKeyDate.setHours(0, 0, 0, 0);
+    const { hour, minute: minutes } = zonedParts(d);
+    const dKeyDate = startOfDay(d);
     const info: TickInfo = {
       hour,
       minutes,

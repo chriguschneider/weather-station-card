@@ -69,3 +69,4 @@ status line.
 - [0023 — Editor collapses into expansion panels with state summaries](./0023-editor-expansion-panels.md) (Accepted)
 - [0024 — Toggle pills replace `ha-form` multi-selects in the editor](./0024-toggle-pills-for-editor-multi-selects.md) (Accepted)
 - [0025 — Attribute row layout as a list of columns](./0025-attribute-row-layout.md) (Accepted)
+- [0026 — Calendar math and displayed times follow the HA server's time zone](./0026-server-time-zone.md) (Accepted)
