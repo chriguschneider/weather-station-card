@@ -30,6 +30,13 @@ export const DEFAULTS_FORECAST = {
   precipitation_color: 'rgba(132, 209, 253, 1.0)',
   show_sunshine: false,
   sunshine_color: 'rgba(255, 215, 0, 1.0)',
+  // Opt-in: print the chance of rain next to the amount in the per-
+  // column precip pill ("4.2 / 85" over "mm  %"). Read from the weather
+  // entity's forecast when it carries `precipitation_probability`,
+  // otherwise overlaid from Open-Meteo on the same request the sunshine
+  // bar makes (ADR-0027). Off by default because the fallback path can
+  // add a network call that sends the HA location to Open-Meteo. (#288)
+  show_precip_probability: false,
   // Opt-in: when the card has a weather entity but NO station sensors,
   // backfill the past/station chart block from Open-Meteo's historical
   // model data (temperature, precipitation, wind, condition) instead of

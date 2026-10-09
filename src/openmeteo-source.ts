@@ -21,6 +21,7 @@
 // Unit-tested against a mocked fetch — see tests/openmeteo-source.test.js.
 
 import type { DailySunshineEntry, HourlySunshineEntry } from './sunshine-source.js';
+import type { DailyProbabilityEntry, HourlyProbabilityEntry } from './precip-probability.js';
 import type { ForecastEntry } from './forecast-utils.js';
 import { wmoToCondition } from './weather-code-map.js';
 import { dedupeRequest } from './utils/shared-requests.js';
@@ -29,12 +30,14 @@ import { startOfDay, zonedDate } from './utils/time-zone.js';
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 
 // Daily variables requested in one call. `sunshine_duration` feeds the
-// sunshine overlay; the rest feed the no-station past block (ADR-0015).
+// sunshine overlay, `precipitation_probability_max` the chance-of-rain
+// pill (ADR-0027); the rest feed the no-station past block (ADR-0015).
 // Always requested together — Open-Meteo does not charge per field and
 // keeping the request shape constant keeps one cache entry valid for
-// both features.
+// all three features.
 const DAILY_FIELDS = [
   'sunshine_duration',
+  'precipitation_probability_max',
   'temperature_2m_max',
   'temperature_2m_min',
   'precipitation_sum',
@@ -45,10 +48,12 @@ const DAILY_FIELDS = [
 ].join(',');
 
 // Hourly variables requested when `includeHourly` is on (hourly / today
-// chart modes). `sunshine_duration` feeds the sunshine overlay; the
-// rest feed the no-station past block at hourly resolution (ADR-0015).
+// chart modes). `sunshine_duration` feeds the sunshine overlay,
+// `precipitation_probability` the chance-of-rain pill; the rest feed
+// the no-station past block at hourly resolution (ADR-0015).
 const HOURLY_FIELDS = [
   'sunshine_duration',
+  'precipitation_probability',
   'temperature_2m',
   'precipitation',
   'weather_code',
@@ -91,6 +96,7 @@ export interface OpenMeteoResponse {
   daily?: {
     time?: string[];
     sunshine_duration?: Array<number | null>;
+    precipitation_probability_max?: Array<number | null>;
     temperature_2m_max?: Array<number | null>;
     temperature_2m_min?: Array<number | null>;
     precipitation_sum?: Array<number | null>;
@@ -102,6 +108,7 @@ export interface OpenMeteoResponse {
   hourly?: {
     time?: string[];
     sunshine_duration?: Array<number | null>;
+    precipitation_probability?: Array<number | null>;
     temperature_2m?: Array<number | null>;
     precipitation?: Array<number | null>;
     weather_code?: Array<number | null>;
@@ -120,6 +127,13 @@ interface CachedPayload {
    *  missing field just forces one refetch via `isStale`. */
   dailyForecast?: ForecastEntry[];
   hourlyForecast?: ForecastEntry[];
+  /** Chance-of-rain arrays (ADR-0027). Absent in caches written before
+   *  the feature landed — `isStale` then forces one refetch. */
+  dailyProbability?: DailyProbabilityEntry[];
+  hourlyProbability?: HourlyProbabilityEntry[];
+  /** Set by every save since the chance-of-rain fields joined the
+   *  request; its absence marks a pre-ADR-0027 cache. */
+  probabilityFetched?: boolean;
   lastFetchMs?: number;
 }
 
@@ -208,6 +222,36 @@ export function parseHourlySunshine(response: OpenMeteoResponse | null | undefin
   const out: HourlySunshineEntry[] = [];
   for (let i = 0; i < t.length; i++) {
     if (v[i] != null) out.push({ datetime: t[i], value: v[i] });
+  }
+  return out;
+}
+
+/** Daily chance of rain: Open-Meteo's `precipitation_probability_max`
+ *  (integer %, the wettest hour of the civil date) as `{date, value}`
+ *  pairs for `attachPrecipProbability`. Null cells are skipped. */
+export function parseDailyProbability(response: OpenMeteoResponse | null | undefined): DailyProbabilityEntry[] {
+  if (!response?.daily) return [];
+  const t = response.daily.time ?? [];
+  const v = response.daily.precipitation_probability_max ?? [];
+  const out: DailyProbabilityEntry[] = [];
+  for (let i = 0; i < t.length; i++) {
+    const n = numOrNull(v[i]);
+    if (n != null && t[i]) out.push({ date: t[i], value: n });
+  }
+  return out;
+}
+
+/** Hourly chance of rain (`precipitation_probability`, integer %) as
+ *  `{datetime, value}` pairs keyed by Open-Meteo's "YYYY-MM-DDTHH:MM"
+ *  HA-location timestamps. */
+export function parseHourlyProbability(response: OpenMeteoResponse | null | undefined): HourlyProbabilityEntry[] {
+  if (!response?.hourly) return [];
+  const t = response.hourly.time ?? [];
+  const v = response.hourly.precipitation_probability ?? [];
+  const out: HourlyProbabilityEntry[] = [];
+  for (let i = 0; i < t.length; i++) {
+    const n = numOrNull(v[i]);
+    if (n != null && t[i]) out.push({ datetime: t[i], value: n });
   }
   return out;
 }
@@ -455,6 +499,13 @@ export class OpenMeteoSource {
   private _hourly: HourlySunshineEntry[] = [];
   private _dailyForecast: ForecastEntry[] = [];
   private _hourlyForecast: ForecastEntry[] = [];
+  private _dailyProbability: DailyProbabilityEntry[] = [];
+  private _hourlyProbability: HourlyProbabilityEntry[] = [];
+  /** True once a fetch that REQUESTED the chance-of-rain fields has
+   *  completed (or a cache written by one was rehydrated). Tracked as
+   *  a flag, not via array length, so a response without the fields
+   *  does not trigger a refetch on every tick. */
+  private _probabilityFetched = false;
   private _lastFetchMs = 0;
   private _inFlight: Promise<void> | null = null;
   private _abort: AbortController | null = null;
@@ -492,6 +543,9 @@ export class OpenMeteoSource {
         if (Array.isArray(cached.hourly)) this._hourly = cached.hourly;
         if (Array.isArray(cached.dailyForecast)) this._dailyForecast = cached.dailyForecast;
         if (Array.isArray(cached.hourlyForecast)) this._hourlyForecast = cached.hourlyForecast;
+        if (Array.isArray(cached.dailyProbability)) this._dailyProbability = cached.dailyProbability;
+        if (Array.isArray(cached.hourlyProbability)) this._hourlyProbability = cached.hourlyProbability;
+        this._probabilityFetched = cached.probabilityFetched === true;
         this._lastFetchMs = Number(cached.lastFetchMs) || 0;
       }
     }
@@ -520,6 +574,16 @@ export class OpenMeteoSource {
     return this._hourlyForecast;
   }
 
+  /** Chance-of-rain arrays for `attachPrecipProbability` (ADR-0027):
+   *  one `{date, value}` per civil date, and — with `includeHourly` —
+   *  one `{datetime, value}` per hour. */
+  getDailyProbability(): DailyProbabilityEntry[] {
+    return this._dailyProbability;
+  }
+  getHourlyProbability(): HourlyProbabilityEntry[] {
+    return this._hourlyProbability;
+  }
+
   /** True when we should kick off a refresh (cache empty for the
    *  currently-requested granularity, or stale). */
   isStale(now: number = this._now()): boolean {
@@ -527,6 +591,9 @@ export class OpenMeteoSource {
     // A cache written before the no-station past block landed (ADR-0015)
     // has no dailyForecast — refetch once so the station block can fill.
     if (!this._dailyForecast.length) return true;
+    // Same one-time refetch for caches written before the chance-of-
+    // rain fields were requested (ADR-0027).
+    if (!this._probabilityFetched) return true;
     if (this.includeHourly && !this._hourly.length) return true;
     if (this.includeHourly && !this._hourlyForecast.length) return true;
     return now - this._lastFetchMs >= REFRESH_TTL_MS;
@@ -594,12 +661,18 @@ export class OpenMeteoSource {
         this._hourly = this.includeHourly ? parseHourlySunshine(json) : [];
         this._dailyForecast = buildDailyForecast(json);
         this._hourlyForecast = this.includeHourly ? buildHourlyForecast(json) : [];
+        this._dailyProbability = parseDailyProbability(json);
+        this._hourlyProbability = this.includeHourly ? parseHourlyProbability(json) : [];
+        this._probabilityFetched = true;
         this._lastFetchMs = this._now();
         saveToStorage(this._storage, this.latitude as number, this.longitude as number, {
           daily: this._daily,
           hourly: this._hourly,
           dailyForecast: this._dailyForecast,
           hourlyForecast: this._hourlyForecast,
+          dailyProbability: this._dailyProbability,
+          hourlyProbability: this._hourlyProbability,
+          probabilityFetched: true,
           lastFetchMs: this._lastFetchMs,
         });
         if (this._listener) this._listener({ ok: true });

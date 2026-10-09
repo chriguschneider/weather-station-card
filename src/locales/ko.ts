@@ -110,6 +110,8 @@ const ko: LocaleEntry = {
     'show_chart_date': 'x축에 날짜 표시',
     'show_chart_sunshine': '일조 막대',
     'show_chart_sunshine_hint': '일조 시간을 Open-Meteo에서 직접 가져옵니다 (Home Assistant에 설정된 위치 사용). 별도의 센서가 필요 없습니다. 일별 모드에서는 열마다 “Xh” 라벨이 표시되고, 시간별 모드에서는 막대만 표시됩니다 (가득 찬 막대 = 1시간 내내 일조).',
+    'show_chart_precip_probability': '강수 확률',
+    'show_chart_precip_probability_hint': '강수량 라벨에 강수 확률을 양 옆에 함께 표시합니다("4.2 / 85" 위, "mm %" 아래). 날씨 엔티티의 예보에 값이 있으면 그 값을, 없으면 Open-Meteo에서 가져옵니다(Home Assistant에 설정된 위치 사용). 비가 없는 날은 30 % 이상일 때 확률만 표시합니다.',
     'show_chart_mode_toggle': '보기 전환 버튼',
     'sunshine_availability': '일조 데이터 제공 범위: 과거 {past}일, 예보 {future}일 (Open-Meteo).',
     'sunshine_availability_pending': '일조: 데이터를 아직 불러오는 중입니다 — 저장 후 편집기를 다시 열어 주세요.',

@@ -110,6 +110,8 @@ const fi: LocaleEntry = {
     'show_chart_date': 'Päivämäärä x-akselilla',
     'show_chart_sunshine': 'Auringonpaistepalkki',
     'show_chart_sunshine_hint': 'Hakee auringonpaisteajan suoraan Open-Meteosta (käyttäen Home Assistantin sijaintia). Lisäantureita ei tarvita. Päivänäkymä näyttää ”Xh”-merkinnät sarakkeittain; tuntinäkymä näyttää vain palkit (täysi palkki = täysi tunti aurinkoa).',
+    'show_chart_precip_probability': 'Sateen todennäköisyys',
+    'show_chart_precip_probability_hint': 'Näyttää sateen todennäköisyyden määrän vieressä sademerkinnässä ("4.2 / 85" ja alla "mm %"). Otetaan sääentiteetistä, jos sen ennuste sen antaa, muuten Open-Meteosta (Home Assistantin sijainti). Kuivina päivinä näytetään vain todennäköisyys 30 %:sta alkaen.',
     'show_chart_mode_toggle': 'Näkymän vaihtopainike',
     'sunshine_availability': 'Auringonpaistetietoja saatavilla: {past} päivää taaksepäin, {future} ennustepäivää (Open-Meteo).',
     'sunshine_availability_pending': 'Auringonpaiste: tietoja ladataan vielä — tallenna ja avaa editori uudelleen.',

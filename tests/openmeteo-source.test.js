@@ -5,9 +5,95 @@ import {
   parseHourlySunshine,
   buildDailyForecast,
   buildHourlyForecast,
+  parseDailyProbability,
+  parseHourlyProbability,
   OpenMeteoSource,
   readCachedAvailability,
 } from '../src/openmeteo-source.js';
+
+// ── Chance of rain (#288, ADR-0027) ─────────────────────────────────
+describe('chance-of-rain fields', () => {
+  it('requests precipitation_probability_max daily and precipitation_probability hourly', () => {
+    const url = buildOpenMeteoUrl(46.91, 7.42, 7, 7, true);
+    const p = new URL(url).searchParams;
+    expect(p.get('daily')).toContain('precipitation_probability_max');
+    expect(p.get('hourly')).toContain('precipitation_probability');
+  });
+
+  it('parseDailyProbability maps time/value pairs and skips null cells', () => {
+    const out = parseDailyProbability({
+      daily: {
+        time: ['2026-05-06', '2026-05-07', '2026-05-08'],
+        precipitation_probability_max: [85, null, 20],
+      },
+    });
+    expect(out).toEqual([
+      { date: '2026-05-06', value: 85 },
+      { date: '2026-05-08', value: 20 },
+    ]);
+  });
+
+  it('parseHourlyProbability maps time/value pairs and skips null cells', () => {
+    const out = parseHourlyProbability({
+      hourly: {
+        time: ['2026-05-06T14:00', '2026-05-06T15:00'],
+        precipitation_probability: [70, null],
+      },
+    });
+    expect(out).toEqual([{ datetime: '2026-05-06T14:00', value: 70 }]);
+  });
+
+  it('both parsers return [] for malformed / missing sections', () => {
+    expect(parseDailyProbability(null)).toEqual([]);
+    expect(parseDailyProbability({ daily: {} })).toEqual([]);
+    expect(parseHourlyProbability({})).toEqual([]);
+  });
+
+  it('OpenMeteoSource exposes the parsed arrays and persists them', async () => {
+    const store = new Map();
+    const storage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        daily: { time: ['2026-05-06'], sunshine_duration: [3600], precipitation_probability_max: [85] },
+        hourly: { time: ['2026-05-06T14:00'], sunshine_duration: [1800], precipitation_probability: [70] },
+      }),
+    }));
+    const src = new OpenMeteoSource({ latitude: 46.9, longitude: 7.4, includeHourly: true, fetchImpl, storage });
+    await src.ensureFresh();
+    expect(src.getDailyProbability()).toEqual([{ date: '2026-05-06', value: 85 }]);
+    expect(src.getHourlyProbability()).toEqual([{ datetime: '2026-05-06T14:00', value: 70 }]);
+
+    const src2 = new OpenMeteoSource({ latitude: 46.9, longitude: 7.4, includeHourly: true, fetchImpl, storage });
+    expect(src2.getDailyProbability()).toHaveLength(1);
+    expect(src2.getHourlyProbability()).toHaveLength(1);
+    expect(src2.isStale()).toBe(false);
+  });
+
+  it('a cache written before the fields were requested is stale once', async () => {
+    const store = new Map();
+    const storage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+    const key = 'wsc_sunshine_46.90_7.40';
+    store.set(key, JSON.stringify({
+      daily: [{ date: '2026-05-06', value: 3600 }],
+      dailyForecast: [{ datetime: '2026-05-06T00:00:00.000Z' }],
+      lastFetchMs: Date.now(),
+    }));
+    const src = new OpenMeteoSource({ latitude: 46.9, longitude: 7.4, fetchImpl: null, storage });
+    expect(src.isStale()).toBe(true);
+  });
+
+  it('a response WITHOUT the fields does not keep the source stale', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ daily: { time: ['2026-05-06'], sunshine_duration: [3600] } }),
+    }));
+    const src = new OpenMeteoSource({ latitude: 46.9, longitude: 7.4, fetchImpl, storage: null });
+    await src.ensureFresh();
+    expect(src.getDailyProbability()).toEqual([]);
+    expect(src.isStale()).toBe(false);
+  });
+});
 
 describe('buildOpenMeteoUrl', () => {
   it('hits the forecast endpoint with daily=sunshine_duration', () => {

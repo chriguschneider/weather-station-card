@@ -110,6 +110,8 @@ const pl: LocaleEntry = {
     'show_chart_date': 'Data na osi x',
     'show_chart_sunshine': 'Pasek nasłonecznienia',
     'show_chart_sunshine_hint': 'Pobiera czas nasłonecznienia bezpośrednio z Open-Meteo (na podstawie lokalizacji skonfigurowanej w Home Assistant). Nie wymaga dodatkowych czujników. W trybie dziennym każda kolumna ma etykietę „Xh”; w trybie godzinowym tylko paski (pełny pasek = pełna godzina słońca).',
+    'show_chart_precip_probability': 'Prawdopodobieństwo deszczu',
+    'show_chart_precip_probability_hint': 'Pokazuje prawdopodobieństwo deszczu obok ilości w etykiecie opadów („4.2 / 85” nad „mm %”). Pobierane z encji pogodowej, gdy jej prognoza je podaje, w przeciwnym razie z Open-Meteo (lokalizacja z Home Assistant). W suche dni pokazywane jest samo prawdopodobieństwo od 30 %.',
     'show_chart_mode_toggle': 'Przycisk przełączania widoku',
     'sunshine_availability': 'Dostępne dane o nasłonecznieniu: {past} dni wstecz, {future} dni prognozy (Open-Meteo).',
     'sunshine_availability_pending': 'Nasłonecznienie: dane wciąż się ładują — zapisz i otwórz edytor ponownie.',

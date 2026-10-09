@@ -75,7 +75,10 @@ those same sensors. This card does both:
   in the same per-day layout next to the past chart. Forecast
   temperature lines are dashed and forecast precipitation bars render
   semi-transparent so predicted values read distinctly from measured
-  ones. Span is configurable separately (`forecast_days:`).
+  ones. Span is configurable separately (`forecast_days:`). The
+  precipitation label can also show the **chance of rain** next to the
+  amount (`forecast.show_precip_probability`), taken from the weather
+  entity or, when it has none, from Open-Meteo.
 - A **live main panel** showing the current temperature, condition icon,
   and (optionally) clock, weather attributes, sunrise/sunset and the
   moon — exact illumination percentage on a dynamically drawn disc plus

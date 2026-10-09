@@ -21,6 +21,7 @@ import {
   createDailyTickLabelsPlugin,
   createSunshineLabelPlugin,
   createPrecipLabelPlugin,
+  PROBABILITY_ONLY_MIN,
   createTempLabelsPlugin,
 } from '../src/chart/plugins.js';
 
@@ -654,6 +655,94 @@ describe('createPrecipLabelPlugin', () => {
     const chart2 = precipMockChart({ barCount: 1 });
     p.afterDatasetsDraw(chart2);
     expect(chart2.ctx.fillText).toHaveBeenCalledWith('4.7', expect.any(Number), expect.any(Number));
+  });
+
+  // ── Chance of rain (#288): "4.2 / 85" over "mm %" ────────────────
+  // With data.precipProb present a forecast column's box grows to two
+  // lines. Columns without a probability (measured station days) keep
+  // the one-line box; a dry column gets a chance-only box from
+  // PROBABILITY_ONLY_MIN up.
+  describe('precipProb (two-line box)', () => {
+    const mk = (precip, precipProb) => createPrecipLabelPlugin({
+      config: baseConfig, data: { precip, precipProb },
+      precipUnit: 'mm', precipPerBarColor: ['#0066cc', '#0066cc', '#0066cc'],
+      precipColor: '#0066cc', textColor: '#000', backgroundColor: '#fff',
+    });
+
+    it('prints amount, slash, chance and both units for a wet forecast column', () => {
+      const chart = precipMockChart({ barCount: 1 });
+      mk([4.2], [85]).afterDatasetsDraw(chart);
+      const texts = chart.ctx.fillText.mock.calls.map((c) => c[0]);
+      expect(texts).toEqual(['4.2', '85', '/', 'mm', '%']);
+      expect(chart.ctx.fillRect).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the one-line box when the column has no probability (measured day)', () => {
+      const chart = precipMockChart({ barCount: 1 });
+      mk([4.2], [null]).afterDatasetsDraw(chart);
+      expect(chart.ctx.fillText.mock.calls.map((c) => c[0])).toEqual(['4.2', 'mm']);
+    });
+
+    it('keeps the one-line box when precipProb is absent (row toggle off)', () => {
+      const chart = precipMockChart({ barCount: 1 });
+      mk([4.2], null).afterDatasetsDraw(chart);
+      expect(chart.ctx.fillText.mock.calls.map((c) => c[0])).toEqual(['4.2', 'mm']);
+    });
+
+    it('draws a chance-only box on a dry column at or above the threshold', () => {
+      expect(PROBABILITY_ONLY_MIN).toBe(30);
+      const chart = precipMockChart({ barCount: 2 });
+      mk([0, null], [35, 30]).afterDatasetsDraw(chart);
+      const texts = chart.ctx.fillText.mock.calls.map((c) => c[0]);
+      expect(texts).toEqual(['35', '%', '30', '%']);
+    });
+
+    it('draws nothing on a dry column below the threshold', () => {
+      const chart = precipMockChart({ barCount: 1 });
+      mk([0], [29]).afterDatasetsDraw(chart);
+      expect(chart.ctx.fillText).not.toHaveBeenCalled();
+      expect(chart.ctx.fillRect).not.toHaveBeenCalled();
+    });
+
+    it('rounds and clamps the printed chance', () => {
+      const chart = precipMockChart({ barCount: 2 });
+      mk([1, 1], [84.6, 140]).afterDatasetsDraw(chart);
+      const texts = chart.ctx.fillText.mock.calls.map((c) => c[0]);
+      expect(texts).toContain('85');
+      expect(texts).toContain('100');
+    });
+
+    it('ignores NaN / non-numeric probabilities (one-line box)', () => {
+      const chart = precipMockChart({ barCount: 2 });
+      mk([1, 1], [NaN, 'x']).afterDatasetsDraw(chart);
+      expect(chart.ctx.fillText.mock.calls.map((c) => c[0])).toEqual(['1.0', 'mm', '1.0', 'mm']);
+    });
+
+    it('draws the slash muted and restores full alpha for the rest', () => {
+      const chart = precipMockChart({ barCount: 1 });
+      const alphas = [];
+      const ctx = chart.ctx;
+      ctx.fillText = vi.fn(() => alphas.push(ctx.globalAlpha));
+      ctx.globalAlpha = 1;
+      mk([4.2], [85]).afterDatasetsDraw(chart);
+      // order: '4.2', '85', '/', 'mm', '%'
+      expect(alphas).toEqual([1, 1, 0.55, 1, 1]);
+      expect(ctx.globalAlpha).toBe(1);
+    });
+
+    it('re-reads precipProb from the shared data object on each draw', () => {
+      const data = { precip: [1.2], precipProb: [40] };
+      const p = createPrecipLabelPlugin({
+        config: baseConfig, data,
+        precipUnit: 'mm', precipPerBarColor: ['#0066cc'], precipColor: '#0066cc',
+        textColor: '#000', backgroundColor: '#fff',
+      });
+      p.afterDatasetsDraw(precipMockChart({ barCount: 1 }));
+      data.precipProb = [90];
+      const chart2 = precipMockChart({ barCount: 1 });
+      p.afterDatasetsDraw(chart2);
+      expect(chart2.ctx.fillText).toHaveBeenCalledWith('90', expect.any(Number), expect.any(Number));
+    });
   });
 });
 

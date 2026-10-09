@@ -110,6 +110,8 @@ const hu: LocaleEntry = {
     'show_chart_date': 'Dátum az x-tengelyen',
     'show_chart_sunshine': 'Napsütés-sáv',
     'show_chart_sunshine_hint': 'A napsütés időtartamát közvetlenül az Open-Meteo szolgáltatásból tölti le (a Home Assistantban beállított helyszín alapján). Nincs szükség további szenzorokra. Napi nézetben oszloponként „Xh” felirat jelenik meg; óránkénti nézetben csak sávok láthatók (teli sáv = egy teljes órányi napsütés).',
+    'show_chart_precip_probability': 'Esővalószínűség',
+    'show_chart_precip_probability_hint': 'Az esővalószínűséget mutatja a mennyiség mellett a csapadékcímkében („4.2 / 85” a „mm %” felett). Az időjárás-entitásból jön, ha az előrejelzése tartalmazza, különben az Open-Meteóból (a Home Assistant helye alapján). Száraz napokon 30 %-tól csak a valószínűség jelenik meg.',
     'show_chart_mode_toggle': 'Nézetváltó gomb',
     'sunshine_availability': 'Napsütésadatok elérhetők: {past} múltbeli nap, {future} előrejelzési nap (Open-Meteo).',
     'sunshine_availability_pending': 'Napsütés: az adatok még töltődnek — mentsd el, majd nyisd meg újra a szerkesztőt.',

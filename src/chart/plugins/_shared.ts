@@ -70,6 +70,10 @@ export interface PluginRenderData {
   dateTime?: ReadonlyArray<string | undefined>;
   precip?: ReadonlyArray<number | null | undefined>;
   sunshine?: ReadonlyArray<number | null | undefined> | null;
+  /** Chance of rain per column, 0..100. `null`/absent when the
+   *  `show_precip_probability` row is off — the precip pill then keeps
+   *  its one-line amount-only form. */
+  precipProb?: ReadonlyArray<number | null | undefined> | null;
 }
 
 /** Subset of the card config the plugins read. Loosely typed because

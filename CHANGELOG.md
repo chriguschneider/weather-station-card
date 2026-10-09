@@ -6,6 +6,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Chance of rain in the chart.** Turn on *Chance of rain* in the
+  editor's chart rows (`forecast.show_precip_probability`) and each
+  forecast column's precipitation label shows the probability next
+  to the amount: `4.2 / 85` over `mm %`. The value comes from your
+  weather entity when its forecast provides it (MeteoSwiss,
+  AccuWeather, OpenWeatherMap, …) and from Open-Meteo otherwise.
+  Past, measured columns keep their plain amount; a dry forecast day
+  shows the chance alone from 30 % up. Works in the daily, today and
+  hourly views. Off by default. (#288,
+  [ADR-0027](docs/adr/0027-precip-probability-entity-first.md))
+
 ## [2.7.0] — 2026-10-08
 
 ### Changed

@@ -110,6 +110,8 @@ const da: LocaleEntry = {
     'show_chart_date': 'Dato på x-aksen',
     'show_chart_sunshine': 'Solskinsbjælke',
     'show_chart_sunshine_hint': 'Henter solskinstimer direkte fra Open-Meteo (med den placering, der er indstillet i Home Assistant). Ingen ekstra sensorer nødvendige. Dagsvisningen viser "Xh"-etiketter pr. kolonne; timevisningen viser kun bjælker (fuld bjælke = en fuld times sol).',
+    'show_chart_precip_probability': 'Regnsandsynlighed',
+    'show_chart_precip_probability_hint': 'Viser regnsandsynligheden ved siden af mængden i nedbørsetiketten ("4.2 / 85" over "mm %"). Hentes fra vejrenheden, når dens prognose leverer den, ellers fra Open-Meteo (placering fra Home Assistant). Tørre dage viser kun sandsynligheden fra 30 %.',
     'show_chart_mode_toggle': 'Knap til visningsskift',
     'sunshine_availability': 'Solskinsdata tilgængelige: {past} dage tilbage, {future} dage frem (Open-Meteo).',
     'sunshine_availability_pending': 'Solskin: data indlæses stadig — gem og åbn editoren igen.',

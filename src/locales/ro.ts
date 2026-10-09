@@ -110,6 +110,8 @@ const ro: LocaleEntry = {
     'show_chart_date': 'Data pe axa x',
     'show_chart_sunshine': 'Bară cu ore de soare',
     'show_chart_sunshine_hint': 'Preia orele de soare direct de la Open-Meteo (folosind locația configurată în Home Assistant). Nu sunt necesari senzori suplimentari. Modul zilnic afișează etichete "Xh" pe coloană; modul orar afișează doar bare (bară plină = oră întreagă de soare).',
+    'show_chart_precip_probability': 'Probabilitate de ploaie',
+    'show_chart_precip_probability_hint': 'Afișează probabilitatea de ploaie lângă cantitate în eticheta de precipitații („4.2 / 85” peste „mm %”). Luată din entitatea meteo când prognoza o oferă, altfel de la Open-Meteo (locația configurată în Home Assistant). Zilele uscate arată doar probabilitatea de la 30 % în sus.',
     'show_chart_mode_toggle': 'Buton de comutare a vizualizării',
     'sunshine_availability': 'Date de soare disponibile: {past} zile trecute, {future} zile de prognoză (Open-Meteo).',
     'sunshine_availability_pending': 'Soare: datele se încarcă încă — salvează și redeschide editorul.',

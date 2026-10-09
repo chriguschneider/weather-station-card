@@ -110,6 +110,8 @@ const nl: LocaleEntry = {
     'show_chart_date': 'Datum op de x-as',
     'show_chart_sunshine': 'Zonneschijnbalk',
     'show_chart_sunshine_hint': 'Haalt de zonneschijnduur rechtstreeks op van Open-Meteo (met de locatie die in Home Assistant is ingesteld). Geen extra sensoren nodig. De dagweergave toont "Xh"-labels per kolom; de uurweergave toont alleen balken (volle balk = een vol uur zon).',
+    'show_chart_precip_probability': 'Regenkans',
+    'show_chart_precip_probability_hint': 'Toont de regenkans naast de hoeveelheid in het neerslaglabel ("4.2 / 85" boven "mm %"). Komt uit de weerentiteit als de verwachting die levert, anders van Open-Meteo (locatie uit Home Assistant). Droge dagen tonen alleen de kans vanaf 30 %.',
     'show_chart_mode_toggle': 'Weergave-wisselknop',
     'sunshine_availability': 'Zonneschijngegevens beschikbaar: {past} dagen terug, {future} dagen vooruit (Open-Meteo).',
     'sunshine_availability_pending': 'Zonneschijn: gegevens worden nog geladen — sla op en open de editor opnieuw.',

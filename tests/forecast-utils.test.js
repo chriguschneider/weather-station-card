@@ -402,6 +402,21 @@ describe('aggregateThreeHour', () => {
     return out;
   }
 
+  // Chance of rain (#288, ADR-0027): a block is as likely to be wet as
+  // its wettest hour — max, never sum or mean.
+  it('aggregates precipitation_probability as the MAX of the block', () => {
+    const entries = hourly(3).map((e, i) => ({ ...e, precipitation_probability: [20, 70, 40][i] }));
+    const [block] = aggregateThreeHour(entries);
+    expect(block.precipitation_probability).toBe(70);
+  });
+
+  it('yields a null probability when no hour in the block carries one', () => {
+    const [block] = aggregateThreeHour(hourly(3));
+    expect(block.precipitation_probability).toBe(null);
+    const mixed = hourly(3).map((e, i) => ({ ...e, precipitation_probability: i === 2 ? 55 : null }));
+    expect(aggregateThreeHour(mixed)[0].precipitation_probability).toBe(55);
+  });
+
   it('returns [] for empty / non-array input', () => {
     expect(aggregateThreeHour([])).toEqual([]);
     expect(aggregateThreeHour(null)).toEqual([]);

@@ -118,6 +118,14 @@ src/
 │                              tags every forecast entry with a daily
 │                              or hourly sunshine value.
 │
+├── precip-probability.ts      (v2.8)  Chance-of-rain overlay for the
+│                              precip pill (ADR-0027): keeps the weather
+│                              entity's precipitation_probability, fills
+│                              gaps from Open-Meteo by date / hour, and
+│                              tells main.ts whether the fallback fetch
+│                              is needed at all. Forecast entries only —
+│                              measured columns never get one. Pure.
+│
 ├── openmeteo-source.ts        Open-Meteo API fetcher with localStorage
 │                              caching, abortable on disconnect.
 │
