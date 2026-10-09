@@ -49,6 +49,12 @@ export interface ForecastEntry {
    *  estimator when no recorder sensor or Open-Meteo overlay
    *  resolves a value (#6 Option F3). */
   cloud_coverage?: number | null;
+  /** Chance of precipitation, integer 0..100 %. Standard HA Forecast
+   *  slot (MeteoSwiss, AccuWeather, OpenWeatherMap fill it); the
+   *  Open-Meteo overlay fills the gap for providers that don't
+   *  (ADR-0027). Never present on measured station entries —
+   *  probability is a forecast notion. */
+  precipitation_probability?: number | null;
 }
 
 interface PickHourlyTickOpts {
@@ -648,6 +654,16 @@ function sumOf<T>(slice: ReadonlyArray<T>, key: keyof ForecastEntry): number | n
   return Math.round(values.reduce((a, b) => a + b, 0) * 10) / 10;
 }
 
+// The chance that ANY hour of a block is wet is at least the wettest
+// hour's chance — the max is the conservative block figure, and the
+// same rule MeteoSwiss uses to derive its daily value from the hourly
+// 3-hour windows. Summing or averaging would be wrong for a probability.
+function maxOf<T>(slice: ReadonlyArray<T>, key: keyof ForecastEntry): number | null {
+  const values = collectNumeric(slice, key);
+  if (!values.length) return null;
+  return Math.max(...values);
+}
+
 function modeOf<T>(slice: ReadonlyArray<T>, key: keyof ForecastEntry): string {
   const counts = new Map<string, number>();
   for (const e of slice) {
@@ -694,6 +710,7 @@ function aggregateBlock<T extends Partial<ForecastEntry>>(
     // Capped against day_length=3 (set by the caller) when the chart
     // computes the bar fraction.
     sunshine: sumOf(slice, 'sunshine'),
+    precipitation_probability: maxOf(slice, 'precipitation_probability'),
     wind_speed: meanOf(slice, 'wind_speed'),
     wind_gust_speed: meanOf(slice, 'wind_gust_speed'),
     wind_bearing: meanOf(slice, 'wind_bearing'),

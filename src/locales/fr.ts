@@ -115,6 +115,8 @@ const fr: LocaleEntry = {
     'show_chart_date': 'Date sur l’axe X',
     'show_chart_sunshine': 'Barre d’ensoleillement',
     'show_chart_sunshine_hint': 'Récupère la durée d’ensoleillement directement depuis Open-Meteo (avec la localisation configurée dans Home Assistant). Aucun capteur supplémentaire requis. Le mode quotidien affiche une étiquette « Xh » par colonne ; le mode horaire n’affiche que des barres (barre pleine = heure entière de soleil).',
+    'show_chart_precip_probability': 'Probabilité de pluie',
+    'show_chart_precip_probability_hint': 'Affiche la probabilité de pluie à côté de la quantité dans l’étiquette de précipitations (« 4.2 / 85 » au-dessus de « mm % »). Prise dans l’entité météo si sa prévision la fournit, sinon depuis Open-Meteo (position configurée dans Home Assistant). Les jours secs n’affichent que la probabilité à partir de 30 %.',
     'show_chart_mode_toggle': 'Bouton de changement de vue',
     'sunshine_availability': 'Données d’ensoleillement disponibles : {past} jours passés, {future} jours de prévision (Open-Meteo).',
     'sunshine_availability_pending': 'Ensoleillement : données en cours de chargement — enregistrez puis rouvrez l’éditeur.',

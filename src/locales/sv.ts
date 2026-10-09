@@ -110,6 +110,8 @@ const sv: LocaleEntry = {
     'show_chart_date': 'Datum på x-axeln',
     'show_chart_sunshine': 'Solskensstapel',
     'show_chart_sunshine_hint': 'Hämtar solskenstid direkt från Open-Meteo (med platsen som är inställd i Home Assistant). Inga extra sensorer krävs. Dagsvyn visar "Xh"-etiketter per kolumn; timvyn visar endast staplar (full stapel = en hel timme sol).',
+    'show_chart_precip_probability': 'Regnsannolikhet',
+    'show_chart_precip_probability_hint': 'Visar regnsannolikheten bredvid mängden i nederbördsetiketten ("4.2 / 85" över "mm %"). Hämtas från väderentiteten när dess prognos har den, annars från Open-Meteo (plats från Home Assistant). Torra dagar visar bara sannolikheten från 30 %.',
     'show_chart_mode_toggle': 'Vyväxlingsknapp',
     'sunshine_availability': 'Solskensdata tillgängliga: {past} dagar bakåt, {future} dagar framåt (Open-Meteo).',
     'sunshine_availability_pending': 'Solsken: data läses fortfarande in — spara och öppna redigeraren igen.',

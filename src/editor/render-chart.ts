@@ -15,15 +15,17 @@ import type { EditorLike, EditorContext, TogglePath } from './types.js';
 import { renderEditorPanel } from './expansion-panel.js';
 import { renderTogglePills } from './toggle-pills.js';
 
-// The six auxiliary chart rows, as multi-select entries. `def` mirrors
-// DEFAULTS_FORECAST (opt-out rows are true, sunshine is opt-in).
+// The seven auxiliary chart rows, as multi-select entries. `def` mirrors
+// DEFAULTS_FORECAST (opt-out rows are true, sunshine and the chance of
+// rain are opt-in).
 export const CHART_ROW_PATHS: ReadonlyArray<TogglePath & { labelKey: string }> = [
-  { path: 'forecast.condition_icons',  def: true,  labelKey: 'show_chart_icons' },
-  { path: 'forecast.show_wind_arrow',  def: true,  labelKey: 'show_chart_wind_direction' },
-  { path: 'forecast.show_wind_speed',  def: true,  labelKey: 'show_chart_wind_speed' },
-  { path: 'forecast.show_date',        def: true,  labelKey: 'show_chart_date' },
-  { path: 'forecast.show_sunshine',    def: false, labelKey: 'show_chart_sunshine' },
-  { path: 'forecast.show_mode_toggle', def: true,  labelKey: 'show_chart_mode_toggle' },
+  { path: 'forecast.condition_icons',          def: true,  labelKey: 'show_chart_icons' },
+  { path: 'forecast.show_wind_arrow',          def: true,  labelKey: 'show_chart_wind_direction' },
+  { path: 'forecast.show_wind_speed',          def: true,  labelKey: 'show_chart_wind_speed' },
+  { path: 'forecast.show_date',                def: true,  labelKey: 'show_chart_date' },
+  { path: 'forecast.show_sunshine',            def: false, labelKey: 'show_chart_sunshine' },
+  { path: 'forecast.show_precip_probability',  def: false, labelKey: 'show_chart_precip_probability' },
+  { path: 'forecast.show_mode_toggle',         def: true,  labelKey: 'show_chart_mode_toggle' },
 ];
 
 const leafOf = (path: string): string => path.split('.').pop() as string;
@@ -136,6 +138,9 @@ export function renderChartSection(editor: EditorLike, ctx: EditorContext): Temp
       ${fcfg.show_sunshine === true ? html`
         <div class="hint">${t('show_chart_sunshine_hint')}</div>
         <div>${editor._renderSunshineAvailabilityHint(cfg, t)}</div>
+      ` : ''}
+      ${fcfg.show_precip_probability === true ? html`
+        <div class="hint">${t('show_chart_precip_probability_hint')}</div>
       ` : ''}
     </div>
 

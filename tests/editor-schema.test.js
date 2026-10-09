@@ -328,15 +328,15 @@ describe('renderChartSection (schema-driven)', () => {
     ]);
   });
 
-  it('collapses the six chart rows into one pill row', () => {
+  it('collapses the seven chart rows into one pill row', () => {
     const container = renderInto(renderChartSection, editor, makeCtx());
     expect(pillValues(container, 'chart_rows')).toEqual([
       'condition_icons', 'show_wind_arrow', 'show_wind_speed',
-      'show_date', 'show_sunshine', 'show_mode_toggle',
+      'show_date', 'show_sunshine', 'show_precip_probability', 'show_mode_toggle',
     ]);
   });
 
-  it('pre-selects the rows that are on (opt-out rows on, sunshine off by default)', () => {
+  it('pre-selects the rows that are on (opt-out rows on, sunshine and chance of rain off by default)', () => {
     const container = renderInto(renderChartSection, editor, makeCtx());
     expect(pillsOn(container, 'chart_rows')).toEqual([
       'condition_icons', 'show_wind_arrow', 'show_wind_speed',

@@ -110,6 +110,8 @@ const es: LocaleEntry = {
     'show_chart_date': 'Fecha en el eje X',
     'show_chart_sunshine': 'Barra de sol',
     'show_chart_sunshine_hint': 'Obtiene las horas de sol directamente de Open-Meteo (usando la ubicación configurada en Home Assistant). No se necesitan sensores adicionales. El modo diario muestra etiquetas "Xh" por columna; el modo por horas muestra solo barras (barra llena = hora completa de sol).',
+    'show_chart_precip_probability': 'Probabilidad de lluvia',
+    'show_chart_precip_probability_hint': 'Muestra la probabilidad de lluvia junto a la cantidad en la etiqueta de precipitación ("4.2 / 85" sobre "mm %"). Se toma de la entidad meteorológica si su pronóstico la incluye; si no, de Open-Meteo (ubicación configurada en Home Assistant). Los días secos muestran solo la probabilidad a partir del 30 %.',
     'show_chart_mode_toggle': 'Botón para cambiar de vista',
     'sunshine_availability': 'Datos de sol disponibles: {past} días pasados, {future} días de previsión (Open-Meteo).',
     'sunshine_availability_pending': 'Horas de sol: los datos aún se están cargando — guarda y vuelve a abrir el editor.',

@@ -77,6 +77,10 @@ export interface BuildChartOpts {
    *  of this render module; draw.ts only consumes the number. */
   visibleBars: number;
   inPreview?: boolean;
+  /** Extra bottom padding in CSS px, on top of the 14 px the one-line
+   *  precip box needs. The orchestrator passes the two-line box's
+   *  extra when `forecast.show_precip_probability` is on (#288). */
+  extraBottomPad?: number;
 }
 
 /** Public surface mirroring Chart.js's instance API the rest of the
@@ -849,8 +853,9 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
     // the boxes are centered on the PrecipAxis-0 line, so half their
     // height (~8 px) sits below it. Without padding they clip into
     // the canvas edge. Matches Chart.js's `layout.padding.bottom: 10`
-    // from the pre-uPlot setup.
-    padding: [4, 0, 14, 0],
+    // from the pre-uPlot setup. The two-line precip box (chance of
+    // rain, #288) hangs ~3 px further and adds its extra here.
+    padding: [4, 0, 14 + (opts.extraBottomPad ?? 0), 0],
     plugins: [uplotPlugin],
   };
 

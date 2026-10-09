@@ -74,6 +74,7 @@ const REQUIRED_EDITOR_KEYS = [
   // chart rows + hints
   'show_chart_icons', 'show_chart_wind_direction', 'show_chart_wind_speed',
   'show_chart_date', 'show_chart_sunshine', 'show_chart_sunshine_hint',
+  'show_chart_precip_probability', 'show_chart_precip_probability_hint',
   'show_chart_mode_toggle', 'sunshine_availability',
   'sunshine_availability_pending', 'sunshine_availability_warning',
   'openmeteo_history_hint', 'openmeteo_history_unavailable',

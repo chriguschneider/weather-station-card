@@ -28,6 +28,8 @@ export {
 
 export {
   createPrecipLabelPlugin,
+  PROBABILITY_ONLY_MIN,
+  PROBABILITY_EXTRA_BOTTOM_PAD,
   type PrecipLabelPluginOpts,
 } from './plugins/precip-label.js';
 

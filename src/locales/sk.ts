@@ -110,6 +110,8 @@ const sk: LocaleEntry = {
     'show_chart_date': 'Dátum na osi x',
     'show_chart_sunshine': 'Pruh slnečného svitu',
     'show_chart_sunshine_hint': 'Načítava trvanie slnečného svitu priamo z Open-Meteo (podľa polohy nastavenej v Home Assistant). Nie sú potrebné žiadne ďalšie senzory. Denný režim zobrazuje pri každom stĺpci popisok „Xh“; hodinový režim iba pruhy (plný pruh = celá hodina slnka).',
+    'show_chart_precip_probability': 'Pravdepodobnosť dažďa',
+    'show_chart_precip_probability_hint': 'Zobrazí pravdepodobnosť dažďa vedľa množstva v popise zrážok („4.2 / 85“ nad „mm %“). Berie sa z entity počasia, ak ju jej predpoveď poskytuje, inak z Open-Meteo (poloha z Home Assistant). Suché dni zobrazujú len pravdepodobnosť od 30 %.',
     'show_chart_mode_toggle': 'Tlačidlo prepínania zobrazenia',
     'sunshine_availability': 'Dostupné údaje o slnečnom svite: {past} dní dozadu, {future} dní predpovede (Open-Meteo).',
     'sunshine_availability_pending': 'Slnečný svit: údaje sa ešte načítavajú — uložte a znova otvorte editor.',

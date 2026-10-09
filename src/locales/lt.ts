@@ -110,6 +110,8 @@ const lt: LocaleEntry = {
     'show_chart_date': 'Data x ašyje',
     'show_chart_sunshine': 'Saulės juosta',
     'show_chart_sunshine_hint': 'Saulės spindėjimo trukmę gauna tiesiai iš Open-Meteo (naudojama Home Assistant nustatyta vietovė). Papildomų jutiklių nereikia. Dienos režimu prie kiekvieno stulpelio rodoma „Xh“ žyma; valandiniu režimu rodomos tik juostos (pilna juosta = visa valanda saulės).',
+    'show_chart_precip_probability': 'Lietaus tikimybė',
+    'show_chart_precip_probability_hint': 'Rodo lietaus tikimybę šalia kiekio kritulių žymoje („4.2 / 85“ virš „mm %“). Imama iš orų objekto, jei jo prognozė ją pateikia, kitaip iš Open-Meteo (Home Assistant nustatyta vietovė). Sausomis dienomis nuo 30 % rodoma tik tikimybė.',
     'show_chart_mode_toggle': 'Rodinio perjungimo mygtukas',
     'sunshine_availability': 'Saulės duomenys: {past} d. praeities, {future} d. prognozės (Open-Meteo).',
     'sunshine_availability_pending': 'Saulė: duomenys dar kraunami — išsaugokite ir atverkite redaktorių iš naujo.',

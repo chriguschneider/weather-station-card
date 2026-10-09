@@ -15,6 +15,9 @@ export interface CardStylesOpts {
   titlePresent: boolean;
   labelsSmallSize: number;
   labelsBaseSize: number;
+  /** Extra chart bottom padding the two-line precip box adds (#288);
+   *  the mode-toggle / jump-to-now buttons follow the baseline up. */
+  extraBottomPad?: number;
 }
 
 // The generated sheet is ~10 KB of string concatenation and render()
@@ -29,6 +32,7 @@ export function cardStyles(opts: CardStylesOpts): string {
   const key = [
     opts.iconsSize, opts.currentTempSize, opts.timeSize, opts.dayDateSize,
     opts.chartHeight, opts.titlePresent, opts.labelsSmallSize, opts.labelsBaseSize,
+    opts.extraBottomPad ?? 0,
   ].join('|');
   const hit = styleCache.get(key);
   if (hit !== undefined) return hit;
@@ -49,6 +53,7 @@ function buildCardStyles({
   titlePresent,
   labelsSmallSize,
   labelsBaseSize,
+  extraBottomPad = 0,
 }: CardStylesOpts): string {
   return `
     ha-icon {
@@ -280,10 +285,12 @@ function buildCardStyles({
      * date labels at the top, and visually aligned with the
      * precip labels. Vertical centring uses chartHeight - 15 so the
      * 30 px button sits centred on Chart.js's precip-axis 0-line
-     * (chartArea.bottom ≈ chartHeight - 10 due to layout.padding.bottom). */
+     * (chartArea.bottom ≈ chartHeight - 10 due to layout.padding.bottom).
+     * The two-line precip box pushes that baseline up by extraBottomPad
+     * (draw.ts); the buttons follow so they stay centred on it. */
     .mode-toggle, .jump-to-now {
       position: absolute;
-      top: ${chartHeight - 30}px;
+      top: ${chartHeight - 30 - extraBottomPad}px;
       width: 30px;
       height: 30px;
       border-radius: 50%;

@@ -31,6 +31,7 @@ import { getThemeTokens } from '../utils/theme-tokens.js';
 import { sunshineFractions } from '../sunshine-source.js';
 import { buildChart, precipCeiling, type UplotChart } from './draw.js';
 import { coerceNumericSeries } from './sanitize.js';
+import { PROBABILITY_EXTRA_BOTTOM_PAD } from './plugins/precip-label.js';
 import {
   createSeparatorPlugin,
   createDailyTickLabelsPlugin,
@@ -62,6 +63,7 @@ interface ForecastChartData extends PluginRenderData {
 interface OrchestratorConfig extends PluginCardConfig {
   forecast: PluginCardConfig['forecast'] & {
     show_sunshine?: boolean;
+    show_precip_probability?: boolean;
     sunshine_color?: string;
     precipitation_color?: string;
     precip_bar_size?: number;
@@ -634,6 +636,11 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
     // only consumes the resolved number. 'today' is pinned to 8 bars.
     visibleBars: effectiveVisibleBars(config as { forecast?: { type?: string; number_of_forecasts?: number | string } }),
     inPreview: card._isInPreview === true,
+    // The two-line precip box (chance of rain, #288) hangs further
+    // below the baseline than the one-line box.
+    extraBottomPad: config.forecast.show_precip_probability === true
+      ? PROBABILITY_EXTRA_BOTTOM_PAD
+      : 0,
   });
   card._chartPhase = null;
   return undefined;

@@ -71,6 +71,8 @@ import {
 } from './forecast-utils.js';
 import { overlayFromOpenMeteo, sunshineFractions } from './sunshine-source.js';
 import { OpenMeteoSource } from './openmeteo-source.js';
+import { forecastHasProbability, overlayPrecipProbability } from './precip-probability.js';
+import { PROBABILITY_EXTRA_BOTTOM_PAD } from './chart/plugins/precip-label.js';
 import { safeQuery } from './utils/safe-query.js';
 import { parseNumericSafe } from './utils/numeric.js';
 import { setupScrollUx } from './scroll-ux.js';
@@ -1799,7 +1801,7 @@ async _refreshPressureDelta(): Promise<void> {
     // + daily flows benefit too. Forecast here is already strictly
     // after station's last hour.
     const merged = overlayFromOpenMeteo(
-      [...station, ...forecast],
+      [...station, ...this._withPrecipProbability(forecast, 0, 'hourly')],
       this._hass,
       this._openMeteoSource,
       'hourly',
@@ -1855,7 +1857,7 @@ async _refreshPressureDelta(): Promise<void> {
       ? Number(cm.sunshine_cloud_exponent)
       : 1.7;
     this.forecasts = overlayFromOpenMeteo(
-      [...station, ...forecast],
+      [...station, ...this._withPrecipProbability(forecast, 0, granularity)],
       this._hass,
       this._openMeteoSource,
       granularity,
@@ -1863,12 +1865,27 @@ async _refreshPressureDelta(): Promise<void> {
     );
   }
 
+  // Chance-of-rain overlay for the precip pill (#288, ADR-0027). Only
+  // the entries from `fromIndex` on are forecast — measured station
+  // entries never get a probability. Entity-provided values are kept
+  // (normalized); gaps are filled from the Open-Meteo source when one
+  // exists. No-op while the row toggle is off.
+  // deno-lint-ignore no-explicit-any
+  _withPrecipProbability(entries: any[], fromIndex: number, granularity: 'daily' | 'hourly'): any[] {
+    if (this.config?.forecast?.show_precip_probability !== true) return entries;
+    if (!entries.length || fromIndex >= entries.length) return entries;
+    const head = entries.slice(0, fromIndex);
+    const tail = overlayPrecipProbability(entries.slice(fromIndex), this._openMeteoSource, granularity);
+    return head.length ? [...head, ...tail] : tail;
+  }
+
   // Async sunshine-arrival path. Updates this.forecasts in place with
   // the freshly-fetched sunshine values and pushes them through the
   // existing chart via updateChart (no destroy + rebuild). Falls back to
   // _refreshForecasts when the chart hasn't been built yet or when the
   // forecast type is 'today' (whose 3-hour aggregation rebuilds the
-  // whole forecasts array, not just the sunshine column).
+  // whole forecasts array, not just the sunshine column). The chance-
+  // of-rain overlay (#288) rides the same path.
   _overlaySunshineOnExisting(): void {
     if (!this.forecasts || !this.forecastChart) {
       this._refreshForecasts();
@@ -1886,15 +1903,34 @@ async _refreshPressureDelta(): Promise<void> {
     const cloudExp = (cm.sunshine_cloud_exponent != null && Number.isFinite(cm.sunshine_cloud_exponent))
       ? Number(cm.sunshine_cloud_exponent)
       : 1.7;
-    this.forecasts = overlayFromOpenMeteo(
-      // deno-lint-ignore no-explicit-any
-      [...this.forecasts] as any,
-      this._hass,
-      this._openMeteoSource,
+    this.forecasts = this._withPrecipProbability(
+      overlayFromOpenMeteo(
+        // deno-lint-ignore no-explicit-any
+        [...this.forecasts] as any,
+        this._hass,
+        this._openMeteoSource,
+        granularity,
+        granularity === 'daily' ? cloudExp : null,
+      ),
+      this._stationCount || 0,
       granularity,
-      granularity === 'daily' ? cloudExp : null,
     );
     this.updateChart();
+  }
+
+  // True when the chance-of-rain row is on AND the weather entity's own
+  // forecast leaves `precipitation_probability` empty, so Open-Meteo
+  // has to fill it (ADR-0027). Unknown (no forecast yet) counts as
+  // "entity covers it": the source is re-evaluated on every forecast
+  // arrival, so the fallback kicks in as soon as the gap is real, and
+  // a MeteoSwiss / AccuWeather user never sends their location to
+  // Open-Meteo for a value the entity already provides.
+  // deno-lint-ignore no-explicit-any
+  _precipProbabilityNeedsOpenMeteo(effectiveCfg: any): boolean {
+    if (effectiveCfg?.forecast?.show_precip_probability !== true) return false;
+    const raw = this._forecastData;
+    if (!Array.isArray(raw) || raw.length === 0) return false;
+    return !forecastHasProbability(raw);
   }
 
   // True when the Open-Meteo source should drive the past/station chart
@@ -1965,15 +2001,19 @@ async _refreshPressureDelta(): Promise<void> {
 
   // Lazy-init the Open-Meteo source and trigger a fetch when the cache
   // is stale (no-op if a fetch is already in flight). The source backs
-  // two features off one call: the in-chart sunshine overlay
-  // (forecast.show_sunshine) and — when the card has a weather entity
-  // but no station sensors — the past/station block itself
-  // (forecast.openmeteo_history, ADR-0015). It is created when either
-  // is active, torn down when neither is.
+  // three features off one call: the in-chart sunshine overlay
+  // (forecast.show_sunshine), the chance-of-rain fallback for weather
+  // entities without `precipitation_probability`
+  // (forecast.show_precip_probability, ADR-0027) and — when the card
+  // has a weather entity but no station sensors — the past/station
+  // block itself (forecast.openmeteo_history, ADR-0015). It is created
+  // when any is active, torn down when none is.
   // deno-lint-ignore no-explicit-any
   _ensureOpenMeteoSource(effectiveCfg: any) {
     const feedsStation = this._openMeteoStationFallbackActive(this.config);
-    const enabled = effectiveCfg?.forecast?.show_sunshine === true || feedsStation;
+    const enabled = effectiveCfg?.forecast?.show_sunshine === true
+      || feedsStation
+      || this._precipProbabilityNeedsOpenMeteo(effectiveCfg);
     if (!enabled) {
       if (this._openMeteoSource) {
         this._openMeteoSource.abort();
@@ -2645,6 +2685,13 @@ computeForecastData({ config, forecastItems } = this) {
   // when no source resolved) and a day_length the bar is scaled against.
   const sunshine = forecast.map((d) => d.sunshine ?? null);
   const dayLength = forecast.map((d) => d.day_length ?? null);
+  // Chance of rain for the precip pill (#288). Gated on the row toggle
+  // HERE so the label plugin can treat "array present" as "draw the
+  // two-line box"; measured station entries never carry the field, so
+  // past columns stay one-line either way.
+  const precipProb = config.forecast?.show_precip_probability === true
+    ? forecast.map((d) => d.precipitation_probability ?? null)
+    : null;
 
   return {
     forecast,
@@ -2662,6 +2709,7 @@ computeForecastData({ config, forecastItems } = this) {
     precip,
     sunshine,
     dayLength,
+    precipProb,
   };
 }
 
@@ -2699,6 +2747,7 @@ updateChart({ forecasts, forecastChart } = this) {
       rd.tempHigh = data.tempHigh;
       rd.tempLow = data.tempLow;
       rd.sunshine = data.sunshine;
+      rd.precipProb = data.precipProb;
     }
     forecastChart.update();
   }
@@ -2966,6 +3015,9 @@ _scheduleForecastRowsReveal(): void {
         titlePresent: !!config.title,
         labelsSmallSize,
         labelsBaseSize,
+        extraBottomPad: config.forecast.show_precip_probability === true
+          ? PROBABILITY_EXTRA_BOTTOM_PAD
+          : 0,
       })}</style>
 
       <ha-card header="${config.title}">

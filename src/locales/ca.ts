@@ -110,6 +110,8 @@ const ca: LocaleEntry = {
     'show_chart_date': 'Data a l’eix x',
     'show_chart_sunshine': 'Barra d’hores de sol',
     'show_chart_sunshine_hint': 'Obté les hores de sol directament d’Open-Meteo (amb la ubicació configurada al Home Assistant). No calen sensors addicionals. El mode diari mostra etiquetes "Xh" per columna; el mode horari només mostra barres (barra plena = hora sencera de sol).',
+    'show_chart_precip_probability': 'Probabilitat de pluja',
+    'show_chart_precip_probability_hint': 'Mostra la probabilitat de pluja al costat de la quantitat a l’etiqueta de precipitació ("4.2 / 85" sobre "mm %"). S’agafa de l’entitat meteorològica si la seva previsió la dona; si no, d’Open-Meteo (ubicació configurada al Home Assistant). Els dies secs només mostren la probabilitat a partir del 30 %.',
     'show_chart_mode_toggle': 'Botó per canviar de vista',
     'sunshine_availability': 'Dades de sol disponibles: {past} dies passats, {future} dies de previsió (Open-Meteo).',
     'sunshine_availability_pending': 'Sol: les dades encara s’estan carregant — desa i torna a obrir l’editor.',

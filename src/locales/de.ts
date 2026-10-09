@@ -164,6 +164,8 @@ const de: LocaleEntry = {
     'show_chart_date': 'Datum in der x-Achse',
     'show_chart_sunshine': 'Sonnenschein-Balken',
     'show_chart_sunshine_hint': 'Holt Sonnenscheindauer direkt von Open-Meteo (Standort aus Home Assistant). Keine zusätzlichen Sensoren nötig. In der Tagesansicht mit "Xh"-Beschriftung, im Stundenmodus nur als Balken (volle Höhe = volle Stunde Sonne).',
+    'show_chart_precip_probability': 'Regenwahrscheinlichkeit',
+    'show_chart_precip_probability_hint': 'Zeigt die Regenwahrscheinlichkeit neben der Menge in der Niederschlags-Beschriftung ("4.2 / 85" über "mm %"). Kommt aus der Wetter-Entität, wenn deren Vorhersage sie liefert, sonst von Open-Meteo (Standort aus Home Assistant). Trockene Tage zeigen ab 30 % nur die Wahrscheinlichkeit.',
     'show_chart_mode_toggle': 'Ansicht-Umschalt-Button',
     'sunshine_availability': 'Sonnenstunden-Daten verfügbar: {past} Tage Vergangenheit, {future} Tage Vorhersage (Open-Meteo).',
     'sunshine_availability_pending': 'Sonnenstunden: Daten werden geladen — speichere und öffne den Editor erneut.',
