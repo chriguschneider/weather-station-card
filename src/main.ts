@@ -1120,7 +1120,13 @@ _schedulePrecipRecomputeTick(): void {
   this._precipRecomputeTimer = setInterval(() => {
     const eid = this._precipBufferEntity;
     if (!eid) return;
-    if (this._recomputePrecipDisplay(eid)) this.requestUpdate();
+    if (this._recomputePrecipDisplay(eid)) {
+      // The derived rate feeds the "Now" override of the next-rain
+      // row, and this tick runs outside the hass path that normally
+      // refreshes it.
+      this._refreshNextRain();
+      this.requestUpdate();
+    }
   }, 30_000);
 }
 
@@ -3777,7 +3783,7 @@ _refreshNextRain(): void {
   const eid = this.config?.sensors?.next_rain;
   const stateObj = eid ? this._hass?.states?.[eid] : undefined;
   const now = Date.now();
-  const view = classifyNextRain(stateObj, now);
+  const view = classifyNextRain(stateObj, now, this._isRainingNow());
   const str = (k: string) =>
     (this.ll(k) || (locale.en as Record<string, unknown>)[k] || '') as string;
 
@@ -3803,6 +3809,17 @@ _refreshNextRain(): void {
 
   if (view?.kind === 'minutes') this._startNextRainTick();
   else this._stopNextRainTick();
+}
+
+/** True while the live precipitation row shows a rate above zero —
+ *  from a dedicated rate sensor or the counter-derived rate, both of
+ *  which land in `precipitation` with a per-hour unit. A cumulative
+ *  counter without a derived rate (no `/h` unit) says nothing about
+ *  right now, so it never claims rain. */
+_isRainingNow(): boolean {
+  if (!/\/(h|hr|hour)$/i.test(this.precipitation_unit ?? '')) return false;
+  const rate = parseNumericSafe(this.precipitation);
+  return rate != null && rate > 0;
 }
 
 // The integration refreshes every five minutes; between updates the

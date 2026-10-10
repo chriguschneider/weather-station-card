@@ -57,6 +57,17 @@ describe('classifyNextRain', () => {
     const view = classifyNextRain({ state: iso(20), attributes: { device_class: 'timestamp' } }, NOW);
     expect(view).toEqual({ kind: 'minutes', minutes: 20, source: '' });
   });
+
+  // The station's own rain gauge is first-hand; a dry radar / forecast
+  // answer next to a live rate above zero would contradict the row above.
+  it('says "now" when the station measures rain, whatever the sensor says', () => {
+    const dry = radarState({ checked_until: iso(48 * 60) }, 'No rain');
+    expect(classifyNextRain(dry, NOW, true)).toEqual({ kind: 'now', source: 'station' });
+    expect(classifyNextRain(radarState({ at: iso(30), source: 'radar' }), NOW, true))
+      .toEqual({ kind: 'now', source: 'station' });
+    expect(classifyNextRain({ state: 'unavailable' }, NOW, true)).toEqual({ kind: 'now', source: 'station' });
+    expect(classifyNextRain(dry, NOW, false).kind).toBe('none');
+  });
 });
 
 describe('formatNextRain', () => {
@@ -127,20 +138,32 @@ describe('card row', () => {
 
   afterEach(() => vi.useRealTimers());
 
-  function mount(nextRainState) {
+  function mount(nextRainState, extraSensors = {}, extraStates = {}) {
     const card = document.createElement('weather-station-card');
     card.setConfig({
-      sensors: { temperature: 'sensor.t', next_rain: 'sensor.next_rain' },
+      sensors: { temperature: 'sensor.t', next_rain: 'sensor.next_rain', ...extraSensors },
       show_attributes: true,
       show_next_rain: true,
     });
     card.hass = {
-      states: { 'sensor.t': { state: '19', attributes: {} }, 'sensor.next_rain': nextRainState },
+      states: { 'sensor.t': { state: '19', attributes: {} }, 'sensor.next_rain': nextRainState, ...extraStates },
       config: {},
       language: 'en',
     };
     return card;
   }
+
+  it('shows "Now" while the station rain rate is above zero, even if the sensor says dry', () => {
+    const dry = radarState({ checked_until: iso(48 * 60) }, 'No rain');
+    const rate = (state) => ({ state, attributes: { unit_of_measurement: 'mm/h' } });
+    const wet = mount(dry, { precipitation_rate: 'sensor.rate' }, { 'sensor.rate': rate('1.4') });
+    expect(wet.next_rain_text).toBe('Now');
+    expect(wet.next_rain_icon).toBe('mdi:weather-pouring');
+    expect(wet.next_rain_title).toBe('Your station — rain rate above zero right now');
+
+    const stopped = mount(dry, { precipitation_rate: 'sensor.rate' }, { 'sensor.rate': rate('0') });
+    expect(stopped.next_rain_text).toBe('No rain');
+  });
 
   it('renders the countdown and keeps it ticking between updates', () => {
     vi.useFakeTimers();

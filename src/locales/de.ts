@@ -41,6 +41,7 @@ const de: LocaleEntry = {
   'next_rain_checked_until': 'Prognose geprüft bis {time}',
   'next_rain_source_radar': 'Radar — an deinem Standort gemessen',
   'next_rain_source_forecast': 'Wetterprognose — stündliches Modell',
+  'next_rain_source_station': 'Deine Station — Regenrate gerade über null',
   'units': {
     'km/h': 'km/h',
     'm/s': 'm/s',
