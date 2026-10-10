@@ -12,6 +12,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   your station reports a rain rate above zero, the row shows *Now*
   regardless of what the radar or forecast sensor says; the tooltip
   names your station as the source.
+- **No false "will be ignored" banner after switching the chart mode.**
+  Cards with `attributes_layout` showed a warning listing every
+  `show_*` row toggle as soon as the view-switch button was used,
+  although none of them was set in the config.
 
 ## [2.8.0] — 2026-10-09
 

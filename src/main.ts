@@ -329,6 +329,12 @@ class WeatherStationCard extends LitElement {
    *  unknown YAML keys / wrong-typed values. Surfaced through
    *  `renderErrorBanner()`; never blocks the render. */
   _configWarnings: string[] = [];
+  /** The config exactly as HA handed it to `setConfig`, before the
+   *  DEFAULTS spread. The mode toggle re-enters setConfig from this,
+   *  not from `this.config`: the merged object carries every `show_*`
+   *  default explicitly, which validateConfig would read as a dozen
+   *  user-set toggles next to `attributes_layout`. */
+  _rawConfig: Record<string, unknown> | null = null;
   /** Last forecast.type that the chart block was actually rendered
    *  with (i.e. data was ready). Compared in render() + `updated()`
    *  to decide which animation class to apply on the block. */
@@ -675,6 +681,7 @@ setConfig(config: any) {
   this._watchedStatesSnapshot = null;
 
   this.config = cardConfig;
+  this._rawConfig = config;
 
   // Advisory config-schema check (Slice 2). Unknown keys and wrong-typed
   // values are silently swallowed by the DEFAULTS spread above — this
@@ -2861,9 +2868,13 @@ renderScrollTimeline() {
 // they configured. For permanent changes, the editor's radio.
 _onModeToggleClick(ev?: Event) {
   if (ev) ev.stopPropagation();
-  const cfg = this.config || {};
-  const fcfg = cfg.forecast || {};
-  this.setConfig({ ...cfg, forecast: { ...fcfg, type: nextForecastType(fcfg.type) } });
+  // Cycle from the merged type (the raw config may leave it to the
+  // default), but rebuild from the raw config so the advisory
+  // validation keeps seeing what the user actually wrote.
+  const current = this.config?.forecast?.type;
+  const raw = (this._rawConfig ?? this.config ?? {}) as Record<string, unknown>;
+  const rawForecast = (raw.forecast ?? {}) as Record<string, unknown>;
+  this.setConfig({ ...raw, forecast: { ...rawForecast, type: nextForecastType(current) } });
 }
 
 // Generation key for the two-phase forecast-row render (ADR-0016).
