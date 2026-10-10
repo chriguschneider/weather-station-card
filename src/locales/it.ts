@@ -14,6 +14,7 @@ const it: LocaleEntry = {
   'next_rain_checked_until': 'Previsioni controllate fino alle {time}',
   'next_rain_source_radar': 'Radar — misurato alla tua posizione',
   'next_rain_source_forecast': 'Previsioni meteo — modello orario',
+  'next_rain_source_station': 'La tua stazione — intensità di pioggia sopra zero adesso',
   'units': {
     'km/h': 'km/h',
     'm/s': 'm/s',

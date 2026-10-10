@@ -41,6 +41,7 @@ const en: LocaleEntry = {
   'next_rain_checked_until': 'Forecast checked until {time}',
   'next_rain_source_radar': 'Radar — measured at your location',
   'next_rain_source_forecast': 'Weather forecast — hourly model',
+  'next_rain_source_station': 'Your station — rain rate above zero right now',
   'units': {
     'km/h': 'km/h',
     'm/s': 'm/s',

@@ -329,6 +329,12 @@ class WeatherStationCard extends LitElement {
    *  unknown YAML keys / wrong-typed values. Surfaced through
    *  `renderErrorBanner()`; never blocks the render. */
   _configWarnings: string[] = [];
+  /** The config exactly as HA handed it to `setConfig`, before the
+   *  DEFAULTS spread. The mode toggle re-enters setConfig from this,
+   *  not from `this.config`: the merged object carries every `show_*`
+   *  default explicitly, which validateConfig would read as a dozen
+   *  user-set toggles next to `attributes_layout`. */
+  _rawConfig: Record<string, unknown> | null = null;
   /** Last forecast.type that the chart block was actually rendered
    *  with (i.e. data was ready). Compared in render() + `updated()`
    *  to decide which animation class to apply on the block. */
@@ -675,6 +681,7 @@ setConfig(config: any) {
   this._watchedStatesSnapshot = null;
 
   this.config = cardConfig;
+  this._rawConfig = config;
 
   // Advisory config-schema check (Slice 2). Unknown keys and wrong-typed
   // values are silently swallowed by the DEFAULTS spread above — this
@@ -1120,7 +1127,13 @@ _schedulePrecipRecomputeTick(): void {
   this._precipRecomputeTimer = setInterval(() => {
     const eid = this._precipBufferEntity;
     if (!eid) return;
-    if (this._recomputePrecipDisplay(eid)) this.requestUpdate();
+    if (this._recomputePrecipDisplay(eid)) {
+      // The derived rate feeds the "Now" override of the next-rain
+      // row, and this tick runs outside the hass path that normally
+      // refreshes it.
+      this._refreshNextRain();
+      this.requestUpdate();
+    }
   }, 30_000);
 }
 
@@ -2855,9 +2868,13 @@ renderScrollTimeline() {
 // they configured. For permanent changes, the editor's radio.
 _onModeToggleClick(ev?: Event) {
   if (ev) ev.stopPropagation();
-  const cfg = this.config || {};
-  const fcfg = cfg.forecast || {};
-  this.setConfig({ ...cfg, forecast: { ...fcfg, type: nextForecastType(fcfg.type) } });
+  // Cycle from the merged type (the raw config may leave it to the
+  // default), but rebuild from the raw config so the advisory
+  // validation keeps seeing what the user actually wrote.
+  const current = this.config?.forecast?.type;
+  const raw = (this._rawConfig ?? this.config ?? {}) as Record<string, unknown>;
+  const rawForecast = (raw.forecast ?? {}) as Record<string, unknown>;
+  this.setConfig({ ...raw, forecast: { ...rawForecast, type: nextForecastType(current) } });
 }
 
 // Generation key for the two-phase forecast-row render (ADR-0016).
@@ -3777,7 +3794,7 @@ _refreshNextRain(): void {
   const eid = this.config?.sensors?.next_rain;
   const stateObj = eid ? this._hass?.states?.[eid] : undefined;
   const now = Date.now();
-  const view = classifyNextRain(stateObj, now);
+  const view = classifyNextRain(stateObj, now, this._isRainingNow());
   const str = (k: string) =>
     (this.ll(k) || (locale.en as Record<string, unknown>)[k] || '') as string;
 
@@ -3803,6 +3820,17 @@ _refreshNextRain(): void {
 
   if (view?.kind === 'minutes') this._startNextRainTick();
   else this._stopNextRainTick();
+}
+
+/** True while the live precipitation row shows a rate above zero —
+ *  from a dedicated rate sensor or the counter-derived rate, both of
+ *  which land in `precipitation` with a per-hour unit. A cumulative
+ *  counter without a derived rate (no `/h` unit) says nothing about
+ *  right now, so it never claims rain. */
+_isRainingNow(): boolean {
+  if (!/\/(h|hr|hour)$/i.test(this.precipitation_unit ?? '')) return false;
+  const rate = parseNumericSafe(this.precipitation);
+  return rate != null && rate > 0;
 }
 
 // The integration refreshes every five minutes; between updates the

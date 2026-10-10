@@ -11,7 +11,9 @@
 
 import { getDateTimeFormat } from './utils/intl-cache.js';
 
-export type NextRainSource = 'radar' | 'forecast' | '';
+/** 'station' = the card's own live rain rate said it is raining; the
+ *  radar sensor was overruled (or absent). */
+export type NextRainSource = 'radar' | 'forecast' | 'station' | '';
 
 export type NextRainView =
   | { kind: 'now'; source: NextRainSource }
@@ -69,7 +71,14 @@ function viewAt(at: number, now: number, source: NextRainSource): NextRainView {
 export function classifyNextRain(
   stateObj: NextRainStateLike | undefined,
   now: number,
+  rainingNow = false,
 ): NextRainView | null {
+  // A measured rain rate above zero beats everything the sensor says:
+  // the radar's 1 km pixel and the hourly model can both miss a shower
+  // that is wetting the station right now, and "No rain" next to
+  // "1.4 mm/h" reads as a bug. Checked before the unavailable guard —
+  // first-hand measurement needs no sensor to confirm it.
+  if (rainingNow) return { kind: 'now', source: 'station' };
   const raw = stateObj?.state;
   if (raw === undefined || NO_VALUE.has(raw)) return null;
   const attrs = stateObj?.attributes ?? {};

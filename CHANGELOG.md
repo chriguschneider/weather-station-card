@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **"Next rain" no longer says *No rain* while it is raining.** When
+  your station reports a rain rate above zero, the row shows *Now*
+  regardless of what the radar or forecast sensor says; the tooltip
+  names your station as the source.
+- **No false "will be ignored" banner after switching the chart mode.**
+  Cards with `attributes_layout` showed a warning listing every
+  `show_*` row toggle as soon as the view-switch button was used,
+  although none of them was set in the config.
+
 ## [2.8.0] — 2026-10-09
 
 ### Added

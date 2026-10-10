@@ -328,7 +328,7 @@ each other directly, so any part can be swapped or left out.
 | --- | --- | --- |
 | Radar sees rain coming within the hour | `in 12 min`, counting down live | radar |
 | Radar or forecast answers further out | `17:00` (radar) or `~17:00` (forecast); weekday added beyond 24 h | radar / cloud-clock |
-| It is raining | `Now` | rain |
+| It is raining — the radar says so, or your station's rain rate is above zero | `Now` | rain |
 | Nothing in sight | `No rain` (hover to see how far the forecast was checked) | closed umbrella |
 
 The tooltip names which source answered, so a forecast time is never
