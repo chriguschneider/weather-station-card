@@ -39,7 +39,7 @@
     "@playwright/test": "^1.63.0",
     "@rollup/plugin-terser": "^1.0.0",
     "@rollup/plugin-typescript": "^12.3.0",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^5.0.1",
     "cross-env": "^10.1.0",
     "dependency-cruiser": "^18.2.0",
     "eslint": "^10.10.0",
