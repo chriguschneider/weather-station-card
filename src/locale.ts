@@ -50,6 +50,7 @@ const loaders: Record<string, () => Promise<{ default: LocaleEntry }>> = {
   ro: () => import('./locales/ro.js'),
   ru: () => import('./locales/ru.js'),
   sk: () => import('./locales/sk.js'),
+  sr: () => import('./locales/sr-Latn.js'),
   sv: () => import('./locales/sv.js'),
   uk: () => import('./locales/uk.js'),
 };
