@@ -1,9 +1,9 @@
-// Per-language string table for sr-Latn.
+// Per-language string table for Serbian (Latin script).
 // One file per language so rollup can lazy-load on demand.
 // Shape and fallback resolution rules live in ../locale.ts.
 import type { LocaleEntry } from '../locale-types.js';
 
-const sr-Latn: LocaleEntry = {
+const sr: LocaleEntry = {
   'tempHi': 'Temperatura',
   'tempLo': 'Noćna temperatura',
   'precip': 'Padavine',
@@ -30,7 +30,7 @@ const sr-Latn: LocaleEntry = {
   'sun_strength_band_moderate': 'Umeren',
   'sun_strength_band_high': 'Visok',
   'sun_strength_band_very_high': 'Veoma visok',
-  'sun_strength_band_extreme': 'Ekstremni',
+  'sun_strength_band_extreme': 'Ekstreman',
   'sun_strength_clear': 'vedro nebo',
   'sun_strength_partly': 'delimično oblačno',
   'sun_strength_cloudy': 'oblačno',
@@ -41,7 +41,7 @@ const sr-Latn: LocaleEntry = {
   'next_rain_checked_until': 'Prognoza proverena do {time}',
   'next_rain_source_radar': 'Radar — mereno na vašoj lokaciji',
   'next_rain_source_forecast': 'Vremenska prognoza — satni model',
-  'next_rain_source_station': 'Vaša stanica — intenzitet kiše trenutno iznad nule'
+  'next_rain_source_station': 'Vaša stanica — intenzitet kiše trenutno iznad nule',
   'units': {
     'km/h': 'km/h',
     'm/s': 'm/s',
@@ -69,14 +69,10 @@ const sr-Latn: LocaleEntry = {
   'snowy-rainy': 'Sneg, kiša',
   'sunny': 'Sunčano',
   'windy': 'Vetrovito',
-  'windy-variant': 'Vetrovito'
-  // Canonical English strings for the visual editor. Other languages
-  // should add an `editor: {…}` block matching these keys; missing
-  // keys (or whole missing editor blocks) fall back to English at
-  // runtime via the `t()` helper in the editor module.
+  'windy-variant': 'Vetrovito',
   'editor': {
     'temperature': 'Temperatura',
-    'humidity': 'Vlažnost', 
+    'humidity': 'Vlažnost',
     'illuminance': 'Osvetljenost',
     'precipitation': 'Padavine',
     'precipitation_rate': 'Intenzitet padavina',
@@ -166,7 +162,7 @@ const sr-Latn: LocaleEntry = {
     'show_time': 'Prikaži sat',
     'show_time_seconds': 'Sekunde',
     'show_day': 'Naziv dana',
-    'show_date': 'Datum'
+    'show_date': 'Datum',
     'use_12hour_format': '12-časovni sat',
     'show_chart_icons': 'Red ikona stanja',
     'show_chart_wind_direction': 'Pravac vetra',
@@ -210,15 +206,15 @@ const sr-Latn: LocaleEntry = {
     'unit_speed_label': 'Prikaži brzinu vetra u',
     'unit_precipitation_label': 'Prikaži padavine u',
     'summary_connected': '{n} senzora povezano',
-    'summary_no_sensors': 'Nema konfigurisnih senzora',
+    'summary_no_sensors': 'Nema konfigurisanih senzora',
     'summary_openmeteo': 'Open-Meteo istorija (bez stanice)',
     'summary_days': 'dani',
     'summary_columns': 'kolone',
     'summary_rows': 'redovi',
     'summary_attributes': 'atributi',
     'summary_on': 'uključeno',
-    'summary_off': 'isključeno'
-  }
+    'summary_off': 'isključeno',
+  },
 };
 
-export default sr-Latn;
+export default sr;
