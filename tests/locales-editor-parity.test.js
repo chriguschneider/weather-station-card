@@ -35,12 +35,13 @@ import pt from '../src/locales/pt.js';
 import ro from '../src/locales/ro.js';
 import ru from '../src/locales/ru.js';
 import sk from '../src/locales/sk.js';
+import sr from '../src/locales/sr.js';
 import sv from '../src/locales/sv.js';
 import uk from '../src/locales/uk.js';
 
 const LOCALES = {
   bg, ca, cs, da, de, el, es, fi, fr, hu, it: it_,
-  ko, lt, nb, nl, pl, pt, ro, ru, sk, sv, uk,
+  ko, lt, nb, nl, pl, pt, ro, ru, sk, sr, sv, uk,
 };
 
 // The active editor surface — every t() lookup the current partials

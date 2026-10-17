@@ -15,7 +15,7 @@
   <a href="https://github.com/chriguschneider/weather-station-card/releases"><img alt="Downloads" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriguschneider%2Fweather-station-card%2Fbadges%2Fdownloads.json" /></a>
   <a href="https://github.com/chriguschneider/weather-station-card/stargazers"><img alt="Stars" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriguschneider%2Fweather-station-card%2Fbadges%2Fstars.json" /></a>
   <a href="https://github.com/chriguschneider/weather-station-card/commits/master"><img alt="Last commit" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriguschneider%2Fweather-station-card%2Fbadges%2Flastcommit.json" /></a>
-  <a href="#configuration"><img alt="Translated into 23 languages" src="https://img.shields.io/badge/translated-23_languages-41BDF5.svg" /></a>
+  <a href="#configuration"><img alt="Translated into 24 languages" src="https://img.shields.io/badge/translated-24_languages-41BDF5.svg" /></a>
   <a href="https://buymeacoffee.com/chriguschneider"><img alt="Buy Me a Coffee" src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00.svg" /></a>
   <a href="#ai-assisted-development"><img alt="AI Assisted" src="https://img.shields.io/badge/AI-assisted-2196F3.svg" /></a>
 </p>
@@ -90,7 +90,7 @@ those same sensors. This card does both:
 - A **compact visual editor** — everything is configurable without
   YAML, and the whole card fits one editor screen (see
   [below](#configuration)).
-- **Fully translated** — UI *and* editor — into 23 languages.
+- **Fully translated** — UI *and* editor — into 24 languages.
 
 Conditions are derived by a deterministic, meteorologically-grounded
 classifier (see [docs/CONDITIONS.md](docs/CONDITIONS.md#how-conditions-are-determined)
@@ -254,7 +254,7 @@ The **visual editor fits one screen**: the four basics (mode, chart
 type, title, weather entity) stay directly visible, everything else
 lives in five collapsible panels whose headers summarise the current
 configuration — readable without opening anything. The editor is fully
-translated into 23 languages.
+translated into 24 languages.
 
 <table>
 <tr>
@@ -345,7 +345,7 @@ For doc-writing conventions (length targets, voice, cross-linking), see
 [docs/STYLE-GUIDE.md](docs/STYLE-GUIDE.md).
 
 **Translations** are a well-bounded first contribution. The card ships
-fully translated — UI and editor — in 23 languages (one file per
+fully translated — UI and editor — in 24 languages (one file per
 language under `src/locales/`). Corrections from native speakers and
 entirely new languages are equally welcome; a parity test guides you to
 every key a language must provide. See CONTRIBUTING.md.
