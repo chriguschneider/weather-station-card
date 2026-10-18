@@ -51,6 +51,7 @@ const loaders: Record<string, () => Promise<{ default: LocaleEntry }>> = {
   ru: () => import('./locales/ru.js'),
   sk: () => import('./locales/sk.js'),
   sr: () => import('./locales/sr.js'),
+  'sr-Latn': () => import('./locales/sr-Latn.js'),
   sv: () => import('./locales/sv.js'),
   uk: () => import('./locales/uk.js'),
 };
@@ -58,7 +59,7 @@ const loaders: Record<string, () => Promise<{ default: LocaleEntry }>> = {
 const registry: Locale = { en };
 
 // Inflight promises so concurrent `ensureLocaleLoaded` calls for the
-// same lang share one fetch. Keyed by base language tag.
+// same lang share one fetch. Keyed by the resolved loader tag.
 const inflight = new Map<string, Promise<void>>();
 
 // Trigger the chunk for `lang` to load and populate the registry.
@@ -72,17 +73,19 @@ const inflight = new Map<string, Promise<void>>();
 // covers missing keys.
 export async function ensureLocaleLoaded(lang: string): Promise<void> {
   if (!lang) return;
-  const baseLang = lang.split('-')[0];
-  if (registry[baseLang]) return;
-  const loader = loaders[baseLang];
+  // Script/region variants with their own table (sr-Latn) win over
+  // the base tag; others (de-CH) share the base chunk.
+  const key = loaders[lang] ? lang : lang.split('-')[0];
+  if (registry[key]) return;
+  const loader = loaders[key];
   if (!loader) return;
-  const existing = inflight.get(baseLang);
+  const existing = inflight.get(key);
   if (existing) return existing;
   const p = loader().then(
-    (m) => { registry[baseLang] = m.default; },
+    (m) => { registry[key] = m.default; },
     () => { /* fetch / parse error — fall through to en */ },
   );
-  inflight.set(baseLang, p);
+  inflight.set(key, p);
   return p;
 }
 

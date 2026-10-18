@@ -53,8 +53,8 @@ const sr: LocaleEntry = {
     'in': 'in'
   },
   'cardinalDirections': [
-    'Ј', 'Ј-СИ', 'СИ', 'И-СИ', 'И', 'И-ЈИ', 'ЈИ', 'Ј-ЈИ',
-    'Ј', 'Ј-ЈЗ', 'ЈЗ', 'З-ЈЗ', 'З', 'З-СЗ', 'СЗ', 'Ј-СЗ', 'Ј'
+    'С', 'С-СИ', 'СИ', 'И-СИ', 'И', 'И-ЈИ', 'ЈИ', 'Ј-ЈИ',
+    'Ј', 'Ј-ЈЗ', 'ЈЗ', 'З-ЈЗ', 'З', 'З-СЗ', 'СЗ', 'С-СЗ', 'С'
   ],
   'clear-night': 'Ведро, ноћ',
   'cloudy': 'Облачно',
@@ -105,7 +105,7 @@ const sr: LocaleEntry = {
     'live_panel_heading': 'Панел уживо',
     'actions_section_heading': 'Акције',
     // Per-section reset-to-defaults button
-      'reset_section': 'Ресетуј ову секцију на подразумевано',
+    'reset_section': 'Ресетуј ову секцију на подразумевано',
     // Sub-section headings
     'chart_time_range_heading': 'Временски опсег и резолуција',
     // Keys retained for backwards compatibility.

@@ -212,6 +212,10 @@ jobs:
         with:
           files: dist/*.js
           body_path: .release-notes.md
+          # A hyphenated tag (v2.9.1-beta.1) becomes a GitHub pre-release,
+          # which HACS only offers behind "Show beta versions" — otherwise
+          # a test build would ship to every user as Latest.
+          prerelease: ${{ contains(github.ref_name, '-') }}
 
       - name: Refresh badge metrics
         # badges.yml computes the release badge from `releases/latest`

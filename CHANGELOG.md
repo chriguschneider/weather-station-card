@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.1-beta.1] — 2026-10-18
+
+Beta for testing the Serbian script split — install via HACS →
+Redownload → "Show beta versions".
+
+### Fixed
+
+- **Serbian now follows the script you picked in Home Assistant.**
+  *Српски* (`sr`) shows the card and editor in Cyrillic, *Srpski*
+  (`sr-Latn`) in Latin. Before, both got Latin in the editor and
+  `sr-Latn` fell back to English on the card itself. If your language
+  is set to *Српски*, the card switches from Latin to Cyrillic.
+  Thanks @cpmarexel2f (#297).
+
 ## [2.9.0] — 2026-10-17
 
 ### Added
