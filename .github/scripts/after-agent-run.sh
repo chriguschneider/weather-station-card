@@ -36,27 +36,52 @@ if [ -n "${EXEC_FILE:-}" ] && [ -f "$EXEC_FILE" ]; then
     "$EXEC_FILE" 2>/dev/null || echo "$outcome")"
 fi
 
-# Refused tool calls are the first thing to look at when a run could not do
-# its job (an allowlist gap): list them in the job summary.
-if [ -n "${EXEC_FILE:-}" ] && [ -f "$EXEC_FILE" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+# What the agent said last, and which tool calls the allowlist refused: the
+# first things to look at when a run did not do its job. Printed to the log
+# (readable through the API) and, if available, to the job summary.
+final_message=""
+denials=""
+if [ -n "${EXEC_FILE:-}" ] && [ -f "$EXEC_FILE" ]; then
+  final_message="$(jq -r '[.[] | select(.type == "result")] | last | .result // "" | .[0:1500]' "$EXEC_FILE" 2>/dev/null || true)"
   denials="$(jq -r '[.[] | select(.type == "result")] | last | .permission_denials // []
     | .[] | "- `\(.tool_name)`: `\(.tool_input.command // .tool_input.file_path // "" | tostring | .[0:160])`"' \
     "$EXEC_FILE" 2>/dev/null || true)"
-  if [ -n "$denials" ]; then
-    { echo "### Tool calls refused by the allowlist"; echo; echo "$denials"; } >> "$GITHUB_STEP_SUMMARY"
-  fi
+fi
+echo "run: $detail"
+[ -n "$denials" ] && printf 'tool calls refused by the allowlist:\n%s\n' "$denials"
+[ -n "$final_message" ] && printf 'final message of the agent:\n%s\n' "$final_message"
+if [ -n "$denials" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+  { echo "### Tool calls refused by the allowlist"; echo; echo "$denials"; } >> "$GITHUB_STEP_SUMMARY"
 fi
 
 nothing_saved() {
-  if [ "$outcome" = "success" ]; then
-    echo "run succeeded and left nothing on a branch; nothing to do"
+  # Nothing committed. A failed run means the issue is probably too big; a
+  # "successful" run that changed nothing (it judged the issue closed,
+  # handled, or not doable) is just as much a dead end for the autopilot,
+  # which would pick the same issue again on the next tick.
+  if [ "$(gh issue view "$issue" --json state --jq .state 2>/dev/null)" = "CLOSED" ]; then
+    echo "issue #$issue is closed; nothing to do"
     return 0
   fi
   echo "run ended ($detail) with nothing to save"
   gh issue edit "$issue" --add-label needs-verification || true
-  gh issue comment "$issue" --body "The agent run ended (**$detail**) before it committed anything: $run_url
+  if [ "$outcome" = "success" ]; then
+    reason="The agent run finished (**$detail**) without changing anything: $run_url"
+  else
+    reason="The agent run ended (**$detail**) before it committed anything: $run_url
 
-That usually means the issue is too big for one run. Split it into smaller issues (see \`docs/agent-automation.md\`, *Sizing an issue*). Labelled \`needs-verification\` so the autopilot does not retry it." || true
+That usually means the issue is too big for one run. Split it into smaller issues (see \`docs/agent-automation.md\`, *Sizing an issue*)."
+  fi
+  gh issue comment "$issue" --body "$reason
+${denials:+
+Tool calls refused by the allowlist:
+$denials
+}${final_message:+
+Last message of the agent:
+
+> ${final_message//$'\n'/$'\n'> }
+}
+Labelled \`needs-verification\` so the autopilot does not retry it." || true
 }
 
 branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
