@@ -1,6 +1,6 @@
 ---
 name: documentation-guardian
-description: Proactively suggests ADRs when architectural changes happen in this Lovelace card repo, and checks code changes against existing decisions in docs/adr/. Activate on new chart plugin, new data source, new render mode, new top-level config option, build/quality gate change, bundler or major-dependency bump, module-boundary break, or pattern deviation from an existing ADR.
+description: Proactively suggests ADRs when architectural changes happen in this Lovelace card repo, and checks code changes against existing decisions in docs/adr/. Activate on new chart plugin, new data source or upstream host, a changed budget, new render mode, new top-level config option, build/quality gate change, bundler or major-dependency bump, module-boundary break, the same logic landing in a second place, or pattern deviation from an existing ADR.
 ---
 
 # Documentation Guardian
@@ -18,13 +18,16 @@ Activate when you observe any of these in a planned or in-progress change:
 
 - A **new chart plugin** under `src/chart/plugins/`, or a new entry registered in `src/chart/plugins.ts`.
 - A **new data source** under `src/data-source/`, or a new tier added to the sunshine-source resolution chain (existing tiers are governed by an accepted ADR — re-read `docs/adr/` to find which).
+- A **new upstream host or endpoint** the card calls from the browser (today: the HA websocket/recorder and Open-Meteo, ADR-0015/0020/0027/0028), or a new runtime dependency in `package.json` `dependencies` — it ships to every dashboard.
+- A change to a **budget**: request cadence or cache TTLs (ADR-0020), the bundle budget in `build.yml`, the perf tolerance in `perf-baseline.json` (ADR-0014), the coverage floor in `vitest.config.js`.
 - A **new render mode** or layout (a fourth top-level mode beside Combination / Station / Forecast), or a new `forecast.style` variant beyond style1/style2.
 - A **new top-level card-config option** that the user can set in their YAML — these become public API and are notoriously hard to remove.
 - A **build / quality gate change**: ESLint rule promoted warn→error, vitest coverage threshold moved, dependency-cruiser rule added or relaxed, new CI workflow under `.github/workflows/`, change to the `Required status checks` set on master.
 - A **bundler or major-dependency bump**: Rollup, vitest, lit, chart.js, playwright, eslint majors. The decision to take a major and the migration shape is ADR-worthy; patch/minor bumps are not.
 - A **boundary break**: a new uplevel `import` in `src/chart/`, `src/editor/`, or `src/utils/`. Either it needs to be removed, or the boundary itself needs an ADR change.
 - A **change to the e2e baseline regeneration flow** (the `update-baselines.yml` workflow, the playwright tolerance, the WSL fallback policy — pinning is governed by an accepted ADR; re-read `docs/adr/` before changing the flow).
-- A **release-flow change** — the steps listed in `CLAUDE.md` for cutting `vX.Y.Z`.
+- A **release-flow change** — the steps in `CONTRIBUTING.md` → *Release flow* and `AGENTS.md` → *Release procedure* for cutting `vX.Y.Z`, or the tag-push steps in `build.yml`.
+- The **same logic in a second language or place** (a parser in the card and in a test helper, a table in code and in docs, a default in `src/defaults.ts` and in the editor): propose one written spec plus a shared golden-fixture test both sides run.
 - A **pattern deviation** from an accepted ADR — code that contradicts an existing decision.
 
 ## Skip — do not trigger on
@@ -59,7 +62,8 @@ When suggesting where information should live, use these targets:
 | `docs/CONDITIONS.md`, `docs/SENSORS.md`, `docs/TROUBLESHOOTING.md` | User reference docs by domain |
 | `docs/STYLE-GUIDE.md` | Documentation conventions themselves |
 | `CHANGELOG.md` | Release-by-release log (every user-visible change is mentioned here) |
-| `CLAUDE.md` | Local-only context (gitignored). Do not propose ADR rationale to live here. |
+| `AGENTS.md` | Conventions for AI assistants and humans (Shared Skeleton from repo-standard + repo-specific rules) |
+| `CLAUDE.md` / `CLAUDE.local.md` | `CLAUDE.md` only imports `AGENTS.md`; `CLAUDE.local.md` is the maintainer's machine-local notes (gitignored). Do not propose ADR rationale to live in either. |
 
 ## Gating test — apply before proposing
 
@@ -87,7 +91,7 @@ When a trigger fires **and** the AND-of-three gate passes, surface it before imp
 
 If the user agrees, draft the ADR using [`docs/adr/template.md`](../../../docs/adr/template.md) in the same PR as the code change. If the user defers ("not now, later"), respect that — do not nag in the same session.
 
-For architecture suggestions in general (per `CLAUDE.md`): list pros/cons, then a recommendation, then act only after OK.
+For architecture suggestions in general: list pros/cons, then a recommendation, then act only after OK.
 
 ## Compliance check
 
@@ -129,6 +133,16 @@ Mirrors [`docs/adr/template.md`](../../../docs/adr/template.md):
 - Sequential four-digit numbers: 0001, 0002, …
 - Find the current highest number with `ls docs/adr/`.
 - **Never reuse** a number, even for deprecated or superseded ADRs.
+
+### Amending
+
+An accepted ADR is never rewritten. A refinement that keeps the decision (a new exception, a moved threshold, a renamed path) is appended to the old ADR, keeping the original text:
+
+```markdown
+## Amendment YYYY-MM-DD (#issue)
+
+What changed and why. Decided by: <owner | ADR-NNNN>.
+```
 
 ### Superseding
 

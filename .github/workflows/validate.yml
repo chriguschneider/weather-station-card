@@ -7,12 +7,18 @@ on:
     - cron: "0 0 * * *"
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   validate-hacs:
     runs-on: "ubuntu-latest"
+    permissions:
+      contents: read
     steps:
-      - uses: "actions/checkout@v7"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: HACS validation
-        uses: "hacs/action@main"
+        uses: hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa # main (2026-10-19; no recent release)
         with:
           category: "plugin"

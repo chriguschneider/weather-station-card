@@ -500,9 +500,10 @@ in sync with the released version with no manual bump.
 CI (`.github/workflows/build.yml`) runs the same chain on every push,
 extended with these gates:
 
-- **Security audit**: `npm audit --audit-level=high` blocks the build
-  on high/critical advisories. Lower-severity findings come as
-  Dependabot PRs (`.github/dependabot.yml`, weekly).
+- **Security audit**: `npm audit --omit=dev --audit-level=high` blocks
+  the build on high/critical advisories in runtime dependencies; the
+  full audit (dev tooling included) only reports. Fixes come as
+  Dependabot PRs (`.github/dependabot.yml`, weekly, 7-day cooldown).
 - **Lint**: ESLint 10 with `typescript-eslint`, `eslint-plugin-lit`,
   `eslint-plugin-sonarjs`. Zero errors required; complexity warnings
   tracked as an accepted refactoring backlog (see `eslint.config.mjs`
@@ -566,8 +567,8 @@ Home Assistant serves each file precompressed (`.js.gz`) when the
 browser supports gzip. After a local deploy to a test HA instance,
 regenerate the `.gz` or HA keeps serving the stale compressed version.
 Cache-busting goes through the resource URL's `?hacstag=` query — see
-[`LOCAL-TESTING.md`](LOCAL-TESTING.md) and `CLAUDE.md` for the deploy
-recipe.
+[`LOCAL-TESTING.md`](LOCAL-TESTING.md) (and the maintainer's local
+`CLAUDE.local.md`) for the deploy recipe.
 
 ## Testing scope
 

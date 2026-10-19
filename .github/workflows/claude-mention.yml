@@ -1,44 +1,107 @@
 name: Claude (@mention)
 
-# Write "@claude ..." in an issue or PR comment and Claude works that item.
-# Complements the opt-in label flow (claude-labeled.yml). Draft PRs only,
-# never master. Requires the CLAUDE_CODE_OAUTH_TOKEN secret.
+# Event-driven: someone writes "@claude ..." in an issue or PR comment, or an
+# issue is assigned. The model is chosen from the issue's labels. Requires
+# the CLAUDE_CODE_OAUTH_TOKEN secret; without it the job skips with a
+# notice. See docs/agent-automation.md.
 
+# zizmor: comment triggers run with secrets for any commenter. That is the
+# point of @claude; the job-level author_association gate below limits it to
+# people with write access, and the action checks write access again.
 on:
-  issue_comment:
+  issue_comment: # zizmor: ignore[dangerous-triggers]
     types: [created]
   pull_request_review_comment:
     types: [created]
+  issues:
+    types: [assigned]
+
+permissions: {}
 
 jobs:
   claude:
-    # Only the owner / collaborators can trigger this. Comment events carry
-    # secrets even from strangers, so gate the @claude path on author role.
+    # Only the owner / collaborators can trigger this: comment events carry
+    # secrets even from strangers. An assignment works the issue text, so
+    # the issue itself must come from someone with write access too.
     if: >-
-      contains(github.event.comment.body, '@claude') &&
-      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
-               github.event.comment.author_association)
+      (github.event_name == 'issues' && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)) ||
+      (github.event_name != 'issues' &&
+       contains(github.event.comment.body, '@claude') &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
+                github.event.comment.author_association))
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: write
       pull-requests: write
       issues: write
-      id-token: write
+      id-token: write # claude-code-action needs OIDC for its GitHub App token
     concurrency:
       group: claude-mention-${{ github.event.issue.number || github.event.pull_request.number }}
       cancel-in-progress: false
+    env:
+      NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
     steps:
-      - uses: actions/checkout@v7
+      # Outbound traffic: `audit` logs every connection, `block` allows only
+      # the list. Start with audit, switch to block once a few runs show the
+      # full list (docs/agent-automation.md). Must stay the first step.
+      - name: Harden the runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
+          egress-policy: audit
+          allowed-endpoints: >
+            api.anthropic.com:443
+            claude.ai:443
+            downloads.claude.ai:443
+            storage.googleapis.com:443
+            bun.sh:443
+            registry.npmjs.org:443
+            github.com:443
+            api.github.com:443
+            uploads.github.com:443
+            codeload.github.com:443
+            objects.githubusercontent.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+
+      - name: Check the Claude token is configured
+        id: token
+        env:
+          TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::notice::CLAUDE_CODE_OAUTH_TOKEN is not set; skipping (see docs/agent-automation.md)."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.token.outputs.present == 'true'
+        with:
+          # See claude-labeled.yml: persisted credentials would make agent
+          # pushes go out as github-actions[bot].
           persist-credentials: false
-      - name: Pick model
+
+      - name: Pick model from issue labels
         id: model
+        if: steps.token.outputs.present == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          n="${{ github.event.issue.number || github.event.pull_request.number }}"
-          bash .github/scripts/pick-model.sh "$n" >> "$GITHUB_OUTPUT"
-      - uses: anthropics/claude-code-action@v1
+        run: bash .github/scripts/pick-model.sh "$NUMBER" >> "$GITHUB_OUTPUT"
+
+      - uses: anthropics/claude-code-action@5eb090f3c3afd701a0672cd32981197ca27688f6 # v1.0.253
+        if: steps.token.outputs.present == 'true'
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: "--model ${{ steps.model.outputs.model }} --max-turns 60 --dangerously-skip-permissions"
+          include_comments_by_actor: "${{ github.repository_owner }},claude[bot]"
+          settings: .claude/ci-settings.json
+          # The action reads the @claude comment as the task. 60 turns, not
+          # 20: a mention that asks for a real change hits 20 while still
+          # gathering context.
+          claude_args: >-
+            --model ${{ steps.model.outputs.model }}
+            --max-turns 60
+            --permission-mode dontAsk
+            --allowedTools "Read,Glob,Grep,Edit,Write,TodoWrite,Bash(git status*),Bash(git diff*),Bash(git log*),Bash(git show*),Bash(git switch*),Bash(git checkout*),Bash(git branch*),Bash(git add*),Bash(git commit*),Bash(git push*),Bash(git rm*),Bash(git mv*),Bash(git restore*),Bash(git fetch*),Bash(git rev-parse*),Bash(ls*),Bash(gh issue view*),Bash(gh issue comment*),Bash(gh pr create*),Bash(gh pr view*),Bash(gh pr diff*),Bash(gh pr checks*),Bash(gh pr comment*),Bash(gh pr edit*),Bash(gh pr list*),Bash(npm ci*),Bash(npm install*),Bash(npm run lint*),Bash(npm run typecheck*),Bash(npm run depcheck*),Bash(npm run coverage*),Bash(npm run rollup*),Bash(npm run build*),Bash(npm test*),Bash(npx vitest*),Bash(npm audit*)"

@@ -1,8 +1,9 @@
 /node_modules/
-# Local-only Claude Code context (testing workflow + repo conventions).
-# This is a public repo; the file may reference paths and host names
-# from the maintainer's setup that don't belong on GitHub.
-CLAUDE.md
+# Machine-local Claude Code notes (testing workflow, host names, deploy
+# recipes from the maintainer's setup that don't belong on GitHub). The
+# shared conventions live in AGENTS.md; the tracked CLAUDE.md only
+# imports them.
+CLAUDE.local.md
 # The build reuses the dist/ tree across runs but never
 # regenerates .gz on its own — those are leftovers from local pushes
 # to a Home Assistant instance and should never be committed.
@@ -24,10 +25,14 @@ playwright-report/
 # Most of .claude/ is local-only (scheduled_tasks.lock, settings.local.json),
 # but skills/ and the project-wide settings.json (PreToolUse hook for the
 # commit-guardian skill) are checked in so every contributor — human or AI —
-# gets the same pre-commit ADR check.
+# gets the same pre-commit ADR check. ci-settings.json and hooks/ are the
+# guardrails of the unattended agent runs (docs/agent-automation.md).
 .claude/*
 !.claude/skills/
 !.claude/settings.json
+!.claude/ci-settings.json
+!.claude/hooks/
+__pycache__/
 # Coverage output — generated per-run by `vitest run --coverage`,
 # consumed by SonarCloud (when activated) via coverage/lcov.info.
 coverage/
