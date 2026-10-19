@@ -56,10 +56,10 @@ jobs:
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
       # Paths whose change always needs a human: CI and agent config, the
       # conventions and decisions the reviewer judges against, dependencies,
-      # the shipped bundle (HACS serves dist/ as is; the reviewer cannot
-      # rebuild it), the GHA-pinned E2E/perf baselines (ADR-0003, ADR-0014)
-      # and the configs that define the quality gates.
-      SENSITIVE: '^(\.github/|\.claude/|scripts/|docs/adr/|AGENTS\.md$|CLAUDE\.md$|package(-lock)?\.json$|hacs\.json$|dist/|tests-e2e/snapshots/|perf-baseline\.json$|vitest\.config\.js$|eslint\.config\.mjs$|\.dependency-cruiser\.cjs$|playwright\.config\.ts$|rollup\.config\.mjs$|tsconfig\.json$)'
+      # the GHA-pinned E2E/perf baselines (ADR-0003, ADR-0014) and the
+      # configs that define the quality gates. Not dist/: CI proves it
+      # matches src/.
+      SENSITIVE: '^(\.github/|\.claude/|scripts/|docs/adr/|AGENTS\.md$|CLAUDE\.md$|package(-lock)?\.json$|hacs\.json$|tests-e2e/snapshots/|perf-baseline\.json$|vitest\.config\.js$|eslint\.config\.mjs$|\.dependency-cruiser\.cjs$|playwright\.config\.ts$|rollup\.config\.mjs$|tsconfig\.json$)'
     steps:
       # Outbound traffic: `audit` logs every connection, `block` allows only
       # the list. Start with audit, switch to block once a few runs show the
