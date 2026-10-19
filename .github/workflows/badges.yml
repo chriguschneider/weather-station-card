@@ -26,12 +26,14 @@ concurrency:
   group: badge-metrics
   cancel-in-progress: true
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
   metrics:
     runs-on: ubuntu-latest
+    permissions:
+      # Force-pushes the generated JSON to the orphan `badges` branch.
+      contents: write
     steps:
       - name: Compute metrics and write badge JSON
         env:

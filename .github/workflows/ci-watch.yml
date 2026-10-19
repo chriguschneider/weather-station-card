@@ -1,0 +1,56 @@
+name: CI watch
+
+# A red CI on the default branch went unnoticed for weeks in two repos (and
+# a release went out on top of it). This opens one issue when CI fails on
+# master (push or the weekly run) and closes it when CI is green again.
+# The issue has no P-label, so the autopilot leaves it to a human.
+#
+# Deviation from repo-standard: this repo's CI is `build.yml`, named
+# "Build & Lint" (its `build` job is a required check and also cuts the
+# release on tag pushes), not a separate `ci.yml` named "CI". Tag runs are
+# ignored by `branches: [master]`.
+
+on:
+  # zizmor: workflow_run runs with secrets on the base branch. Safe here:
+  # no checkout, no artifacts, nothing from the triggering run is executed.
+  workflow_run: # zizmor: ignore[dangerous-triggers]
+    workflows: ["Build & Lint"]
+    types: [completed]
+    branches: [master]
+
+permissions: {}
+
+jobs:
+  watch:
+    # PR runs are judged on the PR; this is about the default branch itself.
+    if: github.event.workflow_run.event != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+      RUN_URL: ${{ github.event.workflow_run.html_url }}
+      TITLE: "CI is red on master"
+    steps:
+      - name: Open, update or close the CI issue
+        run: |
+          issue="$(gh issue list -R "$REPO" --state open --search "\"$TITLE\" in:title" --json number --jq '.[0].number // empty')"
+          case "$CONCLUSION" in
+            success)
+              if [ -n "$issue" ]; then
+                gh issue comment "$issue" -R "$REPO" --body "Green again: $RUN_URL"
+                gh issue close "$issue" -R "$REPO"
+              fi
+              ;;
+            cancelled|skipped) echo "CI $CONCLUSION; nothing to do" ;;
+            *)
+              if [ -n "$issue" ]; then
+                gh issue comment "$issue" -R "$REPO" --body "Still red ($CONCLUSION): $RUN_URL"
+              else
+                gh issue create -R "$REPO" --title "$TITLE" \
+                  --body "CI ended **$CONCLUSION** on master: $RUN_URL. Nothing should be released or promoted until it is green again. This issue closes itself when CI passes."
+              fi
+              ;;
+          esac

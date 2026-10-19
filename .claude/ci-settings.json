@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push --delete*)",
+      "Bash(git push origin :*)",
+      "Bash(gh api*)",
+      "Bash(gh secret*)",
+      "Bash(gh workflow*)",
+      "Bash(gh repo*)",
+      "Bash(gh auth*)",
+      "Bash(curl*)",
+      "Bash(wget*)",
+      "Read(./.env*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/protect-paths.py\""
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -7,19 +7,32 @@ on:
   pull_request:
     branches: [master]
   workflow_dispatch:
+  # Weekly, so tool or dependency drift (a new advisory, a browser update
+  # shifting the visual baselines) turns master red even without commits;
+  # ci-watch.yml opens an issue when it does. Tag-only steps skip.
+  schedule:
+    - cron: "23 4 * * 1"
+
+# Least privilege by default; the build job below asks for what it needs.
+permissions: {}
 
 # Cancel superseded runs on the same ref so iterative pushes (especially
 # from AI-assisted branches that push 3-5 times before CI green) don't
 # stack up. Tag pushes are excluded — they upload release assets, so
-# every tag run must complete.
+# every tag run must complete. The event name keeps the weekly run and a
+# push to master from cancelling each other.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
+    # The release lives in this job (tag push), so it carries the release
+    # permissions on every run. Pull requests from forks get a read-only
+    # token regardless. Splitting the release into its own job would rename
+    # nothing but would change the release path; kept as is on purpose.
+    permissions: # zizmor: ignore[excessive-permissions]
       # softprops/action-gh-release needs contents:write to create or
       # update the GitHub Release on tag push. The repo default is
       # contents:read since GitHub tightened workflow permissions.
@@ -29,20 +42,34 @@ jobs:
       actions: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes with git; the release and the badge
+          # dispatch get the token explicitly.
+          persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
+          # No cache: this job publishes the release, and a poisoned cache
+          # entry would land in the shipped bundle.
+          package-manager-cache: false
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Security audit
-        # Fails the build on high or critical advisories. Low/moderate
-        # are reported as Dependabot PRs (.github/dependabot.yml).
-        # Added v1.4.2 — see issue #19.
+      - name: Security audit (shipped dependencies)
+        # Fails the build on high or critical advisories in what ends up
+        # in the bundle (lit, uplot). Dev tooling never reaches a
+        # dashboard, so a dev-only advisory does not block unrelated PRs.
+        # Added v1.4.2 — see issue #19; runtime-only since repo-standard.
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Security audit (all, informational)
+        # Shows dev-tool advisories without failing the build; fixes
+        # arrive as Dependabot PRs (.github/dependabot.yml).
+        continue-on-error: true
         run: npm audit --audit-level=high
 
       - name: Lint
@@ -130,7 +157,7 @@ jobs:
 
       - name: Upload Playwright report on failure
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report
           path: |
@@ -208,7 +235,8 @@ jobs:
         # Without this, lazy chunks would 404 in HACS-installed
         # cards even though the entry file loads.
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v3
+        # zizmor: ignore[superfluous-actions] -- the release path is kept as is.
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: dist/*.js
           body_path: .release-notes.md
@@ -227,4 +255,5 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run badges.yml --ref master -R "${{ github.repository }}"
+          REPO: ${{ github.repository }}
+        run: gh workflow run badges.yml --ref master -R "$REPO"

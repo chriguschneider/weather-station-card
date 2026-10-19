@@ -42,6 +42,21 @@ ADRs are append-only — once accepted, don't rewrite history. If a decision
 changes, write a new ADR that supersedes the old one and update the old one's
 status line.
 
+## Changing an accepted ADR
+
+Do not rewrite it. A refinement that keeps the decision (a new exception, a
+moved threshold, a renamed path or workflow) is appended as a section at the
+end, and the original text stays:
+
+```
+## Amendment YYYY-MM-DD (#issue)
+
+What changed and why. Decided by: <owner | ADR-NNNN>.
+```
+
+A decision that reverses the ADR gets a new ADR, and the old one's status
+becomes `Superseded by NNNN`.
+
 ## Index
 
 - [0001 — Commit `dist/weather-station-card.js` alongside source](./0001-dist-committed-for-hacs.md) (Accepted)
@@ -72,3 +87,4 @@ status line.
 - [0026 — Calendar math and displayed times follow the HA server's time zone](./0026-server-time-zone.md) (Accepted)
 - [0027 — Chance of rain: weather entity first, Open-Meteo as fallback](./0027-precip-probability-entity-first.md) (Accepted)
 - [0028 — Sunshine bar: weather entity first, Open-Meteo as fallback](./0028-sunshine-entity-first.md) (Accepted)
+- [0029 — Agent guardrails and CI conventions from repo-standard](./0029-repo-standard-agent-guardrails.md) (Accepted)
