@@ -367,6 +367,48 @@ interface HassLatLon {
   config?: { latitude?: number | null };
 }
 
+/** Forecast entry as the weather entity delivers it. `sunshine_duration`
+ *  is not a standard HA Forecast slot: hass-meteoswiss-weather fills it
+ *  in MINUTES (hourly entries: that hour, daily: the local day's sum). */
+export interface EntitySunshineEntry {
+  sunshine?: number | null;
+  sunshine_duration?: unknown;
+}
+
+/** The entity's sunshine in hours, or null when the entry has none.
+ *  Explicit minutes → hours instead of `normalizeSunshineValue`'s
+ *  seconds/hours heuristic, which would read 45 min as 45 s. */
+export function entitySunshineHours(entry: EntitySunshineEntry | null | undefined): number | null {
+  const raw = entry?.sunshine_duration;
+  const n = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : raw;
+  if (typeof n !== 'number' || !Number.isFinite(n)) return null;
+  return Math.max(0, n) / 60;
+}
+
+/** Set `sunshine` from the entity's `sunshine_duration` (ADR-0028).
+ *  Runs before `attachSunshine`, which keeps an existing `sunshine`, so
+ *  Open-Meteo and the cloud-cover estimate only fill entries without
+ *  one. Non-destructive — returns a NEW array. */
+export function attachEntitySunshine<T extends EntitySunshineEntry>(
+  forecasts: ReadonlyArray<T>,
+): T[] {
+  if (!Array.isArray(forecasts)) return [];
+  return forecasts.map((entry) => {
+    const hours = entitySunshineHours(entry);
+    return hours == null ? { ...entry } : { ...entry, sunshine: hours };
+  });
+}
+
+/** True when EVERY entry carries the entity's sunshine — only then can
+ *  the card skip the Open-Meteo request for the forecast columns. An
+ *  empty slice has nothing to fill and counts as covered. */
+export function forecastCoversSunshine(
+  forecasts: ReadonlyArray<EntitySunshineEntry> | null | undefined,
+): boolean {
+  if (!Array.isArray(forecasts)) return true;
+  return forecasts.every((e) => entitySunshineHours(e) != null);
+}
+
 /** Compose the overlay opts from a Home Assistant `hass` object and an
  *  OpenMeteo source instance, then run `attachSunshine`. Pure —
  *  testable without instantiating LitElement / a real card.
