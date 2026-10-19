@@ -97,7 +97,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/pick-model.sh "$NUMBER" >> "$GITHUB_OUTPUT"
 
-      - uses: anthropics/claude-code-action@5eb090f3c3afd701a0672cd32981197ca27688f6 # v1.0.253
+      - name: Claude
+        id: claude
+        uses: anthropics/claude-code-action@5eb090f3c3afd701a0672cd32981197ca27688f6 # v1.0.253
         if: steps.token.outputs.present == 'true'
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -110,4 +112,19 @@ jobs:
             --model ${{ steps.model.outputs.model }}
             --max-turns 60
             --permission-mode dontAsk
-            --allowedTools "Read,Glob,Grep,Edit,Write,TodoWrite,Bash(git status*),Bash(git diff*),Bash(git log*),Bash(git show*),Bash(git switch*),Bash(git checkout*),Bash(git branch*),Bash(git add*),Bash(git commit*),Bash(git push*),Bash(git rm*),Bash(git mv*),Bash(git restore*),Bash(git fetch*),Bash(git rev-parse*),Bash(ls*),Bash(cd *),Bash(gh issue view*),Bash(gh issue comment*),Bash(gh pr create*),Bash(gh pr view*),Bash(gh pr diff*),Bash(gh pr checks*),Bash(gh pr comment*),Bash(gh pr edit*),Bash(gh pr list*),Bash(npm ci*),Bash(npm install*),Bash(npm run lint*),Bash(npm run typecheck*),Bash(npm run depcheck*),Bash(npm run coverage*),Bash(npm run rollup*),Bash(npm run build*),Bash(npm test*),Bash(npx vitest*),Bash(npm audit*),Bash(grep*),Bash(rg*),Bash(find*),Bash(head*),Bash(tail*),Bash(wc*),Bash(cat*),Bash(sed*),Bash(awk*),Bash(sort*),Bash(uniq*),Bash(diff*),Bash(jq*),Bash(mkdir*),Bash(cp*),Bash(mv*),Bash(touch*),Bash(echo*),Bash(printf*),Bash(node *),Bash(npx tsc*),Bash(npx eslint*),Bash(npm run *)"
+            --allowedTools "Read,Glob,Grep,Edit,Write,TodoWrite,Bash(git status*),Bash(git diff*),Bash(git log*),Bash(git show*),Bash(git switch*),Bash(git checkout*),Bash(git branch*),Bash(git add*),Bash(git commit*),Bash(git push*),Bash(git rm*),Bash(git mv*),Bash(git restore*),Bash(git fetch*),Bash(git rev-parse*),Bash(ls*),Bash(cd *),Bash(gh issue view*),Bash(gh issue comment*),Bash(gh pr create*),Bash(gh pr view*),Bash(gh pr diff*),Bash(gh pr checks*),Bash(gh pr comment*),Bash(gh pr edit*),Bash(gh pr list*),Bash(npm ci*),Bash(npm install*),Bash(npm run lint*),Bash(npm run typecheck*),Bash(npm run depcheck*),Bash(npm run coverage*),Bash(npm run rollup*),Bash(npm run build*),Bash(npm test*),Bash(npx vitest*),Bash(npm audit*),Bash(grep*),Bash(rg*),Bash(find*),Bash(head*),Bash(tail*),Bash(wc*),Bash(cat*),Bash(sed*),Bash(awk*),Bash(sort*),Bash(uniq*),Bash(diff*),Bash(jq*),Bash(mkdir*),Bash(cp*),Bash(mv*),Bash(touch*),Bash(echo*),Bash(printf*),Bash(node *),Bash(npx tsc*),Bash(npx eslint*),Bash(npm run *),Bash(git merge*),Bash(git pull*),Bash(gh pr ready*),Bash(/home/runner/work/_actions/anthropics/claude-code-action/*)"
+            --append-system-prompt "Unattended run with a Bash allowlist: every command of a chain is checked on its own; command substitution ($(...), backticks), heredocs and shell loops never match and are refused. Commit with git commit -F <file> (write the message with the Write tool first), PR/comment texts via --body-file, bulk edits via one script or the Edit tool. A refused call is never a reason to stop: use the allowed equivalent."
+
+      # The mention flow has no leftover handling; at least make a refused
+      # call visible in the log and the job summary instead of only in the
+      # agent's own words.
+      - name: Report refused tool calls
+        if: always() && steps.claude.outputs.execution_file != ''
+        env:
+          EXEC_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          [ -f "$EXEC_FILE" ] || exit 0
+          d="$(jq -r '[.[] | select(.type == "result")] | last | .permission_denials // [] | .[] | "- `\(.tool_name)`: `\(.tool_input.command // .tool_input.file_path // "" | tostring | .[0:300])`"' "$EXEC_FILE" 2>/dev/null || true)"
+          [ -z "$d" ] && exit 0
+          printf 'tool calls refused by the allowlist:\n%s\n' "$d"
+          { echo "### Tool calls refused by the allowlist"; echo; echo "$d"; } >> "$GITHUB_STEP_SUMMARY"

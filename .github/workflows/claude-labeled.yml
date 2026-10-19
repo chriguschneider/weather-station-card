@@ -132,7 +132,7 @@ jobs:
             --model ${{ steps.model.outputs.model }}
             --max-turns 100
             --permission-mode dontAsk
-            --allowedTools "Read,Glob,Grep,Edit,Write,TodoWrite,Bash(git status*),Bash(git diff*),Bash(git log*),Bash(git show*),Bash(git switch*),Bash(git checkout*),Bash(git branch*),Bash(git add*),Bash(git commit*),Bash(git push*),Bash(git rm*),Bash(git mv*),Bash(git restore*),Bash(git fetch*),Bash(git rev-parse*),Bash(ls*),Bash(cd *),Bash(gh issue view*),Bash(gh issue comment*),Bash(gh pr create*),Bash(gh pr view*),Bash(gh pr diff*),Bash(gh pr checks*),Bash(gh pr comment*),Bash(gh pr edit*),Bash(gh pr list*),Bash(npm ci*),Bash(npm install*),Bash(npm run lint*),Bash(npm run typecheck*),Bash(npm run depcheck*),Bash(npm run coverage*),Bash(npm run rollup*),Bash(npm run build*),Bash(npm test*),Bash(npx vitest*),Bash(npm audit*),Bash(grep*),Bash(rg*),Bash(find*),Bash(head*),Bash(tail*),Bash(wc*),Bash(cat*),Bash(sed*),Bash(awk*),Bash(sort*),Bash(uniq*),Bash(diff*),Bash(jq*),Bash(mkdir*),Bash(cp*),Bash(mv*),Bash(touch*),Bash(echo*),Bash(printf*),Bash(node *),Bash(npx tsc*),Bash(npx eslint*),Bash(npm run *)"
+            --allowedTools "Read,Glob,Grep,Edit,Write,TodoWrite,Bash(git status*),Bash(git diff*),Bash(git log*),Bash(git show*),Bash(git switch*),Bash(git checkout*),Bash(git branch*),Bash(git add*),Bash(git commit*),Bash(git push*),Bash(git rm*),Bash(git mv*),Bash(git restore*),Bash(git fetch*),Bash(git rev-parse*),Bash(ls*),Bash(cd *),Bash(gh issue view*),Bash(gh issue comment*),Bash(gh pr create*),Bash(gh pr view*),Bash(gh pr diff*),Bash(gh pr checks*),Bash(gh pr comment*),Bash(gh pr edit*),Bash(gh pr list*),Bash(npm ci*),Bash(npm install*),Bash(npm run lint*),Bash(npm run typecheck*),Bash(npm run depcheck*),Bash(npm run coverage*),Bash(npm run rollup*),Bash(npm run build*),Bash(npm test*),Bash(npx vitest*),Bash(npm audit*),Bash(grep*),Bash(rg*),Bash(find*),Bash(head*),Bash(tail*),Bash(wc*),Bash(cat*),Bash(sed*),Bash(awk*),Bash(sort*),Bash(uniq*),Bash(diff*),Bash(jq*),Bash(mkdir*),Bash(cp*),Bash(mv*),Bash(touch*),Bash(echo*),Bash(printf*),Bash(node *),Bash(npx tsc*),Bash(npx eslint*),Bash(npm run *),Bash(git merge*),Bash(git pull*),Bash(gh pr ready*),Bash(/home/runner/work/_actions/anthropics/claude-code-action/*)"
           prompt: |
             You are working, unattended, on GitHub issue #${{ env.ISSUE }}
             of this repository. FIRST read AGENTS.md, ARCHITECTURE.md and
@@ -142,9 +142,11 @@ jobs:
 
             Rules (non-negotiable):
             - The Bash allowlist checks every command of a chain or pipe on
-              its own; shell loops (`for` / `while`) are never matched and get
-              refused. For bulk edits over many files write one `node` script
-              (or use the Edit tool per file). If a call is refused, switch to
+              its own; shell loops (`for` / `while`) and command substitution
+              are never matched and get refused. For bulk edits over many
+              files write one `node` script (or use the Edit tool per file);
+              write PR and comment texts to a file and pass `--body-file`.
+              If a call is refused, switch to
               an allowed equivalent (Edit/Write tool, `npm run typecheck`
               instead of a raw compiler call) and carry on -- a refused call
               is never a reason to stop.
