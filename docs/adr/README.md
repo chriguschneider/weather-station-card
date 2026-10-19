@@ -71,3 +71,4 @@ status line.
 - [0025 — Attribute row layout as a list of columns](./0025-attribute-row-layout.md) (Accepted)
 - [0026 — Calendar math and displayed times follow the HA server's time zone](./0026-server-time-zone.md) (Accepted)
 - [0027 — Chance of rain: weather entity first, Open-Meteo as fallback](./0027-precip-probability-entity-first.md) (Accepted)
+- [0028 — Sunshine bar: weather entity first, Open-Meteo as fallback](./0028-sunshine-entity-first.md) (Accepted)

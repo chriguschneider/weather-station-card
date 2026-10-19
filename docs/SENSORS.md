@@ -131,6 +131,16 @@ Open-Meteo's privacy policy is at
 rather not have any browser call out, leave `show_sunshine` off
 (default).
 
+**Weather entities with their own sunshine forecast.** When the
+forecast entries carry `sunshine_duration` in minutes
+([hass-meteoswiss-weather](https://github.com/chriguschneider/hass-meteoswiss-weather)
+does), the forecast columns use that value. Open-Meteo then only fills
+the columns the entity leaves empty. If the entity covers every
+forecast column, and the past columns are daily with a
+`sensors.sunshine_duration` or `sensors.illuminance`, the card does not
+call Open-Meteo for the sunshine bar at all
+([ADR-0028](adr/0028-sunshine-entity-first.md)).
+
 In hourly mode the bars are per-hour fractions (full bar = full hour
 of sun, empty bar = night or fully overcast). The numeric "Xh" box is
 suppressed at hourly because 168 narrow columns over a 7-day window

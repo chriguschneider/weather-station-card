@@ -69,7 +69,12 @@ import {
   forecastFetchKey,
   forecastsEqual,
 } from './forecast-utils.js';
-import { overlayFromOpenMeteo, sunshineFractions } from './sunshine-source.js';
+import {
+  attachEntitySunshine,
+  forecastCoversSunshine,
+  overlayFromOpenMeteo,
+  sunshineFractions,
+} from './sunshine-source.js';
 import { OpenMeteoSource } from './openmeteo-source.js';
 import { forecastHasProbability, overlayPrecipProbability } from './precip-probability.js';
 import { PROBABILITY_EXTRA_BOTTOM_PAD } from './chart/plugins/precip-label.js';
@@ -1726,12 +1731,15 @@ async _refreshPressureDelta(): Promise<void> {
     const lastStationMs = station.length
       ? new Date((station[station.length - 1] as { datetime?: string }).datetime ?? '').getTime()
       : -Infinity;
-    const forecast = Number.isFinite(lastStationMs)
+    const trimmed = Number.isFinite(lastStationMs)
       ? rawForecast.filter((e: { datetime?: string }) => {
           const t = new Date(e.datetime ?? '').getTime();
           return !Number.isFinite(t) || t > lastStationMs;
         })
       : rawForecast;
+    // The entity's own sunshine goes on first (ADR-0028); the overlays
+    // further down keep it and only fill the entries without one.
+    const forecast = attachEntitySunshine(trimmed);
     // Earlier code dropped the trailing station-today entry when it
     // carried no recorded data yet (temperature + templow + precipitation
     // all null). That removed the FR-station column from ~00:00 to ~00:15
@@ -1946,6 +1954,32 @@ async _refreshPressureDelta(): Promise<void> {
     return !forecastHasProbability(raw);
   }
 
+  // True when the sunshine bar has a column only Open-Meteo can fill
+  // (ADR-0028, same gating as ADR-0027). Forecast columns are covered
+  // when every entry of the visible slice carries the entity's
+  // `sunshine_duration`; until the forecast arrives that counts as
+  // covered, and the next arrival re-evaluates. Station columns are
+  // covered only in daily mode with a sunshine or illuminance sensor —
+  // the hourly recorder builder carries no sunshine at all.
+  // deno-lint-ignore no-explicit-any
+  _sunshineNeedsOpenMeteo(effectiveCfg: any): boolean {
+    if (effectiveCfg?.forecast?.show_sunshine !== true) return false;
+    const fcType = effectiveCfg.forecast.type;
+    if (effectiveCfg.show_station !== false) {
+      const sensors = this.config?.sensors || {};
+      const hasSensor = Object.values(sensors).some(
+        (v) => typeof v === 'string' && v.trim() !== '',
+      );
+      const stationHasSunshine = fcType === 'daily'
+        && !!(sensors.sunshine_duration || sensors.illuminance);
+      if (hasSensor && !stationHasSunshine) return true;
+    }
+    const raw = this._forecastData;
+    if (!Array.isArray(raw) || raw.length === 0) return false;
+    const slice = this._sliceForecast(effectiveCfg, fcType, fcType === 'today', startOfTodayMs());
+    return !forecastCoversSunshine(slice);
+  }
+
   // True when the Open-Meteo source should drive the past/station chart
   // block instead of the recorder (ADR-0015). All must hold:
   //   - no station sensors configured (any one sensor → recorder wins,
@@ -2024,7 +2058,7 @@ async _refreshPressureDelta(): Promise<void> {
   // deno-lint-ignore no-explicit-any
   _ensureOpenMeteoSource(effectiveCfg: any) {
     const feedsStation = this._openMeteoStationFallbackActive(this.config);
-    const enabled = effectiveCfg?.forecast?.show_sunshine === true
+    const enabled = this._sunshineNeedsOpenMeteo(effectiveCfg)
       || feedsStation
       || this._precipProbabilityNeedsOpenMeteo(effectiveCfg);
     if (!enabled) {

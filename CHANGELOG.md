@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **The sunshine bar uses the weather entity's own sunshine forecast
+  when it has one.** Forecast entries with `sunshine_duration` (in
+  minutes, e.g. from hass-meteoswiss-weather) now fill the bar, and
+  Open-Meteo only fills the columns the entity leaves empty. When the
+  entity covers every column, the card no longer sends your location
+  to Open-Meteo for the sunshine bar (ADR-0028).
+
 ## [2.9.0] — 2026-10-17
 
 ### Added
