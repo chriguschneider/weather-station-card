@@ -103,6 +103,12 @@ jobs:
           # github-actions[bot] and their CI would sit in "action_required".
           persist-credentials: false
 
+
+      # The agent runs the repo's checks itself.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.token.outputs.present == 'true'
+        with:
+          node-version: "22"
       - name: Pick model
         id: model
         if: steps.token.outputs.present == 'true'
@@ -126,7 +132,7 @@ jobs:
             --model ${{ steps.model.outputs.model }}
             --max-turns 100
             --permission-mode dontAsk
-            --allowedTools "Read,Glob,Grep,Edit,Write,TodoWrite,Bash(git status*),Bash(git diff*),Bash(git log*),Bash(git show*),Bash(git switch*),Bash(git checkout*),Bash(git branch*),Bash(git add*),Bash(git commit*),Bash(git push*),Bash(git rm*),Bash(git mv*),Bash(git restore*),Bash(git fetch*),Bash(git rev-parse*),Bash(ls*),Bash(gh issue view*),Bash(gh issue comment*),Bash(gh pr create*),Bash(gh pr view*),Bash(gh pr diff*),Bash(gh pr checks*),Bash(gh pr comment*),Bash(gh pr edit*),Bash(gh pr list*),Bash(npm ci*),Bash(npm install*),Bash(npm run lint*),Bash(npm run typecheck*),Bash(npm run depcheck*),Bash(npm run coverage*),Bash(npm run rollup*),Bash(npm run build*),Bash(npm test*),Bash(npx vitest*),Bash(npm audit*)"
+            --allowedTools "Read,Glob,Grep,Edit,Write,TodoWrite,Bash(git status*),Bash(git diff*),Bash(git log*),Bash(git show*),Bash(git switch*),Bash(git checkout*),Bash(git branch*),Bash(git add*),Bash(git commit*),Bash(git push*),Bash(git rm*),Bash(git mv*),Bash(git restore*),Bash(git fetch*),Bash(git rev-parse*),Bash(ls*),Bash(cd *),Bash(gh issue view*),Bash(gh issue comment*),Bash(gh pr create*),Bash(gh pr view*),Bash(gh pr diff*),Bash(gh pr checks*),Bash(gh pr comment*),Bash(gh pr edit*),Bash(gh pr list*),Bash(npm ci*),Bash(npm install*),Bash(npm run lint*),Bash(npm run typecheck*),Bash(npm run depcheck*),Bash(npm run coverage*),Bash(npm run rollup*),Bash(npm run build*),Bash(npm test*),Bash(npx vitest*),Bash(npm audit*)"
           prompt: |
             You are working, unattended, on GitHub issue #${{ env.ISSUE }}
             of this repository. FIRST read AGENTS.md, ARCHITECTURE.md and

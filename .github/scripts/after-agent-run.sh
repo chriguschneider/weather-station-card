@@ -36,6 +36,17 @@ if [ -n "${EXEC_FILE:-}" ] && [ -f "$EXEC_FILE" ]; then
     "$EXEC_FILE" 2>/dev/null || echo "$outcome")"
 fi
 
+# Refused tool calls are the first thing to look at when a run could not do
+# its job (an allowlist gap): list them in the job summary.
+if [ -n "${EXEC_FILE:-}" ] && [ -f "$EXEC_FILE" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+  denials="$(jq -r '[.[] | select(.type == "result")] | last | .permission_denials // []
+    | .[] | "- `\(.tool_name)`: `\(.tool_input.command // .tool_input.file_path // "" | tostring | .[0:160])`"' \
+    "$EXEC_FILE" 2>/dev/null || true)"
+  if [ -n "$denials" ]; then
+    { echo "### Tool calls refused by the allowlist"; echo; echo "$denials"; } >> "$GITHUB_STEP_SUMMARY"
+  fi
+fi
+
 nothing_saved() {
   if [ "$outcome" = "success" ]; then
     echo "run succeeded and left nothing on a branch; nothing to do"
