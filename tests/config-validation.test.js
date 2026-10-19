@@ -261,6 +261,10 @@ describe('validateConfig — attributes_layout (ADR-0025)', () => {
       ...validBaseConfig(),
       attributes_layout: [['pressure', 'dew_point'], ['zero_degree_level', 'wind_speed']],
     })).toEqual([]);
+    expect(validateConfig({
+      ...validBaseConfig(),
+      attributes_layout: [['zero_degree_level_48h', 'wind_speed']],
+    })).toEqual([]);
   });
 
   it('accepts a bare token as a one-row column', () => {

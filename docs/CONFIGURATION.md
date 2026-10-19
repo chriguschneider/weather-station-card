@@ -162,6 +162,7 @@ classifier, and (where relevant) the attribute readouts. Only
 | `sensors.illuminance` | Cloud-cover ratio for live + daily conditions, and the lux-derived station sunshine. Accepts a plain illuminance sensor (lx) **or a solar-irradiance sensor (W/m², `device_class: irradiance`)** — irradiance readings are converted internally at 120 lm/W (daylight luminous efficacy); tune via `condition_mapping.sunshine_lux_ratio` if needed. *(irradiance support since v2.2.3)* |
 | `sensors.uv_index` | UV attribute |
 | `sensors.zero_degree_level` | Zero-degree level row (altitude of the 0 °C isotherm — the snow line). A forecast-derived sensor, e.g. the MeteoSwiss integration's *Zero-degree level* (disabled by default there; needs its hourly option). Unit follows the entity (m or ft). No weather-entity fallback. *(since v2.5)* |
+| `sensors.zero_degree_level_48h` | Zero-degree level in 48 h row: where the snow line will be in two days, next to the current one. Any numeric sensor with a length unit works, e.g. the MeteoSwiss integration's *Zero-degree level in 48 h*. Unit follows the entity. If the sensor has a numeric `change` attribute (metres vs. now) the row shows a trend arrow (steady below 100 m). *(unreleased)* |
 | `sensors.next_rain` | Next-rain row. Built for the [MeteoSwiss Radar](https://github.com/chriguschneider/hass-meteoswiss-radar) integration's *Next rain* sensor (its nowcast entities are opt-in in the integration's options): the card reads the `at`, `source` and `checked_until` attributes, counts down in minutes while the radar sees rain coming, shows a clock time for forecast answers (`~17:00`) and "No rain" otherwise (the tooltip says how far the forecast was checked). Any timestamp sensor works too; other sensors show their state as-is. Auto-detected on new cards. *(unreleased)* |
 | `sensors.sunshine_duration` | Today's live sunshine value (scalar, seconds or hours auto-detected at the `≥ 30` threshold). Past columns fall back to the recorder's daily-max for this same sensor. Only used when `forecast.show_sunshine: true`. *(since v0.9; fully wired in daily fetch since v1.4.)* |
 | `sensors.moon_phase` | **Deprecated (v2.3, ADR-0022)** — the moon line is now computed in-card and reads no entity, so [HA's Moon integration](https://www.home-assistant.io/integrations/moon/) is no longer needed. The key is accepted and ignored so older configs keep validating. Use [`show_moon`](#layout--display) to control the line. *(entity-fed v2.2 only)* |
@@ -212,6 +213,7 @@ matching attribute on `weather_entity`)
 | `show_wind_speed` | bool | opt-out (`true` when value present) | Wind-speed value. |
 | `show_wind_gust_speed` | bool | `false` | Gust speed (opt-in, requires `sensors.gust_speed` or weather-entity attribute). |
 | `show_zero_degree_level` | bool | `false` | Zero-degree level (opt-in, requires `sensors.zero_degree_level`). Renders in the climate column after precipitation; use `attributes_layout` to place it elsewhere. Formatted through HA's entity formatter (display precision, number locale) when available. *(since v2.5)* |
+| `show_zero_degree_level_48h` | bool | `false` | Zero-degree level in 48 h (opt-in, requires `sensors.zero_degree_level_48h`). Renders in the climate column after the zero-degree level, marked "48 h"; use `attributes_layout` to place it elsewhere. *(unreleased)* |
 | `show_next_rain` | bool | `false` | Next rain (opt-in, requires `sensors.next_rain`). Renders in the climate column after precipitation; the tooltip names whether the radar or the hourly forecast answered. *(unreleased)* |
 | `show_dew_point_humidity` | bool | `false` | Force the combined dew point + humidity line. Without it the two share a line whenever both `show_dew_point` and `show_humidity` are on. *(since v2.5)* |
 | `show_uv_illuminance` | bool | `false` | Force the combined UV + illuminance line. Without it the two share a line whenever both `show_uv_index` and `show_illuminance` are on. *(since v2.5)* |
@@ -265,6 +267,7 @@ Rules:
 | `humidity` | Humidity | `sensors.humidity` or weather entity |
 | `precipitation` | Live precipitation rate | `sensors.precipitation` / `sensors.precipitation_rate` |
 | `zero_degree_level` | Zero-degree level | `sensors.zero_degree_level` |
+| `zero_degree_level_48h` | Zero-degree level in 48 h, with a trend arrow when the sensor has a `change` attribute | `sensors.zero_degree_level_48h` |
 | `next_rain` | Next rain (countdown / clock time / dry-until) | `sensors.next_rain` |
 | `uv_illuminance` | UV index and illuminance on one sun-strength line | both of the next two |
 | `uv_index` | UV index with sun-strength icon | `sensors.uv_index` or weather entity |

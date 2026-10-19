@@ -55,6 +55,7 @@ export const ATTRIBUTE_PATHS: ReadonlyArray<
     gateKey: ['precipitation', 'precipitation_rate'] },
   { path: 'show_next_rain',         def: false, gate: 'sensor', gateKey: 'next_rain' },
   { path: 'show_zero_degree_level', def: false, gate: 'sensor', gateKey: 'zero_degree_level' },
+  { path: 'show_zero_degree_level_48h', def: false, gate: 'sensor', gateKey: 'zero_degree_level_48h' },
   { path: 'show_uv_illuminance',    def: false, gate: 'live',   gateKey: ['uv_index', 'illuminance'], requireAll: true },
   { path: 'show_uv_index',          def: true,  gate: 'live',   gateKey: 'uv_index' },
   { path: 'show_illuminance',       def: false, gate: 'sensor', gateKey: 'illuminance' },

@@ -62,9 +62,10 @@ describe('resolveAttributesLayout — automatic mode', () => {
       show_humidity: true,
       show_wind_gust_speed: true,
       show_zero_degree_level: true,
+      show_zero_degree_level_48h: true,
     });
     expect(layout).toEqual([
-      ['dew_point_humidity', 'precipitation', 'zero_degree_level'],
+      ['dew_point_humidity', 'precipitation', 'zero_degree_level', 'zero_degree_level_48h'],
       ['uv_index'],
       ['wind_direction', 'wind_speed', 'wind_gust_speed'],
     ]);
