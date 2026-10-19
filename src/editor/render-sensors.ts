@@ -130,6 +130,7 @@ function buildSensorFields(hass: HassWithStates | null): Array<{ key: string; ca
     { key: 'uv_index',            candidates: uvEntities },
     { key: 'sunshine_duration',   candidates: [] },
     { key: 'zero_degree_level',   candidates: zeroDegreeEntities },
+    { key: 'zero_degree_level_48h', candidates: zeroDegreeEntities },
     { key: 'next_rain',           candidates: nextRainEntities },
   ];
 }

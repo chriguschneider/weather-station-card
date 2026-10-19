@@ -256,6 +256,9 @@ class WeatherStationCard extends LitElement {
   // deno-lint-ignore no-explicit-any
   zero_degree_level: any;
   zero_degree_unit: string | undefined;
+  zero_degree_level_48h: any;
+  zero_degree_48h_unit: string | undefined;
+  zero_degree_48h_change: number | undefined;
   // Display-ready strings, not the raw state object: a fresh object per
   // hass tick would defeat Lit's value comparison (ADR-0017).
   next_rain_text: string | undefined;
@@ -638,6 +641,9 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
       precipitation_unit: { attribute: false },
       zero_degree_level: { attribute: false },
       zero_degree_unit: { attribute: false },
+      zero_degree_level_48h: { attribute: false },
+      zero_degree_48h_unit: { attribute: false },
+      zero_degree_48h_change: { attribute: false },
       next_rain_text: { attribute: false },
       next_rain_icon: { attribute: false },
       next_rain_title: { attribute: false },
@@ -951,7 +957,14 @@ _extractSensorReadings(hass: HassMain): void {
   this.precipitation = valueOf(sensors.precipitation);
   this.zero_degree_level = valueOf(sensors.zero_degree_level);
   this.zero_degree_unit = (attrOf(sensors.zero_degree_level, 'unit_of_measurement') as string | undefined) || undefined;
-  const rawPrecipUnit = (attrOf(sensors.precipitation, 'unit_of_measurement') as string | undefined) || undefined;
+  this.zero_degree_level_48h = valueOf(sensors.zero_degree_level_48h);
+  this.zero_degree_48h_unit = (attrOf(sensors.zero_degree_level_48h, 'unit_of_measurement') as string | undefined) || undefined;
+  {
+    const raw = attrOf(sensors.zero_degree_level_48h, 'change');
+    const num = typeof raw === 'number' ? raw : (typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : NaN);
+    this.zero_degree_48h_change = Number.isFinite(num) ? num : undefined;
+  }
+  const rawPrecipUnit =(attrOf(sensors.precipitation, 'unit_of_measurement') as string | undefined) || undefined;
   this.precipitation_unit = rawPrecipUnit;
   // Three precip shapes, all gated on whether the row is actually
   // rendered (show_precipitation). When the row is hidden the
@@ -3811,6 +3824,22 @@ _climateRow_zeroDegree(show: boolean, value: unknown, unit: string | undefined) 
     html`<ha-icon icon="mdi:snowflake-thermometer"></ha-icon> ${text}`)}`;
 }
 
+// Zero-degree level in 48 h (`sensors.zero_degree_level_48h`): same
+// formatting as the current level, a "48 h" marker tells the rows apart.
+// A numeric `change` attribute (metres vs. now) adds a trend arrow;
+// within ±100 m it reads as steady.
+_climateRow_zeroDegree48h(value: unknown, unit: string | undefined, change: number | undefined) {
+  if (value === undefined || value === '') return null;
+  const eid = this._attrEntity('zero_degree_level_48h', false);
+  const text = this._formatEntityValue(eid, value, unit, 0);
+  const trend = change === undefined ? null
+    : Math.abs(change) < 100 ? 'mdi:trending-neutral'
+    : change > 0 ? 'mdi:trending-up' : 'mdi:trending-down';
+  return html`${this._entityLink(eid,
+    html`<ha-icon icon="mdi:snowflake-thermometer"></ha-icon> <small>48 h</small> ${text}${trend
+      ? html` <ha-icon icon="${trend}"></ha-icon>` : ''}`)}`;
+}
+
 // Next-rain row (`sensors.next_rain`). Text, icon and tooltip are
 // prepared by `_refreshNextRain`; the tooltip names which horizon
 // answered, so a forecast "~17:00" is never read as a radar observation.
@@ -3943,7 +3972,7 @@ _windRow_gust(show: boolean, wind_gust_speed: any) {
 // off or its value is missing (Lit renders null as nothing), so a
 // column with nothing to show is dropped and the remaining columns
 // spread across the width as before.
-renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, language, uv_index, dew_point, wind_gust_speed, illuminance, precipitation, precipitation_unit, zero_degree_level, zero_degree_unit } = this) {
+renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, language, uv_index, dew_point, wind_gust_speed, illuminance, precipitation, precipitation_unit, zero_degree_level, zero_degree_unit, zero_degree_level_48h, zero_degree_48h_unit, zero_degree_48h_change } = this) {
   const dWindSpeed = this._convertDisplayWindSpeed(windSpeed);
   const dPressure = this._convertDisplayPressure(pressure);
 
@@ -3977,6 +4006,7 @@ renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, la
     sun, uv_index, illuminance, language,
     windDirection, dWindSpeed, wind_gust_speed,
     zero_degree_level, zero_degree_unit,
+    zero_degree_level_48h, zero_degree_48h_unit, zero_degree_48h_change,
     next_rain_text: this.next_rain_text,
     next_rain_icon: this.next_rain_icon,
     next_rain_title: this.next_rain_title,
@@ -4023,6 +4053,8 @@ _renderAttributeLine(token: AttributeToken, ctx: any) {
       return this._climateRow_precip(true, ctx.hasPrecipValue, ctx.precipitation, ctx.precipitation_unit);
     case 'zero_degree_level':
       return this._climateRow_zeroDegree(true, ctx.zero_degree_level, ctx.zero_degree_unit);
+    case 'zero_degree_level_48h':
+      return this._climateRow_zeroDegree48h(ctx.zero_degree_level_48h, ctx.zero_degree_48h_unit, ctx.zero_degree_48h_change);
     case 'next_rain':
       return this._climateRow_nextRain(ctx.next_rain_text, ctx.next_rain_icon, ctx.next_rain_title);
     case 'uv_illuminance':
