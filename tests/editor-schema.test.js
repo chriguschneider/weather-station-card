@@ -221,7 +221,7 @@ describe('renderSensorsSection (schema-driven)', () => {
       'wind_speed', 'gust_speed',
       'wind_direction', 'illuminance',
       'uv_index', 'sunshine_duration',
-      'zero_degree_level', 'next_rain',
+      'zero_degree_level', 'zero_degree_level_48h', 'next_rain',
     ]);
   });
 

@@ -6,6 +6,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Zero-degree level in 48 h.** Wire `sensors.zero_degree_level_48h`
+  (for example the MeteoSwiss *Zero-degree level in 48 h* sensor) and
+  switch on `show_zero_degree_level_48h`, or place `zero_degree_level_48h`
+  in `attributes_layout`, to see where the snow line will be in two days
+  next to the current one. The row shows a trend arrow when the sensor
+  has a numeric `change` attribute. The visual editor has the matching
+  sensor picker and toggle.
+
 ### Changed
 
 - **The sunshine bar uses the weather entity's own sunshine forecast
