@@ -142,9 +142,11 @@ jobs:
 
             Rules (non-negotiable):
             - The Bash allowlist checks every command of a chain or pipe on
-              its own; shell loops (`for` / `while`) are never matched and get
-              refused. For bulk edits over many files write one `node` script
-              (or use the Edit tool per file). If a call is refused, switch to
+              its own; shell loops (`for` / `while`) and command substitution
+              are never matched and get refused. For bulk edits over many
+              files write one `node` script (or use the Edit tool per file);
+              write PR and comment texts to a file and pass `--body-file`.
+              If a call is refused, switch to
               an allowed equivalent (Edit/Write tool, `npm run typecheck`
               instead of a raw compiler call) and carry on -- a refused call
               is never a reason to stop.
