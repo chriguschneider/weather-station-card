@@ -6,6 +6,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`forecast.openmeteo: false` switches Open-Meteo off completely.**
+  When you would rather show no sunshine bar than one that disagrees
+  with your local weather service, set it in the card's YAML: the card
+  then sends no Open-Meteo request at all and uses only the weather
+  entity and your own sensors. The default (`true`) changes nothing.
+
 ## [2.11.0] — 2026-10-20
 
 ### Added

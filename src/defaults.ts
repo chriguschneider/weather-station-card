@@ -45,6 +45,10 @@ export const DEFAULTS_FORECAST = {
   // station sensor is configured (the recorder wins) or when there is
   // no weather entity.
   openmeteo_history: false,
+  // Master switch: false never contacts Open-Meteo (sunshine bar, past
+  // block and chance-of-rain fallback all fall back to the weather
+  // entity and the card's own sensors). YAML only.
+  openmeteo: true,
   condition_icons: true,
   // Deprecated — see renderWind in main.ts. Kept as a hard master-off
   // shim for YAML configs that explicitly set show_wind_forecast:

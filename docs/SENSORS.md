@@ -196,6 +196,8 @@ your Home Assistant latitude / longitude (or `location` when set) to
 `api.open-meteo.com` from every browser
 that renders the dashboard. The call is client-side, so nothing is
 centralised on your Home Assistant server. If you would rather no
-browser call out, leave `openmeteo_history` off (default). Open-Meteo's
+browser call out, leave `openmeteo_history` off (default). To never
+contact Open-Meteo at all (also for the sunshine bar and the chance-of-rain
+fallback), set `forecast.openmeteo: false`. Open-Meteo's
 privacy policy is at
 [open-meteo.com/en/terms](https://open-meteo.com/en/terms).
