@@ -6,6 +6,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`location` option for cards about another place.** A card for a
+  ski area or a holiday home showed past sunshine bars and history for
+  your Home Assistant home. Add `location: {latitude: …, longitude: …}`
+  and the Open-Meteo data of that card follows the place you name.
+  Without it nothing changes; a malformed value is ignored with a
+  config warning. YAML only for now.
+
 ## [2.10.0] — 2026-10-20
 
 ### Added

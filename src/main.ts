@@ -76,6 +76,7 @@ import {
   sunshineFractions,
 } from './sunshine-source.js';
 import { OpenMeteoSource } from './openmeteo-source.js';
+import { resolveLocation } from './location.js';
 import { forecastHasProbability, overlayPrecipProbability } from './precip-probability.js';
 import { PROBABILITY_EXTRA_BOTTOM_PAD } from './chart/plugins/precip-label.js';
 import { safeQuery } from './utils/safe-query.js';
@@ -1840,6 +1841,8 @@ async _refreshPressureDelta(): Promise<void> {
       this._hass,
       this._openMeteoSource,
       'hourly',
+      null,
+      this.config.location,
     );
     const allBlocks = aggregateThreeHourCalendar(merged);
     // Drop data-less leading blocks: whole empty days always (short
@@ -1897,6 +1900,7 @@ async _refreshPressureDelta(): Promise<void> {
       this._openMeteoSource,
       granularity,
       granularity === 'daily' ? cloudExp : null,
+      this.config.location,
     );
   }
 
@@ -1946,6 +1950,7 @@ async _refreshPressureDelta(): Promise<void> {
         this._openMeteoSource,
         granularity,
         granularity === 'daily' ? cloudExp : null,
+        this.config.location,
       ),
       this._stationCount || 0,
       granularity,
@@ -2082,9 +2087,9 @@ async _refreshPressureDelta(): Promise<void> {
       }
       return;
     }
-    const cfg = this._hass?.config;
-    const lat = cfg && Number.isFinite(cfg.latitude) ? cfg.latitude : null;
-    const lon = cfg && Number.isFinite(cfg.longitude) ? cfg.longitude : null;
+    const loc = resolveLocation(this.config, this._hass);
+    const lat = loc ? loc.latitude : null;
+    const lon = loc ? loc.longitude : null;
     if (lat == null || lon == null) {
       // No HA location → no Open-Meteo fetch is possible. When the
       // source is the station block's only data provider, mark the

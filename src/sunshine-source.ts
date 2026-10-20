@@ -10,6 +10,7 @@
 // sensor's high-resolution history via the lux/clearsky_lux ratio.
 
 import { clearSkyLuxFactory } from './condition-classifier.js';
+import { parseLocation } from './location.js';
 import { dayKey, dayOfYear, hourOf, startOfDay } from './utils/time-zone.js';
 
 
@@ -417,6 +418,8 @@ export function forecastCoversSunshine(
  *    - forecasts: pre-merged station+forecast array (each entry
  *      already has `datetime`).
  *    - hass: { config: { latitude } }.
+ *    - location: the card's `location` option; its latitude wins over
+ *      hass when valid.
  *    - source: an object exposing `getDailyValues()` /
  *      `getHourlyValues()`. Typically an `OpenMeteoSource`.
  *    - granularity: 'daily' (default) or 'hourly'. Picks which array
@@ -429,8 +432,9 @@ export function overlayFromOpenMeteo<T extends SunshineForecastEntry>(
   source: Partial<SunshineSource> | null | undefined,
   granularity: 'daily' | 'hourly' = 'daily',
   cloudCoverageExponent: number | null = null,
+  location: unknown = null,
 ): T[] {
-  const lat = hass?.config ? hass.config.latitude : null;
+  const lat = parseLocation(location)?.latitude ?? (hass?.config ? hass.config.latitude : null);
   const dailyValues = source && typeof source.getDailyValues === 'function'
     ? source.getDailyValues()
     : null;

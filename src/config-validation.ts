@@ -22,6 +22,7 @@ import {
   isAttributeToken,
   showKeyOf,
 } from './attributes-layout.js';
+import { parseLocation } from './location.js';
 
 // Top-level keys that are valid YAML but intentionally have no DEFAULTS
 // entry — see the drift-guard test's DELETE_ONLY_PATHS and main.ts.
@@ -31,6 +32,7 @@ const EXTRA_TOP_LEVEL_KEYS = [
   'locale', // language override, read in `set hass`
   'speed', // legacy top-level speed unit, merged into units.speed in setConfig
   'condition_mapping', // classifier threshold overrides — free-form object
+  'location', // {latitude, longitude} override for Open-Meteo, checked by parseLocation
   // Standard Home Assistant card-level keys, written by HA itself (the
   // grid/layout editor, conditional visibility) and never read by this
   // card. Flagging them is a false positive — every card in a
@@ -312,6 +314,15 @@ function validateTopLevelEntry(
   }
   if (key === 'attributes_layout') {
     validateAttributesLayout(value, problems);
+    return;
+  }
+  if (key === 'location') {
+    if (value !== undefined && value !== null && parseLocation(value) === null) {
+      problems.push(
+        '`location` is ignored (Home Assistant\'s location is used): expected'
+        + ' `latitude` (-90..90) and `longitude` (-180..180) as numbers',
+      );
+    }
     return;
   }
   // Opaque object containers: type-check the container only, never
