@@ -123,7 +123,12 @@ re-fetches at most once an hour. The response covers the past N days
 plus the next N forecast days in a single call. The bar colour is
 `forecast.sunshine_color` (default `#FFD700` yellow).
 
-**Privacy note**: enabling sunshine sends your latitude / longitude to
+Set the top-level `location: {latitude, longitude}` option to query
+another place than your Home Assistant home (see
+[CONFIGURATION.md](CONFIGURATION.md)).
+
+**Privacy note**: enabling sunshine sends your Home Assistant latitude /
+longitude (or `location` when set) to
 `api.open-meteo.com` from each browser that renders the dashboard. The
 data is fetched client-side, so it's not centralised on your HA server.
 Open-Meteo's privacy policy is at
@@ -187,7 +192,8 @@ What to know:
 - Works in all three chart modes — daily, today and hourly.
 
 **Privacy note**: same as the sunshine overlay — turning this on sends
-your latitude / longitude to `api.open-meteo.com` from every browser
+your Home Assistant latitude / longitude (or `location` when set) to
+`api.open-meteo.com` from every browser
 that renders the dashboard. The call is client-side, so nothing is
 centralised on your Home Assistant server. If you would rather no
 browser call out, leave `openmeteo_history` off (default). Open-Meteo's
