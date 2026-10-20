@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.10.0] — 2026-10-20
+
 ### Added
 
 - **Zero-degree level in 48 h.** Wire `sensors.zero_degree_level_48h`
