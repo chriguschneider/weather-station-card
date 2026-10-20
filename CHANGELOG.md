@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.12.0] — 2026-10-20
+
 ### Added
 
 - **`forecast.openmeteo: false` switches Open-Meteo off completely.**
