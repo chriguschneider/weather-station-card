@@ -84,35 +84,64 @@ Last message of the agent:
 Labelled \`needs-verification\` so the autopilot does not retry it." || true
 }
 
+# The agent's own PR for this issue, whatever branch it ended up on: a run
+# can start on one claude/* branch and open its PR from another (seen on
+# weather-station-card #307, where an old WIP branch could not be merged and
+# the agent switched to a fresh one). Matched by "#<issue>" in the PR body.
+issue_pr() {
+  gh pr list --state open --search "#$issue in:body" --json number,headRefName \
+    --jq '[.[] | select(.headRefName | startswith("claude/"))][0].number // empty' 2>/dev/null || true
+}
+
 branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
 case "$branch" in
   claude/*) ;;
-  *) nothing_saved; exit 0 ;;
+  *)
+    pr="$(issue_pr)"
+    if [ -n "$pr" ]; then
+      echo "not on a claude/* branch, but the agent's PR #$pr exists"
+    else
+      nothing_saved; exit 0
+    fi
+    ;;
 esac
 
 git config user.name "claude[bot]"
 git config user.email "209825114+claude[bot]@users.noreply.github.com"
 
-if [ -n "$(git status --porcelain)" ]; then
+if [ -z "${pr:-}" ] && [ -n "$(git status --porcelain)" ]; then
   git add -A
   git commit -q -m "wip: unfinished agent run for #$issue" \
     -m "The run ended ($detail) before the agent committed this. Saved by after-agent-run.sh."
   echo "committed leftover changes"
 fi
 
-if [ "$(git rev-list --count "origin/$default..HEAD" 2>/dev/null || echo 0)" = "0" ]; then
-  nothing_saved
-  exit 0
+if [ -z "${pr:-}" ]; then
+  ahead="$(git rev-list --count "origin/$default..HEAD" 2>/dev/null || echo 0)"
+  pushed=""
+  if [ "$ahead" != "0" ]; then
+    remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+    if git push -q "$remote" "HEAD:refs/heads/$branch"; then
+      pushed=1
+    else
+      echo "::warning::could not push $branch (remote moved on?)"
+    fi
+  fi
+  if [ -n "$pushed" ]; then
+    pr="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')"
+  fi
+  # Nothing pushed here, or no PR on this branch: the agent may still have
+  # opened its PR from another branch -- hand that one over instead of
+  # stopping (the reviewer would otherwise never start).
+  [ -z "${pr:-}" ] && pr="$(issue_pr)"
+  if [ -z "${pr:-}" ] && [ -z "$pushed" ]; then
+    if [ "$ahead" = "0" ]; then nothing_saved; exit 0; fi
+    echo "::warning::unpushed work on $branch and no PR for #$issue; leaving it to a human"
+    exit 0
+  fi
 fi
 
-remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-if ! git push -q "$remote" "HEAD:refs/heads/$branch"; then
-  echo "::warning::could not push $branch (remote moved on?); leaving it to a human"
-  exit 0
-fi
-
-pr="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')"
-if [ -z "$pr" ]; then
+if [ -z "${pr:-}" ]; then
   # shellcheck disable=SC2016 # the backticks are Markdown, not a command
   gh pr create --draft --head "$branch" \
     --title "WIP: #$issue (agent run did not finish)" \

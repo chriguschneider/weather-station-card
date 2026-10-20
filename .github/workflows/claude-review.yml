@@ -48,6 +48,7 @@ jobs:
       issues: write
       checks: read
       id-token: write
+      actions: write # re-dispatch itself when the PR's workflows are stale
     concurrency:
       group: claude-review-${{ github.event.pull_request.number || github.event.inputs.pr }}
       cancel-in-progress: false
@@ -104,9 +105,31 @@ jobs:
           # CI runs instead of sitting in "action_required".
           persist-credentials: false
 
+      # claude-code-action refuses to run (silently: the job still ends
+      # green) when the PR's copy of this workflow differs from the default
+      # branch -- e.g. the workflows changed while the agent PR was open
+      # (seen on weather-station-card #310). On a pull_request event bring
+      # the branch up to date and re-run as workflow_dispatch, which uses
+      # the default branch's workflow.
+      - name: Workflows in sync with the default branch
+        id: sync
+        if: steps.token.outputs.present == 'true' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git fetch -q origin "$DEFAULT_BRANCH"
+          if git diff --quiet "origin/$DEFAULT_BRANCH" "${{ github.event.pull_request.head.sha }}" -- .github/workflows; then
+            exit 0
+          fi
+          echo "::notice::PR #$PR carries outdated workflows; updating the branch and re-running the review via workflow_dispatch."
+          gh pr update-branch "$PR" || true
+          gh workflow run claude-review.yml -f pr="$PR"
+          echo "redo=true" >> "$GITHUB_OUTPUT"
+
       - name: Wait for the required checks
         id: ci
-        if: steps.token.outputs.present == 'true'
+        if: steps.token.outputs.present == 'true' && steps.sync.outputs.redo != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -121,7 +144,7 @@ jobs:
           fi
 
       - name: Review, fix (bounded), decide
-        if: steps.token.outputs.present == 'true'
+        if: steps.token.outputs.present == 'true' && steps.sync.outputs.redo != 'true'
         uses: anthropics/claude-code-action@5eb090f3c3afd701a0672cd32981197ca27688f6 # v1.0.253
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -195,7 +218,7 @@ jobs:
       # A review run that dies (turn limit, error) would leave the PR open
       # without a label, and the autopilot would wait on it forever.
       - name: Hand a failed review to a human
-        if: failure() && steps.token.outputs.present == 'true'
+        if: failure() && steps.token.outputs.present == 'true' && steps.sync.outputs.redo != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -205,7 +228,7 @@ jobs:
       # The part an agent may not do (CI, agent config) must not get lost
       # when the rest merges: hold the PR and open a follow-up issue.
       - name: Keep human-only changes from getting lost
-        if: always() && steps.token.outputs.present == 'true'
+        if: always() && steps.token.outputs.present == 'true' && steps.sync.outputs.redo != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -221,7 +244,7 @@ jobs:
       # Deterministic, after the model: a PR that changes CI, agent config,
       # conventions, decisions or dependencies is never auto-merged.
       - name: Hold sensitive paths for a human
-        if: always() && steps.token.outputs.present == 'true'
+        if: always() && steps.token.outputs.present == 'true' && steps.sync.outputs.redo != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -240,7 +263,7 @@ jobs:
       # again: the reviewer does not re-run on CI results. So wait for the
       # checks here and hand a failure to a human instead of leaving it silent.
       - name: Hand a failing CI to a human instead of deadlocking
-        if: steps.token.outputs.present == 'true'
+        if: steps.token.outputs.present == 'true' && steps.sync.outputs.redo != 'true'
         timeout-minutes: 25
         env:
           GH_TOKEN: ${{ github.token }}
