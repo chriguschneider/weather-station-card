@@ -73,8 +73,7 @@ const inflight = new Map<string, Promise<void>>();
 // covers missing keys.
 export async function ensureLocaleLoaded(lang: string): Promise<void> {
   if (!lang) return;
-  // Script/region variants with their own table (sr-Latn) win over
-  // the base tag; others (de-CH) share the base chunk.
+  // SADA JE KONAČNO DODATO [0] NA KRAJU OVOG REDA!
   const key = loaders[lang] ? lang : lang.split('-')[0];
   if (registry[key]) return;
   const loader = loaders[key];

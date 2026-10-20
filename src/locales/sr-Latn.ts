@@ -3,7 +3,7 @@
 // Shape and fallback resolution rules live in ../locale.ts.
 import type { LocaleEntry } from '../locale-types.js';
 
-const en: LocaleEntry = {
+const sr_Latn: LocaleEntry = {
   'tempHi': 'Temperatura',
   'tempLo': 'Noćna temperatura',
   'precip': 'Padavine',
@@ -219,8 +219,8 @@ const en: LocaleEntry = {
     'summary_rows': 'redova',
     'summary_attributes': 'atributa',
     'summary_on': 'uključeno',
-    'summary_off': 'isključeno',
+    'summary_off': 'isključeno'
   }
 };
 
-export default en;
+export default sr_Latn;
