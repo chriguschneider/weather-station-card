@@ -1967,6 +1967,7 @@ async _refreshPressureDelta(): Promise<void> {
   // Open-Meteo for a value the entity already provides.
   // deno-lint-ignore no-explicit-any
   _precipProbabilityNeedsOpenMeteo(effectiveCfg: any): boolean {
+    if (effectiveCfg?.forecast?.openmeteo === false) return false;
     if (effectiveCfg?.forecast?.show_precip_probability !== true) return false;
     const raw = this._forecastData;
     if (!Array.isArray(raw) || raw.length === 0) return false;
@@ -1982,6 +1983,7 @@ async _refreshPressureDelta(): Promise<void> {
   // the hourly recorder builder carries no sunshine at all.
   // deno-lint-ignore no-explicit-any
   _sunshineNeedsOpenMeteo(effectiveCfg: any): boolean {
+    if (effectiveCfg?.forecast?.openmeteo === false) return false;
     if (effectiveCfg?.forecast?.show_sunshine !== true) return false;
     const fcType = effectiveCfg.forecast.type;
     if (effectiveCfg.show_station !== false) {
@@ -2010,6 +2012,7 @@ async _refreshPressureDelta(): Promise<void> {
   // deno-lint-ignore no-explicit-any
   _openMeteoStationFallbackActive(cfg: any): boolean {
     if (!cfg || cfg.show_station === false) return false;
+    if (cfg.forecast?.openmeteo === false) return false;
     if (cfg.forecast?.openmeteo_history !== true) return false;
     if (!cfg.weather_entity) return false;
     const sensors = cfg.sensors || {};
@@ -2530,7 +2533,7 @@ _invalidateStaleSources(oldConfig: any) {
   // sources; lazy-cache below decides whether the rebuild is needed.
   // forecast.openmeteo_history toggles the no-station past block on/off
   // (ADR-0015) — a station-source rebuild, so it belongs here.
-  const STATION_KEYS = ['sensors', 'days', 'show_station', 'forecast.type', 'forecast.openmeteo_history'];
+  const STATION_KEYS = ['sensors', 'days', 'show_station', 'forecast.type', 'forecast.openmeteo_history', 'forecast.openmeteo'];
   const FORECAST_KEYS = ['show_forecast', 'weather_entity', 'forecast.type'];
 
   const stationStale = STATION_KEYS.some(stale);
