@@ -10,6 +10,7 @@
 // sensor's high-resolution history via the lux/clearsky_lux ratio.
 
 import { clearSkyLuxFactory } from './condition-classifier.js';
+import { parseLocation } from './location.js';
 import { dayKey, dayOfYear, hourOf, startOfDay } from './utils/time-zone.js';
 
 
@@ -367,6 +368,48 @@ interface HassLatLon {
   config?: { latitude?: number | null };
 }
 
+/** Forecast entry as the weather entity delivers it. `sunshine_duration`
+ *  is not a standard HA Forecast slot: hass-meteoswiss-weather fills it
+ *  in MINUTES (hourly entries: that hour, daily: the local day's sum). */
+export interface EntitySunshineEntry {
+  sunshine?: number | null;
+  sunshine_duration?: unknown;
+}
+
+/** The entity's sunshine in hours, or null when the entry has none.
+ *  Explicit minutes → hours instead of `normalizeSunshineValue`'s
+ *  seconds/hours heuristic, which would read 45 min as 45 s. */
+export function entitySunshineHours(entry: EntitySunshineEntry | null | undefined): number | null {
+  const raw = entry?.sunshine_duration;
+  const n = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : raw;
+  if (typeof n !== 'number' || !Number.isFinite(n)) return null;
+  return Math.max(0, n) / 60;
+}
+
+/** Set `sunshine` from the entity's `sunshine_duration` (ADR-0028).
+ *  Runs before `attachSunshine`, which keeps an existing `sunshine`, so
+ *  Open-Meteo and the cloud-cover estimate only fill entries without
+ *  one. Non-destructive — returns a NEW array. */
+export function attachEntitySunshine<T extends EntitySunshineEntry>(
+  forecasts: ReadonlyArray<T>,
+): T[] {
+  if (!Array.isArray(forecasts)) return [];
+  return forecasts.map((entry) => {
+    const hours = entitySunshineHours(entry);
+    return hours == null ? { ...entry } : { ...entry, sunshine: hours };
+  });
+}
+
+/** True when EVERY entry carries the entity's sunshine — only then can
+ *  the card skip the Open-Meteo request for the forecast columns. An
+ *  empty slice has nothing to fill and counts as covered. */
+export function forecastCoversSunshine(
+  forecasts: ReadonlyArray<EntitySunshineEntry> | null | undefined,
+): boolean {
+  if (!Array.isArray(forecasts)) return true;
+  return forecasts.every((e) => entitySunshineHours(e) != null);
+}
+
 /** Compose the overlay opts from a Home Assistant `hass` object and an
  *  OpenMeteo source instance, then run `attachSunshine`. Pure —
  *  testable without instantiating LitElement / a real card.
@@ -375,6 +418,8 @@ interface HassLatLon {
  *    - forecasts: pre-merged station+forecast array (each entry
  *      already has `datetime`).
  *    - hass: { config: { latitude } }.
+ *    - location: the card's `location` option; its latitude wins over
+ *      hass when valid.
  *    - source: an object exposing `getDailyValues()` /
  *      `getHourlyValues()`. Typically an `OpenMeteoSource`.
  *    - granularity: 'daily' (default) or 'hourly'. Picks which array
@@ -387,8 +432,9 @@ export function overlayFromOpenMeteo<T extends SunshineForecastEntry>(
   source: Partial<SunshineSource> | null | undefined,
   granularity: 'daily' | 'hourly' = 'daily',
   cloudCoverageExponent: number | null = null,
+  location: unknown = null,
 ): T[] {
-  const lat = hass?.config ? hass.config.latitude : null;
+  const lat = parseLocation(location)?.latitude ?? (hass?.config ? hass.config.latitude : null);
   const dailyValues = source && typeof source.getDailyValues === 'function'
     ? source.getDailyValues()
     : null;

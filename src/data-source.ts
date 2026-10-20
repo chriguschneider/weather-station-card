@@ -20,6 +20,7 @@ import {
 } from './condition-classifier.js';
 import { WeatherEntityFeature, type ConditionId } from './const.js';
 import type { ForecastEntry } from './forecast-utils.js';
+import { parseLocation } from './location.js';
 import { sunshineFromLuxHistory, type LuxSample } from './sunshine-source.js';
 import {
   PRESSURE_CONVERSION,
@@ -108,6 +109,8 @@ export interface DataSourceConfig {
     sunshine_lux_ratio?: number;
   };
   weather_entity?: string;
+  /** Card `location` option; validated by `parseLocation`. */
+  location?: unknown;
   show_station?: boolean;
   show_forecast?: boolean;
 }
@@ -919,7 +922,8 @@ export class MeasuredDataSource {
   }
 
   private _mapCondition(day: ClassifyInputs, dayOfYear: number): ConditionId {
-    const lat = this.hass?.config ? this.hass.config.latitude : null;
+    const lat = parseLocation(this.config.location)?.latitude
+      ?? (this.hass?.config ? this.hass.config.latitude : null);
     const clearsky_lux = lat != null
       ? clearSkyNoonLux(lat, dayOfYear)
       : 110000; // sea-level perpendicular-sun fallback (IES)

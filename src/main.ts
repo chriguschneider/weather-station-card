@@ -69,8 +69,14 @@ import {
   forecastFetchKey,
   forecastsEqual,
 } from './forecast-utils.js';
-import { overlayFromOpenMeteo, sunshineFractions } from './sunshine-source.js';
+import {
+  attachEntitySunshine,
+  forecastCoversSunshine,
+  overlayFromOpenMeteo,
+  sunshineFractions,
+} from './sunshine-source.js';
 import { OpenMeteoSource } from './openmeteo-source.js';
+import { resolveLocation } from './location.js';
 import { forecastHasProbability, overlayPrecipProbability } from './precip-probability.js';
 import { PROBABILITY_EXTRA_BOTTOM_PAD } from './chart/plugins/precip-label.js';
 import { safeQuery } from './utils/safe-query.js';
@@ -251,6 +257,10 @@ class WeatherStationCard extends LitElement {
   // deno-lint-ignore no-explicit-any
   zero_degree_level: any;
   zero_degree_unit: string | undefined;
+  // deno-lint-ignore no-explicit-any
+  zero_degree_48h_level: any;
+  zero_degree_48h_unit: string | undefined;
+  zero_degree_48h_change: number | undefined;
   // Display-ready strings, not the raw state object: a fresh object per
   // hass tick would defeat Lit's value comparison (ADR-0017).
   next_rain_text: string | undefined;
@@ -555,6 +565,7 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
     show_wind_gust_speed: true,
     show_illuminance: true,
     show_zero_degree_level: true,
+    show_zero_degree_level_48h: true,
     show_next_rain: true,
     days: 5,
     forecast_days: 5,
@@ -592,7 +603,8 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
       uv_index: findByPattern(/uv/) || '',
       // Forecast-derived snow-line altitude (MeteoSwiss `zero_degree_level`,
       // Open-Meteo-style `freezing_level_height`). No device_class exists.
-      zero_degree_level: findByPattern(/(zero_degree|freezing_level|nullgrad)/) || '',
+      zero_degree_level: findByPattern(/(zero_degree(?!.*48h)|freezing_level|nullgrad)/) || '',
+      zero_degree_level_48h: findByPattern(/zero_degree.*48h/) || '',
       // MeteoSwiss radar nowcast; registry identity first, id pattern second.
       next_rain: findNextRainEntity(hass as Parameters<typeof findNextRainEntity>[0]) || '',
     },
@@ -633,6 +645,9 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
       precipitation_unit: { attribute: false },
       zero_degree_level: { attribute: false },
       zero_degree_unit: { attribute: false },
+      zero_degree_48h_level: { attribute: false },
+      zero_degree_48h_unit: { attribute: false },
+      zero_degree_48h_change: { attribute: false },
       next_rain_text: { attribute: false },
       next_rain_icon: { attribute: false },
       next_rain_title: { attribute: false },
@@ -946,6 +961,11 @@ _extractSensorReadings(hass: HassMain): void {
   this.precipitation = valueOf(sensors.precipitation);
   this.zero_degree_level = valueOf(sensors.zero_degree_level);
   this.zero_degree_unit = (attrOf(sensors.zero_degree_level, 'unit_of_measurement') as string | undefined) || undefined;
+  this.zero_degree_48h_level = valueOf(sensors.zero_degree_level_48h);
+  this.zero_degree_48h_unit = (attrOf(sensors.zero_degree_level_48h, 'unit_of_measurement') as string | undefined) || undefined;
+  const rawChange = attrOf(sensors.zero_degree_level_48h, 'change');
+  const changeNum = rawChange === undefined || rawChange === null || rawChange === '' ? NaN : Number(rawChange);
+  this.zero_degree_48h_change = Number.isFinite(changeNum) ? changeNum : undefined;
   const rawPrecipUnit = (attrOf(sensors.precipitation, 'unit_of_measurement') as string | undefined) || undefined;
   this.precipitation_unit = rawPrecipUnit;
   // Three precip shapes, all gated on whether the row is actually
@@ -1726,12 +1746,15 @@ async _refreshPressureDelta(): Promise<void> {
     const lastStationMs = station.length
       ? new Date((station[station.length - 1] as { datetime?: string }).datetime ?? '').getTime()
       : -Infinity;
-    const forecast = Number.isFinite(lastStationMs)
+    const trimmed = Number.isFinite(lastStationMs)
       ? rawForecast.filter((e: { datetime?: string }) => {
           const t = new Date(e.datetime ?? '').getTime();
           return !Number.isFinite(t) || t > lastStationMs;
         })
       : rawForecast;
+    // The entity's own sunshine goes on first (ADR-0028); the overlays
+    // further down keep it and only fill the entries without one.
+    const forecast = attachEntitySunshine(trimmed);
     // Earlier code dropped the trailing station-today entry when it
     // carried no recorded data yet (temperature + templow + precipitation
     // all null). That removed the FR-station column from ~00:00 to ~00:15
@@ -1818,6 +1841,8 @@ async _refreshPressureDelta(): Promise<void> {
       this._hass,
       this._openMeteoSource,
       'hourly',
+      null,
+      this.config.location,
     );
     const allBlocks = aggregateThreeHourCalendar(merged);
     // Drop data-less leading blocks: whole empty days always (short
@@ -1875,6 +1900,7 @@ async _refreshPressureDelta(): Promise<void> {
       this._openMeteoSource,
       granularity,
       granularity === 'daily' ? cloudExp : null,
+      this.config.location,
     );
   }
 
@@ -1924,6 +1950,7 @@ async _refreshPressureDelta(): Promise<void> {
         this._openMeteoSource,
         granularity,
         granularity === 'daily' ? cloudExp : null,
+        this.config.location,
       ),
       this._stationCount || 0,
       granularity,
@@ -1940,10 +1967,38 @@ async _refreshPressureDelta(): Promise<void> {
   // Open-Meteo for a value the entity already provides.
   // deno-lint-ignore no-explicit-any
   _precipProbabilityNeedsOpenMeteo(effectiveCfg: any): boolean {
+    if (effectiveCfg?.forecast?.openmeteo === false) return false;
     if (effectiveCfg?.forecast?.show_precip_probability !== true) return false;
     const raw = this._forecastData;
     if (!Array.isArray(raw) || raw.length === 0) return false;
     return !forecastHasProbability(raw);
+  }
+
+  // True when the sunshine bar has a column only Open-Meteo can fill
+  // (ADR-0028, same gating as ADR-0027). Forecast columns are covered
+  // when every entry of the visible slice carries the entity's
+  // `sunshine_duration`; until the forecast arrives that counts as
+  // covered, and the next arrival re-evaluates. Station columns are
+  // covered only in daily mode with a sunshine or illuminance sensor —
+  // the hourly recorder builder carries no sunshine at all.
+  // deno-lint-ignore no-explicit-any
+  _sunshineNeedsOpenMeteo(effectiveCfg: any): boolean {
+    if (effectiveCfg?.forecast?.openmeteo === false) return false;
+    if (effectiveCfg?.forecast?.show_sunshine !== true) return false;
+    const fcType = effectiveCfg.forecast.type;
+    if (effectiveCfg.show_station !== false) {
+      const sensors = this.config?.sensors || {};
+      const hasSensor = Object.values(sensors).some(
+        (v) => typeof v === 'string' && v.trim() !== '',
+      );
+      const stationHasSunshine = fcType === 'daily'
+        && !!(sensors.sunshine_duration || sensors.illuminance);
+      if (hasSensor && !stationHasSunshine) return true;
+    }
+    const raw = this._forecastData;
+    if (!Array.isArray(raw) || raw.length === 0) return false;
+    const slice = this._sliceForecast(effectiveCfg, fcType, fcType === 'today', startOfTodayMs());
+    return !forecastCoversSunshine(slice);
   }
 
   // True when the Open-Meteo source should drive the past/station chart
@@ -1957,6 +2012,7 @@ async _refreshPressureDelta(): Promise<void> {
   // deno-lint-ignore no-explicit-any
   _openMeteoStationFallbackActive(cfg: any): boolean {
     if (!cfg || cfg.show_station === false) return false;
+    if (cfg.forecast?.openmeteo === false) return false;
     if (cfg.forecast?.openmeteo_history !== true) return false;
     if (!cfg.weather_entity) return false;
     const sensors = cfg.sensors || {};
@@ -2024,7 +2080,7 @@ async _refreshPressureDelta(): Promise<void> {
   // deno-lint-ignore no-explicit-any
   _ensureOpenMeteoSource(effectiveCfg: any) {
     const feedsStation = this._openMeteoStationFallbackActive(this.config);
-    const enabled = effectiveCfg?.forecast?.show_sunshine === true
+    const enabled = this._sunshineNeedsOpenMeteo(effectiveCfg)
       || feedsStation
       || this._precipProbabilityNeedsOpenMeteo(effectiveCfg);
     if (!enabled) {
@@ -2034,9 +2090,9 @@ async _refreshPressureDelta(): Promise<void> {
       }
       return;
     }
-    const cfg = this._hass?.config;
-    const lat = cfg && Number.isFinite(cfg.latitude) ? cfg.latitude : null;
-    const lon = cfg && Number.isFinite(cfg.longitude) ? cfg.longitude : null;
+    const loc = resolveLocation(this.config, this._hass);
+    const lat = loc ? loc.latitude : null;
+    const lon = loc ? loc.longitude : null;
     if (lat == null || lon == null) {
       // No HA location → no Open-Meteo fetch is possible. When the
       // source is the station block's only data provider, mark the
@@ -2477,7 +2533,7 @@ _invalidateStaleSources(oldConfig: any) {
   // sources; lazy-cache below decides whether the rebuild is needed.
   // forecast.openmeteo_history toggles the no-station past block on/off
   // (ADR-0015) — a station-source rebuild, so it belongs here.
-  const STATION_KEYS = ['sensors', 'days', 'show_station', 'forecast.type', 'forecast.openmeteo_history'];
+  const STATION_KEYS = ['sensors', 'days', 'show_station', 'forecast.type', 'forecast.openmeteo_history', 'forecast.openmeteo'];
   const FORECAST_KEYS = ['show_forecast', 'weather_entity', 'forecast.type'];
 
   const stationStale = STATION_KEYS.some(stale);
@@ -3777,6 +3833,22 @@ _climateRow_zeroDegree(show: boolean, value: unknown, unit: string | undefined) 
     html`<ha-icon icon="mdi:snowflake-thermometer"></ha-icon> ${text}`)}`;
 }
 
+// Zero-degree level in 48 h (`sensors.zero_degree_level_48h`): same
+// formatting as the current level. A numeric `change` attribute (vs. the
+// current level) adds a trend arrow; within ±100 m counts as steady.
+_climateRow_zeroDegree48h(value: unknown, unit: string | undefined, change: number | undefined) {
+  if (value === undefined || value === '') return null;
+  const eid = this._attrEntity('zero_degree_level_48h', false);
+  const text = this._formatEntityValue(eid, value, unit, 0);
+  let trendIcon = '';
+  if (change !== undefined) {
+    if (Math.abs(change) < 100) trendIcon = 'mdi:trending-neutral';
+    else trendIcon = change > 0 ? 'mdi:trending-up' : 'mdi:trending-down';
+  }
+  return html`${this._entityLink(eid,
+    html`<ha-icon icon="mdi:snowflake-thermometer"></ha-icon> <small>48 h</small> ${text}${trendIcon ? html` <ha-icon icon="${trendIcon}"></ha-icon>` : ''}`)}`;
+}
+
 // Next-rain row (`sensors.next_rain`). Text, icon and tooltip are
 // prepared by `_refreshNextRain`; the tooltip names which horizon
 // answered, so a forecast "~17:00" is never read as a radar observation.
@@ -3909,7 +3981,7 @@ _windRow_gust(show: boolean, wind_gust_speed: any) {
 // off or its value is missing (Lit renders null as nothing), so a
 // column with nothing to show is dropped and the remaining columns
 // spread across the width as before.
-renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, language, uv_index, dew_point, wind_gust_speed, illuminance, precipitation, precipitation_unit, zero_degree_level, zero_degree_unit } = this) {
+renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, language, uv_index, dew_point, wind_gust_speed, illuminance, precipitation, precipitation_unit, zero_degree_level, zero_degree_unit, zero_degree_48h_level, zero_degree_48h_unit, zero_degree_48h_change } = this) {
   const dWindSpeed = this._convertDisplayWindSpeed(windSpeed);
   const dPressure = this._convertDisplayPressure(pressure);
 
@@ -3943,6 +4015,7 @@ renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, la
     sun, uv_index, illuminance, language,
     windDirection, dWindSpeed, wind_gust_speed,
     zero_degree_level, zero_degree_unit,
+    zero_degree_48h_level, zero_degree_48h_unit, zero_degree_48h_change,
     next_rain_text: this.next_rain_text,
     next_rain_icon: this.next_rain_icon,
     next_rain_title: this.next_rain_title,
@@ -3989,6 +4062,8 @@ _renderAttributeLine(token: AttributeToken, ctx: any) {
       return this._climateRow_precip(true, ctx.hasPrecipValue, ctx.precipitation, ctx.precipitation_unit);
     case 'zero_degree_level':
       return this._climateRow_zeroDegree(true, ctx.zero_degree_level, ctx.zero_degree_unit);
+    case 'zero_degree_level_48h':
+      return this._climateRow_zeroDegree48h(ctx.zero_degree_48h_level, ctx.zero_degree_48h_unit, ctx.zero_degree_48h_change);
     case 'next_rain':
       return this._climateRow_nextRain(ctx.next_rain_text, ctx.next_rain_icon, ctx.next_rain_title);
     case 'uv_illuminance':

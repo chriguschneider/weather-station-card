@@ -69,6 +69,10 @@ button activates:
 SonarCloud and Dependabot run on PRs too but are advisory; CodeQL's
 `Analyze` job is required, the standalone CodeQL helper check is not.
 
+`build.yml` also runs weekly on `master`, so dependency or browser drift
+shows up without a commit; when it fails, `ci-watch.yml` opens a
+"CI is red on master" issue and closes it once the build is green again.
+
 Linear history is enforced (no merge commits) — the maintainer uses
 `gh pr merge --rebase` to land PRs.
 
@@ -85,7 +89,9 @@ assistants are welcome — see [`AGENTS.md`](AGENTS.md) for the
 conventions specific to AI-assisted work (commit attribution, comment
 discipline, parallel-work coordination, draft-PR convention,
 `dist/`-rebase recipe). Everything in this file applies to those PRs
-too.
+too. The maintainer's own agent automation (`agent:go`, `@claude`, the
+reviewer) is described in
+[`docs/agent-automation.md`](docs/agent-automation.md).
 
 ## Tests
 

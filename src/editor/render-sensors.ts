@@ -102,7 +102,8 @@ function buildSensorFields(hass: HassWithStates | null): Array<{ key: string; ca
   //   wind_speed     | gust_speed         ┐ wind
   //   wind_direction | illuminance        ┘ the one mixed row
   //   uv_index       | sunshine_duration  — light; rarest slot last
-  //   zero_degree_level | next_rain       — forecast-derived
+  //   zero_degree_level | zero_degree_level_48h — forecast-derived
+  //   next_rain                           — nowcast
   //
   // Twelve station slots in two columns is six rows, but the themes are
   // 2+2+2+3+3 — wind and light have three members each, so ONE row has
@@ -130,6 +131,7 @@ function buildSensorFields(hass: HassWithStates | null): Array<{ key: string; ca
     { key: 'uv_index',            candidates: uvEntities },
     { key: 'sunshine_duration',   candidates: [] },
     { key: 'zero_degree_level',   candidates: zeroDegreeEntities },
+    { key: 'zero_degree_level_48h', candidates: zeroDegreeEntities },
     { key: 'next_rain',           candidates: nextRainEntities },
   ];
 }

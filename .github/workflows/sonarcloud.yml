@@ -20,6 +20,8 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions: {}
+
 jobs:
   analyze:
     runs-on: ubuntu-latest
@@ -29,13 +31,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # SonarCloud needs the full history for new-code detection.
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
 
@@ -57,7 +60,7 @@ jobs:
         # fails, so a coverage regression blocks the PR instead of
         # surfacing on master after the merge (v2.2.0 lesson: the
         # scan uploaded fine, the gate result was never enforced).
-        uses: SonarSource/sonarqube-scan-action@v8
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
         with:
           args: -Dsonar.qualitygate.wait=true
         env:

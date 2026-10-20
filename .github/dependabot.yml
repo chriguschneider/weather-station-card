@@ -2,8 +2,14 @@
 # phase. Weekly cadence keeps PR noise low for a hobby-scale repo;
 # bump to daily if the dependency surface grows.
 #
-# No auto-merge: every PR gets manually reviewed (small repo, Lit/HA
-# ecosystem moves fast and breaking changes do happen).
+# Dependency PRs are reviewed by a human: the agent reviewer never
+# auto-merges a change to package*.json or .github/ (claude-review.yml),
+# and the Lit/HA ecosystem moves fast enough that breaking changes do
+# happen.
+#
+# The 7-day cooldown lets a compromised release surface before it lands
+# here (tj-actions, 2025). Actions are pinned by commit SHA with a version
+# comment; Dependabot bumps both.
 
 version: 2
 updates:
@@ -13,7 +19,14 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
     groups:
+      # vitest and its plugins pin each other as peers: one PR for all of
+      # them, also for majors, or every single-package PR fails with
+      # ERESOLVE (seen in hass-meteoswiss-radar#221/#222).
+      vitest:
+        patterns: ["vitest", "@vitest/*"]
       # Group dev-only patch + minor updates so the PR queue stays
       # manageable. Major bumps still come as individual PRs.
       dev-dependencies:
@@ -21,10 +34,27 @@ updates:
         update-types:
           - "patch"
           - "minor"
+      # Runtime dependencies (lit, uplot) get their own group, so a
+      # change to what ships in the bundle is never hidden in a dev bump.
+      runtime-dependencies:
+        dependency-type: "production"
+        update-types:
+          - "patch"
+          - "minor"
 
+  # claude-code-action is exempt from the cooldown: its releases carry
+  # security fixes for the agent workflows and should arrive at once.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 3
+    cooldown:
+      default-days: 7
+      exclude:
+        - "anthropics/claude-code-action"
+    groups:
+      actions:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]

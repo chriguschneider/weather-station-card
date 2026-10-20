@@ -20,6 +20,8 @@ name: Update E2E Baselines
 on:
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   update:
     runs-on: ubuntu-latest
@@ -30,19 +32,26 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        # Unlike every other checkout here, credentials stay persisted: the
+        # last step pushes the regenerated baselines back with them. Manual
+        # dispatch only, by someone with write access; no artifact is
+        # uploaded, so the token cannot leak through one.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Fetch the full ref so the bot's push goes to the same
           # branch the workflow was dispatched on.
           ref: ${{ github.ref }}
-          # `persist-credentials: true` is the default — leaves the
-          # GITHUB_TOKEN in `~/.git-credentials` so the post-checkout
-          # `git push` step uses it.
+          # Kept on purpose (the default): leaves GITHUB_TOKEN in the
+          # git config so the final `git pull --rebase` / `git push` use it.
+          persist-credentials: true
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
+          # These PNGs become the visual contract; build from a clean
+          # install, not from a cache an earlier run could have filled.
+          package-manager-cache: false
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund

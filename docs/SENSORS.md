@@ -123,13 +123,28 @@ re-fetches at most once an hour. The response covers the past N days
 plus the next N forecast days in a single call. The bar colour is
 `forecast.sunshine_color` (default `#FFD700` yellow).
 
-**Privacy note**: enabling sunshine sends your latitude / longitude to
+Set the top-level `location: {latitude, longitude}` option to query
+another place than your Home Assistant home (see
+[CONFIGURATION.md](CONFIGURATION.md)).
+
+**Privacy note**: enabling sunshine sends your Home Assistant latitude /
+longitude (or `location` when set) to
 `api.open-meteo.com` from each browser that renders the dashboard. The
 data is fetched client-side, so it's not centralised on your HA server.
 Open-Meteo's privacy policy is at
 [open-meteo.com/en/terms](https://open-meteo.com/en/terms). If you'd
 rather not have any browser call out, leave `show_sunshine` off
 (default).
+
+**Weather entities with their own sunshine forecast.** When the
+forecast entries carry `sunshine_duration` in minutes
+([hass-meteoswiss-weather](https://github.com/chriguschneider/hass-meteoswiss-weather)
+does), the forecast columns use that value. Open-Meteo then only fills
+the columns the entity leaves empty. If the entity covers every
+forecast column, and the past columns are daily with a
+`sensors.sunshine_duration` or `sensors.illuminance`, the card does not
+call Open-Meteo for the sunshine bar at all
+([ADR-0028](adr/0028-sunshine-entity-first.md)).
 
 In hourly mode the bars are per-hour fractions (full bar = full hour
 of sun, empty bar = night or fully overcast). The numeric "Xh" box is
@@ -177,9 +192,12 @@ What to know:
 - Works in all three chart modes — daily, today and hourly.
 
 **Privacy note**: same as the sunshine overlay — turning this on sends
-your latitude / longitude to `api.open-meteo.com` from every browser
+your Home Assistant latitude / longitude (or `location` when set) to
+`api.open-meteo.com` from every browser
 that renders the dashboard. The call is client-side, so nothing is
 centralised on your Home Assistant server. If you would rather no
-browser call out, leave `openmeteo_history` off (default). Open-Meteo's
+browser call out, leave `openmeteo_history` off (default). To never
+contact Open-Meteo at all (also for the sunshine bar and the chance-of-rain
+fallback), set `forecast.openmeteo: false`. Open-Meteo's
 privacy policy is at
 [open-meteo.com/en/terms](https://open-meteo.com/en/terms).

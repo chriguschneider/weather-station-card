@@ -42,9 +42,13 @@ after.
 
 ## npm audit
 
-`npm audit --audit-level=high` runs in CI and blocks the build on
-high or critical advisories. Lower severities are reported by
-Dependabot but don't fail the build.
+`npm audit --omit=dev --audit-level=high` runs in CI and blocks the
+build on high or critical advisories in the runtime dependencies (what
+ships in the bundle: `lit`, `uplot`). A second, informational
+`npm audit --audit-level=high` over everything (dev tooling included)
+reports but does not fail: a dev-only advisory never reaches a
+dashboard, and it used to block unrelated PRs (ADR-0029). Lower
+severities and dev-tool fixes arrive as Dependabot PRs.
 
 ## Coverage gate
 

@@ -4,19 +4,49 @@ All notable changes to this project are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.9.1-beta.1] — 2026-10-18
+## [Unreleased]
 
-Beta for testing the Serbian script split — install via HACS →
-Redownload → "Show beta versions".
+## [2.12.0] — 2026-10-20
 
-### Fixed
+### Added
 
-- **Serbian now follows the script you picked in Home Assistant.**
-  *Српски* (`sr`) shows the card and editor in Cyrillic, *Srpski*
-  (`sr-Latn`) in Latin. Before, both got Latin in the editor and
-  `sr-Latn` fell back to English on the card itself. If your language
-  is set to *Српски*, the card switches from Latin to Cyrillic.
-  Thanks @cpmarexel2f (#297).
+- **`forecast.openmeteo: false` switches Open-Meteo off completely.**
+  When you would rather show no sunshine bar than one that disagrees
+  with your local weather service, set it in the card's YAML: the card
+  then sends no Open-Meteo request at all and uses only the weather
+  entity and your own sensors. The default (`true`) changes nothing.
+
+## [2.11.0] — 2026-10-20
+
+### Added
+
+- **`location` option for cards about another place.** A card for a
+  ski area or a holiday home showed past sunshine bars and history for
+  your Home Assistant home. Add `location: {latitude: …, longitude: …}`
+  and the Open-Meteo data of that card follows the place you name.
+  Without it nothing changes; a malformed value is ignored with a
+  config warning. YAML only for now.
+
+## [2.10.0] — 2026-10-20
+
+### Added
+
+- **Zero-degree level in 48 h.** Wire `sensors.zero_degree_level_48h`
+  (for example the MeteoSwiss *Zero-degree level in 48 h* sensor) and
+  switch on `show_zero_degree_level_48h`, or place `zero_degree_level_48h`
+  in `attributes_layout`, to see where the snow line will be in two days
+  next to the current one. The row shows a trend arrow when the sensor
+  has a numeric `change` attribute. The visual editor has the matching
+  sensor picker and toggle.
+
+### Changed
+
+- **The sunshine bar uses the weather entity's own sunshine forecast
+  when it has one.** Forecast entries with `sunshine_duration` (in
+  minutes, e.g. from hass-meteoswiss-weather) now fill the bar, and
+  Open-Meteo only fills the columns the entity leaves empty. When the
+  entity covers every column, the card no longer sends your location
+  to Open-Meteo for the sunshine bar (ADR-0028).
 
 ## [2.9.0] — 2026-10-17
 

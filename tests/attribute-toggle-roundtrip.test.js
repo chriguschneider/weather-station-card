@@ -28,6 +28,10 @@ const hass = {
     'sensor.wspd': { state: '12.5', attributes: { unit_of_measurement: 'km/h' } },
     'sensor.zero': { state: '2450.4', attributes: { unit_of_measurement: 'm' } },
     'sensor.dew': { state: '12.3', attributes: { unit_of_measurement: '°C' } },
+    'sensor.zero48': { state: '1800', attributes: { unit_of_measurement: 'm', change: -650 } },
+    'sensor.zero48_flat': { state: '2400', attributes: { unit_of_measurement: 'm', change: 40 } },
+    'sensor.zero48_up': { state: '3100', attributes: { unit_of_measurement: 'm', change: 650 } },
+    'sensor.zero48_plain': { state: '2000', attributes: { unit_of_measurement: 'm' } },
     'sun.sun': { state: 'above_horizon', attributes: {} },
   },
   config: { latitude: 46.9, longitude: 7.4 },
@@ -158,6 +162,40 @@ describe('attributes_layout round-trip', () => {
     expect(markup).toContain('snowflake-thermometer');
     // Default position: climate column, after the pressure row.
     expect(columnOf(markup, 'snowflake-thermometer')).toBe(columnOf(markup, '946'));
+  });
+
+  describe('zero-degree level in 48 h', () => {
+    const base = { show_station: false, show_forecast: false, show_attributes: true };
+    const withSensor = (eid, extra = {}) => renderCard({
+      ...base, sensors: { ...WIND_SENSORS, zero_degree_level_48h: eid }, ...extra,
+    });
+
+    it('is hidden by default and shown via show_zero_degree_level_48h', () => {
+      expect(withSensor('sensor.zero48')).not.toContain('1,800 m');
+      expect(withSensor('sensor.zero48', { show_zero_degree_level_48h: true })).toContain('1,800 m');
+    });
+
+    it('is hidden without the sensor', () => {
+      const markup = renderCard({ ...base, show_zero_degree_level_48h: true, sensors: WIND_SENSORS });
+      expect(markup).not.toContain('48 h');
+    });
+
+    it('works as a layout token with a 48 h marker', () => {
+      const markup = withSensor('sensor.zero48_plain', {
+        attributes_layout: [['zero_degree_level', 'zero_degree_level_48h']],
+      });
+      expect(markup).toContain('2,450 m');
+      expect(markup).toContain('2,000 m');
+      expect(markup).toContain('48 h');
+    });
+
+    it('draws a trend arrow from the change attribute', () => {
+      const layout = { attributes_layout: [['zero_degree_level_48h']] };
+      expect(withSensor('sensor.zero48', layout)).toContain('mdi:trending-down');
+      expect(withSensor('sensor.zero48_up', layout)).toContain('mdi:trending-up');
+      expect(withSensor('sensor.zero48_flat', layout)).toContain('mdi:trending-neutral');
+      expect(withSensor('sensor.zero48_plain', layout)).not.toContain('mdi:trending');
+    });
   });
 
   it('prefers hass.formatEntityState for the zero-degree value when HA offers it', () => {

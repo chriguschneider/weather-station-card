@@ -45,6 +45,10 @@ export const DEFAULTS_FORECAST = {
   // station sensor is configured (the recorder wins) or when there is
   // no weather entity.
   openmeteo_history: false,
+  // Master switch: false never contacts Open-Meteo (sunshine bar, past
+  // block and chance-of-rain fallback all fall back to the weather
+  // entity and the card's own sensors). YAML only.
+  openmeteo: true,
   condition_icons: true,
   // Deprecated — see renderWind in main.ts. Kept as a hard master-off
   // shim for YAML configs that explicitly set show_wind_forecast:
@@ -106,6 +110,9 @@ export const DEFAULTS = {
   // integration). Opt-in like the other detail rows; needs
   // `sensors.zero_degree_level`, no weather-entity fallback exists.
   show_zero_degree_level: false,
+  // Zero-degree level forecast for 48 h ahead; opt-in, needs
+  // `sensors.zero_degree_level_48h`.
+  show_zero_degree_level_48h: false,
   // Next rain (MeteoSwiss radar nowcast, or any timestamp sensor).
   // Opt-in; needs `sensors.next_rain`.
   show_next_rain: false,

@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell -NoProfile -Command \"$p=[Console]::In.ReadToEnd()|ConvertFrom-Json; if ($p.tool_input.command -match '^\\s*git\\s+commit\\b') { @{hookSpecificOutput=@{hookEventName='PreToolUse';additionalContext='Run the commit-guardian skill at .claude/skills/commit-guardian/SKILL.md before this commit. Check staged changes against ADRs in docs/adr/ and conventions in CLAUDE.md, ARCHITECTURE.md, docs/STYLE-GUIDE.md.'}}|ConvertTo-Json -Compress -Depth 5 }\""
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/commit-reminder.py\""
           }
         ]
       }
