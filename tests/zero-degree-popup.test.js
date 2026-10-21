@@ -551,7 +551,7 @@ describe('card: zero-degree trend and site state (#333)', () => {
     const card = await mountCard(trendHass(T0));
     const { current, trend, currentIcon, trendIcon } = rows(card);
     expect(trendIcon).toBe('mdi:arrow-down');
-    expect(trend.querySelector('small').textContent).toBe('48 h');
+    expect(trend.querySelector('small')).toBeNull();
     expect(trend.querySelector('.wsc-zd-target').textContent.replace(/\s+/g, ' ').trim())
       .toBe('1,586 m Thu 05:00');
     expect(trend.querySelector('.wsc-zd-day').textContent).toBe('Thu');
@@ -590,7 +590,9 @@ describe('card: zero-degree trend and site state (#333)', () => {
   it('target reaching the site: precipitation colour, ❄ marker, snow sentence', async () => {
     const card = await mountCard(trendHass(T0), { title: 'Köniz', elevation: 1300 });
     const { current, trend, currentIcon } = rows(card);
-    expect(trend.querySelector('small').textContent).toBe('❄ 48 h');
+    expect(trend.querySelector('small')).toBeNull();
+    expect(trend.querySelector('.wsc-zd-target').textContent.replace(/\s+/g, ' ').trim())
+      .toBe('❄ 1,586 m Thu 05:00');
     expect(trend.querySelector('.wsc-zd-target').getAttribute('style'))
       .toBe('color: rgba(132, 209, 253, 1.0)');
     expect(titleOf(trend)).toContain(' · Snow down to Köniz 1,300 m from Thu 05:00');

@@ -11,12 +11,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **The zero-degree level in 48 h row now shows where the snow line is
   heading.** With the sensor's hourly forecast (the MeteoSwiss
   integration provides it), the row shows the next low or high point
-  with its weekday and time, e.g. "48 h 1,586 m Thu 05:00", and an arrow
+  with its weekday and time, e.g. "1,586 m Thu 05:00", behind an arrow
   for direction and pace (rises fast, rises, stays, falls, falls fast).
   The tooltip spells it out, including the turn after it ("then up to
   2,556 m Fri 06:00"). If that low brings the estimated snow line down
-  to your site, the value turns the chart's precipitation colour and the
-  marker reads "❄ 48 h". Without the forecast attribute the row shows the
+  to your site, the value turns the chart's precipitation colour and a
+  small ❄ appears in front of it. Without the forecast attribute the row shows the
   sensor's value with a trend arrow as before; if the sensor has an `at`
   attribute (time of the minimum), the tooltip shows the lowest level,
   when it happens and the current level.

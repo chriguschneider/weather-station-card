@@ -4061,7 +4061,7 @@ _climateRow_zeroDegree48h(value: unknown, unit: string | undefined, change: numb
     ? `color: ${this.config?.forecast?.precipitation_color || 'rgba(132, 209, 253, 1.0)'}`
     : nothing;
   const row = html`${this._zeroDegreeLink(eid,
-    html`<ha-icon icon="${zeroDegreeTrendIcon(view.trend)}"></ha-icon> <small>${reaches ? '❄ ' : ''}48 h</small> <span class="wsc-zd-target" style=${reachStyle}>${fmt(target.level)} <span class="wsc-zd-day">${when.day}</span> ${when.time}</span>`)}`;
+    html`<ha-icon icon="${zeroDegreeTrendIcon(view.trend)}"></ha-icon> <span class="wsc-zd-target" style=${reachStyle}>${reaches ? '❄ ' : ''}${fmt(target.level)} <span class="wsc-zd-day">${when.day}</span> ${when.time}</span>`)}`;
   return html`<span title=${title} aria-label=${title}>${row}</span>`;
 }
 

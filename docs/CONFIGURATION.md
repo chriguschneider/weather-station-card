@@ -267,7 +267,7 @@ Rules:
 | `humidity` | Humidity | `sensors.humidity` or weather entity |
 | `precipitation` | Live precipitation rate | `sensors.precipitation` / `sensors.precipitation_rate` |
 | `zero_degree_level` | Zero-degree level; the icon shows where the estimated snow line lies relative to your site (see [Zero-degree rows](#zero-degree-rows)) | `sensors.zero_degree_level` |
-| `zero_degree_level_48h` | Zero-degree trend (marker "48 h"): the next lowest or highest level with weekday/time and a direction arrow | `sensors.zero_degree_level_48h` |
+| `zero_degree_level_48h` | Zero-degree trend: the next lowest or highest level with weekday/time and a direction arrow | `sensors.zero_degree_level_48h` |
 | `next_rain` | Next rain (countdown / clock time / dry-until) | `sensors.next_rain` |
 | `uv_illuminance` | UV index and illuminance on one sun-strength line | both of the next two |
 | `uv_index` | UV index with sun-strength icon | `sensors.uv_index` or weather entity |
@@ -328,8 +328,8 @@ With a known elevation the tooltip reads e.g. "Snow line about 2,206 m
 
 **Trend row** (`zero_degree_level_48h`, needs the sensor's `forecast`
 attribute): the value is the target of the next movement within 48 h —
-the lowest or highest level with its weekday and time, e.g. "48 h 1,586 m
-Thu 05:00". The card looks at the lowest and the highest point of the
+the lowest or highest level with its weekday and time, e.g. "1,586 m
+Thu 05:00" after the trend icon. The card looks at the lowest and the highest point of the
 next 48 h; the one that comes first is the target if it differs from
 now by at least 200 m, otherwise the later one if that does. If neither
 moves 200 m the level counts as stable and the row shows the 48 h
@@ -348,8 +348,8 @@ reads "Stays between 2,450 and 2,600 m".
 | `mdi:arrow-down` | falls fast |
 
 When the target's estimated snow line reaches your site, the value takes
-the chart's precipitation colour (`forecast.precipitation_color`), the
-marker reads "❄ 48 h" and the tooltip adds "Snow down to … from …". On a
+the chart's precipitation colour (`forecast.precipitation_color`), a
+small "❄" is put in front of it and the tooltip adds "Snow down to … from …". On a
 narrow card the weekday is dropped and the time kept.
 
 **Site elevation** comes from, in this order: the card's `elevation`
