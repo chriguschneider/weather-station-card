@@ -117,6 +117,17 @@ describe('classifyZeroDegreeTrend', () => {
     expect(metresPerUnit(undefined)).toBe(1);
   });
 
+  it('falling then rising, rising then falling, all four pace/direction classes', () => {
+    const rf = classifyZeroDegreeTrend([{ t: 0, level: 2000 }, { t: 10 * H, level: 2300 }, { t: 20 * H, level: 2000 }], 2000, 0);
+    expect(rf.trend).toBe('rising');
+    expect(rf.next).toEqual({ t: 20 * H, level: 2000 });
+    const ff = classifyZeroDegreeTrend([{ t: 0, level: 2000 }, { t: 5 * H, level: 1700 }], 2000, 0);
+    expect(ff.trend).toBe('falling_fast');
+    expect(ff.next).toBeNull();
+    const rs = classifyZeroDegreeTrend([{ t: 0, level: 2000 }, { t: 20 * H, level: 2300 }], 2000, 0);
+    expect(rs.trend).toBe('rising');
+  });
+
   it('non-finite now level yields null', () => {
     expect(classifyZeroDegreeTrend(CURVE, NaN, ANCHORS[0][0])).toBeNull();
   });
@@ -157,6 +168,9 @@ describe('reachesSite', () => {
     expect(reachesSite(881, 581)).toBe(true);
     expect(reachesSite(882, 581)).toBe(false);
     expect(reachesSite(1586, undefined)).toBe(false);
+    expect(reachesSite(NaN, 581)).toBe(false);
+    expect(reachesSite(881, 581, 1)).toBe(true);
+    expect(reachesSite(3000, 581, 0.3048)).toBe(false);
   });
 });
 
@@ -175,5 +189,7 @@ describe('resolveElevation', () => {
     expect(resolveElevation(undefined, [], hass)).toBe(540);
     expect(resolveElevation(null, [], { config: {} })).toBeUndefined();
     expect(resolveElevation({}, [], null)).toBeUndefined();
+    expect(resolveElevation({ elevation: NaN }, [], { config: { elevation: '12.5' } })).toBe(12.5);
+    expect(resolveElevation({ elevation: {} }, [], { config: { elevation: '  ' } })).toBeUndefined();
   });
 });

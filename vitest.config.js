@@ -60,6 +60,7 @@ export default {
         'src/attributes-layout.ts',
         'src/next-rain.ts',
         'src/zero-degree-popup.ts',
+        'src/zero-degree-trend.ts',
       ],
       thresholds: {
         statements: 80,

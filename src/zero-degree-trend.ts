@@ -68,42 +68,78 @@ export function classifyZeroDegreeTrend(
   const window = curve.filter((p) => p.t >= nowTime && p.t <= end);
   if (!window.length) return null;
 
+  const { min, max } = findExtremes(window);
+  const range = { min: min.level, max: max.level };
+  const pick = pickTarget(min, max, nowLevel, unitMetres);
+  if (!pick) return { trend: 'stable', target: min, next: null, ...range };
+
+  const trend = paceTrend(pick, nowTime);
+  const next = findNext(window, pick.p, pick.falling, unitMetres);
+  return { trend, target: pick.p, next, ...range };
+}
+
+interface Candidate {
+  p: ZeroDegreePoint;
+  /** Distance from the current level, in metres. */
+  amount: number;
+  falling: boolean;
+}
+
+function isSignificant(amountMetres: number): boolean {
+  return amountMetres >= SIGNIFICANT_CHANGE_M;
+}
+
+function findExtremes(window: readonly ZeroDegreePoint[]): { min: ZeroDegreePoint; max: ZeroDegreePoint } {
   let min = window[0];
   let max = window[0];
   for (const p of window) {
     if (p.level < min.level) min = p;
     if (p.level > max.level) max = p;
   }
-  const drop = (nowLevel - min.level) * unitMetres;
-  const rise = (max.level - nowLevel) * unitMetres;
-  const significant = (amount: number) => amount >= SIGNIFICANT_CHANGE_M;
+  return { min, max };
+}
 
-  // The extreme that comes first wins; the later one only when the
-  // earlier one is too small to matter.
-  const minFirst = min.t <= max.t;
-  const ordered = minFirst
-    ? [{ p: min, amount: drop, falling: true }, { p: max, amount: rise, falling: false }]
-    : [{ p: max, amount: rise, falling: false }, { p: min, amount: drop, falling: true }];
-  const pick = ordered.find((o) => significant(o.amount));
-  const range = { min: min.level, max: max.level };
-  if (!pick) return { trend: 'stable', target: min, next: null, ...range };
+// The extreme that comes first wins; the later one only when the
+// earlier one is too small to matter.
+function pickTarget(
+  min: ZeroDegreePoint,
+  max: ZeroDegreePoint,
+  nowLevel: number,
+  unitMetres: number,
+): Candidate | undefined {
+  const low: Candidate = { p: min, amount: (nowLevel - min.level) * unitMetres, falling: true };
+  const high: Candidate = { p: max, amount: (max.level - nowLevel) * unitMetres, falling: false };
+  const ordered = min.t <= max.t ? [low, high] : [high, low];
+  return ordered.find((c) => isSignificant(c.amount));
+}
 
+const TREND_BY_DIRECTION_AND_PACE: Record<'falling' | 'rising', [slow: ZeroDegreeTrendClass, fast: ZeroDegreeTrendClass]> = {
+  falling: ['falling', 'falling_fast'],
+  rising: ['rising', 'rising_fast'],
+};
+
+function paceTrend(pick: Candidate, nowTime: number): ZeroDegreeTrendClass {
   const hours = (pick.p.t - nowTime) / HOUR_MS;
   const fast = hours > 0 && pick.amount / hours >= FAST_PACE_M_PER_H;
-  const trend: ZeroDegreeTrendClass = pick.falling
-    ? (fast ? 'falling_fast' : 'falling')
-    : (fast ? 'rising_fast' : 'rising');
+  return TREND_BY_DIRECTION_AND_PACE[pick.falling ? 'falling' : 'rising'][fast ? 1 : 0];
+}
 
-  // The opposite extreme after the target, measured from the target:
-  // "falls to 1'586 m Thu, then up to 2'556 m Fri".
+// The opposite extreme after the target, measured from the target:
+// "falls to 1'586 m Thu, then up to 2'556 m Fri".
+function findNext(
+  window: readonly ZeroDegreePoint[],
+  target: ZeroDegreePoint,
+  falling: boolean,
+  unitMetres: number,
+): ZeroDegreePoint | null {
   let next: ZeroDegreePoint | null = null;
   for (const p of window) {
-    if (p.t <= pick.p.t) continue;
-    if (!next || (pick.falling ? p.level > next.level : p.level < next.level)) next = p;
+    if (p.t <= target.t) continue;
+    const better = !next || (falling ? p.level > next.level : p.level < next.level);
+    if (better) next = p;
   }
-  if (next && !significant(Math.abs(next.level - pick.p.level) * unitMetres)) next = null;
-
-  return { trend, target: pick.p, next, ...range };
+  if (!next || !isSignificant(Math.abs(next.level - target.level) * unitMetres)) return null;
+  return next;
 }
 
 const TREND_ICONS: Record<ZeroDegreeTrendClass, string> = {
