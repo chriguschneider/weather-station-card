@@ -22,7 +22,7 @@
 // editor/*) ARE all strictly typed — anyone importing from this card
 // gets typed exports.
 
-import locale, { ensureLocaleLoaded } from './locale.js';
+import locale, { ensureLocaleLoaded, resolveLocaleKey } from './locale.js';
 import {
   cardinalDirectionsIcon,
   weatherIcons,
@@ -2324,7 +2324,7 @@ _resizeChartIfWidthChanged() {
 
 // deno-lint-ignore no-explicit-any
 ll(str: string): any {
-  const selectedLocale: string = this.config.locale || this.language || 'en';
+  const selectedLocale: string = resolveLocaleKey(this.config.locale || this.language || 'en');
 
   // deno-lint-ignore no-explicit-any
   const localeAny = locale as Record<string, Record<string, any>>;
