@@ -4,6 +4,10 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const nb: LocaleEntry = {
+  'zero_degree_popup_title': 'Nullgradersgrense',
+  'zero_degree_lowest': 'Lavest',
+  'history': 'Historikk',
+  'close': 'Lukk',
   'tempHi': 'Maksimumstemperatur',
   'tempLo': 'Minimumstemperatur',
   'precip': 'Nedbør',

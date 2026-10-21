@@ -6,6 +6,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Tap a zero-degree row to see how the snow line moves.** When the
+  48 h zero-degree sensor carries an hourly `forecast` attribute (the
+  MeteoSwiss integration's does), tapping either zero-degree row opens
+  a chart of the forecast zero-degree level for the coming days, with
+  the lowest point marked. *History* in the popup still opens the
+  sensor's usual dialog. Without that attribute a tap opens the sensor
+  dialog as before. Nothing to configure.
+
 ### Fixed
 
 - **Serbian in Latin script (Srpski) now gets its own translation in the

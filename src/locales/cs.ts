@@ -4,6 +4,10 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const cs: LocaleEntry = {
+  'zero_degree_popup_title': 'Nulová izoterma',
+  'zero_degree_lowest': 'Nejnižší',
+  'history': 'Historie',
+  'close': 'Zavřít',
   'tempHi': 'Teplota',
   'tempLo': 'Teplota v noci',
   'precip': 'Srážky',

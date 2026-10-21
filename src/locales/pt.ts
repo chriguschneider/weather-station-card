@@ -4,6 +4,10 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const pt: LocaleEntry = {
+  'zero_degree_popup_title': 'Cota de 0 °C',
+  'zero_degree_lowest': 'Mínimo',
+  'history': 'Histórico',
+  'close': 'Fechar',
   'tempHi': 'Temperatura máxima',
   'tempLo': 'Temperatura noite',
   'precip': 'Precipitação',

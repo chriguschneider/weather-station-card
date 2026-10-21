@@ -4,6 +4,10 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const sr: LocaleEntry = {
+  'zero_degree_popup_title': 'Висина границе нула степени',
+  'zero_degree_lowest': 'Најнижа',
+  'history': 'Историја',
+  'close': 'Затвори',
   'tempHi': 'Температура',
   'tempLo': 'Ноћна температура',
   'precip': 'Падавине',

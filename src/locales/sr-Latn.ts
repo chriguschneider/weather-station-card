@@ -4,6 +4,10 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const sr_Latn: LocaleEntry = {
+  'zero_degree_popup_title': 'Visina granice nula stepeni',
+  'zero_degree_lowest': 'Najniža',
+  'history': 'Istorija',
+  'close': 'Zatvori',
   'tempHi': 'Temperatura',
   'tempLo': 'Noćna temperatura',
   'precip': 'Padavine',

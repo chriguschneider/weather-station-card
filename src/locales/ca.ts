@@ -4,6 +4,10 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const ca: LocaleEntry = {
+  'zero_degree_popup_title': 'Isoterma zero',
+  'zero_degree_lowest': 'Mínim',
+  'history': 'Historial',
+  'close': 'Tanca',
   'tempHi': 'Temperatura màxima',
   'tempLo': 'Temperatura mínima',
   'precip': 'Precipitació',

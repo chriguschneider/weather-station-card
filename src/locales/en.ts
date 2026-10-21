@@ -4,6 +4,10 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const en: LocaleEntry = {
+  'zero_degree_popup_title': 'Zero-degree level',
+  'zero_degree_lowest': 'Lowest',
+  'history': 'History',
+  'close': 'Close',
   'tempHi': 'Temperature',
   'tempLo': 'Temperature night',
   'precip': 'Precipitations',

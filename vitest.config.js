@@ -59,6 +59,7 @@ export default {
         'src/moon.ts',
         'src/attributes-layout.ts',
         'src/next-rain.ts',
+        'src/zero-degree-popup.ts',
       ],
       thresholds: {
         statements: 80,

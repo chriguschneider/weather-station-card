@@ -4,6 +4,10 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const ko: LocaleEntry = {
+  'zero_degree_popup_title': '0 °C 고도',
+  'zero_degree_lowest': '최저',
+  'history': '기록',
+  'close': '닫기',
   'tempHi': '최고 기온',
   'tempLo': '최저 기온',
   'precip': '강수',

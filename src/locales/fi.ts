@@ -4,6 +4,10 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const fi: LocaleEntry = {
+  'zero_degree_popup_title': 'Nollaraja',
+  'zero_degree_lowest': 'Alin',
+  'history': 'Historia',
+  'close': 'Sulje',
   'tempHi': 'Lämpötila ylin',
   'tempLo': 'Lämpötila alin',
   'precip': 'Sademäärä',

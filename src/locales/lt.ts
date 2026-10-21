@@ -4,6 +4,10 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const lt: LocaleEntry = {
+  'zero_degree_popup_title': 'Nulinė izoterma',
+  'zero_degree_lowest': 'Žemiausia',
+  'history': 'Istorija',
+  'close': 'Uždaryti',
   'tempHi': 'Dieną',
   'tempLo': 'Naktį',
   'precip': 'Krituliai',
