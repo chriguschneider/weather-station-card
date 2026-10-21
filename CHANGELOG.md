@@ -6,6 +6,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Documentation
+
+- The README now explains the snow line rows (zero-degree level, the
+  48 h trend row, the popup), the sunshine source order, the
+  `forecast.openmeteo`, `location` and `debug` options and how this
+  card works together with MeteoSwiss Weather and MeteoSwiss Radar.
+  The configuration reference no longer marks shipped features as
+  unreleased and corrects several defaults.
+
 ## [2.14.0] — 2026-10-21
 
 ### Changed

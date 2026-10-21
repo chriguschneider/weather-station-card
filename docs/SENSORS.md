@@ -108,9 +108,13 @@ Notes:
 Set `forecast.show_sunshine: true` and you're done. The card adds a
 yellow half-bar on the right of every column (precipitation keeps the
 left half) and a small "Xh" label at the top of the column. Sunshine
-values come directly from
+values come from the weather entity first: when its forecast carries
+`sunshine_duration` (MeteoSwiss Weather does, see
+[ADR-0028](adr/0028-sunshine-entity-first.md)), the card uses that. Only
+where the entity has none does it fall back to
 [Open-Meteo](https://open-meteo.com/)'s `daily=sunshine_duration`
-endpoint — no extra sensors, no YAML, nothing to set up.
+endpoint — no extra sensors, no YAML, nothing to set up. A configured
+`sensors.sunshine_duration` overrides both for today's value.
 
 ```yaml
 forecast:
