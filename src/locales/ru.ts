@@ -4,12 +4,15 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const ru: LocaleEntry = {
+  'zero_degree_popup_title': 'Нулевая изотерма',
+  'zero_degree_lowest': 'Минимум',
+  'history': 'История',
+  'close': 'Закрыть',
   'tempHi': 'Температура',
   'tempLo': 'Температура ночью',
   'precip': 'Осадки',
   'sunshine': 'Солнце',
   'feelsLike': 'Ощущается как',
-  'zero_degree_lowest': 'Lowest',
   'units': {
     'km/h': 'км/ч',
     'm/s': 'м/с',

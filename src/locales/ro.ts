@@ -4,12 +4,15 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const ro: LocaleEntry = {
+  'zero_degree_popup_title': 'Izoterma de 0 °C',
+  'zero_degree_lowest': 'Minim',
+  'history': 'Istoric',
+  'close': 'Închide',
   'tempHi': 'Temperatură',
   'tempLo': 'Temperatură noaptea',
   'precip': 'Precipitații',
   'sunshine': 'Soare',
   'feelsLike': 'Se simte ca',
-  'zero_degree_lowest': 'Lowest',
   'units': {
     'km/h': 'km/h',
     'm/s': 'm/s',

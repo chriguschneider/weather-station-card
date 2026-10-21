@@ -4,12 +4,15 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const sr_Latn: LocaleEntry = {
+  'zero_degree_popup_title': 'Visina granice nula stepeni',
+  'zero_degree_lowest': 'Najniža',
+  'history': 'Istorija',
+  'close': 'Zatvori',
   'tempHi': 'Temperatura',
   'tempLo': 'Noćna temperatura',
   'precip': 'Padavine',
   'sunshine': 'Sunčano',
   'feelsLike': 'Subjektivni osećaj',
-  'zero_degree_lowest': 'Lowest',
   'pressure_trend_rising_fast': 'Pritisak brzo raste',
   'pressure_trend_rising': 'Pritisak raste',
   'pressure_trend_stable': 'Pritisak je stabilan',

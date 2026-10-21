@@ -4,12 +4,15 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const de: LocaleEntry = {
+  'zero_degree_popup_title': 'Nullgradgrenze',
+  'zero_degree_lowest': 'Tiefstwert',
+  'history': 'Verlauf',
+  'close': 'Schliessen',
   'tempHi': 'Temperatur',
   'tempLo': 'Nachttemperatur',
   'precip': 'Niederschlag',
   'sunshine': 'Sonne',
   'feelsLike': 'Gefühlt',
-  'zero_degree_lowest': 'Tiefstwert',
   'pressure_trend_rising_fast': 'Luftdruck schnell steigend',
   'pressure_trend_rising': 'Luftdruck steigend',
   'pressure_trend_stable': 'Luftdruck stabil',

@@ -4,12 +4,15 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const sk: LocaleEntry = {
+  'zero_degree_popup_title': 'Nulová izoterma',
+  'zero_degree_lowest': 'Najnižšia',
+  'history': 'História',
+  'close': 'Zavrieť',
   'tempHi': 'Teplota',
   'tempLo': 'Teplota v noci',
   'precip': 'Zrážky',
   'sunshine': 'Slnko',
   'feelsLike': 'Pocitová teplota',
-  'zero_degree_lowest': 'Lowest',
   'units': {
     'km/h': 'km/h',
     'm/s': 'm/s',

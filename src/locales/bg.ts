@@ -4,12 +4,15 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const bg: LocaleEntry = {
+  'zero_degree_popup_title': 'Нулева изотерма',
+  'zero_degree_lowest': 'Най-ниско',
+  'history': 'История',
+  'close': 'Затвори',
   'tempHi': 'Максимална температура',
   'tempLo': 'Минимална температура',
   'precip': 'Валежи',
   'sunshine': 'Слънце',
   'feelsLike': 'Усеща се като',
-  'zero_degree_lowest': 'Lowest',
   'units': {
     'km/h': 'км/ч',
     'm/s': 'м/с',

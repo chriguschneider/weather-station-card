@@ -4,12 +4,15 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const nl: LocaleEntry = {
+  'zero_degree_popup_title': 'Nulgradengrens',
+  'zero_degree_lowest': 'Laagste',
+  'history': 'Geschiedenis',
+  'close': 'Sluiten',
   'tempHi': 'Temperatuur',
   'tempLo': 'Nachttemperatuur',
   'precip': 'Neerslag',
   'sunshine': 'Zon',
   'feelsLike': 'Voelt als',
-  'zero_degree_lowest': 'Lowest',
   'units': {
     'km/h': 'km/h',
     'm/s': 'm/s',

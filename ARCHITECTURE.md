@@ -103,6 +103,16 @@ src/
 │                              remove helpers. Pure; main.ts maps the
 │                              resolved tokens onto its row helpers.
 │
+├── zero-degree-popup.ts       Popup behind the zero-degree rows
+│                              (#330): parses the 48 h sensor's
+│                              `forecast` attribute, builds a small
+│                              uPlot line chart in a plain-DOM overlay
+│                              mounted in the shadow root (outside the
+│                              `.card` container, whose containment
+│                              would pin `position: fixed`). One
+│                              instance per card, closed from the
+│                              TeardownRegistry on disconnect.
+│
 ├── forecast-utils.ts          Pure helpers: hourlyTempSeries,
 │                              normalizeForecastMode, startOfTodayMs,
 │                              filterMidnightStaleForecast,

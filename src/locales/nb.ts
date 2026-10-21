@@ -4,12 +4,15 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const nb: LocaleEntry = {
+  'zero_degree_popup_title': 'Nullgradersgrense',
+  'zero_degree_lowest': 'Lavest',
+  'history': 'Historikk',
+  'close': 'Lukk',
   'tempHi': 'Maksimumstemperatur',
   'tempLo': 'Minimumstemperatur',
   'precip': 'Nedbør',
   'sunshine': 'Sol',
   'feelsLike': 'Føles som',
-  'zero_degree_lowest': 'Lowest',
   'units': {
     'km/h': 'km/t',
     'm/s': 'm/s',

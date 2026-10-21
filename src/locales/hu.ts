@@ -4,12 +4,15 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const hu: LocaleEntry = {
+  'zero_degree_popup_title': '0 °C-os szint',
+  'zero_degree_lowest': 'Legalacsonyabb',
+  'history': 'Előzmények',
+  'close': 'Bezárás',
   'tempHi': 'Max. hőmérséklet',
   'tempLo': 'Min. hőmérséklet',
   'precip': 'Csapadék',
   'sunshine': 'Nap',
   'feelsLike': 'Hőérzet',
-  'zero_degree_lowest': 'Lowest',
   'units': {
     'km/h': 'km/h',
     'm/s': 'm/s',

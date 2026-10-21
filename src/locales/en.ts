@@ -4,12 +4,15 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const en: LocaleEntry = {
+  'zero_degree_popup_title': 'Zero-degree level',
+  'zero_degree_lowest': 'Lowest',
+  'history': 'History',
+  'close': 'Close',
   'tempHi': 'Temperature',
   'tempLo': 'Temperature night',
   'precip': 'Precipitations',
   'sunshine': 'Sunshine',
   'feelsLike': 'Feels like',
-  'zero_degree_lowest': 'Lowest',
   'pressure_trend_rising_fast': 'Pressure rising rapidly',
   'pressure_trend_rising': 'Pressure rising',
   'pressure_trend_stable': 'Pressure stable',

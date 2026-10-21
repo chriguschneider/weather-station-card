@@ -31,7 +31,7 @@ import {
 } from './const.js';
 import { DEFAULTS, DEFAULTS_FORECAST, DEFAULTS_UNITS } from './defaults.js';
 import { validateConfig } from './config-validation.js';
-import {LitElement, html, svg} from 'lit';
+import {LitElement, html, nothing, svg} from 'lit';
 import {MDI_PATHS} from './icons/mdi-paths.js';
 import {guard} from 'lit/directives/guard.js';
 import {
@@ -122,6 +122,7 @@ import { cardStyles } from './chart/styles.js';
 import { getDateTimeFormat, getNumberFormat } from './utils/intl-cache.js';
 import { moonIllumination, nextMoonEvent, litMoonPath } from './moon.js';
 import { classifyNextRain, findNextRainEntity, formatCheckedUntil, formatNextRain, nextRainIcon } from './next-rain.js';
+import { parseZeroDegreeCurve, ZeroDegreePopup, type ZeroDegreePoint } from './zero-degree-popup.js';
 import {
   resolveAttributesLayout,
   type AttributeToken,
@@ -261,6 +262,12 @@ class WeatherStationCard extends LitElement {
   zero_degree_48h_level: any;
   zero_degree_48h_unit: string | undefined;
   zero_degree_48h_change: number | undefined;
+  // Parsed `forecast` attribute of the 48 h sensor (#330); null = no
+  // popup, the rows open more-info. Re-parsed only when HA hands over a
+  // new attribute array, so the identity stays stable for Lit.
+  zero_degree_curve: ZeroDegreePoint[] | null | undefined;
+  _zeroDegreeCurveRaw: unknown;
+  _zeroDegreePopup: ZeroDegreePopup | null = null;
   zero_degree_48h_at: string | undefined;
   // Display-ready strings, not the raw state object: a fresh object per
   // hass tick would defeat Lit's value comparison (ADR-0017).
@@ -649,6 +656,7 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
       zero_degree_48h_level: { attribute: false },
       zero_degree_48h_unit: { attribute: false },
       zero_degree_48h_change: { attribute: false },
+      zero_degree_curve: { attribute: false },
       zero_degree_48h_at: { attribute: false },
       next_rain_text: { attribute: false },
       next_rain_icon: { attribute: false },
@@ -968,6 +976,11 @@ _extractSensorReadings(hass: HassMain): void {
   const rawChange = attrOf(sensors.zero_degree_level_48h, 'change');
   const changeNum = rawChange === undefined || rawChange === null || rawChange === '' ? NaN : Number(rawChange);
   this.zero_degree_48h_change = Number.isFinite(changeNum) ? changeNum : undefined;
+  const rawCurve = attrOf(sensors.zero_degree_level_48h, 'forecast');
+  if (rawCurve !== this._zeroDegreeCurveRaw || this.zero_degree_curve === undefined) {
+    this._zeroDegreeCurveRaw = rawCurve;
+    this.zero_degree_curve = parseZeroDegreeCurve(rawCurve);
+  }
   const rawAt = attrOf(sensors.zero_degree_level_48h, 'at');
   this.zero_degree_48h_at = typeof rawAt === 'string' && rawAt ? rawAt : undefined;
   const rawPrecipUnit = (attrOf(sensors.precipitation, 'unit_of_measurement') as string | undefined) || undefined;
@@ -1647,6 +1660,7 @@ async _refreshPressureDelta(): Promise<void> {
       }
     });
     r.add(() => this._stopNextRainTick());
+    r.add(() => this._zeroDegreePopup?.close(false));
     r.add(() => {
       if (this._clockTimer) {
         clearInterval(this._clockTimer);
@@ -3612,15 +3626,85 @@ _convertDisplayPressure(pressure: any): any {
 // deno-lint-ignore no-explicit-any
 _entityLink(entityId: string | undefined, content: any): any {
   if (!entityId || !this._hass?.states?.[entityId]) return content;
+  return this._activatable(() => this._fire('hass-more-info', { entityId }), content);
+}
+
+// deno-lint-ignore no-explicit-any
+_activatable(activate: (el: HTMLElement) => void, content: any, hasPopup?: 'dialog'): any {
   const open = (ev: Event) => {
     ev.stopPropagation();
-    this._fire('hass-more-info', { entityId });
+    activate(ev.currentTarget as HTMLElement);
   };
   return html`<span class="wsc-entity-link" role="button" tabindex="0"
+    aria-haspopup=${hasPopup ?? nothing}
     @click=${open}
     @keydown=${(ev: KeyboardEvent) => {
       if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(ev); }
     }}>${content}</span>`;
+}
+
+// Both zero-degree rows open the forecast-curve popup when the 48 h
+// sensor carries a usable `forecast` attribute (#330), else more-info.
+// deno-lint-ignore no-explicit-any
+_zeroDegreeLink(entityId: string | undefined, content: any): any {
+  if (!this.zero_degree_curve) return this._entityLink(entityId, content);
+  return this._activatable((el) => this._openZeroDegreePopup(el), content, 'dialog');
+}
+
+_openZeroDegreePopup(returnFocus: HTMLElement | null): void {
+  const curve = this.zero_degree_curve;
+  const root = this.shadowRoot;
+  if (!curve || !root) return;
+  const str = (k: string) =>
+    (this.ll(k) || (locale.en as Record<string, unknown>)[k] || '') as string;
+  const historyEid = this._attrEntity('zero_degree_level_48h', false);
+  const popup = this._zeroDegreePopup ??= new ZeroDegreePopup();
+  popup.open({
+    root,
+    themeHost: this,
+    curve,
+    unit: this.zero_degree_48h_unit,
+    language: this.language,
+    hour12: this.config?.use_12hour_format,
+    formatValue: (level, withUnit) => this._zeroDegreeFormat(level, withUnit),
+    strings: {
+      title: str('zero_degree_popup_title'),
+      lowest: str('zero_degree_lowest'),
+      history: str('history'),
+      close: str('close'),
+    },
+    returnFocus,
+    onHistory: historyEid && this._hass?.states?.[historyEid]
+      ? () => {
+          popup.close(false);
+          this._fire('hass-more-info', { entityId: historyEid });
+        }
+      : undefined,
+  });
+}
+
+// Popup level in the same format as the row: HA's entity formatter on a
+// copy of the 48 h sensor's state carrying the curve value, so the
+// user's number format applies. Axis ticks drop the unit suffix.
+_zeroDegreeFormat(level: number, withUnit: boolean): string {
+  const eid = this._attrEntity('zero_degree_level_48h', false);
+  const hass = this._hass as unknown as {
+    states?: Record<string, { state: string } | undefined>;
+    formatEntityState?: (stateObj: { state: string }) => string;
+  } | null;
+  const stateObj = eid ? hass?.states?.[eid] : undefined;
+  const unit = this.zero_degree_48h_unit;
+  if (stateObj && typeof hass?.formatEntityState === 'function') {
+    try {
+      const full = hass.formatEntityState({ ...stateObj, state: String(level) });
+      if (withUnit) return full;
+      return unit && full.endsWith(unit) ? full.slice(0, -unit.length).trim() : full;
+    } catch {
+      // Fall through to the Intl path.
+    }
+  }
+  const n = getNumberFormat(this.language, { maximumFractionDigits: 0 }).format(level);
+  return withUnit && unit ? `${n} ${unit}` : n;
 }
 
 // Entity id backing an attribute row: the configured sensor wins;
@@ -3833,7 +3917,7 @@ _climateRow_zeroDegree(show: boolean, value: unknown, unit: string | undefined) 
   if (!show || value === undefined || value === '') return null;
   const eid = this._attrEntity('zero_degree_level', false);
   const text = this._formatEntityValue(eid, value, unit, 0);
-  return html`${this._entityLink(eid,
+  return html`${this._zeroDegreeLink(eid,
     html`<ha-icon icon="mdi:snowflake-thermometer"></ha-icon> ${text}`)}`;
 }
 
@@ -3866,7 +3950,7 @@ _climateRow_zeroDegree48h(value: unknown, unit: string | undefined, change: numb
       title += ` · ${str('next_rain_now').toLowerCase()} ${nowText}`;
     }
   }
-  const row = html`${this._entityLink(eid,
+  const row = html`${this._zeroDegreeLink(eid,
     html`<ha-icon icon="mdi:snowflake-thermometer"></ha-icon> <small>min 48 h</small> ${text}${trendIcon ? html` <ha-icon icon="${trendIcon}"></ha-icon>` : ''}`)}`;
   return title ? html`<span title=${title} aria-label=${title}>${row}</span>` : row;
 }

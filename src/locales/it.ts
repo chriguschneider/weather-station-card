@@ -4,12 +4,15 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const it: LocaleEntry = {
+  'zero_degree_popup_title': 'Zero termico',
+  'zero_degree_lowest': 'Minimo',
+  'history': 'Cronologia',
+  'close': 'Chiudi',
   'tempHi': 'Temperatura massima',
   'tempLo': 'Temperatura notte',
   'precip': 'Precipitazioni',
   'sunshine': 'Sole',
   'feelsLike': 'Percepito come',
-  'zero_degree_lowest': 'Lowest',
   'next_rain_now': 'Ora',
   'next_rain_none': 'Niente pioggia',
   'next_rain_checked_until': 'Previsioni controllate fino alle {time}',

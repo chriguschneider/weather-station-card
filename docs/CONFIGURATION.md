@@ -278,6 +278,18 @@ Rules:
 | `wind_speed` | Wind speed | `sensors.wind_speed` or weather entity |
 | `wind_gust_speed` | Gust speed | `sensors.gust_speed` or weather entity |
 
+Tapping a row opens the more-info dialog of the sensor behind it. The
+two zero-degree rows are the exception when `sensors.zero_degree_level_48h`
+carries a `forecast` attribute — a list of `{datetime, level}` entries
+(ISO 8601 time, level in the sensor's unit), as the MeteoSwiss
+integration provides. Then a tap (or Enter / Space) opens a popup with
+the forecast zero-degree level as a line chart from now to the end of
+the data: day separators, the lowest point marked, a cursor readout
+and a *History* button that opens the sensor's more-info dialog. Esc,
+the close button or a click next to the popup close it. With no
+attribute, or fewer than two valid entries, the tap opens more-info as
+before. *(unreleased)*
+
 **Chart rows**
 
 | Key | Type | Default | Description |

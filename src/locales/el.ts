@@ -4,12 +4,15 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const el: LocaleEntry = {
+  'zero_degree_popup_title': 'Ισόθερμη 0 °C',
+  'zero_degree_lowest': 'Χαμηλότερο',
+  'history': 'Ιστορικό',
+  'close': 'Κλείσιμο',
   'tempHi': 'Μέγιστη θερμοκρασία',
   'tempLo': 'Ελάχιστη θερμοκρασία νύχτας',
   'precip': 'Υετός',
   'sunshine': 'Ήλιος',
   'feelsLike': 'Αίσθηση σαν',
-  'zero_degree_lowest': 'Lowest',
   'units': {
     'km/h': 'χλμ/ώρα',
     'm/s': 'μ/δ',

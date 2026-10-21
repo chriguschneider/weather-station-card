@@ -4,12 +4,15 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const uk: LocaleEntry = {
+  'zero_degree_popup_title': 'Нульова ізотерма',
+  'zero_degree_lowest': 'Найнижчий',
+  'history': 'Історія',
+  'close': 'Закрити',
   'tempHi': 'Температура',
   'tempLo': 'Температура вночі',
   'precip': 'Опади',
   'sunshine': 'Сонце',
   'feelsLike': 'Відчувається як',
-  'zero_degree_lowest': 'Lowest',
   'units': {
     'km/h': 'км/год',
     'm/s': 'м/с',

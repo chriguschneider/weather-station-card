@@ -4,12 +4,15 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const pl: LocaleEntry = {
+  'zero_degree_popup_title': 'Poziom 0 °C',
+  'zero_degree_lowest': 'Najniższy',
+  'history': 'Historia',
+  'close': 'Zamknij',
   'tempHi': 'Temperatura',
   'tempLo': 'Temperatura w nocy',
   'precip': 'Opady',
   'sunshine': 'Słońce',
   'feelsLike': 'Odczuwalna',
-  'zero_degree_lowest': 'Lowest',
   'units': {
     'km/h': 'km/h',
     'm/s': 'm/s',

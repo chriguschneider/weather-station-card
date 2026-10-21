@@ -4,12 +4,15 @@
 import type { LocaleEntry } from '../locale-types.js';
 
 const sr: LocaleEntry = {
+  'zero_degree_popup_title': 'Висина границе нула степени',
+  'zero_degree_lowest': 'Најнижа',
+  'history': 'Историја',
+  'close': 'Затвори',
   'tempHi': 'Температура',
   'tempLo': 'Ноћна температура',
   'precip': 'Падавине',
   'sunshine': 'Сунчано',
   'feelsLike': 'Субјективни осећај',
-  'zero_degree_lowest': 'Lowest',
   'pressure_trend_rising_fast': 'Притисак брзо расте',
   'pressure_trend_rising': 'Притисак расте',
   'pressure_trend_stable': 'Притисак је стабилан',
