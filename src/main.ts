@@ -3937,7 +3937,7 @@ _climateRow_zeroDegree(show: boolean, value: unknown, unit: string | undefined) 
     html`<ha-icon icon="${siteStateIcon(state)}"></ha-icon> ${text}`)}`;
   if (state === 'unknown' || elevation === undefined) return row;
   const str = this._zeroDegreeStr;
-  const line = this._formatEntityValue(eid, Math.round(snowLine(level, perUnit)), unit, 0);
+  const line = this._formatMetres(Math.round(snowLine(level, perUnit)));
   const title = `${str('zero_degree_snow_line').replace('{level}', line)}, `
     + `${this._zeroDegreePlace(elevation)} · ${str(`zero_degree_site_${state}`)}`;
   return html`<span title=${title} aria-label=${title}>${row}</span>`;
@@ -3960,9 +3960,33 @@ _zeroDegreeElevation(): number | undefined {
   );
 }
 
+// Metres in the user's HA number format: HA's formatter on a copy of the
+// current-level sensor's state pinned to `m` (the snow-line estimate and
+// the elevation are always metres, whatever unit the sensor reports).
+_formatMetres(metres: number): string {
+  const eid = this._attrEntity('zero_degree_level', false) || this._attrEntity('zero_degree_level_48h', false);
+  const hass = this._hass as unknown as {
+    states?: Record<string, { state: string; attributes?: Record<string, unknown> } | undefined>;
+    formatEntityState?: (stateObj: { state: string }) => string;
+  } | null;
+  const stateObj = eid ? hass?.states?.[eid] : undefined;
+  if (stateObj && typeof hass?.formatEntityState === 'function') {
+    try {
+      return hass.formatEntityState({
+        ...stateObj,
+        state: String(metres),
+        attributes: { ...stateObj.attributes, unit_of_measurement: 'm' },
+      } as { state: string });
+    } catch {
+      // Fall through to the Intl path.
+    }
+  }
+  return `${getNumberFormat(this.language || 'en', { maximumFractionDigits: 0 }).format(metres)} m`;
+}
+
 // "Köniz 581 m" — the card title names the place when there is one.
 _zeroDegreePlace(elevation: number): string {
-  const metres = `${getNumberFormat(this.language || 'en', { maximumFractionDigits: 0 }).format(elevation)} m`;
+  const metres = this._formatMetres(elevation);
   const name = typeof this.config?.title === 'string' ? this.config.title.trim() : '';
   return name ? `${name} ${metres}` : metres;
 }

@@ -598,6 +598,15 @@ describe('card: zero-degree trend and site state (#333)', () => {
     expect(titleOf(current)).toBe('Snow line about 2,206 m (estimated), Köniz 1,300 m · far above you');
   });
 
+  it('site tooltip numbers go through the HA number format, in metres', async () => {
+    const hass = trendHass(T0, { haElevation: 619 });
+    hass.formatEntityState = (s) =>
+      `${String(Math.round(Number(s.state))).replace(/\B(?=(\d{3})+$)/g, "'")} ${s.attributes.unit_of_measurement}`;
+    const card = await mountCard(hass);
+    expect(titleOf(rows(card).current))
+      .toBe("Snow line about 2'206 m (estimated), 619 m · far above you");
+  });
+
   it('site state follows the elevation (sensor attribute, then HA)', async () => {
     let card = await mountCard(trendHass(T0, { attrs: { elevation: 2000 } }));
     expect(rows(card).currentIcon).toBe('mdi:snowflake-alert');
