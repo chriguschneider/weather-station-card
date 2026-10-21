@@ -82,11 +82,22 @@ export interface ZeroDegreeFormatOpts {
   language: string;
   unit: string | undefined;
   hour12?: boolean;
+  /** Level formatter supplied by the card so the popup reads like the
+   *  row beside it (HA number format). Absent: plain Intl in `language`. */
+  formatValue?(level: number, withUnit: boolean): string;
 }
 
-export function formatLevel(level: number, { language, unit }: ZeroDegreeFormatOpts): string {
-  const n = getNumberFormat(language, { maximumFractionDigits: 0 }).format(level);
-  return unit ? `${n} ${unit}` : n;
+export function formatLevel(level: number, opts: ZeroDegreeFormatOpts, withUnit = true): string {
+  if (opts.formatValue) return opts.formatValue(level, withUnit);
+  const n = getNumberFormat(opts.language, { maximumFractionDigits: 0 }).format(level);
+  return withUnit && opts.unit ? `${n} ${opts.unit}` : n;
+}
+
+/** Lowest point within `hours` of the curve start (the row's 48 h figure). */
+export function findWindowMinimum(curve: readonly ZeroDegreePoint[], hours: number): ZeroDegreePoint | null {
+  if (!curve.length) return null;
+  const end = curve[0].t + hours * 3_600_000;
+  return findCurveMinimum(curve.filter((p) => p.t <= end));
 }
 
 /** Weekday + clock, the next-rain tooltip's style ("Thu 05:00"). */
@@ -104,9 +115,17 @@ export function formatCurveRange(t0: number, t1: number, { language, hour12 }: Z
   return `${fmt.format(new Date(t0))} – ${fmt.format(new Date(t1))}`;
 }
 
-/** "Lowest 1'585 m Thu 05:00". */
-export function formatLowest(min: ZeroDegreePoint, lowestLabel: string, opts: ZeroDegreeFormatOpts): string {
-  return `${lowestLabel} ${formatLevel(min.level, opts)} ${formatWeekdayTime(min.t, opts)}`;
+/** "Lowest 1'447 m Sat 08:00", plus " · 48 h: 1'586 m Thu 05:00" when the
+ *  48 h minimum is a different hour than the curve's. */
+export function formatLowest(
+  min: ZeroDegreePoint,
+  lowestLabel: string,
+  opts: ZeroDegreeFormatOpts,
+  min48h?: ZeroDegreePoint | null,
+): string {
+  const at = (p: ZeroDegreePoint) => `${formatLevel(p.level, opts)} ${formatWeekdayTime(p.t, opts)}`;
+  const base = `${lowestLabel} ${at(min)}`;
+  return min48h && min48h.t !== min.t ? `${base} · 48 h: ${at(min48h)}` : base;
 }
 
 export interface ZeroDegreeChartColors {
@@ -242,7 +261,7 @@ export const buildZeroDegreeChart: ZeroDegreeChartFactory = (target, curve, opts
         size: 56,
         grid: { stroke: opts.colors.muted, width: 0.5 },
         ticks: { show: false },
-        values: (_u, splits) => splits.map((s) => getNumberFormat(opts.language, { maximumFractionDigits: 0 }).format(s)),
+        values: (_u, splits) => splits.map((s) => formatLevel(s, opts, false)),
       },
     ],
     hooks: {
@@ -412,7 +431,7 @@ export class ZeroDegreePopup {
     const readout = el('div', 'wsc-zd-readout');
     const footer = el('div', 'wsc-zd-footer');
     const min = findCurveMinimum(curve);
-    footer.append(el('span', 'wsc-zd-lowest', min ? formatLowest(min, strings.lowest, opts) : ''));
+    footer.append(el('span', 'wsc-zd-lowest', min ? formatLowest(min, strings.lowest, opts, findWindowMinimum(curve, 48)) : ''));
     const focusables: HTMLElement[] = [closeBtn];
     if (opts.onHistory) {
       const onHistory = opts.onHistory;
@@ -439,6 +458,7 @@ export class ZeroDegreePopup {
       language: opts.language,
       unit: opts.unit,
       hour12: opts.hour12,
+      formatValue: opts.formatValue,
       width: chartTarget.clientWidth || panel.clientWidth || 488,
       height: CHART_HEIGHT,
       colors: {

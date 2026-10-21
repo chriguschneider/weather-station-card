@@ -3662,6 +3662,7 @@ _openZeroDegreePopup(returnFocus: HTMLElement | null): void {
     unit: this.zero_degree_48h_unit,
     language: this.language,
     hour12: this.config?.use_12hour_format,
+    formatValue: (level, withUnit) => this._zeroDegreeFormat(level, withUnit),
     strings: {
       title: str('zero_degree_popup_title'),
       lowest: str('zero_degree_lowest'),
@@ -3676,6 +3677,30 @@ _openZeroDegreePopup(returnFocus: HTMLElement | null): void {
         }
       : undefined,
   });
+}
+
+// Popup level in the same format as the row: HA's entity formatter on a
+// copy of the 48 h sensor's state carrying the curve value, so the
+// user's number format applies. Axis ticks drop the unit suffix.
+_zeroDegreeFormat(level: number, withUnit: boolean): string {
+  const eid = this._attrEntity('zero_degree_level_48h', false);
+  const hass = this._hass as unknown as {
+    states?: Record<string, { state: string } | undefined>;
+    formatEntityState?: (stateObj: { state: string }) => string;
+  } | null;
+  const stateObj = eid ? hass?.states?.[eid] : undefined;
+  const unit = this.zero_degree_48h_unit;
+  if (stateObj && typeof hass?.formatEntityState === 'function') {
+    try {
+      const full = hass.formatEntityState({ ...stateObj, state: String(level) });
+      if (withUnit) return full;
+      return unit && full.endsWith(unit) ? full.slice(0, -unit.length).trim() : full;
+    } catch {
+      // Fall through to the Intl path.
+    }
+  }
+  const n = getNumberFormat(this.language, { maximumFractionDigits: 0 }).format(level);
+  return withUnit && unit ? `${n} ${unit}` : n;
 }
 
 // Entity id backing an attribute row: the configured sensor wins;

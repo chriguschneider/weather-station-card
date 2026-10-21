@@ -9,6 +9,7 @@ import {
   paddedLevelRange,
   dayStartsBetween,
   formatLowest,
+  findWindowMinimum,
   formatCurveRange,
   buildZeroDegreeChart,
   ZeroDegreePopup,
@@ -144,6 +145,30 @@ describe('text', () => {
   it('omits the unit when the sensor has none', () => {
     const min = findCurveMinimum(parseZeroDegreeCurve(ROWS));
     expect(formatLowest(min, 'Lowest', { ...opts, unit: undefined })).toBe('Lowest 1,585 Thu 05:00');
+  });
+
+  it('appends the 48 h minimum when it is a different hour', () => {
+    const curve = parseZeroDegreeCurve([
+      ...ROWS,
+      { datetime: '2026-10-24T08:00:00+02:00', level: 1447 },
+    ]);
+    const min = findCurveMinimum(curve);
+    const min48 = findWindowMinimum(curve, 48);
+    expect(min48.level).toBe(1585);
+    expect(formatLowest(min, 'Lowest', opts, min48))
+      .toBe('Lowest 1,447 m Sat 08:00 · 48 h: 1,585 m Thu 05:00');
+  });
+
+  it('shows the minimum once when the 48 h one is the same hour', () => {
+    const curve = parseZeroDegreeCurve(ROWS);
+    expect(formatLowest(findCurveMinimum(curve), 'Lowest', opts, findWindowMinimum(curve, 48)))
+      .toBe('Lowest 1,585 m Thu 05:00');
+  });
+
+  it('uses the card-supplied formatter for values', () => {
+    const min = findCurveMinimum(parseZeroDegreeCurve(ROWS));
+    const formatValue = (l, withUnit) => `${l}'${withUnit ? 'u' : ''}`;
+    expect(formatLowest(min, 'Lowest', { ...opts, formatValue })).toBe("Lowest 1585'u Thu 05:00");
   });
 
   it('formats the data range', () => {
