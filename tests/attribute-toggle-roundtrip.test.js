@@ -198,9 +198,11 @@ describe('attributes_layout round-trip', () => {
       expect(withSensor('sensor.zero48_plain', layout)).not.toContain('mdi:trending');
     });
 
-    it('marks the value as the minimum over 48 h', () => {
+    // #333 dropped the word "min": without a curve the marker is v2.12's.
+    it('marks the value with a plain 48 h marker', () => {
       const markup = withSensor('sensor.zero48_plain', { attributes_layout: [['zero_degree_level_48h']] });
-      expect(markup).toContain('min 48 h');
+      expect(markup).toContain('<small>48 h</small>');
+      expect(markup).not.toContain('min 48 h');
     });
 
     it('adds a tooltip and aria-label from the at attribute, with the current level', () => {

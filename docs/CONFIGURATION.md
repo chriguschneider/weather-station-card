@@ -162,7 +162,7 @@ classifier, and (where relevant) the attribute readouts. Only
 | `sensors.illuminance` | Cloud-cover ratio for live + daily conditions, and the lux-derived station sunshine. Accepts a plain illuminance sensor (lx) **or a solar-irradiance sensor (W/m², `device_class: irradiance`)** — irradiance readings are converted internally at 120 lm/W (daylight luminous efficacy); tune via `condition_mapping.sunshine_lux_ratio` if needed. *(irradiance support since v2.2.3)* |
 | `sensors.uv_index` | UV attribute |
 | `sensors.zero_degree_level` | Zero-degree level row (altitude of the 0 °C isotherm — the snow line). A forecast-derived sensor, e.g. the MeteoSwiss integration's *Zero-degree level* (disabled by default there; needs its hourly option). Unit follows the entity (m or ft). No weather-entity fallback. *(since v2.5)* |
-| `sensors.zero_degree_level_48h` | Zero-degree level in 48 h row: the lowest snow line within the next 48 h, marked "min 48 h". Any numeric sensor with a length unit works, e.g. the MeteoSwiss integration's *Zero-degree level in 48 h*. Unit follows the entity. If the sensor has a numeric `change` attribute (lowest minus now, in metres) the row shows a trend arrow (steady below 100 m); an `at` attribute (ISO datetime of the minimum) adds a tooltip with the lowest value, its weekday/time and the current level. *(unreleased)* |
+| `sensors.zero_degree_level_48h` | Zero-degree trend row, marked "48 h": where the zero-degree level goes next, e.g. from the MeteoSwiss integration's *Zero-degree level in 48 h*. Unit follows the entity. With an hourly `forecast` attribute (list of `{datetime, level}`) the row shows the target of the next movement and an arrow for its direction and pace; see [Zero-degree rows](#zero-degree-rows). Without it the row shows the sensor's value with a trend arrow from a numeric `change` attribute (steady below 100 m), and an `at` attribute (ISO datetime of the minimum) adds a tooltip with the lowest value, its weekday/time and the current level. An `elevation` attribute (metres) on this or the current-level sensor is used as the site elevation. *(unreleased)* |
 | `sensors.next_rain` | Next-rain row. Built for the [MeteoSwiss Radar](https://github.com/chriguschneider/hass-meteoswiss-radar) integration's *Next rain* sensor (its nowcast entities are opt-in in the integration's options): the card reads the `at`, `source` and `checked_until` attributes, counts down in minutes while the radar sees rain coming, shows a clock time for forecast answers (`~17:00`) and "No rain" otherwise (the tooltip says how far the forecast was checked). Any timestamp sensor works too; other sensors show their state as-is. Auto-detected on new cards. *(unreleased)* |
 | `sensors.sunshine_duration` | Today's live sunshine value (scalar, seconds or hours auto-detected at the `≥ 30` threshold). Past columns fall back to the recorder's daily-max for this same sensor. Only used when `forecast.show_sunshine: true`. *(since v0.9; fully wired in daily fetch since v1.4.)* |
 | `sensors.moon_phase` | **Deprecated (v2.3, ADR-0022)** — the moon line is now computed in-card and reads no entity, so [HA's Moon integration](https://www.home-assistant.io/integrations/moon/) is no longer needed. The key is accepted and ignored so older configs keep validating. Use [`show_moon`](#layout--display) to control the line. *(entity-fed v2.2 only)* |
@@ -266,8 +266,8 @@ Rules:
 | `dew_point` | Dew point + comfort icon | `sensors.dew_point` or weather entity |
 | `humidity` | Humidity | `sensors.humidity` or weather entity |
 | `precipitation` | Live precipitation rate | `sensors.precipitation` / `sensors.precipitation_rate` |
-| `zero_degree_level` | Zero-degree level | `sensors.zero_degree_level` |
-| `zero_degree_level_48h` | Lowest zero-degree level in the next 48 h (marker "min 48 h"), with a trend arrow when the sensor has a `change` attribute and a tooltip (lowest, weekday/time, current level) when it has an `at` attribute | `sensors.zero_degree_level_48h` |
+| `zero_degree_level` | Zero-degree level; the icon shows where the estimated snow line lies relative to your site (see [Zero-degree rows](#zero-degree-rows)) | `sensors.zero_degree_level` |
+| `zero_degree_level_48h` | Zero-degree trend (marker "48 h"): the next lowest or highest level with weekday/time and a direction arrow | `sensors.zero_degree_level_48h` |
 | `next_rain` | Next rain (countdown / clock time / dry-until) | `sensors.next_rain` |
 | `uv_illuminance` | UV index and illuminance on one sun-strength line | both of the next two |
 | `uv_index` | UV index with sun-strength icon | `sensors.uv_index` or weather entity |
@@ -304,6 +304,59 @@ before. *(unreleased)*
 | `forecast.show_precip_probability` | bool | `false` | Chance of rain next to the amount in each forecast column's precipitation label: `4.2 / 85` over `mm %`. The value comes from the weather entity's forecast when it provides `precipitation_probability` (MeteoSwiss, AccuWeather, OpenWeatherMap, Pirate Weather, Tomorrow.io do); otherwise from Open-Meteo, on the same request the sunshine bar makes — which sends your Home Assistant location to Open-Meteo. Past (measured) columns never show a chance. A dry forecast day shows the chance alone from 30 % up. In `today` mode each 3-hour block shows the maximum of its hours. Off by default. *(since v2.8, [ADR-0027](adr/0027-precip-probability-entity-first.md))* |
 | `forecast.openmeteo` | bool | `true` | Master switch for Open-Meteo. Set `false` to switch **every** Open-Meteo request of the card off (sunshine bar, `openmeteo_history` past block, chance-of-rain fallback): the card then uses only the weather entity and its own sensors, and columns nothing fills simply have no sunshine bar / chance. YAML only, no editor toggle. |
 | `forecast.openmeteo_history` | bool | `false` | Fills the **past** (left) half of the chart from Open-Meteo's historical model data — temperature, precipitation, wind and condition icons — for cards that have a `weather_entity` but no station `sensors.*`. Works in daily, today and hourly modes. Off by default. Has no effect once any station sensor is configured (the recorder is always preferred) or when there is no weather entity. Sends your Home Assistant location to Open-Meteo — see [SENSORS.md → Open-Meteo past block](SENSORS.md#open-meteo-past-block-no-station-sensors). |
+
+### Zero-degree rows
+
+The two zero-degree rows each answer one question with one icon.
+*(unreleased)*
+
+**Current row** (`zero_degree_level`): the value is the zero-degree
+level now. The icon tells where the estimated snow line lies relative to
+your site's elevation. The snow line is estimated as the zero-degree
+level minus 300 m — MeteoSwiss' rule of thumb for precipitation, an
+estimate only.
+
+| Icon | Snow line |
+| --- | --- |
+| `mdi:snowflake-thermometer` | more than 300 m above your site (or elevation unknown) |
+| `mdi:snowflake-alert` | up to 300 m above your site |
+| `mdi:snowflake` | at your site or below |
+
+With a known elevation the tooltip reads e.g. "Snow line about 2,206 m
+(estimated), Köniz 581 m · far above you" (the place name is the card's
+`title`).
+
+**Trend row** (`zero_degree_level_48h`, needs the sensor's `forecast`
+attribute): the value is the target of the next movement within 48 h —
+the lowest or highest level with its weekday and time, e.g. "48 h 1,586 m
+Thu 05:00". The card looks at the lowest and the highest point of the
+next 48 h; the one that comes first is the target if it differs from
+now by at least 200 m, otherwise the later one if that does. If neither
+moves 200 m the level counts as stable and the row shows the 48 h
+minimum. A movement of 40 m/h or more on average is "fast". The tooltip
+names the movement, the current level and, when the level turns again
+by 200 m or more afterwards, the next extreme ("Falls fast to 1,586 m
+Thu 05:00 · now 2,506 m · then up to 2,556 m Fri 06:00"); a stable level
+reads "Stays between 2,450 and 2,600 m".
+
+| Icon | Trend |
+| --- | --- |
+| `mdi:arrow-up` | rises fast |
+| `mdi:arrow-top-right` | rises |
+| `mdi:arrow-right` | stays |
+| `mdi:arrow-bottom-right` | falls |
+| `mdi:arrow-down` | falls fast |
+
+When the target's estimated snow line reaches your site, the value takes
+the chart's precipitation colour (`forecast.precipitation_color`), the
+marker reads "❄ 48 h" and the tooltip adds "Snow down to … from …". On a
+narrow card the weekday is dropped and the time kept.
+
+**Site elevation** comes from, in this order: the card's `elevation`
+option, an `elevation` attribute on the 48 h sensor, then on the
+current-level sensor, then Home Assistant's configured elevation
+(Settings → System → General). Without any, the current row keeps its
+plain icon and the trend row is never coloured.
 
 ## Chart appearance
 
@@ -360,6 +413,7 @@ expands user-supplied `var(...)` exactly as before.
 | --- | --- | --- | --- |
 | `forecast.type` | `'daily' \| 'hourly' \| 'today'` | `'daily'` | At hourly, station data is fetched at hour resolution (mean per hour, single temperature line) and the forecast is subscribed with `forecast_type: hourly`. `days` / `forecast_days` define the data window (so `days: 4` at hourly = 96 hours of station history). The `'today'` mode (since v1.4; reworked as a **day pager** in v2.2) frames exactly one calendar day of 3-hour blocks per viewport and pages day-wise through the whole `days` window — chevrons step ±1 day, free scrolling snaps to day boundaries. Editor radio in Setup. See [Daily vs. hourly resolution](#daily-vs-hourly-resolution) below. |
 | `forecast.number_of_forecasts` | integer | `8` | Number of bars visible in the viewport at once. Default `8` works across the modes — at daily with `days: 7` everything fits without scrolling, at hourly it caps the viewport at ~8 hours and the user scrolls. Set `0` for "fit all" (no scrolling). **Ignored in `'today'` mode**, which always frames one calendar day (8 × 3-h blocks). When more bars are loaded than visible, the chart row + wind row + conditions row scroll horizontally in lockstep, and a slim day timeline below the chart shows where you are (click/scrub it to navigate). Initial scroll position is "now" (centred at the station/forecast boundary in combination mode; the current day's page in `'today'`). |
+| `elevation` | number | sensor / Home Assistant elevation | Site elevation in metres for the [zero-degree rows](#zero-degree-rows). Overrides an `elevation` attribute on the zero-degree sensors and Home Assistant's configured elevation. Editor: *Elevation (m)* under the station sensors. *(unreleased)* |
 | `locale` | string | HA's selected language | Override locale (e.g. `de`, `fr`). Falls back to English for missing keys. |
 | `location` | object | Home Assistant's home location | `{latitude, longitude}` (decimal degrees, −90..90 / −180..180). Every Open-Meteo request of the card (sunshine bars, the `openmeteo_history` past block, the chance-of-rain fallback) and the sunshine day length use these coordinates instead of Home Assistant's, so a card for another place (e.g. a ski area) shows that place's past data. Sun and moon rise/set times keep using Home Assistant's location. A malformed value is ignored with a config warning. YAML only. *(since v2.11)* |
 

@@ -156,6 +156,14 @@ function buildSensorsSchema(hass: HassWithStates | null): Array<Record<string, u
   }];
 }
 
+// Site elevation for the zero-degree rows (#333), a top-level option.
+// Empty means "take the sensor's or Home Assistant's elevation". The
+// bounds only frame the input box (Dead Sea shore to above Everest).
+const ELEVATION_SCHEMA = [{
+  name: 'elevation',
+  selector: { number: { min: -500, max: 9000, step: 1, mode: 'box' } },
+}];
+
 export function renderSensorsSection(editor: EditorLike, ctx: EditorContext): TemplateResult {
   const { t, sensorsConfig, pastDataAvailable, showsStation } = ctx;
 
@@ -225,6 +233,13 @@ export function renderSensorsSection(editor: EditorLike, ctx: EditorContext): Te
           .hass=${editor.hass}
           .computeLabel=${computeLabel}
           @value-changed=${editor._sensorsChanged}
+        ></ha-form>
+        <ha-form
+          .data=${{ elevation: ctx.cfg.elevation }}
+          .schema=${ELEVATION_SCHEMA}
+          .hass=${editor.hass}
+          .computeLabel=${() => t('elevation')}
+          @value-changed=${editor._chartTopChanged}
         ></ha-form>
       `}
     </div>

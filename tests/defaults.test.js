@@ -116,6 +116,7 @@ function pathExistsInDefaults(path) {
 // runtime fallback like `cfg.title || ''` provides the default).
 const DELETE_ONLY_PATHS = new Set([
   'title',  // free-text user label, runtime fallback in render-chart.ts
+  'elevation',  // optional site elevation, falls back to sensor / HA (#333)
 ]);
 
 // Schema field names a render-*.ts treats as UI-only (not config-backed)

@@ -373,3 +373,19 @@ describe('validateConfig — HA wrapper keys and numeric strings (v2.0.1)', () =
     expect(problems[0]).toContain('forecast.labels_font_size');
   });
 });
+
+describe('validateConfig — elevation (#333)', () => {
+  it('accepts a number, a numeric string or an empty value', () => {
+    for (const elevation of [581, '581', '', null, -20]) {
+      expect(validateConfig({ ...validBaseConfig(), elevation })).toEqual([]);
+    }
+  });
+
+  it('flags a non-numeric value', () => {
+    for (const elevation of ['high', true, [581]]) {
+      const problems = validateConfig({ ...validBaseConfig(), elevation });
+      expect(problems).toHaveLength(1);
+      expect(problems[0]).toContain('Wrong type for `elevation`: expected number');
+    }
+  });
+});

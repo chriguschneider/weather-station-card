@@ -222,7 +222,29 @@ describe('renderSensorsSection (schema-driven)', () => {
       'wind_direction', 'illuminance',
       'uv_index', 'sunshine_duration',
       'zero_degree_level', 'zero_degree_level_48h', 'next_rain',
+      // Top-level option in its own form below the grid (#333).
+      'elevation',
     ]);
+  });
+
+  // `elevation` is a top-level key, not a sensor slot: its form shows the
+  // configured value and writes through _chartTopChanged.
+  it('elevation field round-trips through the real editor handler', async () => {
+    await import('../src/weather-station-card-editor.js');
+    const real = document.createElement('weather-station-card-editor');
+    real._config = { sensors: { temperature: 'sensor.t' } };
+    real.configChanged = vi.fn();
+    real.requestUpdate = vi.fn();
+    const editor = makeEditor({ _chartTopChanged: real._chartTopChanged });
+    const container = renderInto(renderSensorsSection, editor, makeCtx({ cfg: { elevation: 581 } }));
+    const form = [...container.querySelectorAll('ha-form')]
+      .find((f) => (f.schema || []).some((s) => s.name === 'elevation'));
+    expect(form.data).toEqual({ elevation: 581 });
+    form.dispatchEvent(new CustomEvent('value-changed', { detail: { value: { elevation: 620 } } }));
+    expect(real.configChanged.mock.calls[0][0].elevation).toBe(620);
+    real._config = real.configChanged.mock.calls[0][0];
+    form.dispatchEvent(new CustomEvent('value-changed', { detail: { value: { elevation: undefined } } }));
+    expect('elevation' in real.configChanged.mock.calls[1][0]).toBe(false);
   });
 
   // The zero-degree level has no device_class and shares its metre
