@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.13.0] — 2026-10-21
+
 ### Added
 
 - **Tap a zero-degree row to see how the snow line moves.** When the
