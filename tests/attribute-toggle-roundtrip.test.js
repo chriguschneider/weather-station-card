@@ -32,6 +32,7 @@ const hass = {
     'sensor.zero48_flat': { state: '2400', attributes: { unit_of_measurement: 'm', change: 40 } },
     'sensor.zero48_up': { state: '3100', attributes: { unit_of_measurement: 'm', change: 650 } },
     'sensor.zero48_plain': { state: '2000', attributes: { unit_of_measurement: 'm' } },
+    'sensor.zero48_at': { state: '1585', attributes: { unit_of_measurement: 'm', change: -865, at: '2026-10-22T05:00:00+00:00' } },
     'sun.sun': { state: 'above_horizon', attributes: {} },
   },
   config: { latitude: 46.9, longitude: 7.4 },
@@ -195,6 +196,27 @@ describe('attributes_layout round-trip', () => {
       expect(withSensor('sensor.zero48_up', layout)).toContain('mdi:trending-up');
       expect(withSensor('sensor.zero48_flat', layout)).toContain('mdi:trending-neutral');
       expect(withSensor('sensor.zero48_plain', layout)).not.toContain('mdi:trending');
+    });
+
+    it('marks the value as the minimum over 48 h', () => {
+      const markup = withSensor('sensor.zero48_plain', { attributes_layout: [['zero_degree_level_48h']] });
+      expect(markup).toContain('min 48 h');
+    });
+
+    it('adds a tooltip and aria-label from the at attribute, with the current level', () => {
+      const layout = { attributes_layout: [['zero_degree_level_48h']] };
+      const markup = withSensor('sensor.zero48_at', layout);
+      // The template stringifier drops the attribute quotes.
+      const re = 'Lowest 1,585 m \\S+ \\S+ · now 2,450 m';
+      expect(markup).toMatch(new RegExp(`title=${re} `));
+      expect(markup).toMatch(new RegExp(`aria-label=${re}>`));
+      expect(markup).toContain('mdi:trending-down');
+    });
+
+    it('has no tooltip without the at attribute', () => {
+      const markup = withSensor('sensor.zero48', { attributes_layout: [['zero_degree_level_48h']] });
+      expect(markup).not.toContain('title=');
+      expect(markup).not.toContain('aria-label=');
     });
   });
 
