@@ -18,12 +18,11 @@
 import uPlot from 'uplot';
 import { getDateTimeFormat, getNumberFormat } from './utils/intl-cache.js';
 import { addDays, startOfDay } from './utils/time-zone.js';
+import {
+  isSignificantChange, metresPerUnit, siteLineLevel, type ZeroDegreePoint,
+} from './zero-degree-trend.js';
 
-export interface ZeroDegreePoint {
-  /** Epoch ms. */
-  t: number;
-  level: number;
-}
+export type { ZeroDegreePoint };
 
 /** Valid, sorted, deduplicated points of the `forecast` attribute, or
  *  null when fewer than two survive. Rows with an unparseable datetime
@@ -56,6 +55,15 @@ export function findCurveMinimum(curve: readonly ZeroDegreePoint[]): ZeroDegreeP
   return min;
 }
 
+/** Highest point; the earliest one on a tie. */
+export function findCurveMaximum(curve: readonly ZeroDegreePoint[]): ZeroDegreePoint | null {
+  let max: ZeroDegreePoint | null = null;
+  for (const p of curve) {
+    if (!max || p.level > max.level) max = p;
+  }
+  return max;
+}
+
 /** Y range snapped to whole hundreds with at least 100 of headroom on
  *  both sides, so the minimum label never sits on the plot edge. Never
  *  dips below zero for an all-positive curve. */
@@ -64,6 +72,17 @@ export function paddedLevelRange(min: number, max: number): [number, number] {
   const hi = Math.ceil(max / 100) * 100 + 100;
   if (min >= 0 && lo < 0) lo = 0;
   return [lo, hi];
+}
+
+/** Padded y range of the curve, widened to hold the site line. */
+export function curveYRange(curve: readonly ZeroDegreePoint[], siteLevel?: number): [number, number] {
+  let lo = siteLevel ?? Infinity;
+  let hi = siteLevel ?? -Infinity;
+  for (const p of curve) {
+    if (p.level < lo) lo = p.level;
+    if (p.level > hi) hi = p.level;
+  }
+  return paddedLevelRange(lo, hi);
 }
 
 /** Local midnights (HA server zone, ADR-0026) strictly after `t0` and
@@ -132,12 +151,23 @@ export interface ZeroDegreeChartColors {
   line: string;
   text: string;
   muted: string;
+  /** Site line; falls back to `line`. */
+  site?: string;
+}
+
+/** Level at which the estimated snow line reaches the site, in the
+ *  curve's unit, with the line's label ("Köniz 581 m"). */
+export interface ZeroDegreeSiteLine {
+  level: number;
+  label: string;
 }
 
 export interface ZeroDegreeChartOpts extends ZeroDegreeFormatOpts {
   width: number;
   height: number;
   colors: ZeroDegreeChartColors;
+  /** Absent without a known site elevation: no line. */
+  site?: ZeroDegreeSiteLine;
   /** Cursor readout; idx null when the cursor leaves the plot. */
   onCursor?(point: ZeroDegreePoint | null): void;
 }
@@ -155,11 +185,23 @@ export type ZeroDegreeChartFactory = (
 
 const CHART_HEIGHT = 220;
 
-/** Day separators, the "now" line at the first point and the minimum
- *  marker, painted after uPlot drew the series. Canvas pixels. */
+/** The lowest point is always marked; the highest only when it is at
+ *  least as far above the current level as the trend row's threshold. */
+export function markedExtremes(
+  curve: readonly ZeroDegreePoint[],
+  unit: string | undefined,
+): { min: ZeroDegreePoint | null; max: ZeroDegreePoint | null } {
+  const max = findCurveMaximum(curve);
+  const significant = max && isSignificantChange(max.level - curve[0].level, metresPerUnit(unit));
+  return { min: findCurveMinimum(curve), max: significant ? max : null };
+}
+
+/** Day separators, the "now" line at the first point, the site line and
+ *  the extreme markers, painted after uPlot drew the series. Canvas pixels. */
 function overlayPlugin(
   curve: readonly ZeroDegreePoint[],
   min: ZeroDegreePoint | null,
+  max: ZeroDegreePoint | null,
   opts: ZeroDegreeChartOpts,
 ): uPlot.Plugin {
   const midnights = dayStartsBetween(curve[0].t, curve[curve.length - 1].t);
@@ -187,24 +229,39 @@ function overlayPlugin(
         c.moveTo(nowX, top);
         c.lineTo(nowX, top + height);
         c.stroke();
-        if (min) {
-          const x = u.valToPos(min.t, 'x', true);
-          const y = u.valToPos(min.level, 'y', true);
+        const left = u.bbox.left;
+        const right = left + u.bbox.width;
+        c.font = `${12 * pr}px sans-serif`;
+        c.textAlign = 'left';
+        if (opts.site) {
+          const y = Math.round(u.valToPos(opts.site.level, 'y', true));
+          c.strokeStyle = opts.colors.site ?? opts.colors.line;
+          c.fillStyle = c.strokeStyle;
+          c.setLineDash([6 * pr, 4 * pr]);
+          c.beginPath();
+          c.moveTo(left, y);
+          c.lineTo(right, y);
+          c.stroke();
+          c.setLineDash([]);
+          c.textBaseline = 'bottom';
+          c.fillText(opts.site.label, right - c.measureText(opts.site.label).width, y - 3 * pr);
+        }
+        const mark = (p: ZeroDegreePoint, below: boolean) => {
+          const x = u.valToPos(p.t, 'x', true);
+          const y = u.valToPos(p.level, 'y', true);
           c.fillStyle = opts.colors.line;
           c.beginPath();
           c.arc(x, y, 4 * pr, 0, 2 * Math.PI);
           c.fill();
           c.fillStyle = opts.colors.text;
-          c.font = `${12 * pr}px sans-serif`;
-          c.textBaseline = 'top';
-          // Keep the label inside the plot when the minimum sits at an edge.
-          const label = formatLevel(min.level, opts);
+          c.textBaseline = below ? 'top' : 'bottom';
+          // Keep the label inside the plot when the point sits at an edge.
+          const label = formatLevel(p.level, opts);
           const w = c.measureText(label).width;
-          const left = u.bbox.left;
-          const right = left + u.bbox.width;
-          c.textAlign = 'left';
-          c.fillText(label, Math.min(Math.max(x - w / 2, left), right - w), y + 7 * pr);
-        }
+          c.fillText(label, Math.min(Math.max(x - w / 2, left), right - w), below ? y + 7 * pr : y - 7 * pr);
+        };
+        if (min) mark(min, true);
+        if (max) mark(max, false);
         c.restore();
       },
     },
@@ -212,14 +269,8 @@ function overlayPlugin(
 }
 
 export const buildZeroDegreeChart: ZeroDegreeChartFactory = (target, curve, opts) => {
-  const min = findCurveMinimum(curve);
-  let lo = Infinity;
-  let hi = -Infinity;
-  for (const p of curve) {
-    if (p.level < lo) lo = p.level;
-    if (p.level > hi) hi = p.level;
-  }
-  const yRange = paddedLevelRange(lo, hi);
+  const { min, max } = markedExtremes(curve, opts.unit);
+  const yRange = curveYRange(curve, opts.site?.level);
   const t0 = curve[0].t;
   const t1 = curve[curve.length - 1].t;
   const midnights = dayStartsBetween(t0, t1);
@@ -271,7 +322,7 @@ export const buildZeroDegreeChart: ZeroDegreeChartFactory = (target, curve, opts
         opts.onCursor(idx == null ? null : curve[idx] ?? null);
       }],
     },
-    plugins: [overlayPlugin(curve, min, opts)],
+    plugins: [overlayPlugin(curve, min, max, opts)],
   }, data, target);
   return {
     destroy: () => u.destroy(),
@@ -372,6 +423,10 @@ export interface ZeroDegreePopupOpts extends ZeroDegreeFormatOpts {
   /** Element the theme variables are read from (the card host). */
   themeHost: Element;
   curve: readonly ZeroDegreePoint[];
+  /** Site elevation in metres and its label; absent: no site line. */
+  site?: { elevation: number; label: string };
+  /** CSS colour of the site line (the precipitation colour). */
+  siteColor?: string;
   strings: ZeroDegreePopupStrings;
   /** Focus goes back here on close. */
   returnFocus?: HTMLElement | null;
@@ -465,7 +520,11 @@ export class ZeroDegreePopup {
         line: cssVar(theme, '--accent-color') || cssVar(theme, '--primary-color') || '#03a9f4',
         text: cssVar(theme, '--primary-text-color') || '#212121',
         muted,
+        site: opts.siteColor,
       },
+      site: opts.site
+        ? { level: siteLineLevel(opts.site.elevation, metresPerUnit(opts.unit)), label: opts.site.label }
+        : undefined,
       onCursor: (p) => {
         readout.textContent = p ? `${formatWeekdayTime(p.t, opts)} · ${formatLevel(p.level, opts)}` : '';
       },

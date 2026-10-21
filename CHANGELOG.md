@@ -8,6 +8,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The zero-degree popup shows where the snow line reaches your
+  site.** A dashed line in the precipitation colour marks your
+  elevation + 300 m, labelled with the location name and elevation
+  (e.g. "Köniz 581 m"): where the curve dips below it, snow can reach
+  you. The highest point of the curve is now marked too when it is at
+  least 200 m above the current level. Without a known elevation no
+  line is drawn.
+
 - **The zero-degree level in 48 h row now shows where the snow line is
   heading.** With the sensor's hourly forecast (the MeteoSwiss
   integration provides it), the row shows the next low or high point

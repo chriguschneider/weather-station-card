@@ -3669,10 +3669,13 @@ _openZeroDegreePopup(returnFocus: HTMLElement | null): void {
     (this.ll(k) || (locale.en as Record<string, unknown>)[k] || '') as string;
   const historyEid = this._attrEntity('zero_degree_level_48h', false);
   const popup = this._zeroDegreePopup ??= new ZeroDegreePopup();
+  const elevation = this._zeroDegreeElevation();
   popup.open({
     root,
     themeHost: this,
     curve,
+    site: elevation === undefined ? undefined : { elevation, label: this._zeroDegreePlace(elevation) },
+    siteColor: this.config?.forecast?.precipitation_color || 'rgba(132, 209, 253, 1.0)',
     unit: this.zero_degree_48h_unit,
     language: this.language,
     hour12: this.config?.use_12hour_format,

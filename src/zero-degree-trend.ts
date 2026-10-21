@@ -9,7 +9,11 @@
 //
 // The thresholds below are the card's own heuristics, decided in #333.
 
-import type { ZeroDegreePoint } from './zero-degree-popup.js';
+export interface ZeroDegreePoint {
+  /** Epoch ms. */
+  t: number;
+  level: number;
+}
 
 export type ZeroDegreeTrendClass =
   | 'rising_fast'
@@ -89,6 +93,11 @@ function isSignificant(amountMetres: number): boolean {
   return amountMetres >= SIGNIFICANT_CHANGE_M;
 }
 
+/** True when a level difference (curve unit) is a real movement, not noise. */
+export function isSignificantChange(delta: number, unitMetres = 1): boolean {
+  return isSignificant(delta * unitMetres);
+}
+
 function findExtremes(window: readonly ZeroDegreePoint[]): { min: ZeroDegreePoint; max: ZeroDegreePoint } {
   let min = window[0];
   let max = window[0];
@@ -153,6 +162,12 @@ const TREND_ICONS: Record<ZeroDegreeTrendClass, string> = {
 
 export function zeroDegreeTrendIcon(trend: ZeroDegreeTrendClass): string {
   return TREND_ICONS[trend];
+}
+
+/** Zero-degree level at which the estimated snow line reaches a site
+ *  at `elevation` metres, in the curve's unit. */
+export function siteLineLevel(elevation: number, unitMetres = 1): number {
+  return (elevation + SNOW_LINE_OFFSET_M) / unitMetres;
 }
 
 /** Estimated snow line in the curve's unit. */

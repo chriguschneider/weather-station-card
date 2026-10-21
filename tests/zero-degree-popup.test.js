@@ -12,6 +12,8 @@ import {
   findWindowMinimum,
   formatCurveRange,
   buildZeroDegreeChart,
+  markedExtremes,
+  curveYRange,
   ZeroDegreePopup,
 } from '../src/zero-degree-popup.js';
 import { setCardTimeZone } from '../src/utils/time-zone.js';
@@ -382,6 +384,64 @@ describe('buildZeroDegreeChart (uPlot)', () => {
   });
 });
 
+describe('zero-degree chart: site line and extremes (#334)', () => {
+  const baseOpts = {
+    language: 'en-GB', unit: 'm', width: 480, height: 220,
+    colors: { line: '#f00', text: '#000', muted: '#888', site: '#08f' },
+  };
+  const draw = async (curve, extra = {}) => {
+    const calls = stubCanvas();
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const chart = buildZeroDegreeChart(target, curve, { ...baseOpts, ...extra });
+    await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 0));
+    chart.destroy();
+    return calls;
+  };
+  const labels = (calls) => calls.filter(([k]) => k === 'fillText').map(([, t]) => t);
+
+  it('draws a dashed labelled site line when a site is given', async () => {
+    const calls = await draw(parseZeroDegreeCurve(ROWS), { site: { level: 881, label: 'Köniz 581 m' } });
+    expect(labels(calls)).toContain('Köniz 581 m');
+    expect(calls.some(([k, d]) => k === 'setLineDash' && d.length === 2 && d[0] > d[1])).toBe(true);
+  });
+
+  it('draws no site line without one', async () => {
+    const calls = await draw(parseZeroDegreeCurve(ROWS));
+    expect(labels(calls).some((t) => /Köniz/.test(t))).toBe(false);
+  });
+
+  it('widens the y range to hold a site line below or above the curve', () => {
+    const curve = parseZeroDegreeCurve(ROWS);
+    expect(curveYRange(curve)).toEqual([1400, 2900]);
+    expect(curveYRange(curve, 300)).toEqual([200, 2900]);
+    expect(curveYRange(curve, 4000)).toEqual([1400, 4100]);
+    expect(curveYRange(curve, 2000)).toEqual([1400, 2900]);
+  });
+
+  it('marks the highest point only when it is 200 m above now', async () => {
+    const rising = parseZeroDegreeCurve([
+      { datetime: '2026-10-21T07:00:00+02:00', level: 1500 },
+      { datetime: '2026-10-21T12:00:00+02:00', level: 1400 },
+      { datetime: '2026-10-22T12:00:00+02:00', level: 2300 },
+    ]);
+    const both = await draw(rising);
+    expect(labels(both)).toEqual(expect.arrayContaining(['1,400 m', '2,300 m']));
+    const one = await draw(parseZeroDegreeCurve(ROWS));
+    expect(labels(one)).toContain('1,585 m');
+    expect(labels(one)).not.toContain('2,722 m');
+  });
+
+  it('markedExtremes respects the unit', () => {
+    const curve = [{ t: 0, level: 1000 }, { t: 1, level: 1500 }, { t: 2, level: 900 }];
+    // 500 ft = 152 m is noise; 500 m is a movement.
+    expect(markedExtremes(curve, 'ft').max).toBeNull();
+    expect(markedExtremes(curve, 'm').max).toEqual({ t: 1, level: 1500 });
+    expect(markedExtremes(curve, 'm').min).toEqual({ t: 2, level: 900 });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Card integration.
 
@@ -628,5 +688,18 @@ describe('card: zero-degree trend and site state (#333)', () => {
     expect(trend.querySelector('small').textContent).toBe('48 h');
     expect(trend.querySelector('ha-icon[icon="mdi:trending-down"]')).not.toBeNull();
     expect(err).not.toHaveBeenCalled();
+  });
+});
+
+describe('card: zero-degree popup site line (#334)', () => {
+  it('hands the popup the site elevation and name, or nothing', async () => {
+    const open = vi.spyOn(ZeroDegreePopup.prototype, 'open').mockImplementation(() => {});
+    let card = await mountCard(makeHass({ forecast: ROWS }), { title: 'Köniz', elevation: 581 });
+    rowLinks(card)[0].click();
+    expect(open.mock.calls[0][0].site).toEqual({ elevation: 581, label: 'Köniz 581 m' });
+    card.remove();
+    card = await mountCard(makeHass({ forecast: ROWS }));
+    rowLinks(card)[0].click();
+    expect(open.mock.calls[1][0].site).toBeUndefined();
   });
 });
