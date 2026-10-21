@@ -369,7 +369,7 @@ switch on `show_zero_degree_level` / `show_zero_degree_level_48h`.
   turn after it ("then up to …"). If that low brings the snow line down
   to your site, the value takes the chart's precipitation colour and a
   ❄ is put in front of it.
-- **Popup on tap.** Tapping the 48 h row opens the forecast curve with
+- **Popup on tap.** Tapping either zero-degree row opens the forecast curve with
   day separators, the low point marked and a *History* button. Any
   sensor with a `forecast` attribute of `{datetime, level}` points
   works for the popup.
@@ -404,8 +404,7 @@ hass-meteoswiss-weather ──(hourly forecast)──▶ hass-meteoswiss-radar �
 | Sunshine today | weather integration's `sunshine_duration_today` | `sensors.sunshine_duration` |
 | Measured values | your station sensors | `sensors.*` |
 
-Forum threads: MeteoSwiss Weather (link follows once the thread exists),
-[MeteoSwiss Radar](https://community.home-assistant.io/t/1022501).
+Forum threads: [MeteoSwiss Radar](https://community.home-assistant.io/t/1022501).
 
 ## Contributing & architecture
 
