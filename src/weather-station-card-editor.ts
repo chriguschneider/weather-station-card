@@ -1,6 +1,6 @@
 import { LitElement, html, type TemplateResult } from 'lit';
 import type { HomeAssistant } from './editor/types.js';
-import locale, { ensureLocaleLoaded } from './locale.js';
+import locale, { ensureLocaleLoaded, resolveLocaleKey } from './locale.js';
 import { readCachedAvailability } from './openmeteo-source.js';
 import { renderBasicsSection } from './editor/render-basics.js';
 import { renderSensorsSection } from './editor/render-sensors.js';
@@ -33,7 +33,7 @@ interface ValueChangedTarget {
 function tEditor(hass: HomeAssistant | null, key: string): string {
   const lang = (hass?.language) || 'en';
   const baseLang = lang.split('-')[0];
-  for (const l of [lang, baseLang, 'en']) {
+  for (const l of [lang, resolveLocaleKey(lang), baseLang, 'en']) {
     const block = (locale as Record<string, { editor?: Record<string, string> } | undefined>)[l]?.editor;
     if (block && typeof block[key] === 'string') return block[key];
   }

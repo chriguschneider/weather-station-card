@@ -8,6 +8,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Serbian in Latin script (Srpski) now gets its own translation in the
+  card and the editor.** Thanks to @cpmarexel2f.
 - **`current_temp_size` changes the size of the current temperature again.**
   Since 2.2.0 it only moved the reading. The default (28) now actually
   applies, so the temperature looks larger than the 18px you have seen
