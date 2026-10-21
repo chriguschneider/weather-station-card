@@ -124,6 +124,16 @@ import { moonIllumination, nextMoonEvent, litMoonPath } from './moon.js';
 import { classifyNextRain, findNextRainEntity, formatCheckedUntil, formatNextRain, nextRainIcon } from './next-rain.js';
 import { parseZeroDegreeCurve, ZeroDegreePopup, type ZeroDegreePoint } from './zero-degree-popup.js';
 import {
+  classifySiteState,
+  classifyZeroDegreeTrend,
+  metresPerUnit,
+  reachesSite,
+  resolveElevation,
+  siteStateIcon,
+  snowLine,
+  zeroDegreeTrendIcon,
+} from './zero-degree-trend.js';
+import {
   resolveAttributesLayout,
   type AttributeToken,
 } from './attributes-layout.js';
@@ -3913,22 +3923,153 @@ _sunRow_sun(show: boolean, sun: any, language: string) {
 // entity formatter when available so the integration's display
 // precision and the user's number locale apply; the fallback rounds
 // to whole metres/feet — decimals carry no meaning at this scale.
+// The icon tells where the estimated snow line lies relative to the
+// site (#333); without a known elevation it stays the plain snowflake.
 _climateRow_zeroDegree(show: boolean, value: unknown, unit: string | undefined) {
   if (!show || value === undefined || value === '') return null;
   const eid = this._attrEntity('zero_degree_level', false);
   const text = this._formatEntityValue(eid, value, unit, 0);
-  return html`${this._zeroDegreeLink(eid,
-    html`<ha-icon icon="mdi:snowflake-thermometer"></ha-icon> ${text}`)}`;
+  const level = Number(value);
+  const elevation = this._zeroDegreeElevation();
+  const perUnit = metresPerUnit(unit);
+  const state = classifySiteState(Number.isFinite(level) ? level : undefined, elevation, perUnit);
+  const row = html`${this._zeroDegreeLink(eid,
+    html`<ha-icon icon="${siteStateIcon(state)}"></ha-icon> ${text}`)}`;
+  if (state === 'unknown' || elevation === undefined) return row;
+  const str = this._zeroDegreeStr;
+  const line = this._formatMetres(Math.round(snowLine(level, perUnit)));
+  const title = `${str('zero_degree_snow_line').replace('{level}', line)}, `
+    + `${this._zeroDegreePlace(elevation)} · ${str(`zero_degree_site_${state}`)}`;
+  return html`<span title=${title} aria-label=${title}>${row}</span>`;
 }
 
-// Lowest zero-degree level within the next 48 h
-// (`sensors.zero_degree_level_48h`): same formatting as the current
-// level. A numeric `change` attribute (lowest minus now) adds a trend
-// arrow; within ±100 m counts as steady. An `at` attribute (ISO datetime
-// of the minimum) adds a tooltip with the lowest value, its weekday/time
-// and, when known, the current level.
+_zeroDegreeStr = (k: string): string =>
+  (this.ll(k) || (locale.en as Record<string, unknown>)[k] || '') as string;
+
+// Site elevation in metres (card option > sensor attribute > HA config).
+_zeroDegreeElevation(): number | undefined {
+  const states = this._hass?.states as Record<string, { attributes?: Record<string, unknown> } | undefined> | undefined;
+  const attrsOf = (key: string) => {
+    const eid = this._attrEntity(key, false);
+    return eid ? states?.[eid]?.attributes : undefined;
+  };
+  return resolveElevation(
+    this.config,
+    [attrsOf('zero_degree_level_48h'), attrsOf('zero_degree_level')],
+    this._hass as unknown as { config?: { elevation?: unknown } },
+  );
+}
+
+// Metres in the user's HA number format: HA's formatter on a copy of the
+// current-level sensor's state pinned to `m` (the snow-line estimate and
+// the elevation are always metres, whatever unit the sensor reports).
+_formatMetres(metres: number): string {
+  const eid = this._attrEntity('zero_degree_level', false) || this._attrEntity('zero_degree_level_48h', false);
+  const hass = this._hass as unknown as {
+    states?: Record<string, { state: string; attributes?: Record<string, unknown> } | undefined>;
+    formatEntityState?: (stateObj: { state: string }) => string;
+  } | null;
+  const stateObj = eid ? hass?.states?.[eid] : undefined;
+  if (stateObj && typeof hass?.formatEntityState === 'function') {
+    try {
+      return hass.formatEntityState({
+        ...stateObj,
+        state: String(metres),
+        attributes: { ...stateObj.attributes, unit_of_measurement: 'm' },
+      } as { state: string });
+    } catch {
+      // Fall through to the Intl path.
+    }
+  }
+  return `${getNumberFormat(this.language || 'en', { maximumFractionDigits: 0 }).format(metres)} m`;
+}
+
+// "Köniz 581 m" — the card title names the place when there is one.
+_zeroDegreePlace(elevation: number): string {
+  const metres = this._formatMetres(elevation);
+  const name = typeof this.config?.title === 'string' ? this.config.title.trim() : '';
+  return name ? `${name} ${metres}` : metres;
+}
+
+// Weekday + clock of a curve point; the weekday sits in its own span so
+// the narrow-card breakpoint can drop it and keep the time.
+_zeroDegreeWhen(t: number): { day: string; time: string } {
+  const lang = this.language || 'en';
+  const hour12 = this.config?.use_12hour_format;
+  const d = new Date(t);
+  return {
+    day: getDateTimeFormat(lang, { weekday: 'short' }).format(d),
+    time: getDateTimeFormat(lang, { hour: 'numeric', minute: 'numeric', hour12 }).format(d),
+  };
+}
+
+// Zero-degree trend row (`sensors.zero_degree_level_48h`, #333): with the
+// sensor's `forecast` curve the value is the target of the next movement
+// (lowest or highest level, weekday/time) and the icon its direction and
+// pace. When the target's snow line reaches the site, the value takes
+// the precipitation colour and the marker a snowflake. Without a curve
+// the row stays as in v2.12 (_zeroDegree48hFallback).
 _climateRow_zeroDegree48h(value: unknown, unit: string | undefined, change: number | undefined, at?: string, nowValue?: unknown) {
   if (value === undefined || value === '') return null;
+  const curve = this.zero_degree_curve;
+  const now = Date.now();
+  const nowNum = nowValue === undefined || nowValue === '' ? NaN : Number(nowValue);
+  const nowLevel = Number.isFinite(nowNum) ? nowNum : curve?.find((p) => p.t >= now)?.level;
+  const perUnit = metresPerUnit(unit);
+  const view = curve && nowLevel !== undefined
+    ? classifyZeroDegreeTrend(curve, nowLevel, now, perUnit)
+    : null;
+  if (!view) return this._zeroDegree48hFallback(value, unit, change, at, nowValue);
+
+  const eid = this._attrEntity('zero_degree_level_48h', false);
+  const str = this._zeroDegreeStr;
+  const fmt = (level: number, withUnit = true) => this._zeroDegreeFormat(level, withUnit);
+  const { target, next } = view;
+  const when = this._zeroDegreeWhen(target.t);
+  const whenText = `${when.day} ${when.time}`;
+  const elevation = this._zeroDegreeElevation();
+  const reaches = reachesSite(target.level, elevation, perUnit);
+
+  let title: string;
+  if (view.trend === 'stable') {
+    title = str('zero_degree_stays_between')
+      .replace('{min}', fmt(view.min, false))
+      .replace('{max}', fmt(view.max));
+  } else {
+    const sentence = str('zero_degree_trend_to')
+      .replace('{trend}', str(`zero_degree_trend_${view.trend}`))
+      .replace('{level}', fmt(target.level))
+      .replace('{time}', whenText);
+    title = sentence.charAt(0).toUpperCase() + sentence.slice(1);
+    if (nowLevel !== undefined) title += ` · ${str('next_rain_now').toLowerCase()} ${fmt(nowLevel)}`;
+    if (next) {
+      const nextWhen = this._zeroDegreeWhen(next.t);
+      title += ` · ${str(next.level > target.level ? 'zero_degree_then_up' : 'zero_degree_then_down')
+        .replace('{level}', fmt(next.level))
+        .replace('{time}', `${nextWhen.day} ${nextWhen.time}`)}`;
+    }
+  }
+  if (reaches && elevation !== undefined) {
+    title += ` · ${str('zero_degree_snow_to_site')
+      .replace('{place}', this._zeroDegreePlace(elevation))
+      .replace('{time}', whenText)}`;
+  }
+
+  // The precipitation colour is the chart bars' colour, a CSS colour or
+  // var(...) string from the card's own config.
+  const reachStyle = reaches
+    ? `color: ${this.config?.forecast?.precipitation_color || 'rgba(132, 209, 253, 1.0)'}`
+    : nothing;
+  const row = html`${this._zeroDegreeLink(eid,
+    html`<ha-icon icon="${zeroDegreeTrendIcon(view.trend)}"></ha-icon> <span class="wsc-zd-target" style=${reachStyle}>${reaches ? '❄ ' : ''}${fmt(target.level)} <span class="wsc-zd-day">${when.day}</span> ${when.time}</span>`)}`;
+  return html`<span title=${title} aria-label=${title}>${row}</span>`;
+}
+
+// Trend row without a usable curve: value + arrow from the `change`
+// attribute (within ±100 m counts as steady), as in v2.12. An `at`
+// attribute (ISO datetime of the minimum) adds a tooltip with the lowest
+// value, its weekday/time and, when known, the current level.
+_zeroDegree48hFallback(value: unknown, unit: string | undefined, change: number | undefined, at?: string, nowValue?: unknown) {
   const eid = this._attrEntity('zero_degree_level_48h', false);
   const text = this._formatEntityValue(eid, value, unit, 0);
   let trendIcon = '';
@@ -3951,7 +4092,7 @@ _climateRow_zeroDegree48h(value: unknown, unit: string | undefined, change: numb
     }
   }
   const row = html`${this._zeroDegreeLink(eid,
-    html`<ha-icon icon="mdi:snowflake-thermometer"></ha-icon> <small>min 48 h</small> ${text}${trendIcon ? html` <ha-icon icon="${trendIcon}"></ha-icon>` : ''}`)}`;
+    html`<ha-icon icon="mdi:snowflake-thermometer"></ha-icon> <small>48 h</small> ${text}${trendIcon ? html` <ha-icon icon="${trendIcon}"></ha-icon>` : ''}`)}`;
   return title ? html`<span title=${title} aria-label=${title}>${row}</span>` : row;
 }
 

@@ -40,6 +40,8 @@ export const SECTION_KEYS: Record<SectionKey, ReadonlyArray<string>> = {
     // The Open-Meteo no-station past-block opt-in (ADR-0015), driven by
     // the past-source dropdown in this section.
     'forecast.openmeteo_history',
+    // Site elevation for the zero-degree rows (#333); no DEFAULTS entry.
+    'elevation',
   ],
   chart: [
     'days',

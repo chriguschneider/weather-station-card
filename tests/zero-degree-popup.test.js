@@ -402,10 +402,11 @@ function makeHass(attrs = {}) {
 // The card attaches its observer from a timer that can outlive a test.
 globalThis.ResizeObserver ??= class { observe() {} disconnect() {} unobserve() {} };
 
-async function mountCard(hass) {
+async function mountCard(hass, extraConfig = {}) {
   stubCanvas();
   const card = document.createElement('weather-station-card');
   card.setConfig({
+    ...extraConfig,
     show_station: false,
     show_forecast: false,
     show_attributes: true,
@@ -423,9 +424,11 @@ async function mountCard(hass) {
   return card;
 }
 
+// Current row: a snowflake icon (site state); trend row: an arrow (#333)
+// or, without a curve, the v2.12 snowflake + trending arrow.
 const rowLinks = (card) =>
   [...card.shadowRoot.querySelectorAll('.wsc-entity-link')]
-    .filter((el) => el.querySelector('ha-icon[icon="mdi:snowflake-thermometer"]'));
+    .filter((el) => /^mdi:(snowflake|arrow-)/.test(el.querySelector('ha-icon')?.getAttribute('icon') || ''));
 
 describe('card: zero-degree rows', () => {
   it('with a curve both rows open the popup instead of more-info', async () => {
@@ -496,5 +499,134 @@ describe('card: zero-degree rows', () => {
     expect(root.querySelector('[role="dialog"]')).toBeNull();
     expect(root.querySelector('.uplot')).toBeNull();
     expect(card._zeroDegreePopup.isOpen).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Trend row and site state (#333).
+
+// Hourly curve through the issue's figures: 2'506 m Wed 07:00, 1'586 m
+// Thu 05:00, 2'556 m Fri 06:00, 2'300 m Sat 12:00; linear in between.
+const TREND_ANCHORS = [
+  ['2026-10-21T07:00:00+02:00', 2506],
+  ['2026-10-22T05:00:00+02:00', 1586],
+  ['2026-10-23T06:00:00+02:00', 2556],
+  ['2026-10-24T12:00:00+02:00', 2300],
+].map(([iso, level]) => [ms(iso), level]);
+const TREND_ROWS = (() => {
+  const out = [];
+  for (let i = 0; i < TREND_ANCHORS.length - 1; i++) {
+    const [t0, l0] = TREND_ANCHORS[i];
+    const [t1, l1] = TREND_ANCHORS[i + 1];
+    for (let t = t0; t < t1; t += 3_600_000) {
+      out.push({ datetime: new Date(t).toISOString(), level: Math.round(l0 + ((l1 - l0) * (t - t0)) / (t1 - t0)) });
+    }
+  }
+  const [tl, ll] = TREND_ANCHORS[TREND_ANCHORS.length - 1];
+  out.push({ datetime: new Date(tl).toISOString(), level: ll });
+  return out;
+})();
+const levelAt = (t) => TREND_ROWS.find((r) => Date.parse(r.datetime) === t).level;
+
+function trendHass(now, { haElevation, attrs = {} } = {}) {
+  vi.spyOn(Date, 'now').mockReturnValue(now);
+  const hass = makeHass({ forecast: TREND_ROWS, ...attrs });
+  hass.states['sensor.zero_degree_level'].state = String(levelAt(now));
+  hass.states[SENSOR].state = '1586';
+  if (haElevation !== undefined) hass.config.elevation = haElevation;
+  return hass;
+}
+
+const rows = (card) => {
+  const [current, trend] = rowLinks(card);
+  return { current, trend, currentIcon: current.querySelector('ha-icon').getAttribute('icon'),
+    trendIcon: trend.querySelector('ha-icon').getAttribute('icon') };
+};
+const titleOf = (link) => link.closest('[title]')?.getAttribute('title') ?? null;
+
+describe('card: zero-degree trend and site state (#333)', () => {
+  const T0 = TREND_ANCHORS[0][0];
+
+  it('today: falls fast to 1586 m Thu 05:00, then up to 2556 m Fri 06:00', async () => {
+    const card = await mountCard(trendHass(T0));
+    const { current, trend, currentIcon, trendIcon } = rows(card);
+    expect(trendIcon).toBe('mdi:arrow-down');
+    expect(trend.querySelector('small')).toBeNull();
+    expect(trend.querySelector('.wsc-zd-target').textContent.replace(/\s+/g, ' ').trim())
+      .toBe('1,586 m Thu 05:00');
+    expect(trend.querySelector('.wsc-zd-day').textContent).toBe('Thu');
+    expect(trend.querySelector('.wsc-zd-target').getAttribute('style')).toBeNull();
+    expect(titleOf(trend)).toBe('Falls fast to 1,586 m Thu 05:00 · now 2,506 m · then up to 2,556 m Fri 06:00');
+    // No elevation anywhere: plain icon, no site tooltip.
+    expect(currentIcon).toBe('mdi:snowflake-thermometer');
+    expect(titleOf(current)).toBeNull();
+    // The popup still opens from both rows (#330).
+    expect(trend.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(current.getAttribute('aria-haspopup')).toBe('dialog');
+  });
+
+  it('20 h later: rises to 2556 m Fri 06:00', async () => {
+    const card = await mountCard(trendHass(T0 + 20 * 3_600_000));
+    const { trend, trendIcon } = rows(card);
+    expect(trendIcon).toBe('mdi:arrow-top-right');
+    expect(trend.querySelector('.wsc-zd-target').textContent.replace(/\s+/g, ' ').trim())
+      .toBe('2,556 m Fri 06:00');
+    expect(titleOf(trend)).toBe('Rises to 2,556 m Fri 06:00 · now 1,670 m');
+  });
+
+  it('a flat curve reads "Stays between"', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(T0);
+    const flat = [0, 6, 12].map((h, i) => ({
+      datetime: new Date(T0 + h * 3_600_000).toISOString(), level: [2500, 2450, 2600][i],
+    }));
+    const hass = makeHass({ forecast: flat });
+    hass.states['sensor.zero_degree_level'].state = '2500';
+    const card = await mountCard(hass);
+    const { trend, trendIcon } = rows(card);
+    expect(trendIcon).toBe('mdi:arrow-right');
+    expect(titleOf(trend)).toBe('Stays between 2,450 and 2,600 m');
+  });
+
+  it('target reaching the site: precipitation colour, ❄ marker, snow sentence', async () => {
+    const card = await mountCard(trendHass(T0), { title: 'Köniz', elevation: 1300 });
+    const { current, trend, currentIcon } = rows(card);
+    expect(trend.querySelector('small')).toBeNull();
+    expect(trend.querySelector('.wsc-zd-target').textContent.replace(/\s+/g, ' ').trim())
+      .toBe('❄ 1,586 m Thu 05:00');
+    expect(trend.querySelector('.wsc-zd-target').getAttribute('style'))
+      .toBe('color: rgba(132, 209, 253, 1.0)');
+    expect(titleOf(trend)).toContain(' · Snow down to Köniz 1,300 m from Thu 05:00');
+    expect(currentIcon).toBe('mdi:snowflake-thermometer');
+    expect(titleOf(current)).toBe('Snow line about 2,206 m (estimated), Köniz 1,300 m · far above you');
+  });
+
+  it('site tooltip numbers go through the HA number format, in metres', async () => {
+    const hass = trendHass(T0, { haElevation: 619 });
+    hass.formatEntityState = (s) =>
+      `${String(Math.round(Number(s.state))).replace(/\B(?=(\d{3})+$)/g, "'")} ${s.attributes.unit_of_measurement}`;
+    const card = await mountCard(hass);
+    expect(titleOf(rows(card).current))
+      .toBe("Snow line about 2'206 m (estimated), 619 m · far above you");
+  });
+
+  it('site state follows the elevation (sensor attribute, then HA)', async () => {
+    let card = await mountCard(trendHass(T0, { attrs: { elevation: 2000 } }));
+    expect(rows(card).currentIcon).toBe('mdi:snowflake-alert');
+    expect(titleOf(rows(card).current)).toBe('Snow line about 2,206 m (estimated), 2,000 m · just above you');
+    card.remove();
+    vi.restoreAllMocks();
+    card = await mountCard(trendHass(T0, { haElevation: 2300 }));
+    expect(rows(card).currentIcon).toBe('mdi:snowflake');
+    expect(titleOf(rows(card).current)).toContain('at your level or below');
+  });
+
+  it('without a curve the trend row stays as in v2.12', async () => {
+    const err = vi.spyOn(console, 'error');
+    const card = await mountCard(makeHass({}));
+    const { trend, trendIcon } = rows(card);
+    expect(trendIcon).toBe('mdi:snowflake-thermometer');
+    expect(trend.querySelector('small').textContent).toBe('48 h');
+    expect(trend.querySelector('ha-icon[icon="mdi:trending-down"]')).not.toBeNull();
+    expect(err).not.toHaveBeenCalled();
   });
 });

@@ -53,7 +53,7 @@ const REQUIRED_EDITOR_KEYS = [
   'temperature', 'humidity', 'illuminance', 'precipitation',
   'precipitation_rate', 'pressure',
   'wind_speed', 'gust_speed', 'wind_direction', 'uv_index', 'dew_point',
-  'sunshine_duration', 'zero_degree_level', 'zero_degree_level_48h', 'next_rain',
+  'sunshine_duration', 'zero_degree_level', 'zero_degree_level_48h', 'elevation', 'next_rain',
   // basics
   'required_marker', 'title', 'days', 'forecast_days', 'weather_entity',
   'mode_label', 'mode_station', 'mode_forecast', 'mode_combination',

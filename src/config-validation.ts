@@ -33,6 +33,7 @@ const EXTRA_TOP_LEVEL_KEYS = [
   'speed', // legacy top-level speed unit, merged into units.speed in setConfig
   'condition_mapping', // classifier threshold overrides — free-form object
   'location', // {latitude, longitude} override for Open-Meteo, checked by parseLocation
+  'elevation', // site metres for the zero-degree rows; unset falls back to the sensor / HA (#333)
   // Standard Home Assistant card-level keys, written by HA itself (the
   // grid/layout editor, conditional visibility) and never read by this
   // card. Flagging them is a false positive — every card in a
@@ -323,6 +324,10 @@ function validateTopLevelEntry(
         + ' `latitude` (-90..90) and `longitude` (-180..180) as numbers',
       );
     }
+    return;
+  }
+  if (key === 'elevation') {
+    checkValueType(key, value, 0, problems);
     return;
   }
   // Opaque object containers: type-check the container only, never

@@ -645,6 +645,11 @@ function buildCardStyles({
         gap: 4px 12px;
         font-size: 13px;
       }
+      /* The zero-degree trend row keeps the time of its target and
+       * drops the weekday (#333). */
+      .wsc-zd-day {
+        display: none;
+      }
       /* Tighten the chart-chrome typography so timeline labels and
        * wind units don't overflow their narrow columns. */
       .scroll-timeline .tl-seg-label {
