@@ -15,7 +15,7 @@
   <a href="https://github.com/chriguschneider/weather-station-card/releases"><img alt="Downloads" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriguschneider%2Fweather-station-card%2Fbadges%2Fdownloads.json" /></a>
   <a href="https://github.com/chriguschneider/weather-station-card/stargazers"><img alt="Stars" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriguschneider%2Fweather-station-card%2Fbadges%2Fstars.json" /></a>
   <a href="https://github.com/chriguschneider/weather-station-card/commits/master"><img alt="Last commit" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriguschneider%2Fweather-station-card%2Fbadges%2Flastcommit.json" /></a>
-  <a href="#configuration"><img alt="Translated into 24 languages" src="https://img.shields.io/badge/translated-24_languages-41BDF5.svg" /></a>
+  <a href="#configuration"><img alt="Translated into 25 languages" src="https://img.shields.io/badge/translated-25_languages-41BDF5.svg" /></a>
   <a href="https://buymeacoffee.com/chriguschneider"><img alt="Buy Me a Coffee" src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00.svg" /></a>
   <a href="#ai-assisted-development"><img alt="AI Assisted" src="https://img.shields.io/badge/AI-assisted-2196F3.svg" /></a>
 </p>
@@ -45,6 +45,7 @@ forecast — driven by sensor data, not a `weather.*` entity.
 - [Installation](#installation)
 - [Configuration](#configuration) → [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
 - [Conditions, sensors, sunshine](#conditions-sensors-and-sunshine) → [docs/CONDITIONS.md](docs/CONDITIONS.md), [docs/SENSORS.md](docs/SENSORS.md)
+- [Snow line](#snow-line) · [Works together](#works-together)
 - [Contributing & architecture](#contributing--architecture)
 - [AI-assisted development](#ai-assisted-development)
 - [Community](#community)
@@ -78,19 +79,27 @@ those same sensors. This card does both:
   ones. Span is configurable separately (`forecast_days:`). The
   precipitation label can also show the **chance of rain** next to the
   amount (`forecast.show_precip_probability`), taken from the weather
-  entity or, when it has none, from Open-Meteo.
+  entity or, when it has none, from Open-Meteo. The sunshine bar
+  (`forecast.show_sunshine`) takes the weather entity's
+  `sunshine_duration` first ([ADR-0028](docs/adr/0028-sunshine-entity-first.md)),
+  Open-Meteo only as fallback, and `sensors.sunshine_duration`
+  overrides today's value. MeteoSwiss Weather's `sunshine_duration_today`
+  sensor feeds that slot. `forecast.openmeteo: false` switches every
+  Open-Meteo request off.
 - A **live main panel** showing the current temperature, condition icon,
   and (optionally) clock, weather attributes, sunrise/sunset and the
   moon — exact illumination percentage on a dynamically drawn disc plus
   the next moonrise/moonset, computed in-card with no Moon integration
-  needed. All values derive from current sensor states, not from a
+  needed (`location:` sets another place for Open-Meteo data and sunshine
+day length; sun and moon times keep using Home Assistant's location).
+All values derive from current sensor states, not from a
   forecast; every sensor-backed value is clickable and opens its
   more-info dialog. With the MeteoSwiss Radar integration it can also
   show [when rain is next expected](#next-rain-with-meteoswiss-radar).
 - A **compact visual editor** — everything is configurable without
   YAML, and the whole card fits one editor screen (see
   [below](#configuration)).
-- **Fully translated** — UI *and* editor — into 24 languages.
+- **Fully translated** — UI *and* editor — into 25 languages.
 
 Conditions are derived by a deterministic, meteorologically-grounded
 classifier (see [docs/CONDITIONS.md](docs/CONDITIONS.md#how-conditions-are-determined)
@@ -254,7 +263,8 @@ The **visual editor fits one screen**: the four basics (mode, chart
 type, title, weather entity) stay directly visible, everything else
 lives in five collapsible panels whose headers summarise the current
 configuration — readable without opening anything. The editor is fully
-translated into 24 languages.
+translated into 25 languages. Set `debug: true` in YAML to append a
+diagnostics panel that shows what the card detected.
 
 <table>
 <tr>
@@ -317,7 +327,9 @@ each other directly, so any part can be swapped or left out.
    the card editor shows a hint pointing there.
 2. Optional: in the same options, pick a *Weather entity for the hourly
    forecast*. Without one, "next rain" only looks as far as the radar
-   does (2 h).
+   does (2 h). If that entity is MeteoSwiss Weather, switch on its
+   hourly forecast option; without it the forecast part has nothing
+   to read.
 3. In the card editor, pick the sensor under *Next rain* and switch on
    the *Next rain* attribute pill. New cards find the sensor
    automatically, even if the entity was renamed.
@@ -336,6 +348,65 @@ mistaken for a radar observation. Any other timestamp sensor works in
 the same slot. See `sensors.next_rain` and `show_next_rain` in
 [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
+## Snow line
+
+Two rows in the attribute block show where the zero-degree level, and
+with it the snow line, is. Both read ordinary sensors, so they need the
+[MeteoSwiss Weather](https://github.com/chriguschneider/hass-meteoswiss-weather)
+integration's *Zero-degree level* and *Zero-degree level, lowest in 48 h*
+sensors (both disabled by default there: enable them in the entity
+settings) or any sensor of your own. Wire them as
+`sensors.zero_degree_level` and `sensors.zero_degree_level_48h` and
+switch on `show_zero_degree_level` / `show_zero_degree_level_48h`.
+
+- **Zero-degree level (now).** The icon tells how close the snow line is
+  to your site. The snow line is estimated 300 m below the zero-degree
+  level, an estimate only. The icon changes when it comes within 300 m
+  of your site and again when it reaches it.
+- **Zero-degree level in 48 h (trend row).** An arrow shows direction
+  and pace (rises fast · rises · stays · falls · falls fast), followed
+  by the next low or high with weekday and time. The tooltip adds the
+  turn after it ("then up to …"). If that low brings the snow line down
+  to your site, the value takes the chart's precipitation colour and a
+  ❄ is put in front of it.
+- **Popup on tap.** Tapping the 48 h row opens the forecast curve with
+  day separators, the low point marked and a *History* button. Any
+  sensor with a `forecast` attribute of `{datetime, level}` points
+  works for the popup.
+
+Your site's elevation comes from, in this order: the card's `elevation:`
+option, the sensor's `elevation` attribute, Home Assistant's settings
+(Settings → System → General).
+
+<!-- Screenshot to add later: docs/images/zero-degree-popup.png -->
+
+Thresholds and details: [docs/CONFIGURATION.md](docs/CONFIGURATION.md#zero-degree-rows).
+
+## Works together
+
+Three independent installs, none needs the others: this card,
+[hass-meteoswiss-weather](https://github.com/chriguschneider/hass-meteoswiss-weather)
+(integration: weather entity and sensors) and
+[hass-meteoswiss-radar](https://github.com/chriguschneider/hass-meteoswiss-radar)
+(radar animation card and next-rain sensor). Each link is an ordinary
+Home Assistant entity.
+
+```
+hass-meteoswiss-weather ──(weather entity · station sensors · zero-degree level + curve + elevation · sunshine today)──▶ weather-station-card
+hass-meteoswiss-weather ──(hourly forecast)──▶ hass-meteoswiss-radar ──(next_rain sensor)──▶ weather-station-card
+```
+
+| What you want | Which piece | Setting |
+| --- | --- | --- |
+| Radar animation | the radar card | none in this card |
+| Next rain | radar integration (nowcast on, weather entity = MeteoSwiss Weather **with its hourly option on**) | `sensors.next_rain` |
+| Snow line now, lowest in 48 h, popup, trend | weather integration's `zero_degree_level` and `zero_degree_level_48h` (enable both) | `sensors.zero_degree_level`, `sensors.zero_degree_level_48h` |
+| Sunshine today | weather integration's `sunshine_duration_today` | `sensors.sunshine_duration` |
+| Measured values | your station sensors | `sensors.*` |
+
+Forum threads: MeteoSwiss Weather (link follows once the thread exists),
+[MeteoSwiss Radar](https://community.home-assistant.io/t/1022501).
+
 ## Contributing & architecture
 
 PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the build flow.
@@ -345,7 +416,7 @@ For doc-writing conventions (length targets, voice, cross-linking), see
 [docs/STYLE-GUIDE.md](docs/STYLE-GUIDE.md).
 
 **Translations** are a well-bounded first contribution. The card ships
-fully translated — UI and editor — in 24 languages (one file per
+fully translated — UI and editor — in 25 languages (one file per
 language under `src/locales/`). Corrections from native speakers and
 entirely new languages are equally welcome; a parity test guides you to
 every key a language must provide. See CONTRIBUTING.md.

@@ -109,7 +109,7 @@ visual editor against a config that can't be edited safely.
 | `show_forecast` | bool | `true` | Render the forecast block on the right. (Editor: Mode.) Requires `weather_entity`. |
 | `weather_entity` | string | _none_ | `weather.*` entity used for the forecast block. Required when `show_forecast: true`. |
 | `days` | integer | `7` | Number of past days (station block). 1–14. |
-| `forecast_days` | integer | `days` | Number of forecast columns; defaults to the same span as `days`. |
+| `forecast_days` | integer | `7` | Number of forecast columns. |
 | `tap_action` | object | `{ action: none }` | Action triggered by a single click on the card. See [Actions](#actions) below. |
 | `hold_action` | object | `{ action: none }` | Action triggered by holding the card for ≥ 500 ms. |
 | `double_tap_action` | object | `{ action: none }` | Action triggered by a double click within 250 ms. |
@@ -161,9 +161,9 @@ classifier, and (where relevant) the attribute readouts. Only
 | `sensors.wind_direction` | Wind direction attribute & arrow |
 | `sensors.illuminance` | Cloud-cover ratio for live + daily conditions, and the lux-derived station sunshine. Accepts a plain illuminance sensor (lx) **or a solar-irradiance sensor (W/m², `device_class: irradiance`)** — irradiance readings are converted internally at 120 lm/W (daylight luminous efficacy); tune via `condition_mapping.sunshine_lux_ratio` if needed. *(irradiance support since v2.2.3)* |
 | `sensors.uv_index` | UV attribute |
-| `sensors.zero_degree_level` | Zero-degree level row (altitude of the 0 °C isotherm — the snow line). A forecast-derived sensor, e.g. the MeteoSwiss integration's *Zero-degree level* (disabled by default there; needs its hourly option). Unit follows the entity (m or ft). No weather-entity fallback. *(since v2.5)* |
-| `sensors.zero_degree_level_48h` | Zero-degree trend row, marked "48 h": where the zero-degree level goes next, e.g. from the MeteoSwiss integration's *Zero-degree level in 48 h*. Unit follows the entity. With an hourly `forecast` attribute (list of `{datetime, level}`) the row shows the target of the next movement and an arrow for its direction and pace; see [Zero-degree rows](#zero-degree-rows). Without it the row shows the sensor's value with a trend arrow from a numeric `change` attribute (steady below 100 m), and an `at` attribute (ISO datetime of the minimum) adds a tooltip with the lowest value, its weekday/time and the current level. An `elevation` attribute (metres) on this or the current-level sensor is used as the site elevation. *(unreleased)* |
-| `sensors.next_rain` | Next-rain row. Built for the [MeteoSwiss Radar](https://github.com/chriguschneider/hass-meteoswiss-radar) integration's *Next rain* sensor (its nowcast entities are opt-in in the integration's options): the card reads the `at`, `source` and `checked_until` attributes, counts down in minutes while the radar sees rain coming, shows a clock time for forecast answers (`~17:00`) and "No rain" otherwise (the tooltip says how far the forecast was checked). Any timestamp sensor works too; other sensors show their state as-is. Auto-detected on new cards. *(unreleased)* |
+| `sensors.zero_degree_level` | Zero-degree level row (altitude of the 0 °C isotherm — the snow line). A forecast-derived sensor, e.g. the MeteoSwiss integration's *Zero-degree level* (disabled by default there; enable it in the entity settings). Unit follows the entity (m or ft). No weather-entity fallback. *(since v2.5)* |
+| `sensors.zero_degree_level_48h` | Zero-degree trend row, marked "48 h": where the zero-degree level goes next, e.g. from the MeteoSwiss integration's *Zero-degree level, lowest in 48 h* (disabled by default there; enable it). Unit follows the entity. With an hourly `forecast` attribute (list of `{datetime, level}`) the row shows the target of the next movement and an arrow for its direction and pace; see [Zero-degree rows](#zero-degree-rows). Without it the row shows the sensor's value with a trend arrow from a numeric `change` attribute (steady below 100 m), and an `at` attribute (ISO datetime of the minimum) adds a tooltip with the lowest value, its weekday/time and the current level. An `elevation` attribute (metres) on this or the current-level sensor is used as the site elevation. |
+| `sensors.next_rain` | Next-rain row. Built for the [MeteoSwiss Radar](https://github.com/chriguschneider/hass-meteoswiss-radar) integration's *Next rain* sensor (its nowcast entities are opt-in in the integration's options): the card reads the `at`, `source` and `checked_until` attributes, counts down in minutes while the radar sees rain coming, shows a clock time for forecast answers (`~17:00`) and "No rain" otherwise (the tooltip says how far the forecast was checked). Any timestamp sensor works too; other sensors show their state as-is. Auto-detected on new cards. |
 | `sensors.sunshine_duration` | Today's live sunshine value (scalar, seconds or hours auto-detected at the `≥ 30` threshold). Past columns fall back to the recorder's daily-max for this same sensor. Only used when `forecast.show_sunshine: true`. *(since v0.9; fully wired in daily fetch since v1.4.)* |
 | `sensors.moon_phase` | **Deprecated (v2.3, ADR-0022)** — the moon line is now computed in-card and reads no entity, so [HA's Moon integration](https://www.home-assistant.io/integrations/moon/) is no longer needed. The key is accepted and ignored so older configs keep validating. Use [`show_moon`](#layout--display) to control the line. *(entity-fed v2.2 only)* |
 
@@ -191,14 +191,14 @@ requires a backing value — either a sensor under `sensors.*` or the
 matching attribute on `weather_entity`)
 
 > **Opt-out semantics for the headline attributes**: pressure, UV,
-> wind-direction, and wind-speed default to *visible* when their
+> wind-direction, wind-speed, and precipitation default to *visible* when their
 > backing value is present. The `false` defaults in the table mean
 > "absent unless the renderer sees a value"; the runtime check is
 > `cfg.show_x !== false`, so omitting the key keeps the attribute
 > visible. Set `show_x: false` explicitly to hide.
 > `show_humidity`, `show_dew_point`, `show_wind_gust_speed`,
-> `show_illuminance`, `show_precipitation`, and `show_sun` are opt-in
-> (require an explicit `true`).
+> `show_illuminance`, and `show_sun` are opt-in (require an explicit
+> `true`).
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -213,8 +213,8 @@ matching attribute on `weather_entity`)
 | `show_wind_speed` | bool | opt-out (`true` when value present) | Wind-speed value. |
 | `show_wind_gust_speed` | bool | `false` | Gust speed (opt-in, requires `sensors.gust_speed` or weather-entity attribute). |
 | `show_zero_degree_level` | bool | `false` | Zero-degree level (opt-in, requires `sensors.zero_degree_level`). Renders in the climate column after precipitation; use `attributes_layout` to place it elsewhere. Formatted through HA's entity formatter (display precision, number locale) when available. *(since v2.5)* |
-| `show_zero_degree_level_48h` | bool | `false` | Zero-degree level in 48 h (opt-in, requires `sensors.zero_degree_level_48h`). Renders in the climate column after the zero-degree level, marked "48 h"; use `attributes_layout` to place it elsewhere. *(unreleased)* |
-| `show_next_rain` | bool | `false` | Next rain (opt-in, requires `sensors.next_rain`). Renders in the climate column after precipitation; the tooltip names whether the radar or the hourly forecast answered. *(unreleased)* |
+| `show_zero_degree_level_48h` | bool | `false` | Zero-degree level in 48 h (opt-in, requires `sensors.zero_degree_level_48h`). Renders in the climate column after the zero-degree level, marked "48 h"; use `attributes_layout` to place it elsewhere. |
+| `show_next_rain` | bool | `false` | Next rain (opt-in, requires `sensors.next_rain`). Renders in the climate column after precipitation; the tooltip names whether the radar or the hourly forecast answered. |
 | `show_dew_point_humidity` | bool | `false` | Force the combined dew point + humidity line. Without it the two share a line whenever both `show_dew_point` and `show_humidity` are on. *(since v2.5)* |
 | `show_uv_illuminance` | bool | `false` | Force the combined UV + illuminance line. Without it the two share a line whenever both `show_uv_index` and `show_illuminance` are on. *(since v2.5)* |
 | `show_sun` | bool | `false` | Sunrise / sunset row (opt-in). |
@@ -288,7 +288,7 @@ the data: day separators, the lowest point marked, a cursor readout
 and a *History* button that opens the sensor's more-info dialog. Esc,
 the close button or a click next to the popup close it. With no
 attribute, or fewer than two valid entries, the tap opens more-info as
-before. *(unreleased)*
+before.
 
 **Chart rows**
 
@@ -297,7 +297,7 @@ before. *(unreleased)*
 | `forecast.condition_icons` | bool | `true` | Condition icons row above the chart. |
 | `forecast.show_wind_arrow` | bool | `true` | Per-day wind-direction arrow. Independent of `show_wind_speed` since v1.9.x — either toggle alone surfaces the wind row. When both are on and a column is too narrow to fit the arrow + speed side-by-side, the speed wraps onto a second line below the arrow. |
 | `forecast.show_wind_speed` | bool | `true` | Per-day wind-speed value. Independent of `show_wind_arrow` since v1.9.x. |
-| `forecast.show_wind_forecast` | bool | `true` | ⚠️ **Deprecated in v1.9.x, removal v2.0.** Legacy master toggle that hides the entire wind row when set to `false`. The editor doesn't expose it. New configs should use the independent `show_wind_arrow` and `show_wind_speed` toggles instead — set both to `false` for the same effect. |
+| `forecast.show_wind_forecast` | bool | `true` | ⚠️ **Deprecated in v1.9.x; still accepted, will be removed in a future major.** Legacy master toggle that hides the entire wind row when set to `false`. The editor doesn't expose it. New configs should use the independent `show_wind_arrow` and `show_wind_speed` toggles instead — set both to `false` for the same effect. |
 | `forecast.show_date` | bool | `true` | `dd/mm` date row in the X-axis. When off, only the weekday is rendered. |
 | `forecast.show_mode_toggle` | bool | `true` | Show the small in-card button that cycles the view daily → today → hourly. On by default; set to `false` to hide it and lock the card to its configured `forecast.type` (the change is not persisted otherwise — a refresh resets it). |
 | `forecast.show_sunshine` | bool | `false` | Sunshine-duration column inside the chart — half-bar in yellow on the right of every column (precipitation keeps the left half), with the day's hours rendered as a small "Xh" label at the top of the column. Off by default; turning it on without configuring at least one of the sunshine sensors below renders empty bars and labels (no warning, no banner). See [SENSORS.md → Sunshine duration](SENSORS.md#sunshine-duration) for setup. |
@@ -307,8 +307,9 @@ before. *(unreleased)*
 
 ### Zero-degree rows
 
-The two zero-degree rows each answer one question with one icon.
-*(unreleased)*
+The two zero-degree rows each answer one question with one icon. Both
+sensors are disabled by default in the MeteoSwiss integration; enable
+them in its entity settings.
 
 **Current row** (`zero_degree_level`): the value is the zero-degree
 level now. The icon tells where the estimated snow line lies relative to
@@ -411,9 +412,9 @@ expands user-supplied `var(...)` exactly as before.
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `forecast.type` | `'daily' \| 'hourly' \| 'today'` | `'daily'` | At hourly, station data is fetched at hour resolution (mean per hour, single temperature line) and the forecast is subscribed with `forecast_type: hourly`. `days` / `forecast_days` define the data window (so `days: 4` at hourly = 96 hours of station history). The `'today'` mode (since v1.4; reworked as a **day pager** in v2.2) frames exactly one calendar day of 3-hour blocks per viewport and pages day-wise through the whole `days` window — chevrons step ±1 day, free scrolling snaps to day boundaries. Editor radio in Setup. See [Daily vs. hourly resolution](#daily-vs-hourly-resolution) below. |
+| `forecast.type` | `'daily' \| 'hourly' \| 'today'` | `'daily'` | At hourly, station data is fetched at hour resolution (mean per hour, single temperature line) and the forecast is subscribed with `forecast_type: hourly`. `days` / `forecast_days` define the data window (so `days: 4` at hourly = 96 hours of station history). The `'today'` mode (since v1.4; reworked as a **day pager** in v2.2) frames exactly one calendar day of 3-hour blocks per viewport and pages day-wise through the whole `days` window — chevrons step ±1 day, free scrolling snaps to day boundaries. Editor: the dropdown in the Basics section. See [Daily vs. hourly resolution](#daily-vs-hourly-resolution) below. |
 | `forecast.number_of_forecasts` | integer | `8` | Number of bars visible in the viewport at once. Default `8` works across the modes — at daily with `days: 7` everything fits without scrolling, at hourly it caps the viewport at ~8 hours and the user scrolls. Set `0` for "fit all" (no scrolling). **Ignored in `'today'` mode**, which always frames one calendar day (8 × 3-h blocks). When more bars are loaded than visible, the chart row + wind row + conditions row scroll horizontally in lockstep, and a slim day timeline below the chart shows where you are (click/scrub it to navigate). Initial scroll position is "now" (centred at the station/forecast boundary in combination mode; the current day's page in `'today'`). |
-| `elevation` | number | sensor / Home Assistant elevation | Site elevation in metres for the [zero-degree rows](#zero-degree-rows). Overrides an `elevation` attribute on the zero-degree sensors and Home Assistant's configured elevation. Editor: *Elevation (m)* under the station sensors. *(unreleased)* |
+| `elevation` | number | sensor / Home Assistant elevation | Site elevation in metres for the [zero-degree rows](#zero-degree-rows). Overrides an `elevation` attribute on the zero-degree sensors and Home Assistant's configured elevation. Editor: *Elevation (m)* under the station sensors. |
 | `locale` | string | HA's selected language | Override locale (e.g. `de`, `fr`). Falls back to English for missing keys. |
 | `location` | object | Home Assistant's home location | `{latitude, longitude}` (decimal degrees, −90..90 / −180..180). Every Open-Meteo request of the card (sunshine bars, the `openmeteo_history` past block, the chance-of-rain fallback) and the sunshine day length use these coordinates instead of Home Assistant's, so a card for another place (e.g. a ski area) shows that place's past data. Sun and moon rise/set times keep using Home Assistant's location. A malformed value is ignored with a config warning. YAML only. *(since v2.11)* |
 
@@ -421,8 +422,8 @@ expands user-supplied `var(...)` exactly as before.
 
 Every value documented in [CONDITIONS.md → How conditions are determined](CONDITIONS.md#how-conditions-are-determined)
 can be overridden. Defaults are meteorologically grounded — only set what you
-want to change. The editor exposes the same fields under Advanced; empty
-fields use the default.
+want to change. YAML only: the editor has no field for it. Omitted keys use
+the default.
 
 | Key                        | Unit  | Default | Used by rule |
 | -------------------------- | ----- | ------- | ------------ |
