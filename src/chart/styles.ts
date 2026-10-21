@@ -109,7 +109,7 @@ function buildCardStyles({
     .main div {
       line-height: 0.9;
     }
-    .main span {
+    .main span:not(.wsc-entity-link) {
       font-size: 18px;
       color: var(--secondary-text-color, #727272);
     }
@@ -623,7 +623,7 @@ function buildCardStyles({
         height: ${Math.round(iconsSize * 1.5)}px;
         margin-inline-end: 10px;
       }
-      .main span {
+      .main span:not(.wsc-entity-link) {
         font-size: 15px;
       }
       /* Clock is position:absolute — at this width keep it pinned but

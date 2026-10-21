@@ -6,6 +6,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`current_temp_size` changes the size of the current temperature again.**
+  Since 2.2.0 it only moved the reading. The default (28) now actually
+  applies, so the temperature looks larger than the 18px you have seen
+  since 2.2.0 (set `current_temp_size: 18` to keep the old size), and
+  it is drawn in the primary text colour again instead of grey.
+
 ## [2.12.0] — 2026-10-20
 
 ### Added
