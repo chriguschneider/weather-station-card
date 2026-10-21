@@ -6,6 +6,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The zero-degree level in 48 h row now says it shows the lowest
+  value.** The marker reads "min 48 h". If the sensor has an `at`
+  attribute (time of the minimum), hovering the row shows the lowest
+  level, when it happens and the current level. The labels in the
+  editor changed to "Zero-degree level, lowest in 48 h".
+
 ### Fixed
 
 - **Serbian in Latin script (Srpski) now gets its own translation in the
