@@ -6,16 +6,6 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Added
-
-- **Tap a zero-degree row to see how the snow line moves.** When the
-  48 h zero-degree sensor carries an hourly `forecast` attribute (the
-  MeteoSwiss integration's does), tapping either zero-degree row opens
-  a chart of the forecast zero-degree level for the coming days, with
-  the lowest point marked. *History* in the popup still opens the
-  sensor's usual dialog. Without that attribute a tap opens the sensor
-  dialog as before. Nothing to configure.
-
 ### Changed
 
 - **The zero-degree level in 48 h row now shows where the snow line is
@@ -29,8 +19,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   marker reads "❄ 48 h". Without the forecast attribute the row shows the
   sensor's value with a trend arrow as before; if the sensor has an `at`
   attribute (time of the minimum), the tooltip shows the lowest level,
-  when it happens and the current level. The editor labels changed to
-  "Zero-degree level, lowest in 48 h".
+  when it happens and the current level.
 - **The zero-degree level row's icon shows how close the snow line is
   to you.** The snow line is estimated 300 m below the zero-degree level
   (MeteoSwiss' rule of thumb); the snowflake icon changes when it comes
@@ -38,6 +27,26 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The elevation comes from Home Assistant's settings, the sensor, or the
   new `elevation` option (editor: *Elevation (m)* under the station
   sensors). Nothing to do if Home Assistant knows your elevation.
+
+## [2.13.0] — 2026-10-21
+
+### Added
+
+- **Tap a zero-degree row to see how the snow line moves.** When the
+  48 h zero-degree sensor carries an hourly `forecast` attribute (the
+  MeteoSwiss integration's does), tapping either zero-degree row opens
+  a chart of the forecast zero-degree level for the coming days, with
+  the lowest point marked. *History* in the popup still opens the
+  sensor's usual dialog. Without that attribute a tap opens the sensor
+  dialog as before. Nothing to configure.
+
+### Changed
+
+- **The zero-degree level in 48 h row now says it shows the lowest
+  value.** The marker reads "min 48 h". If the sensor has an `at`
+  attribute (time of the minimum), hovering the row shows the lowest
+  level, when it happens and the current level. The labels in the
+  editor changed to "Zero-degree level, lowest in 48 h".
 
 ### Fixed
 
