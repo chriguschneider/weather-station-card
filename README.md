@@ -404,7 +404,7 @@ hass-meteoswiss-weather ──(hourly forecast)──▶ hass-meteoswiss-radar �
 | Sunshine today | weather integration's `sunshine_duration_today` | `sensors.sunshine_duration` |
 | Measured values | your station sensors | `sensors.*` |
 
-Forum threads: [MeteoSwiss Radar](https://community.home-assistant.io/t/1022501).
+Forum threads: [MeteoSwiss Radar](https://community.home-assistant.io/t/1022501), [MeteoSwiss Weather](https://community.home-assistant.io/t/meteoswiss-weather-official-swiss-open-data-no-app-api-history-back-to-1980/1029728).
 
 ## Contributing & architecture
 
