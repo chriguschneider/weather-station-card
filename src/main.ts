@@ -268,6 +268,7 @@ class WeatherStationCard extends LitElement {
   zero_degree_curve: ZeroDegreePoint[] | null | undefined;
   _zeroDegreeCurveRaw: unknown;
   _zeroDegreePopup: ZeroDegreePopup | null = null;
+  zero_degree_48h_at: string | undefined;
   // Display-ready strings, not the raw state object: a fresh object per
   // hass tick would defeat Lit's value comparison (ADR-0017).
   next_rain_text: string | undefined;
@@ -656,6 +657,7 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
       zero_degree_48h_unit: { attribute: false },
       zero_degree_48h_change: { attribute: false },
       zero_degree_curve: { attribute: false },
+      zero_degree_48h_at: { attribute: false },
       next_rain_text: { attribute: false },
       next_rain_icon: { attribute: false },
       next_rain_title: { attribute: false },
@@ -979,6 +981,8 @@ _extractSensorReadings(hass: HassMain): void {
     this._zeroDegreeCurveRaw = rawCurve;
     this.zero_degree_curve = parseZeroDegreeCurve(rawCurve);
   }
+  const rawAt = attrOf(sensors.zero_degree_level_48h, 'at');
+  this.zero_degree_48h_at = typeof rawAt === 'string' && rawAt ? rawAt : undefined;
   const rawPrecipUnit = (attrOf(sensors.precipitation, 'unit_of_measurement') as string | undefined) || undefined;
   this.precipitation_unit = rawPrecipUnit;
   // Three precip shapes, all gated on whether the row is actually
@@ -3917,10 +3921,13 @@ _climateRow_zeroDegree(show: boolean, value: unknown, unit: string | undefined) 
     html`<ha-icon icon="mdi:snowflake-thermometer"></ha-icon> ${text}`)}`;
 }
 
-// Zero-degree level in 48 h (`sensors.zero_degree_level_48h`): same
-// formatting as the current level. A numeric `change` attribute (vs. the
-// current level) adds a trend arrow; within ±100 m counts as steady.
-_climateRow_zeroDegree48h(value: unknown, unit: string | undefined, change: number | undefined) {
+// Lowest zero-degree level within the next 48 h
+// (`sensors.zero_degree_level_48h`): same formatting as the current
+// level. A numeric `change` attribute (lowest minus now) adds a trend
+// arrow; within ±100 m counts as steady. An `at` attribute (ISO datetime
+// of the minimum) adds a tooltip with the lowest value, its weekday/time
+// and, when known, the current level.
+_climateRow_zeroDegree48h(value: unknown, unit: string | undefined, change: number | undefined, at?: string, nowValue?: unknown) {
   if (value === undefined || value === '') return null;
   const eid = this._attrEntity('zero_degree_level_48h', false);
   const text = this._formatEntityValue(eid, value, unit, 0);
@@ -3929,8 +3936,23 @@ _climateRow_zeroDegree48h(value: unknown, unit: string | undefined, change: numb
     if (Math.abs(change) < 100) trendIcon = 'mdi:trending-neutral';
     else trendIcon = change > 0 ? 'mdi:trending-up' : 'mdi:trending-down';
   }
-  return html`${this._zeroDegreeLink(eid,
-    html`<ha-icon icon="mdi:snowflake-thermometer"></ha-icon> <small>48 h</small> ${text}${trendIcon ? html` <ha-icon icon="${trendIcon}"></ha-icon>` : ''}`)}`;
+  const atDate = at ? new Date(at) : null;
+  let title = '';
+  if (atDate && !Number.isNaN(atDate.getTime())) {
+    const str = (k: string) =>
+      (this.ll(k) || (locale.en as Record<string, unknown>)[k] || '') as string;
+    const when = getDateTimeFormat(this.language || 'en', {
+      weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: this.config?.use_12hour_format,
+    }).format(atDate);
+    title = `${str('zero_degree_lowest')} ${text} ${when}`;
+    if (nowValue !== undefined && nowValue !== '') {
+      const nowText = this._formatEntityValue(this._attrEntity('zero_degree_level', false), nowValue, unit, 0);
+      title += ` · ${str('next_rain_now').toLowerCase()} ${nowText}`;
+    }
+  }
+  const row = html`${this._zeroDegreeLink(eid,
+    html`<ha-icon icon="mdi:snowflake-thermometer"></ha-icon> <small>min 48 h</small> ${text}${trendIcon ? html` <ha-icon icon="${trendIcon}"></ha-icon>` : ''}`)}`;
+  return title ? html`<span title=${title} aria-label=${title}>${row}</span>` : row;
 }
 
 // Next-rain row (`sensors.next_rain`). Text, icon and tooltip are
@@ -4065,7 +4087,7 @@ _windRow_gust(show: boolean, wind_gust_speed: any) {
 // off or its value is missing (Lit renders null as nothing), so a
 // column with nothing to show is dropped and the remaining columns
 // spread across the width as before.
-renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, language, uv_index, dew_point, wind_gust_speed, illuminance, precipitation, precipitation_unit, zero_degree_level, zero_degree_unit, zero_degree_48h_level, zero_degree_48h_unit, zero_degree_48h_change } = this) {
+renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, language, uv_index, dew_point, wind_gust_speed, illuminance, precipitation, precipitation_unit, zero_degree_level, zero_degree_unit, zero_degree_48h_level, zero_degree_48h_unit, zero_degree_48h_change, zero_degree_48h_at } = this) {
   const dWindSpeed = this._convertDisplayWindSpeed(windSpeed);
   const dPressure = this._convertDisplayPressure(pressure);
 
@@ -4099,7 +4121,7 @@ renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, la
     sun, uv_index, illuminance, language,
     windDirection, dWindSpeed, wind_gust_speed,
     zero_degree_level, zero_degree_unit,
-    zero_degree_48h_level, zero_degree_48h_unit, zero_degree_48h_change,
+    zero_degree_48h_level, zero_degree_48h_unit, zero_degree_48h_change, zero_degree_48h_at,
     next_rain_text: this.next_rain_text,
     next_rain_icon: this.next_rain_icon,
     next_rain_title: this.next_rain_title,
@@ -4147,7 +4169,7 @@ _renderAttributeLine(token: AttributeToken, ctx: any) {
     case 'zero_degree_level':
       return this._climateRow_zeroDegree(true, ctx.zero_degree_level, ctx.zero_degree_unit);
     case 'zero_degree_level_48h':
-      return this._climateRow_zeroDegree48h(ctx.zero_degree_48h_level, ctx.zero_degree_48h_unit, ctx.zero_degree_48h_change);
+      return this._climateRow_zeroDegree48h(ctx.zero_degree_48h_level, ctx.zero_degree_48h_unit, ctx.zero_degree_48h_change, ctx.zero_degree_48h_at, ctx.zero_degree_level);
     case 'next_rain':
       return this._climateRow_nextRain(ctx.next_rain_text, ctx.next_rain_icon, ctx.next_rain_title);
     case 'uv_illuminance':
