@@ -45,6 +45,12 @@ export function setCardTimeZone(tz: unknown): void {
   activeZone = typeof tz === 'string' && tz !== '' && isValidZone(tz) ? tz : undefined;
 }
 
+/** The given IANA zone when it is a non-empty string the browser's Intl
+ *  knows, else undefined. Backs the display-only `time_zone` card option. */
+export function validTimeZone(tz: unknown): string | undefined {
+  return typeof tz === 'string' && tz !== '' && isValidZone(tz) ? tz : undefined;
+}
+
 /** The configured server zone, or undefined while none is set — the
  *  shape `Intl.DateTimeFormat`'s `timeZone` option expects. */
 export function configuredTimeZone(): string | undefined {

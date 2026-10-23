@@ -66,6 +66,7 @@ export const SECTION_KEYS: Record<SectionKey, ReadonlyArray<string>> = {
     'show_time',
     'show_time_seconds',
     'use_12hour_format',
+    'time_zone',
     'show_day',
     'show_date',
     'show_attributes',
