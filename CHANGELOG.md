@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `time_zone` option to show the clock and sunrise/sunset in another time zone, for cards of a remote home (#343).
+
 ### Documentation
 
 - The README now explains the snow line rows (zero-degree level, the
