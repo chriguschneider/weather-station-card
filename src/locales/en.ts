@@ -221,6 +221,7 @@ const en: LocaleEntry = {
     'chart_height': 'Chart height (px)',
     'number_of_forecasts_helper': 'Visible columns: 0 = show all without scrolling',
     'clock_label': 'Clock',
+    'time_zone': 'Time zone (clock and sun)',
     'clock_off': 'Off',
     'clock_24h': '24-hour',
     'clock_24h_seconds': '24-hour + seconds',

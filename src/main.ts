@@ -119,6 +119,7 @@ import {
 import { sanitizeForecastEntries } from './chart/sanitize.js';
 import { renderChartSkeleton } from './chart/skeleton.js';
 import { cardStyles } from './chart/styles.js';
+import { validTimeZone } from './utils/time-zone.js';
 import { getDateTimeFormat, getNumberFormat } from './utils/intl-cache.js';
 import { moonIllumination, nextMoonEvent, litMoonPath } from './moon.js';
 import { classifyNextRain, findNextRainEntity, formatCheckedUntil, formatNextRain, nextRainIcon } from './next-rain.js';
@@ -3548,11 +3549,13 @@ renderMain({ config, sun, weather, temperature } = this) {
 _updateClock(): void {
   const cfg = this.config || {};
   const currentDate = new Date();
+  const timeZone = validTimeZone(cfg.time_zone);
   const timeOptions = {
     hour12: cfg.use_12hour_format,
     hour: 'numeric',
     minute: 'numeric',
     second: cfg.show_time_seconds === true ? 'numeric' : undefined,
+    timeZone,
   };
   const currentTime = getDateTimeFormat(this.language, timeOptions as Intl.DateTimeFormatOptions).format(currentDate);
   const mainDiv = this.shadowRoot?.querySelector('.main');
@@ -3562,13 +3565,13 @@ _updateClock(): void {
   if (cfg.show_day !== false) {
     const dayElement = mainDiv.querySelector('.date-text.day');
     if (dayElement) {
-      dayElement.textContent = getDateTimeFormat(this.language, { weekday: 'long' }).format(currentDate).toUpperCase();
+      dayElement.textContent = getDateTimeFormat(this.language, { weekday: 'long', timeZone }).format(currentDate).toUpperCase();
     }
   }
   if (cfg.show_date !== false) {
     const dateElement = mainDiv.querySelector('.date-text.date');
     if (dateElement) {
-      dateElement.textContent = getDateTimeFormat(this.language, { month: 'long', day: 'numeric' }).format(currentDate);
+      dateElement.textContent = getDateTimeFormat(this.language, { month: 'long', day: 'numeric', timeZone }).format(currentDate);
     }
   }
 }
@@ -4347,7 +4350,8 @@ const use12HourFormat = this.config.use_12hour_format;
 const timeOptions = {
     hour12: use12HourFormat,
     hour: 'numeric',
-    minute: 'numeric'
+    minute: 'numeric',
+    timeZone: validTimeZone(this.config.time_zone),
 } as Intl.DateTimeFormatOptions;
 
   const timeFmt = getDateTimeFormat(language, timeOptions);
