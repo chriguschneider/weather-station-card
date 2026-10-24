@@ -145,7 +145,9 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
 
   // ── Clock mode (UI-only abstraction over three booleans) ─────────────
   // show_time / show_time_seconds / use_12hour_format project onto one
-  // dropdown: off | 24h | 24h_seconds | 12h | 12h_seconds.
+  // dropdown: off | 24h | 24h_seconds | 12h | 12h_seconds. The 12-hour
+  // format also drives the sunrise/sunset row, so it has its own toggle
+  // (_setTwelveHour) and "off" leaves it untouched.
   get _clockMode(): string {
     const c = this._config ?? {};
     if (c.show_time !== true) return 'off';
@@ -156,16 +158,23 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
 
   _setClockMode = (value: string): void => {
     const selected: string[] = [];
+    const items: TogglePath[] = [
+      { path: 'show_time', def: false },
+      { path: 'show_time_seconds', def: false },
+    ];
     if (value !== 'off') selected.push('show_time');
     if (value.endsWith('_seconds')) selected.push('show_time_seconds');
-    if (value.startsWith('12h')) selected.push('use_12hour_format');
+    if (value !== 'off') {
+      items.push({ path: 'use_12hour_format', def: false });
+      if (value.startsWith('12h')) selected.push('use_12hour_format');
+    }
+    this._applyTogglePaths(items, selected);
+  };
+
+  _setTwelveHour = (on: boolean): void => {
     this._applyTogglePaths(
-      [
-        { path: 'show_time', def: false },
-        { path: 'show_time_seconds', def: false },
-        { path: 'use_12hour_format', def: false },
-      ],
-      selected,
+      [{ path: 'use_12hour_format', def: false }],
+      on ? ['use_12hour_format'] : [],
     );
   };
 

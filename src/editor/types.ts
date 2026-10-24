@@ -69,6 +69,8 @@ export interface EditorLike {
   _setPastSource(value: PastSource): void;
   _clockMode: string;
   _setClockMode(value: string): void;
+  /** The 12-hour format, shared by the clock and the sunrise/sunset row. */
+  _setTwelveHour(on: boolean): void;
   _applyTogglePaths(items: ReadonlyArray<TogglePath>, selectedLeaves: ReadonlyArray<string>): void;
   _applyAttributeToggles(items: ReadonlyArray<TogglePath>, selectedLeaves: ReadonlyArray<string>): void;
   /** Write an explicit `attributes_layout` (null = back to automatic,

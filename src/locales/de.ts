@@ -180,6 +180,7 @@ const de: LocaleEntry = {
     'show_day': 'Wochentag',
     'show_date': 'Datum',
     'use_12hour_format': '12-Stunden-Format',
+    'twelve_hour_format': '12-Stunden-Format',
     'show_chart_icons': 'Bedingungs-Icon-Zeile',
     'show_chart_wind_direction': 'Windrichtung',
     'show_chart_wind_speed': 'Windgeschwindigkeit',

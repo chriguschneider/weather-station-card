@@ -189,6 +189,7 @@ const sr: LocaleEntry = {
     'show_day': 'Назив дана',
     'show_date': 'Датум',
     'use_12hour_format': '12-часовни формат сата',
+    'twelve_hour_format': '12-часовни формат сата',
     'show_chart_icons': 'Ред са иконама временских прилика',
     'show_chart_wind_direction': 'Смер ветра',
     'show_chart_wind_speed': 'Брзина ветра',

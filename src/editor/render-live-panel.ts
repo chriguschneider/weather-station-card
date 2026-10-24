@@ -166,6 +166,7 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
   }];
 
   const timeZoneSchema = [{ name: 'time_zone', selector: { text: {} } }];
+  const twelveHourSchema = gateSchema('use_12hour_format');
 
   const availableAttrs = availableAttributePaths(hasLiveValue, hasSensor);
 
@@ -174,12 +175,17 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
     if (next && next !== editor._clockMode) editor._setClockMode(next);
   };
 
+  const handleTwelveHour = (event: CustomEvent<{ value: { use_12hour_format?: boolean } }>): void => {
+    editor._setTwelveHour(event.detail.value?.use_12hour_format === true);
+  };
+
   const labelFor = (schema: { name: string }): string => {
     const map: Record<string, string> = {
       show_main: t('show_main'),
       show_attributes: t('show_attributes'),
       clock_mode: t('clock_label'),
       time_zone: t('time_zone'),
+      use_12hour_format: t('twelve_hour_format'),
     };
     return map[schema.name] || t(schema.name);
   };
@@ -227,6 +233,14 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
           ></ha-form>
         </div>
       ` : ''}
+
+      <ha-form
+        .data=${{ use_12hour_format: cfg.use_12hour_format === true }}
+        .schema=${twelveHourSchema}
+        .hass=${editor.hass}
+        .computeLabel=${labelFor}
+        @value-changed=${handleTwelveHour}
+      ></ha-form>
 
       <div class="divider"></div>
 

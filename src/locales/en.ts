@@ -189,6 +189,7 @@ const en: LocaleEntry = {
     'show_day': 'Day name',
     'show_date': 'Date',
     'use_12hour_format': '12-hour clock',
+    'twelve_hour_format': '12-hour format',
     'show_chart_icons': 'Condition icons row',
     'show_chart_wind_direction': 'Wind direction',
     'show_chart_wind_speed': 'Wind speed',

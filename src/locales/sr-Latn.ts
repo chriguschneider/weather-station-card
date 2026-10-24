@@ -189,6 +189,7 @@ const sr_Latn: LocaleEntry = {
     'show_day': 'Naziv dana',
     'show_date': 'Datum',
     'use_12hour_format': '12-časovni format sata',
+    'twelve_hour_format': '12-časovni format sata',
     'show_chart_icons': 'Red sa ikonama vremenskih prilika',
     'show_chart_wind_direction': 'Smer vetra',
     'show_chart_wind_speed': 'Brzina vetra',
