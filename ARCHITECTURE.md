@@ -173,9 +173,8 @@ src/
 │                              chunks — only the user's language is
 │                              fetched at runtime.
 │
-├── icons/                     Bundled SVG weather-condition icons,
-│                              copied verbatim to dist/icons/ by the
-│                              build (inline plugin in rollup.config.mjs).
+├── icons/                     MDI path strings for the inline icon
+│                              sprite (ADR-0018); compiled into the bundle.
 │
 ├── utils/
 │   ├── safe-query.ts          shadowRoot?.querySelector helper.
