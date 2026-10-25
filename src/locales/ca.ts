@@ -157,7 +157,7 @@ const ca: LocaleEntry = {
     'clock_on_seconds': 'Activat amb segons',
     'clock_12h': '12 hores',
     'time_format_label': 'Format d\'hora',
-    'time_format_hint': 'També l\'utilitzen el rellotge i les etiquetes d\'hora del gràfic.',
+    'time_format_hint': 'També l\'utilitza el rellotge.',
     'main_elements_label': 'Elements',
     'unit_pressure_label': 'Mostra la pressió en',
     'unit_speed_label': 'Mostra el vent en',

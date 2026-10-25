@@ -157,7 +157,7 @@ const ko: LocaleEntry = {
     'clock_on_seconds': '초 포함 켜기',
     'clock_12h': '12시간',
     'time_format_label': '시간 형식',
-    'time_format_hint': '시계와 차트 시간 레이블에도 사용됩니다.',
+    'time_format_hint': '시계에도 사용됩니다.',
     'main_elements_label': '요소',
     'unit_pressure_label': '기압 단위',
     'unit_speed_label': '풍속 단위',

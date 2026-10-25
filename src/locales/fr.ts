@@ -163,7 +163,7 @@ const fr: LocaleEntry = {
     'clock_on_seconds': 'Activée avec secondes',
     'clock_12h': '12 heures',
     'time_format_label': 'Format de l\'heure',
-    'time_format_hint': 'Également utilisé par l\'horloge et les libellés d\'heure du graphique.',
+    'time_format_hint': 'Également utilisé par l\'horloge.',
     'main_elements_label': 'Éléments',
     'unit_pressure_label': 'Afficher la pression en',
     'unit_speed_label': 'Afficher le vent en',

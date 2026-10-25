@@ -157,7 +157,7 @@ const sv: LocaleEntry = {
     'clock_on_seconds': 'På med sekunder',
     'clock_12h': '12-timmars',
     'time_format_label': 'Tidsformat',
-    'time_format_hint': 'Används även av klockan och diagrammets tidsetiketter.',
+    'time_format_hint': 'Används även av klockan.',
     'main_elements_label': 'Element',
     'unit_pressure_label': 'Visa lufttryck i',
     'unit_speed_label': 'Visa vindhastighet i',

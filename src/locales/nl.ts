@@ -157,7 +157,7 @@ const nl: LocaleEntry = {
     'clock_on_seconds': 'Aan met seconden',
     'clock_12h': '12-uurs',
     'time_format_label': 'Tijdnotatie',
-    'time_format_hint': 'Ook gebruikt door de klok en de tijdlabels van de grafiek.',
+    'time_format_hint': 'Ook gebruikt door de klok.',
     'main_elements_label': 'Elementen',
     'unit_pressure_label': 'Luchtdruk weergeven in',
     'unit_speed_label': 'Windsnelheid weergeven in',

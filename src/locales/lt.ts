@@ -157,7 +157,7 @@ const lt: LocaleEntry = {
     'clock_on_seconds': 'Įjungta su sekundėmis',
     'clock_12h': '12 valandų',
     'time_format_label': 'Laiko formatas',
-    'time_format_hint': 'Taip pat naudojamas laikrodyje ir diagramos laiko žymose.',
+    'time_format_hint': 'Taip pat naudojamas laikrodyje.',
     'main_elements_label': 'Elementai',
     'unit_pressure_label': 'Slėgio vienetas',
     'unit_speed_label': 'Vėjo greičio vienetas',

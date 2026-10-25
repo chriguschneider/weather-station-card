@@ -157,7 +157,7 @@ const es: LocaleEntry = {
     'clock_on_seconds': 'Activado con segundos',
     'clock_12h': '12 horas',
     'time_format_label': 'Formato de hora',
-    'time_format_hint': 'También lo usan el reloj y las etiquetas de hora del gráfico.',
+    'time_format_hint': 'También lo usa el reloj.',
     'main_elements_label': 'Elementos',
     'unit_pressure_label': 'Mostrar la presión en',
     'unit_speed_label': 'Mostrar el viento en',

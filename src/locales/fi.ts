@@ -157,7 +157,7 @@ const fi: LocaleEntry = {
     'clock_on_seconds': 'Päällä sekunteineen',
     'clock_12h': '12 h',
     'time_format_label': 'Aikamuoto',
-    'time_format_hint': 'Käytössä myös kellossa ja kaavion aikatunnisteissa.',
+    'time_format_hint': 'Käytössä myös kellossa.',
     'main_elements_label': 'Elementit',
     'unit_pressure_label': 'Ilmanpaineen yksikkö',
     'unit_speed_label': 'Tuulen nopeuden yksikkö',

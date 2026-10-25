@@ -157,7 +157,7 @@ const nb: LocaleEntry = {
     'clock_on_seconds': 'På med sekunder',
     'clock_12h': '12-timers',
     'time_format_label': 'Tidsformat',
-    'time_format_hint': 'Brukes også av klokken og tidsetikettene i diagrammet.',
+    'time_format_hint': 'Brukes også av klokken.',
     'main_elements_label': 'Elementer',
     'unit_pressure_label': 'Vis lufttrykk i',
     'unit_speed_label': 'Vis vindhastighet i',

@@ -157,7 +157,7 @@ const uk: LocaleEntry = {
     'clock_on_seconds': 'Увімк. із секундами',
     'clock_12h': '12 годин',
     'time_format_label': 'Формат часу',
-    'time_format_hint': 'Також використовується годинником і підписами часу на діаграмі.',
+    'time_format_hint': 'Також використовується годинником.',
     'main_elements_label': 'Елементи',
     'unit_pressure_label': 'Показувати тиск у',
     'unit_speed_label': 'Показувати швидкість вітру в',

@@ -157,7 +157,7 @@ const hu: LocaleEntry = {
     'clock_on_seconds': 'Be, másodpercekkel',
     'clock_12h': '12 órás',
     'time_format_label': 'Időformátum',
-    'time_format_hint': 'Az óra és a diagram időcímkéi is ezt használják.',
+    'time_format_hint': 'Az óra is ezt használja.',
     'main_elements_label': 'Elemek',
     'unit_pressure_label': 'Légnyomás mértékegysége',
     'unit_speed_label': 'Szélsebesség mértékegysége',

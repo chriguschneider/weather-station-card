@@ -157,7 +157,7 @@ const ro: LocaleEntry = {
     'clock_on_seconds': 'Pornit cu secunde',
     'clock_12h': '12 ore',
     'time_format_label': 'Format oră',
-    'time_format_hint': 'Folosit și de ceas și de etichetele de timp ale graficului.',
+    'time_format_hint': 'Folosit și de ceas.',
     'main_elements_label': 'Elemente',
     'unit_pressure_label': 'Afișează presiunea în',
     'unit_speed_label': 'Afișează vântul în',

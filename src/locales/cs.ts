@@ -157,7 +157,7 @@ const cs: LocaleEntry = {
     'clock_on_seconds': 'Zapnuto se sekundami',
     'clock_12h': '12 hodin',
     'time_format_label': 'Formát času',
-    'time_format_hint': 'Používá se také pro hodiny a časové popisky grafu.',
+    'time_format_hint': 'Používá se také pro hodiny.',
     'main_elements_label': 'Prvky',
     'unit_pressure_label': 'Zobrazovat tlak v',
     'unit_speed_label': 'Zobrazovat vítr v',

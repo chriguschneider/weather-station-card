@@ -227,7 +227,7 @@ const sr_Latn: LocaleEntry = {
     'clock_on_seconds': 'Uključeno sa sekundama',
     'clock_12h': '12-časovni',
     'time_format_label': 'Format vremena',
-    'time_format_hint': 'Koristi se i za sat i vremenske oznake grafikona.',
+    'time_format_hint': 'Koristi se i za sat.',
     'main_elements_label': 'Elementi',
     'unit_pressure_label': 'Prikaži pritisak u',
     'unit_speed_label': 'Prikaži brzinu vetra u',

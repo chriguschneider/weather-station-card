@@ -157,7 +157,7 @@ const pt: LocaleEntry = {
     'clock_on_seconds': 'Ligado com segundos',
     'clock_12h': '12 horas',
     'time_format_label': 'Formato da hora',
-    'time_format_hint': 'Também usado pelo relógio e pelas etiquetas de hora do gráfico.',
+    'time_format_hint': 'Também usado pelo relógio.',
     'main_elements_label': 'Elementos',
     'unit_pressure_label': 'Mostrar pressão em',
     'unit_speed_label': 'Mostrar vento em',

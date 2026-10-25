@@ -218,7 +218,7 @@ const de: LocaleEntry = {
     'clock_on_seconds': 'An mit Sekunden',
     'clock_12h': '12-Stunden',
     'time_format_label': 'Zeitformat',
-    'time_format_hint': 'Gilt auch für die Uhr und die Zeitbeschriftungen im Diagramm.',
+    'time_format_hint': 'Gilt auch für die Uhr.',
     'main_elements_label': 'Elemente',
     'unit_pressure_label': 'Luftdruck anzeigen in',
     'unit_speed_label': 'Wind anzeigen in',

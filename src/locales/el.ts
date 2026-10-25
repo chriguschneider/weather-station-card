@@ -157,7 +157,7 @@ const el: LocaleEntry = {
     'clock_on_seconds': 'Ενεργό με δευτερόλεπτα',
     'clock_12h': '12ωρο',
     'time_format_label': 'Μορφή ώρας',
-    'time_format_hint': 'Χρησιμοποιείται και από το ρολόι και τις ετικέτες ώρας του γραφήματος.',
+    'time_format_hint': 'Χρησιμοποιείται και από το ρολόι.',
     'main_elements_label': 'Στοιχεία',
     'unit_pressure_label': 'Εμφάνιση πίεσης σε',
     'unit_speed_label': 'Εμφάνιση ταχύτητας ανέμου σε',

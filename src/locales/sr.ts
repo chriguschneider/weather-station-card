@@ -227,7 +227,7 @@ const sr: LocaleEntry = {
     'clock_on_seconds': 'Укључено са секундама',
     'clock_12h': '12-часовни',
     'time_format_label': 'Формат времена',
-    'time_format_hint': 'Користи се и за сат и временске ознаке графикона.',
+    'time_format_hint': 'Користи се и за сат.',
     'main_elements_label': 'Елементи',
     'unit_pressure_label': 'Прикажи притисак у',
     'unit_speed_label': 'Прикажи брзину ветра у',

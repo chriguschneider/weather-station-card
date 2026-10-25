@@ -157,7 +157,7 @@ const bg: LocaleEntry = {
     'clock_on_seconds': 'Вкл. със секунди',
     'clock_12h': '12 часа',
     'time_format_label': 'Формат на времето',
-    'time_format_hint': 'Използва се и от часовника и етикетите на графиката.',
+    'time_format_hint': 'Използва се и от часовника.',
     'main_elements_label': 'Елементи',
     'unit_pressure_label': 'Показване на налягането в',
     'unit_speed_label': 'Показване на скоростта на вятъра в',

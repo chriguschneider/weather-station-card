@@ -157,7 +157,7 @@ const ru: LocaleEntry = {
     'clock_on_seconds': 'Вкл. с секундами',
     'clock_12h': '12 часов',
     'time_format_label': 'Формат времени',
-    'time_format_hint': 'Также используется часами и подписями времени на графике.',
+    'time_format_hint': 'Также используется часами.',
     'main_elements_label': 'Элементы',
     'unit_pressure_label': 'Показывать давление в',
     'unit_speed_label': 'Показывать скорость ветра в',
