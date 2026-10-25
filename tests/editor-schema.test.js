@@ -25,6 +25,7 @@ function makeEditor(overrides = {}) {
     _mode: 'combination',
     _pastSource: 'station',
     _clockMode: 'off',
+    _timeFormat: '24h',
     _setMode: vi.fn(),
     _setPastSource: vi.fn(),
     _setClockMode: vi.fn(),
@@ -487,37 +488,46 @@ describe('renderLivePanelSection (schema-driven)', () => {
     ]);
     const clock = findField(container, 'clock_mode');
     expect(selectOptionValues(clock.field)).toEqual([
-      'off', '24h', '24h_seconds', '12h', '12h_seconds',
+      'off', 'on', 'on_seconds',
     ]);
   });
 
-  it('offers the 12-hour format toggle in the attributes row while the sun item is on', () => {
+  it('offers the time format selector in the attributes row, defaulting to 24-hour', () => {
     const container = renderInto(
       renderLivePanelSection,
       editor,
-      makeCtx({ cfg: { show_attributes: true, show_sun: true, use_12hour_format: true } }),
+      makeCtx({ cfg: { show_attributes: true } }),
     );
-    const toggle = findField(container, 'use_12hour_format');
-    expect(toggle.field.selector).toEqual({ boolean: {} });
-    expect(toggle.form.data.use_12hour_format).toBe(true);
+    const sel = findField(container, 'time_format');
+    expect(selectOptionValues(sel.field)).toEqual(['24h', '12h']);
+    expect(sel.form.data.time_format).toBe('24h');
   });
 
-  it('hides the 12-hour format toggle when the sun item is off', () => {
+  it('shows the time format selector without the sun item or the main panel', () => {
     const container = renderInto(
       renderLivePanelSection,
       editor,
-      makeCtx({ cfg: { show_main: true, show_attributes: true, show_sun: false } }),
+      makeCtx({ cfg: { show_main: false, show_attributes: true, show_sun: false } }),
     );
-    expect(findField(container, 'use_12hour_format')).toBeNull();
+    expect(findField(container, 'time_format')).not.toBeNull();
   });
 
-  it('hides the 12-hour format toggle when the attributes row is off', () => {
+  it('reflects _timeFormat in the selector', () => {
+    const container = renderInto(
+      renderLivePanelSection,
+      { ...editor, _timeFormat: '12h' },
+      makeCtx({ cfg: { show_attributes: true, use_12hour_format: true } }),
+    );
+    expect(findField(container, 'time_format').form.data.time_format).toBe('12h');
+  });
+
+  it('hides the time format selector when the attributes row is off', () => {
     const container = renderInto(
       renderLivePanelSection,
       editor,
       makeCtx({ cfg: { show_main: true, show_attributes: false, show_sun: true } }),
     );
-    expect(findField(container, 'use_12hour_format')).toBeNull();
+    expect(findField(container, 'time_format')).toBeNull();
   });
 
   it('offers only sun + moon attribute options when no sensors / live values report', () => {
