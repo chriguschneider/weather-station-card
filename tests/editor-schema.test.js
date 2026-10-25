@@ -503,6 +503,19 @@ describe('renderLivePanelSection (schema-driven)', () => {
     expect(sel.form.data.time_format).toBe('24h');
   });
 
+  it('puts a subheading directly above the time format selector', () => {
+    const container = renderInto(
+      renderLivePanelSection,
+      editor,
+      makeCtx({ cfg: { show_attributes: true } }),
+    );
+    const heading = container.querySelector('h4.subsection');
+    expect(heading.textContent.trim()).toBe('time_format_scope');
+    expect(heading.nextElementSibling.tagName.toLowerCase()).toBe('ha-form');
+    expect(container.querySelector('.hint').textContent.trim())
+      .toBe('time_format_hint');
+  });
+
   it('shows the time format selector without the sun item or the main panel', () => {
     const container = renderInto(
       renderLivePanelSection,

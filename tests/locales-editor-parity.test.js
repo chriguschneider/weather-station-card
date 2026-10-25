@@ -88,7 +88,7 @@ const REQUIRED_EDITOR_KEYS = [
   'past_source_label', 'past_source_station', 'past_source_openmeteo',
   // clock dropdown
   'clock_label', 'clock_off', 'clock_on', 'clock_on_seconds',
-  'clock_24h', 'clock_12h', 'time_format_label', 'time_format_hint',
+  'clock_24h', 'clock_12h', 'time_format_label', 'time_format_scope', 'time_format_hint',
   // multi-select labels
   'main_elements_label',
   // units

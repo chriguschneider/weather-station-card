@@ -264,6 +264,7 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
             onChange: (next) => editor._applyAttributeToggles(availableAttrs, next),
           })}
           ${board}
+          <h4 class="subsection">${t('time_format_scope')}</h4>
           <ha-form
             .data=${{ time_format: editor._timeFormat }}
             .schema=${timeFormatSchema}

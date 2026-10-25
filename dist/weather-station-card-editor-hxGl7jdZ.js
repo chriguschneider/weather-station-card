@@ -1,4 +1,4 @@
-import{b as e,f as t,A as a,n as o,r as s,a as n,t as i,h as r,i as l,c,d,e as h,s as p,g as u,j as _,D as f,k as m,l as g}from"./main-CbBdjJkx.js";const y=[{name:"weather_entity",required:!0,selector:{entity:{domain:"weather"}}}];function b(t){const{editor:a,sectionKey:o,icon:s,title:n,summary:i,resetLabel:r,body:l}=t;return e`
+import{b as e,f as t,A as a,n as o,r as s,a as n,t as i,h as r,i as l,c,d,e as h,s as p,g as u,j as _,D as f,k as m,l as g}from"./main-ptRbCNKq.js";const y=[{name:"weather_entity",required:!0,selector:{entity:{domain:"weather"}}}];function b(t){const{editor:a,sectionKey:o,icon:s,title:n,summary:i,resetLabel:r,body:l}=t;return e`
     <ha-expansion-panel
       outlined
       class="editor-panel"
@@ -413,6 +413,7 @@ import{b as e,f as t,A as a,n as o,r as s,a as n,t as i,h as r,i as l,c,d,e as h
         <div class="gated">
           ${x({label:o("attributes_heading"),group:"attributes",options:m.map(({path:e})=>({value:e,label:E(o,e)})),selected:v,onChange:e=>t._applyAttributeToggles(m,e)})}
           ${w}
+          <h4 class="subsection">${o("time_format_scope")}</h4>
           <ha-form
             .data=${{time_format:t._timeFormat}}
             .schema=${f}
