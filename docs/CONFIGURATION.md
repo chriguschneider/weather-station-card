@@ -182,7 +182,7 @@ ON; in YAML the sub-keys are evaluated regardless.
 | `show_current_condition` | bool | `false` | Show condition text under temperature. |
 | `show_time` | bool | `false` | Live clock. |
 | `show_time_seconds` | bool | `false` | Include seconds in the clock. |
-| `use_12hour_format` | bool | `false` | Use 12-hour times for the clock and the sunrise/sunset row. Works without `show_time`. |
+| `use_12hour_format` | bool | `false` | Use 12-hour times for the clock and the sunrise/sunset row. Works without `show_time`; the editor shows a toggle for it below the attributes board while the sun item is on. |
 | `time_zone` | string | `''` | IANA time zone (e.g. `Europe/Zurich`) for the live clock, its day/date labels and the sunrise/sunset row, for cards of a remote home. Empty or invalid = the Home Assistant server's zone. Only these follow it; day boundaries, chart ticks and statistics stay on the server zone. |
 | `show_day` | bool | `false` | Day-of-week label. |
 | `show_date` | bool | `false` | Date label. |

@@ -491,15 +491,33 @@ describe('renderLivePanelSection (schema-driven)', () => {
     ]);
   });
 
-  it('offers the 12-hour format toggle even when the clock panel is gated off', () => {
+  it('offers the 12-hour format toggle in the attributes row while the sun item is on', () => {
     const container = renderInto(
       renderLivePanelSection,
       editor,
-      makeCtx({ cfg: { show_main: false, use_12hour_format: true } }),
+      makeCtx({ cfg: { show_attributes: true, show_sun: true, use_12hour_format: true } }),
     );
     const toggle = findField(container, 'use_12hour_format');
     expect(toggle.field.selector).toEqual({ boolean: {} });
     expect(toggle.form.data.use_12hour_format).toBe(true);
+  });
+
+  it('hides the 12-hour format toggle when the sun item is off', () => {
+    const container = renderInto(
+      renderLivePanelSection,
+      editor,
+      makeCtx({ cfg: { show_main: true, show_attributes: true, show_sun: false } }),
+    );
+    expect(findField(container, 'use_12hour_format')).toBeNull();
+  });
+
+  it('hides the 12-hour format toggle when the attributes row is off', () => {
+    const container = renderInto(
+      renderLivePanelSection,
+      editor,
+      makeCtx({ cfg: { show_main: true, show_attributes: false, show_sun: true } }),
+    );
+    expect(findField(container, 'use_12hour_format')).toBeNull();
   });
 
   it('offers only sun + moon attribute options when no sensors / live values report', () => {

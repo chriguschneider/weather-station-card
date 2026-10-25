@@ -12,7 +12,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- The editor offers the 12-hour format for the sunrise/sunset row on its own, without the clock (#343).
+- The editor offers a "12-hour format" toggle below the attributes board while the sunrise/sunset item is on, so its times can use 12-hour format without the clock (#343).
 
 ### Documentation
 

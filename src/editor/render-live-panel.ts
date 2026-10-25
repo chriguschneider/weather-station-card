@@ -234,14 +234,6 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
         </div>
       ` : ''}
 
-      <ha-form
-        .data=${{ use_12hour_format: cfg.use_12hour_format === true }}
-        .schema=${twelveHourSchema}
-        .hass=${editor.hass}
-        .computeLabel=${labelFor}
-        @value-changed=${handleTwelveHour}
-      ></ha-form>
-
       <div class="divider"></div>
 
       <ha-form
@@ -261,6 +253,15 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
             onChange: (next) => editor._applyAttributeToggles(availableAttrs, next),
           })}
           ${board}
+          ${enabledAttrs.includes('show_sun') ? html`
+            <ha-form
+              .data=${{ use_12hour_format: cfg.use_12hour_format === true }}
+              .schema=${twelveHourSchema}
+              .hass=${editor.hass}
+              .computeLabel=${labelFor}
+              @value-changed=${handleTwelveHour}
+            ></ha-form>
+          ` : ''}
           ${nowcastHint}
         </div>
       ` : ''}
