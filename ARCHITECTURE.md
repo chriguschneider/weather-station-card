@@ -173,9 +173,8 @@ src/
 │                              chunks — only the user's language is
 │                              fetched at runtime.
 │
-├── icons/                     Bundled SVG weather-condition icons,
-│                              copied verbatim to dist/icons/ by the
-│                              build (inline plugin in rollup.config.mjs).
+├── icons/                     MDI path strings for the inline icon
+│                              sprite (ADR-0018); compiled into the bundle.
 │
 ├── utils/
 │   ├── safe-query.ts          shadowRoot?.querySelector helper.
@@ -571,7 +570,6 @@ split bundle (ADR-0013):
   only when the user opens it.
 - `<lang>-<hash>.js` — 23 per-language locale chunks, fetched on
   demand; only the user's language is loaded.
-- `icons/` — SVG weather-condition icons.
 
 Home Assistant serves each file precompressed (`.js.gz`) when the
 browser supports gzip. After a local deploy to a test HA instance,
