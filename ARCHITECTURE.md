@@ -570,7 +570,6 @@ split bundle (ADR-0013):
   only when the user opens it.
 - `<lang>-<hash>.js` — 23 per-language locale chunks, fetched on
   demand; only the user's language is loaded.
-- `icons/` — SVG weather-condition icons.
 
 Home Assistant serves each file precompressed (`.js.gz`) when the
 browser supports gzip. After a local deploy to a test HA instance,
