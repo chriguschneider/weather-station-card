@@ -131,7 +131,8 @@ const SCHEMA_KEY_SKIPLIST = new Set([
   'past_source',    // sensors + forecast.openmeteo_history (sensors section)
   'chart_rows',     // six forecast.* row booleans (chart section)
   'main_elements',  // four show_* booleans (live_panel section)
-  'clock_mode',     // show_time / show_time_seconds / use_12hour_format
+  'clock_mode',     // show_time / show_time_seconds
+  'time_format',    // use_12hour_format ('24h' | '12h')
   'attributes',     // the attribute show_* booleans (live_panel section)
 ]);
 

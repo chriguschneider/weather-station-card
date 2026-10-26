@@ -4,8 +4,8 @@
 //
 // v2.3 redesign (ADR-0023): the former walls of toggles (8 main-panel
 // + 13 attribute switches) collapse into two multi-select fields under
-// their on/off gates, and the three clock booleans (show_time,
-// show_time_seconds, use_12hour_format) project onto a single "clock"
+// their on/off gates, and the two clock booleans (show_time,
+// show_time_seconds) project onto a single "clock"
 // dropdown — the same UI-only-abstraction pattern the mode dropdown
 // uses for show_station / show_forecast.
 //
@@ -68,7 +68,9 @@ export const ATTRIBUTE_PATHS: ReadonlyArray<
   { path: 'show_moon',              def: true },
 ];
 
-const CLOCK_OPTIONS = ['off', '24h', '24h_seconds', '12h', '12h_seconds'] as const;
+const CLOCK_OPTIONS = ['off', 'on', 'on_seconds'] as const;
+// Labels reuse the clock_24h / clock_12h strings.
+const TIME_FORMAT_OPTIONS = ['24h', '12h'] as const;
 
 function selectedLeaves(
   cfg: Record<string, unknown>,
@@ -166,6 +168,15 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
   }];
 
   const timeZoneSchema = [{ name: 'time_zone', selector: { text: {} } }];
+  const timeFormatSchema = [{
+    name: 'time_format',
+    selector: {
+      select: {
+        mode: 'dropdown',
+        options: TIME_FORMAT_OPTIONS.map((value) => ({ value, label: t(`clock_${value}`) })),
+      },
+    },
+  }];
 
   const availableAttrs = availableAttributePaths(hasLiveValue, hasSensor);
 
@@ -174,12 +185,18 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
     if (next && next !== editor._clockMode) editor._setClockMode(next);
   };
 
+  const handleTimeFormat = (event: CustomEvent<{ value: { time_format?: string } }>): void => {
+    const next = event.detail.value?.time_format;
+    if (next && next !== editor._timeFormat) editor._setTimeFormat(next);
+  };
+
   const labelFor = (schema: { name: string }): string => {
     const map: Record<string, string> = {
       show_main: t('show_main'),
       show_attributes: t('show_attributes'),
       clock_mode: t('clock_label'),
       time_zone: t('time_zone'),
+      time_format: t('time_format_label'),
     };
     return map[schema.name] || t(schema.name);
   };
@@ -247,6 +264,15 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
             onChange: (next) => editor._applyAttributeToggles(availableAttrs, next),
           })}
           ${board}
+          <h4 class="subsection">${t('time_format_scope')}</h4>
+          <ha-form
+            .data=${{ time_format: editor._timeFormat }}
+            .schema=${timeFormatSchema}
+            .hass=${editor.hass}
+            .computeLabel=${labelFor}
+            @value-changed=${handleTimeFormat}
+          ></ha-form>
+          <div class="hint">${t('time_format_hint')}</div>
           ${nowcastHint}
         </div>
       ` : ''}

@@ -695,12 +695,14 @@ export class MeasuredDataSource {
     // the caller's "configured sunshine source is authoritative → 0 h"
     // rule produces the same 0 downstream, and the returned map keeps
     // its historical only-days-with-sunshine shape.
-    const fetchedFromMs = fetchStart.getTime();
+    // Compare day keys as strings: YYYY-MM-DD sorts chronologically, and
+    // parsing the key as a local time would read it in the browser's
+    // zone rather than the server's (ADR-0026).
+    const fetchedFromKey = dayKey(fetchStart);
     const updated: Record<string, number> = { ...(cachedDays ?? {}) };
     let dirty = false;
     for (const k of neededDays) {
-      const dayMs = new Date(`${k}T00:00`).getTime();
-      if (!Number.isFinite(dayMs) || dayMs < fetchedFromMs) continue;
+      if (k < fetchedFromKey) continue;
       const v = map.get(k) ?? 0;
       if (updated[k] !== v) { updated[k] = v; dirty = true; }
     }
