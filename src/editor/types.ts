@@ -69,6 +69,9 @@ export interface EditorLike {
   _setPastSource(value: PastSource): void;
   _clockMode: string;
   _setClockMode(value: string): void;
+  /** '24h' | '12h' — use_12hour_format, shared by every time value. */
+  _timeFormat: string;
+  _setTimeFormat(value: string): void;
   _applyTogglePaths(items: ReadonlyArray<TogglePath>, selectedLeaves: ReadonlyArray<string>): void;
   _applyAttributeToggles(items: ReadonlyArray<TogglePath>, selectedLeaves: ReadonlyArray<string>): void;
   /** Write an explicit `attributes_layout` (null = back to automatic,

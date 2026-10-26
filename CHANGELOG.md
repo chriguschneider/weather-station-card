@@ -10,6 +10,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `time_zone` option to show the clock and sunrise/sunset in another time zone, for cards of a remote home (#343).
 
+### Changed
+
+- The editor has a "Time format" selector (24-hour / 12-hour) below the attributes board that applies to the clock and the attributes row times, so 12-hour times no longer require the clock. The clock dropdown is now Off / On / On with seconds. Existing configs keep working unchanged (#343).
+
 ### Removed
 
 - Unused SVG weather icons in `dist/icons/`, left over from the animated icon set removed in v1.9. The card has used Home Assistant's own icons since then; nothing changes on screen.

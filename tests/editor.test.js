@@ -241,25 +241,34 @@ describe('editor._clockMode / _setClockMode', () => {
     expect(makeEditor({ show_time: false })._clockMode).toBe('off');
   });
 
-  it('reads the four on-variants from the three booleans', () => {
-    expect(makeEditor({ show_time: true })._clockMode).toBe('24h');
-    expect(makeEditor({ show_time: true, show_time_seconds: true })._clockMode).toBe('24h_seconds');
-    expect(makeEditor({ show_time: true, use_12hour_format: true })._clockMode).toBe('12h');
+  it('maps existing configs onto on / on_seconds regardless of the time format', () => {
+    expect(makeEditor({ show_time: true })._clockMode).toBe('on');
+    expect(makeEditor({ show_time: true, use_12hour_format: true })._clockMode).toBe('on');
+    expect(makeEditor({ show_time: true, show_time_seconds: true })._clockMode).toBe('on_seconds');
     expect(makeEditor({
       show_time: true, show_time_seconds: true, use_12hour_format: true,
-    })._clockMode).toBe('12h_seconds');
+    })._clockMode).toBe('on_seconds');
   });
 
-  it('writes only the non-default booleans (defaults are deleted, YAML stays terse)', () => {
-    const editor = makeEditor({ show_time: true, show_time_seconds: true });
-    editor._setClockMode('12h');
+  it('writes only show_time / show_time_seconds and never use_12hour_format', () => {
+    const editor = makeEditor({ show_time: true, show_time_seconds: true, use_12hour_format: true });
+    editor._setClockMode('on');
     const newCfg = editor.configChanged.mock.calls[0][0];
     expect(newCfg.show_time).toBe(true);
     expect('show_time_seconds' in newCfg).toBe(false);
     expect(newCfg.use_12hour_format).toBe(true);
   });
 
-  it('off deletes all three keys', () => {
+  it('on_seconds sets both clock keys and leaves the format untouched', () => {
+    const editor = makeEditor({});
+    editor._setClockMode('on_seconds');
+    const newCfg = editor.configChanged.mock.calls[0][0];
+    expect(newCfg.show_time).toBe(true);
+    expect(newCfg.show_time_seconds).toBe(true);
+    expect('use_12hour_format' in newCfg).toBe(false);
+  });
+
+  it('off deletes the clock keys but keeps use_12hour_format', () => {
     const editor = makeEditor({
       show_time: true, show_time_seconds: true, use_12hour_format: true,
     });
@@ -267,14 +276,52 @@ describe('editor._clockMode / _setClockMode', () => {
     const newCfg = editor.configChanged.mock.calls[0][0];
     expect('show_time' in newCfg).toBe(false);
     expect('show_time_seconds' in newCfg).toBe(false);
-    expect('use_12hour_format' in newCfg).toBe(false);
+    expect(newCfg.use_12hour_format).toBe(true);
+  });
+
+  it('is a single config write per dropdown change', () => {
+    const editor = makeEditor({});
+    editor._setClockMode('on_seconds');
+    expect(editor.configChanged).toHaveBeenCalledTimes(1);
   });
 
   it('round-trips through the getter', () => {
     const editor = makeEditor({});
-    editor._setClockMode('12h_seconds');
+    editor._setClockMode('on_seconds');
     editor._config = editor.configChanged.mock.calls[0][0];
-    expect(editor._clockMode).toBe('12h_seconds');
+    expect(editor._clockMode).toBe('on_seconds');
+  });
+});
+
+describe('editor._timeFormat / _setTimeFormat', () => {
+  it('defaults to 24h and reads 12h from use_12hour_format', () => {
+    expect(makeEditor({})._timeFormat).toBe('24h');
+    expect(makeEditor({ use_12hour_format: false })._timeFormat).toBe('24h');
+    expect(makeEditor({ use_12hour_format: true })._timeFormat).toBe('12h');
+  });
+
+  it('12h writes use_12hour_format without touching the clock', () => {
+    const editor = makeEditor({});
+    editor._setTimeFormat('12h');
+    const newCfg = editor.configChanged.mock.calls[0][0];
+    expect(newCfg.use_12hour_format).toBe(true);
+    expect('show_time' in newCfg).toBe(false);
+    expect(editor._clockMode).toBe('off');
+  });
+
+  it('24h deletes the key (default is false)', () => {
+    const editor = makeEditor({ use_12hour_format: true });
+    editor._setTimeFormat('24h');
+    const newCfg = editor.configChanged.mock.calls[0][0];
+    expect('use_12hour_format' in newCfg).toBe(false);
+  });
+
+  it('round-trips through the getter', () => {
+    const editor = makeEditor({ show_time: true });
+    editor._setTimeFormat('12h');
+    editor._config = editor.configChanged.mock.calls[0][0];
+    expect(editor._timeFormat).toBe('12h');
+    expect(editor._clockMode).toBe('on');
   });
 });
 

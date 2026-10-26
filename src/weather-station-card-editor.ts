@@ -143,29 +143,37 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     this.requestUpdate();
   };
 
-  // ── Clock mode (UI-only abstraction over three booleans) ─────────────
-  // show_time / show_time_seconds / use_12hour_format project onto one
-  // dropdown: off | 24h | 24h_seconds | 12h | 12h_seconds.
+  // ── Clock mode (UI-only abstraction over two booleans) ───────────────
+  // show_time / show_time_seconds project onto one dropdown:
+  // off | on | on_seconds. The 12h/24h choice lives in the separate
+  // time-format selector (use_12hour_format), shared by every time value.
   get _clockMode(): string {
     const c = this._config ?? {};
     if (c.show_time !== true) return 'off';
-    const twelve = c.use_12hour_format === true;
-    const seconds = c.show_time_seconds === true;
-    return (twelve ? '12h' : '24h') + (seconds ? '_seconds' : '');
+    return c.show_time_seconds === true ? 'on_seconds' : 'on';
   }
 
   _setClockMode = (value: string): void => {
     const selected: string[] = [];
     if (value !== 'off') selected.push('show_time');
-    if (value.endsWith('_seconds')) selected.push('show_time_seconds');
-    if (value.startsWith('12h')) selected.push('use_12hour_format');
+    if (value === 'on_seconds') selected.push('show_time_seconds');
     this._applyTogglePaths(
       [
         { path: 'show_time', def: false },
         { path: 'show_time_seconds', def: false },
-        { path: 'use_12hour_format', def: false },
       ],
       selected,
+    );
+  };
+
+  get _timeFormat(): string {
+    return this._config?.use_12hour_format === true ? '12h' : '24h';
+  }
+
+  _setTimeFormat = (value: string): void => {
+    this._applyTogglePaths(
+      [{ path: 'use_12hour_format', def: false }],
+      value === '12h' ? ['use_12hour_format'] : [],
     );
   };
 

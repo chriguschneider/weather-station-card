@@ -25,6 +25,7 @@ function makeEditor(overrides = {}) {
     _mode: 'combination',
     _pastSource: 'station',
     _clockMode: 'off',
+    _timeFormat: '24h',
     _setMode: vi.fn(),
     _setPastSource: vi.fn(),
     _setClockMode: vi.fn(),
@@ -487,8 +488,59 @@ describe('renderLivePanelSection (schema-driven)', () => {
     ]);
     const clock = findField(container, 'clock_mode');
     expect(selectOptionValues(clock.field)).toEqual([
-      'off', '24h', '24h_seconds', '12h', '12h_seconds',
+      'off', 'on', 'on_seconds',
     ]);
+  });
+
+  it('offers the time format selector in the attributes row, defaulting to 24-hour', () => {
+    const container = renderInto(
+      renderLivePanelSection,
+      editor,
+      makeCtx({ cfg: { show_attributes: true } }),
+    );
+    const sel = findField(container, 'time_format');
+    expect(selectOptionValues(sel.field)).toEqual(['24h', '12h']);
+    expect(sel.form.data.time_format).toBe('24h');
+  });
+
+  it('puts a subheading directly above the time format selector', () => {
+    const container = renderInto(
+      renderLivePanelSection,
+      editor,
+      makeCtx({ cfg: { show_attributes: true } }),
+    );
+    const heading = container.querySelector('h4.subsection');
+    expect(heading.textContent.trim()).toBe('time_format_scope');
+    expect(heading.nextElementSibling.tagName.toLowerCase()).toBe('ha-form');
+    expect(container.querySelector('.hint').textContent.trim())
+      .toBe('time_format_hint');
+  });
+
+  it('shows the time format selector without the sun item or the main panel', () => {
+    const container = renderInto(
+      renderLivePanelSection,
+      editor,
+      makeCtx({ cfg: { show_main: false, show_attributes: true, show_sun: false } }),
+    );
+    expect(findField(container, 'time_format')).not.toBeNull();
+  });
+
+  it('reflects _timeFormat in the selector', () => {
+    const container = renderInto(
+      renderLivePanelSection,
+      { ...editor, _timeFormat: '12h' },
+      makeCtx({ cfg: { show_attributes: true, use_12hour_format: true } }),
+    );
+    expect(findField(container, 'time_format').form.data.time_format).toBe('12h');
+  });
+
+  it('hides the time format selector when the attributes row is off', () => {
+    const container = renderInto(
+      renderLivePanelSection,
+      editor,
+      makeCtx({ cfg: { show_main: true, show_attributes: false, show_sun: true } }),
+    );
+    expect(findField(container, 'time_format')).toBeNull();
   });
 
   it('offers only sun + moon attribute options when no sensors / live values report', () => {
