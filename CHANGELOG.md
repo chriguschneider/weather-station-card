@@ -18,6 +18,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Unused SVG weather icons in `dist/icons/`, left over from the animated icon set removed in v1.9. The card has used Home Assistant's own icons since then; nothing changes on screen.
 
+### Fixed
+
+- Lux sunshine cache refetched the whole history every hour when the browser was east of the Home Assistant server.
+
 ### Documentation
 
 - The README now explains the snow line rows (zero-degree level, the
