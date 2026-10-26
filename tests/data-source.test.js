@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { bucketPrecipitation, MeasuredDataSource, ForecastDataSource } from '../src/data-source.js';
 import { WeatherEntityFeature } from '../src/const.js';
 import { clearDedupeCaches } from '../src/utils/shared-requests.js';
+import { addDays, dayKey, setCardTimeZone, startOfDay } from '../src/utils/time-zone.js';
 
 // Recorder WS calls are deduplicated module-wide (cross-card sharing in
 // production) — reset between tests so identical request signatures in
@@ -684,6 +685,71 @@ describe('MeasuredDataSource._fetchLuxSunshine (#56 + #66)', () => {
     // Only 2 valid samples — gives one interval, may or may not bucket
     // a non-zero day depending on timing — but no throw.
     await expect(ds._fetchLuxSunshine(sensors, new Date(t0 - HOUR_MS), new Date(t0 + HOUR_MS))).resolves.not.toThrow();
+  });
+});
+
+describe('lux day cache with the browser east of the server zone (#352)', () => {
+  // Server in New York, browser in Tokyo: the day key of the oldest
+  // window day used to be parsed in Tokyo time, which lands before the
+  // server-midnight fetch start and was never written to the cache.
+  const sensors = { illuminance: 'sensor.lux' };
+  let savedTZ;
+  let storage;
+  let hass;
+
+  beforeEach(() => {
+    savedTZ = process.env.TZ;
+    process.env.TZ = 'Asia/Tokyo';
+    storage = new Map();
+    globalThis.window = {
+      localStorage: {
+        getItem: (k) => storage.get(k) ?? null,
+        setItem: (k, v) => storage.set(k, String(v)),
+      },
+    };
+    setCardTimeZone('America/New_York');
+    vi.useFakeTimers({ now: new Date('2026-10-26T15:00:00Z') });
+    hass = {
+      config: { latitude: 40.71, longitude: -74.0 },
+      callWS: vi.fn(async () => ({
+        'sensor.lux': [
+          { s: '1000', lu: (Date.now() - 2 * 3600_000) / 1000 },
+          { s: '1000', lu: (Date.now() - 3600_000) / 1000 },
+        ],
+      })),
+    };
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    setCardTimeZone(undefined);
+    delete globalThis.window;
+    if (savedTZ === undefined) delete process.env.TZ;
+    else process.env.TZ = savedTZ;
+  });
+
+  // Same window the daily path builds: today's midnight + 1 day, back
+  // `days + 1` days.
+  const dailyWindow = (days) => {
+    const end = addDays(startOfDay(Date.now()), 1);
+    return { start: addDays(end, -(days + 1)), end };
+  };
+
+  it('caches the oldest completed day and stops refetching the window on the next poll', async () => {
+    const { start, end } = dailyWindow(2);
+    const oldestKey = dayKey(start);
+    const ds = new MeasuredDataSource(hass, { sensors });
+
+    clearDedupeCaches();
+    await ds._fetchLuxSunshine(sensors, start, end);
+    const cache = JSON.parse([...storage.values()][0]);
+    expect(Object.keys(cache.days)).toContain(oldestKey);
+    expect(hass.callWS.mock.calls[0][0].start_time).toBe(start.toISOString());
+
+    clearDedupeCaches();
+    await ds._fetchLuxSunshine(sensors, start, end);
+    // No completed day is missing, so only today's samples are fetched.
+    expect(hass.callWS.mock.calls[1][0].start_time).toBe(startOfDay(Date.now()).toISOString());
   });
 });
 
