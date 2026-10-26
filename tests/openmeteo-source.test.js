@@ -1,4 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { setCardTimeZone, zonedPartsIn } from '../src/utils/time-zone.js';
 import {
   buildOpenMeteoUrl,
   parseDailySunshine,
@@ -10,6 +12,12 @@ import {
   OpenMeteoSource,
   readCachedAvailability,
 } from '../src/openmeteo-source.js';
+
+// Open-Meteo hourly `time` is epoch seconds (timeformat=unixtime).
+const utc = (iso) => Date.parse(`${iso}:00Z`) / 1000;
+
+setCardTimeZone('UTC');
+afterAll(() => setCardTimeZone(undefined));
 
 // ── Chance of rain (#288, ADR-0027) ─────────────────────────────────
 describe('chance-of-rain fields', () => {
@@ -36,7 +44,7 @@ describe('chance-of-rain fields', () => {
   it('parseHourlyProbability maps time/value pairs and skips null cells', () => {
     const out = parseHourlyProbability({
       hourly: {
-        time: ['2026-05-06T14:00', '2026-05-06T15:00'],
+        time: [utc('2026-05-06T14:00'), utc('2026-05-06T15:00')],
         precipitation_probability: [70, null],
       },
     });
@@ -56,7 +64,7 @@ describe('chance-of-rain fields', () => {
       ok: true,
       json: async () => ({
         daily: { time: ['2026-05-06'], sunshine_duration: [3600], precipitation_probability_max: [85] },
-        hourly: { time: ['2026-05-06T14:00'], sunshine_duration: [1800], precipitation_probability: [70] },
+        hourly: { time: [utc('2026-05-06T14:00')], sunshine_duration: [1800], precipitation_probability: [70] },
       }),
     }));
     const src = new OpenMeteoSource({ latitude: 46.9, longitude: 7.4, includeHourly: true, fetchImpl, storage });
@@ -73,7 +81,7 @@ describe('chance-of-rain fields', () => {
   it('a cache written before the fields were requested is stale once', async () => {
     const store = new Map();
     const storage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
-    const key = 'wsc_sunshine_46.90_7.40';
+    const key = 'wsc_sunshine_v2_46.90_7.40';
     store.set(key, JSON.stringify({
       daily: [{ date: '2026-05-06', value: 3600 }],
       dailyForecast: [{ datetime: '2026-05-06T00:00:00.000Z' }],
@@ -194,7 +202,7 @@ describe('parseHourlySunshine', () => {
   it('maps the hourly two-array shape into {datetime, value} pairs', () => {
     const response = {
       hourly: {
-        time: ['2026-05-05T12:00', '2026-05-05T13:00', '2026-05-05T14:00'],
+        time: [utc('2026-05-05T12:00'), utc('2026-05-05T13:00'), utc('2026-05-05T14:00')],
         sunshine_duration: [3600, 1800, 0],
       },
     };
@@ -208,7 +216,7 @@ describe('parseHourlySunshine', () => {
   it('skips null hourly entries', () => {
     const response = {
       hourly: {
-        time: ['2026-05-05T12:00', '2026-05-05T13:00'],
+        time: [utc('2026-05-05T12:00'), utc('2026-05-05T13:00')],
         sunshine_duration: [3600, null],
       },
     };
@@ -311,7 +319,7 @@ describe('buildDailyForecast', () => {
 describe('buildHourlyForecast', () => {
   const sample = {
     hourly: {
-      time: ['2026-05-20T10:00', '2026-05-20T11:00', '2026-05-20T12:00'],
+      time: [utc('2026-05-20T10:00'), utc('2026-05-20T11:00'), utc('2026-05-20T12:00')],
       sunshine_duration: [3600, 1800, 0],
       temperature_2m: [14.2, 15.8, 16.1],
       precipitation: [0, 0.3, 1.7],
@@ -411,7 +419,7 @@ describe('OpenMeteoSource', () => {
     const fetchSpy = makeFetchOk({
       ...sampleResponse,
       hourly: {
-        time: ['2026-05-05T12:00', '2026-05-05T13:00'],
+        time: [utc('2026-05-05T12:00'), utc('2026-05-05T13:00')],
         sunshine_duration: [3600, 1800],
       },
     });
@@ -520,7 +528,7 @@ describe('OpenMeteoSource', () => {
     const fetchSpy = makeFetchOk({
       ...sampleResponse,
       hourly: {
-        time: ['2026-05-05T12:00', '2026-05-05T13:00'],
+        time: [utc('2026-05-05T12:00'), utc('2026-05-05T13:00')],
         sunshine_duration: [3600, 1800],
       },
     });
@@ -551,7 +559,7 @@ describe('OpenMeteoSource', () => {
     const fetchSpy = makeFetchOk({
       ...sampleResponse,
       hourly: {
-        time: ['2026-05-05T12:00'],
+        time: [utc('2026-05-05T12:00')],
         sunshine_duration: [3600],
       },
     });
@@ -688,7 +696,7 @@ describe('readCachedAvailability', () => {
 
   it('counts past + forecast days from a cached daily array', () => {
     const storage = makeStorage({
-      [`wsc_sunshine_${lat.toFixed(2)}_${lon.toFixed(2)}`]: JSON.stringify({
+      [`wsc_sunshine_v2_${lat.toFixed(2)}_${lon.toFixed(2)}`]: JSON.stringify({
         daily: [
           { date: '2026-05-03', value: 28800 }, // -2 (past)
           { date: '2026-05-04', value: 30000 }, // -1 (past)
@@ -708,7 +716,7 @@ describe('readCachedAvailability', () => {
 
   it('handles a daily array with malformed / undated entries', () => {
     const storage = makeStorage({
-      [`wsc_sunshine_${lat.toFixed(2)}_${lon.toFixed(2)}`]: JSON.stringify({
+      [`wsc_sunshine_v2_${lat.toFixed(2)}_${lon.toFixed(2)}`]: JSON.stringify({
         daily: [
           null,
           { value: 100 }, // no date
@@ -725,7 +733,7 @@ describe('readCachedAvailability', () => {
 
   it('returns zeros for an empty cached payload (post-failure fallback)', () => {
     const storage = makeStorage({
-      [`wsc_sunshine_${lat.toFixed(2)}_${lon.toFixed(2)}`]: JSON.stringify({
+      [`wsc_sunshine_v2_${lat.toFixed(2)}_${lon.toFixed(2)}`]: JSON.stringify({
         daily: [],
         hourly: [],
         lastFetchMs: 0,
@@ -851,5 +859,116 @@ describe('OpenMeteoSource.ensureFresh edge cases', () => {
     await Promise.all([p1, p2]);
     // Both calls collapsed into a single fetch.
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── Instants + response zone (#353) ─────────────────────────────────
+// Fixtures are trimmed real responses, see tests/fixtures/openmeteo/README.md.
+const fixture = (name) =>
+  JSON.parse(readFileSync(new URL(`./fixtures/openmeteo/${name}.json`, import.meta.url), 'utf8'));
+
+describe('unixtime responses', () => {
+  it('requests timeformat=unixtime with timezone=auto', () => {
+    const p = new URL(buildOpenMeteoUrl(46.91, 7.42, 7, 7, true)).searchParams;
+    expect(p.get('timeformat')).toBe('unixtime');
+    expect(p.get('timezone')).toBe('auto');
+  });
+
+  it('a location in America/Denver keeps its own hours and days under a Zurich card', () => {
+    setCardTimeZone('Europe/Zurich');
+    try {
+      const response = fixture('openmeteo-denver');
+      // Denver midnights (MDT) of 25th-27th.
+      expect(parseDailySunshine(response)).toEqual([
+        { date: '2026-10-25', value: 21600 },
+        { date: '2026-10-26', value: 3600 },
+        { date: '2026-10-27', value: 19278.43 },
+      ]);
+      expect(parseDailyProbability(response).map((e) => e.value)).toEqual([14, 59, 0]);
+      // Same instants keyed in the Zurich card zone (CET from the 25th).
+      expect(parseHourlySunshine(response).map((e) => e.datetime)).toEqual([
+        '2026-10-26T06:00',
+        '2026-10-26T07:00',
+        '2026-10-26T08:00',
+        '2026-10-26T13:00',
+        '2026-10-26T14:00',
+      ]);
+      expect(buildHourlyForecast(response).map((e) => e.datetime)).toEqual([
+        '2026-10-26T05:00:00.000Z',
+        '2026-10-26T06:00:00.000Z',
+        '2026-10-26T07:00:00.000Z',
+        '2026-10-26T12:00:00.000Z',
+        '2026-10-26T13:00:00.000Z',
+      ]);
+      // Zurich midnight of each Denver day.
+      expect(buildDailyForecast(response).map((e) => e.datetime)).toEqual([
+        '2026-10-24T22:00:00.000Z',
+        '2026-10-25T23:00:00.000Z',
+        '2026-10-26T23:00:00.000Z',
+      ]);
+    } finally {
+      setCardTimeZone('UTC');
+    }
+  });
+
+  it('hours on both sides of the Zurich DST end map to the right local hour', () => {
+    setCardTimeZone('Europe/Zurich');
+    try {
+      const response = fixture('openmeteo-zurich-dst-2026-10-25');
+      // 01:00Z and 00:00Z of the 25th are 02:00 CET and 02:00 CEST.
+      expect(parseHourlySunshine(response).map((e) => e.datetime)).toEqual([
+        '2026-10-23T23:00',
+        '2026-10-24T00:00',
+        '2026-10-24T01:00',
+        '2026-10-24T23:00',
+        '2026-10-25T00:00',
+        '2026-10-25T01:00',
+        '2026-10-25T02:00',
+        '2026-10-25T02:00',
+        '2026-10-25T03:00',
+        '2026-10-25T04:00',
+      ]);
+      expect(buildHourlyForecast(response).map((e) => e.datetime).slice(5, 8)).toEqual([
+        '2026-10-24T23:00:00.000Z',
+        '2026-10-25T00:00:00.000Z',
+        '2026-10-25T01:00:00.000Z',
+      ]);
+    } finally {
+      setCardTimeZone('UTC');
+    }
+  });
+
+  it('day keys survive the single-offset midnight error after the DST end', () => {
+    setCardTimeZone('Europe/Zurich');
+    try {
+      // One fixed +1 h offset for all days: the 23rd and 24th arrive as 23:00Z.
+      const response = fixture('openmeteo-zurich-dst-2026-10-25');
+      expect(parseDailySunshine(response).map((e) => e.date)).toEqual([
+        '2026-10-23',
+        '2026-10-24',
+        '2026-10-25',
+        '2026-10-26',
+      ]);
+    } finally {
+      setCardTimeZone('UTC');
+    }
+  });
+
+  it('sunrise epochs are instants, right despite the single response offset', () => {
+    const response = fixture('openmeteo-zurich-sun-dst-2026-10-25');
+    // 05:57Z on the 24th is 07:57 CEST, not 06:57 as the +1 offset suggests.
+    const sunrise = zonedPartsIn(response.daily.sunrise[1] * 1000, 'Europe/Zurich');
+    expect(new Date(response.daily.sunrise[1] * 1000).toISOString().slice(0, 16)).toBe('2026-10-24T05:57');
+    expect([sunrise.day, sunrise.hour, sunrise.minute]).toEqual([24, 7, 57]);
+  });
+
+  it('ignores a cache written under the v1 key', () => {
+    const store = new Map([
+      ['wsc_sunshine_46.90_7.40', JSON.stringify({ daily: [{ date: '2026-05-06', value: 1 }], lastFetchMs: Date.now() })],
+    ]);
+    const storage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+    const src = new OpenMeteoSource({ latitude: 46.9, longitude: 7.4, fetchImpl: vi.fn(), storage });
+    expect(src.getDailyValues()).toEqual([]);
+    expect(readCachedAvailability(46.9, 7.4, storage)).toBeNull();
   });
 });
