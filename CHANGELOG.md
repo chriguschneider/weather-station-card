@@ -10,6 +10,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `time_zone` option to show the clock and sunrise/sunset in another time zone, for cards of a remote home (#343).
 
+### Fixed
+
+- Open-Meteo sunshine and past-data hours were shifted when `location` lay in another time zone than the server, and by one hour across a daylight-saving change.
+
 ### Removed
 
 - Unused SVG weather icons in `dist/icons/`, left over from the animated icon set removed in v1.9. The card has used Home Assistant's own icons since then; nothing changes on screen.

@@ -95,6 +95,16 @@ export interface ZonedParts {
 
 const toMs = (d: Date | number): number => (typeof d === 'number' ? d : d.getTime());
 
+/** Calendar parts of an instant in an explicit IANA zone, independent of
+ *  the card's zone. Callers pass a zone already checked with `validTimeZone`. */
+export function zonedPartsIn(d: Date | number, tz: string): ZonedParts {
+  const out: ZonedParts = { year: 0, month: 0, day: 0, hour: 0, minute: 0, second: 0 };
+  for (const part of formatterFor(tz).formatToParts(new Date(toMs(d)))) {
+    if (part.type in out) out[part.type as keyof ZonedParts] = Number(part.value);
+  }
+  return out;
+}
+
 export function zonedParts(d: Date | number): ZonedParts {
   const ms = toMs(d);
   if (isNative()) {

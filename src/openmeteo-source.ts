@@ -25,7 +25,7 @@ import type { DailyProbabilityEntry, HourlyProbabilityEntry } from './precip-pro
 import type { ForecastEntry } from './forecast-utils.js';
 import { wmoToCondition } from './weather-code-map.js';
 import { dedupeRequest } from './utils/shared-requests.js';
-import { startOfDay, zonedDate } from './utils/time-zone.js';
+import { dayKey, hourOf, startOfDay, validTimeZone, zonedDate, zonedPartsIn } from './utils/time-zone.js';
 
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 
@@ -72,7 +72,10 @@ const REFRESH_TTL_MS = 60 * 60 * 1000;
 // LocalStorage key prefix. Keyed by lat/lon-rounded-to-2 so two
 // dashboards at the same location share the cache, but a dashboard at
 // a different location doesn't accidentally see stale far-away data.
-const STORAGE_PREFIX = 'wsc_sunshine_';
+// The `v2` segment is the schema version (ADR-0020): v1 entries held
+// keys built from civil times read in the wrong zone, so they are never
+// read again.
+const STORAGE_PREFIX = 'wsc_sunshine_v2_';
 
 /** Subset of the Web Storage API the source uses. Allows tests /
  *  unsupported environments to inject their own. */
@@ -93,8 +96,11 @@ export type SunshineListener = (event: { ok: boolean; error?: string }) => void;
  *  hourly carries the per-hour sunshine value. All arrays are parallel
  *  to `time`. */
 export interface OpenMeteoResponse {
+  /** IANA zone Open-Meteo resolved `timezone=auto` to (the location's). */
+  timezone?: string;
+  utc_offset_seconds?: number;
   daily?: {
-    time?: string[];
+    time?: Array<number | string>;
     sunshine_duration?: Array<number | null>;
     precipitation_probability_max?: Array<number | null>;
     temperature_2m_max?: Array<number | null>;
@@ -106,7 +112,7 @@ export interface OpenMeteoResponse {
     wind_direction_10m_dominant?: Array<number | null>;
   };
   hourly?: {
-    time?: string[];
+    time?: Array<number | string>;
     sunshine_duration?: Array<number | null>;
     precipitation_probability?: Array<number | null>;
     temperature_2m?: Array<number | null>;
@@ -181,6 +187,10 @@ export function buildOpenMeteoUrl(
     longitude: String(longitude),
     daily: DAILY_FIELDS,
     timezone: 'auto',
+    // Epoch seconds instead of civil strings: Open-Meteo applies one
+    // fixed UTC offset per response, so civil times are wrong on the
+    // far side of a DST change in the range.
+    timeformat: 'unixtime',
     past_days: String(pastDays),
     forecast_days: String(forecastDays),
     temperature_unit: 'celsius',
@@ -204,15 +214,16 @@ export function parseDailySunshine(response: OpenMeteoResponse | null | undefine
   const v = response.daily.sunshine_duration ?? [];
   const out: DailySunshineEntry[] = [];
   for (let i = 0; i < t.length; i++) {
-    if (v[i] != null) out.push({ date: t[i], value: v[i] });
+    const date = responseDayKey(t[i], response);
+    if (v[i] != null && date) out.push({ date, value: v[i] });
   }
   return out;
 }
 
-/** Hourly counterpart. Open-Meteo's hourly time strings are
- *  "YYYY-MM-DDTHH:MM" in the requested timezone (we use timezone=auto,
- *  matching the user's HA location). `attachSunshine` consumes these
- *  via `localHourString` matching.
+/** Hourly counterpart. Open-Meteo's hourly times are epoch seconds
+ *  (`timeformat=unixtime`); each becomes the "YYYY-MM-DDTHH:00" key of
+ *  that instant in the card's zone, which `attachSunshine` matches via
+ *  `localHourString`.
  *
  *  Values are seconds of sunshine within that hour, capped at 3600. */
 export function parseHourlySunshine(response: OpenMeteoResponse | null | undefined): HourlySunshineEntry[] {
@@ -221,7 +232,8 @@ export function parseHourlySunshine(response: OpenMeteoResponse | null | undefin
   const v = response.hourly.sunshine_duration ?? [];
   const out: HourlySunshineEntry[] = [];
   for (let i = 0; i < t.length; i++) {
-    if (v[i] != null) out.push({ datetime: t[i], value: v[i] });
+    const datetime = cardHourString(t[i]);
+    if (v[i] != null && datetime) out.push({ datetime, value: v[i] });
   }
   return out;
 }
@@ -236,14 +248,14 @@ export function parseDailyProbability(response: OpenMeteoResponse | null | undef
   const out: DailyProbabilityEntry[] = [];
   for (let i = 0; i < t.length; i++) {
     const n = numOrNull(v[i]);
-    if (n != null && t[i]) out.push({ date: t[i], value: n });
+    const date = responseDayKey(t[i], response);
+    if (n != null && date) out.push({ date, value: n });
   }
   return out;
 }
 
 /** Hourly chance of rain (`precipitation_probability`, integer %) as
- *  `{datetime, value}` pairs keyed by Open-Meteo's "YYYY-MM-DDTHH:MM"
- *  HA-location timestamps. */
+ *  `{datetime, value}` pairs keyed like `localHourString` (card zone). */
 export function parseHourlyProbability(response: OpenMeteoResponse | null | undefined): HourlyProbabilityEntry[] {
   if (!response?.hourly) return [];
   const t = response.hourly.time ?? [];
@@ -251,17 +263,32 @@ export function parseHourlyProbability(response: OpenMeteoResponse | null | unde
   const out: HourlyProbabilityEntry[] = [];
   for (let i = 0; i < t.length; i++) {
     const n = numOrNull(v[i]);
-    if (n != null && t[i]) out.push({ datetime: t[i], value: n });
+    const datetime = cardHourString(t[i]);
+    if (n != null && datetime) out.push({ datetime, value: n });
   }
   return out;
 }
 
-/** Parse Open-Meteo's "YYYY-MM-DD" civil date (timezone=auto → the
- *  HA location's zone) into a midnight ISO string in the card's zone.
- *  This matches `MeasuredDataSource`'s daily `datetime` convention, so
- *  the Open-Meteo past block's columns align with recorder-backed ones. */
-function localMidnightIso(civilDate: string | undefined): string | null {
-  const d = civilMidnight(civilDate);
+/** "YYYY-MM-DD" of a daily `time` entry in the response's zone.
+ *  `daily.time` is the local midnight instant, but the response carries
+ *  a single UTC offset, so across a DST change the instant can sit an
+ *  hour off midnight; reading the zone's date at noon of that day is
+ *  immune to a ±1 h error. Civil strings (legacy payloads) pass through. */
+function responseDayKey(t: number | string | undefined, response: OpenMeteoResponse | null | undefined): string | null {
+  if (typeof t === 'string') return /^\d{4}-\d{2}-\d{2}/.test(t) ? t.slice(0, 10) : null;
+  if (typeof t !== 'number' || !Number.isFinite(t)) return null;
+  const noon = (t + 12 * 3600) * 1000;
+  const tz = validTimeZone(response?.timezone);
+  if (!tz) return dayKey(noon);
+  const p = zonedPartsIn(noon, tz);
+  return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
+}
+
+/** Midnight (card zone) of the response's calendar day — the daily
+ *  `datetime` convention of `MeasuredDataSource`, so the Open-Meteo past
+ *  block's columns align with recorder-backed ones. */
+function localMidnightIso(t: number | string | undefined, response: OpenMeteoResponse | null | undefined): string | null {
+  const d = civilMidnight(responseDayKey(t, response) ?? undefined);
   return d ? d.toISOString() : null;
 }
 
@@ -273,15 +300,20 @@ function civilMidnight(civilDate: string | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** Parse Open-Meteo's "YYYY-MM-DDTHH:MM" hourly timestamp (HA-location
- *  time, since the request uses timezone=auto) into an on-the-hour ISO string,
- *  matching `MeasuredDataSource`'s hourly `datetime` convention. */
-function localHourIso(hourString: string | undefined): string | null {
-  if (!hourString) return null;
-  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(hourString);
-  if (!m) return null;
-  const d = zonedDate(Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4]), Number(m[5]));
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+/** On-the-hour ISO of an hourly epoch-seconds `time` (an instant, so no
+ *  zone is involved), matching `MeasuredDataSource`'s hourly convention. */
+function hourIso(t: number | string | undefined): string | null {
+  if (typeof t !== 'number' || !Number.isFinite(t)) return null;
+  return new Date(Math.floor(t / 3600) * 3600 * 1000).toISOString();
+}
+
+/** "YYYY-MM-DDTHH:00" of an hourly epoch-seconds `time` in the card's
+ *  zone, the key shape `localHourString` produces for chart columns. */
+function cardHourString(t: number | string | undefined): string | null {
+  const iso = hourIso(t);
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  return `${dayKey(ms)}T${String(hourOf(ms)).padStart(2, '0')}:00`;
 }
 
 /** Coerce a possibly-null Open-Meteo array cell to `number | null`. */
@@ -324,7 +356,7 @@ export function buildDailyForecast(
 
   const out: ForecastEntry[] = [];
   for (let i = 0; i < t.length; i++) {
-    const iso = localMidnightIso(t[i]);
+    const iso = localMidnightIso(t[i], response);
     if (!iso) continue;
     out.push({
       datetime: iso,
@@ -371,7 +403,7 @@ export function buildHourlyForecast(
 
   const out: ForecastEntry[] = [];
   for (let i = 0; i < t.length; i++) {
-    const iso = localHourIso(t[i]);
+    const iso = hourIso(t[i]);
     if (!iso) continue;
     out.push({
       datetime: iso,
