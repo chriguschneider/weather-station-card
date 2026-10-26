@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
-import { setCardTimeZone } from '../src/utils/time-zone.js';
+import { readFileSync } from 'node:fs';
+import { setCardTimeZone, zonedPartsIn } from '../src/utils/time-zone.js';
 import {
   buildOpenMeteoUrl,
   parseDailySunshine,
@@ -862,11 +863,11 @@ describe('OpenMeteoSource.ensureFresh edge cases', () => {
 });
 
 // ── Instants + response zone (#353) ─────────────────────────────────
-// Built from epoch arithmetic, not a captured response: the sandbox
-// that wrote them had no network. Replace with trimmed real payloads.
-describe('unixtime responses', () => {
-  const sec = (iso) => Date.parse(iso) / 1000;
+// Fixtures are trimmed real responses, see tests/fixtures/openmeteo/README.md.
+const fixture = (name) =>
+  JSON.parse(readFileSync(new URL(`./fixtures/openmeteo/${name}.json`, import.meta.url), 'utf8'));
 
+describe('unixtime responses', () => {
   it('requests timeformat=unixtime with timezone=auto', () => {
     const p = new URL(buildOpenMeteoUrl(46.91, 7.42, 7, 7, true)).searchParams;
     expect(p.get('timeformat')).toBe('unixtime');
@@ -876,35 +877,35 @@ describe('unixtime responses', () => {
   it('a location in America/Denver keeps its own hours and days under a Zurich card', () => {
     setCardTimeZone('Europe/Zurich');
     try {
-      const response = {
-        timezone: 'America/Denver',
-        utc_offset_seconds: -21600,
-        daily: {
-          // Denver midnight 2026-05-20 (MDT, UTC-6)
-          time: [sec('2026-05-20T06:00:00Z')],
-          sunshine_duration: [36000],
-          precipitation_probability_max: [40],
-        },
-        hourly: {
-          // Denver 06:00 and 07:00 local
-          time: [sec('2026-05-20T12:00:00Z'), sec('2026-05-20T13:00:00Z')],
-          sunshine_duration: [3600, 1800],
-          temperature_2m: [8, 10],
-        },
-      };
-      expect(parseDailySunshine(response)).toEqual([{ date: '2026-05-20', value: 36000 }]);
-      expect(parseDailyProbability(response)).toEqual([{ date: '2026-05-20', value: 40 }]);
-      // Same instants, keyed in the Zurich card zone (14:00 / 15:00).
-      expect(parseHourlySunshine(response)).toEqual([
-        { datetime: '2026-05-20T14:00', value: 3600 },
-        { datetime: '2026-05-20T15:00', value: 1800 },
+      const response = fixture('openmeteo-denver');
+      // Denver midnights (MDT) of 25th-27th.
+      expect(parseDailySunshine(response)).toEqual([
+        { date: '2026-10-25', value: 21600 },
+        { date: '2026-10-26', value: 3600 },
+        { date: '2026-10-27', value: 19278.43 },
+      ]);
+      expect(parseDailyProbability(response).map((e) => e.value)).toEqual([14, 59, 0]);
+      // Same instants keyed in the Zurich card zone (CET from the 25th).
+      expect(parseHourlySunshine(response).map((e) => e.datetime)).toEqual([
+        '2026-10-26T06:00',
+        '2026-10-26T07:00',
+        '2026-10-26T08:00',
+        '2026-10-26T13:00',
+        '2026-10-26T14:00',
       ]);
       expect(buildHourlyForecast(response).map((e) => e.datetime)).toEqual([
-        '2026-05-20T12:00:00.000Z',
-        '2026-05-20T13:00:00.000Z',
+        '2026-10-26T05:00:00.000Z',
+        '2026-10-26T06:00:00.000Z',
+        '2026-10-26T07:00:00.000Z',
+        '2026-10-26T12:00:00.000Z',
+        '2026-10-26T13:00:00.000Z',
       ]);
-      // Zurich midnight of the Denver day 2026-05-20.
-      expect(buildDailyForecast(response)[0].datetime).toBe('2026-05-19T22:00:00.000Z');
+      // Zurich midnight of each Denver day.
+      expect(buildDailyForecast(response).map((e) => e.datetime)).toEqual([
+        '2026-10-24T22:00:00.000Z',
+        '2026-10-25T23:00:00.000Z',
+        '2026-10-26T23:00:00.000Z',
+      ]);
     } finally {
       setCardTimeZone('UTC');
     }
@@ -913,24 +914,24 @@ describe('unixtime responses', () => {
   it('hours on both sides of the Zurich DST end map to the right local hour', () => {
     setCardTimeZone('Europe/Zurich');
     try {
-      const response = {
-        timezone: 'Europe/Zurich',
-        utc_offset_seconds: 7200,
-        hourly: {
-          // 02:00 CEST, 02:00 CET (repeated hour), 03:00 CET
-          time: [sec('2026-10-25T00:00:00Z'), sec('2026-10-25T01:00:00Z'), sec('2026-10-25T02:00:00Z')],
-          sunshine_duration: [100, 200, 300],
-        },
-      };
+      const response = fixture('openmeteo-zurich-dst-2026-10-25');
+      // 01:00Z and 00:00Z of the 25th are 02:00 CET and 02:00 CEST.
       expect(parseHourlySunshine(response).map((e) => e.datetime)).toEqual([
+        '2026-10-23T23:00',
+        '2026-10-24T00:00',
+        '2026-10-24T01:00',
+        '2026-10-24T23:00',
+        '2026-10-25T00:00',
+        '2026-10-25T01:00',
         '2026-10-25T02:00',
         '2026-10-25T02:00',
         '2026-10-25T03:00',
+        '2026-10-25T04:00',
       ]);
-      expect(buildHourlyForecast(response).map((e) => e.datetime)).toEqual([
+      expect(buildHourlyForecast(response).map((e) => e.datetime).slice(5, 8)).toEqual([
+        '2026-10-24T23:00:00.000Z',
         '2026-10-25T00:00:00.000Z',
         '2026-10-25T01:00:00.000Z',
-        '2026-10-25T02:00:00.000Z',
       ]);
     } finally {
       setCardTimeZone('UTC');
@@ -940,17 +941,10 @@ describe('unixtime responses', () => {
   it('day keys survive the single-offset midnight error after the DST end', () => {
     setCardTimeZone('Europe/Zurich');
     try {
-      const response = {
-        timezone: 'Europe/Zurich',
-        utc_offset_seconds: 7200,
-        daily: {
-          // 24th and 25th at CEST midnight; 26th is CET midnight
-          // (25th 23:00Z) but a fixed +2 h offset yields 22:00Z.
-          time: [sec('2026-10-23T22:00:00Z'), sec('2026-10-24T22:00:00Z'), sec('2026-10-25T22:00:00Z')],
-          sunshine_duration: [1, 2, 3],
-        },
-      };
+      // One fixed +1 h offset for all days: the 23rd and 24th arrive as 23:00Z.
+      const response = fixture('openmeteo-zurich-dst-2026-10-25');
       expect(parseDailySunshine(response).map((e) => e.date)).toEqual([
+        '2026-10-23',
         '2026-10-24',
         '2026-10-25',
         '2026-10-26',
@@ -958,6 +952,14 @@ describe('unixtime responses', () => {
     } finally {
       setCardTimeZone('UTC');
     }
+  });
+
+  it('sunrise epochs are instants, right despite the single response offset', () => {
+    const response = fixture('openmeteo-zurich-sun-dst-2026-10-25');
+    // 05:57Z on the 24th is 07:57 CEST, not 06:57 as the +1 offset suggests.
+    const sunrise = zonedPartsIn(response.daily.sunrise[1] * 1000, 'Europe/Zurich');
+    expect(new Date(response.daily.sunrise[1] * 1000).toISOString().slice(0, 16)).toBe('2026-10-24T05:57');
+    expect([sunrise.day, sunrise.hour, sunrise.minute]).toEqual([24, 7, 57]);
   });
 
   it('ignores a cache written under the v1 key', () => {
