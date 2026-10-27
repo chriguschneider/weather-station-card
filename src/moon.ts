@@ -57,10 +57,36 @@ export interface SunTimes {
   sunset: Date | null;
 }
 
-// suncalc 1.9 getTimes() for the single "sunrise"/"sunset" pair.
 const J0 = 0.0009;
 // Sun's centre at −0.833°: standard refraction plus the solar semi-diameter.
 const SUN_HORIZON = -0.833 * RAD;
+
+// Declination and equation of time (in days) at Julian date `jd`, after the
+// NOAA solar calculator (Meeus, Astronomical Algorithms ch. 25 and 28).
+// suncalc's cheaper series drifts by ~2 min against astral in late October.
+function sunNoaa(jd: number): { dec: number; eot: number } {
+  const t = (jd - J2000) / 36525;
+  const l0 = RAD * ((280.46646 + t * (36000.76983 + t * 0.0003032)) % 360);
+  const m = RAD * (357.52911 + t * (35999.05029 - 0.0001537 * t));
+  const e = 0.016708634 - t * (0.000042037 + 0.0000001267 * t);
+  const center =
+    Math.sin(m) * (1.914602 - t * (0.004817 + 0.000014 * t)) +
+    Math.sin(2 * m) * (0.019993 - 0.000101 * t) +
+    Math.sin(3 * m) * 0.000289;
+  const omega = RAD * (125.04 - 1934.136 * t);
+  const lambda = l0 + RAD * center - RAD * (0.00569 + 0.00478 * Math.sin(omega));
+  const eps =
+    RAD * (23 + (26 + (21.448 - t * (46.815 + t * (0.00059 - t * 0.001813))) / 60) / 60) +
+    RAD * 0.00256 * Math.cos(omega);
+  const y = Math.tan(eps / 2) ** 2;
+  const eotRad =
+    y * Math.sin(2 * l0) -
+    2 * e * Math.sin(m) +
+    4 * e * y * Math.sin(m) * Math.cos(2 * l0) -
+    0.5 * y * y * Math.sin(4 * l0) -
+    1.25 * e * e * Math.sin(2 * m);
+  return { dec: Math.asin(Math.sin(eps) * Math.sin(lambda)), eot: eotRad / (2 * Math.PI) };
+}
 
 /** Sunrise/sunset around the solar noon nearest `date` at the site.
  *  Both are null when the sun never crosses the horizon that day
@@ -68,26 +94,34 @@ const SUN_HORIZON = -0.833 * RAD;
 export function sunTimes(date: Date, lat: number, lon: number): SunTimes {
   const lw = RAD * -lon;
   const phi = RAD * lat;
-  const d = toDays(date);
-  const n = Math.round(d - J0 - lw / (2 * Math.PI));
-  const ds = J0 + lw / (2 * Math.PI) + n;
-  const m = RAD * (357.5291 + 0.98560028 * ds);
-  const c = RAD * (1.9148 * Math.sin(m) + 0.02 * Math.sin(2 * m) + 0.0003 * Math.sin(3 * m));
-  const L = m + c + RAD * 102.9372 + Math.PI;
-  const dec = declination(L, 0);
-  const jNoon = J2000 + ds + 0.0053 * Math.sin(m) - 0.0069 * Math.sin(2 * L);
+  const n = Math.round(toDays(date) - J0 - lw / (2 * Math.PI));
+  // Mean solar noon at the site; the equation of time shifts it per event.
+  const base = J2000 + lw / (2 * Math.PI) + n;
 
-  const cosH =
-    (Math.sin(SUN_HORIZON) - Math.sin(phi) * Math.sin(dec)) /
-    (Math.cos(phi) * Math.cos(dec));
-  if (!Number.isFinite(cosH) || cosH < -1 || cosH > 1) return { sunrise: null, sunset: null };
+  const halfDay = (decl: number): number => {
+    const cosH =
+      (Math.sin(SUN_HORIZON) - Math.sin(phi) * Math.sin(decl)) /
+      (Math.cos(phi) * Math.cos(decl));
+    return !Number.isFinite(cosH) || cosH < -1 || cosH > 1
+      ? NaN
+      : Math.acos(cosH) / (2 * Math.PI);
+  };
 
-  // Hour angle as a fraction of a day; the sun's declination is held at
-  // its solar-noon value, which is accurate to well under a minute below
-  // the polar circles.
-  const half = Math.acos(cosH) / (2 * Math.PI);
-  const fromJulian = (j: number): Date => new Date((j + 0.5 - J1970) * DAY_MS);
-  return { sunrise: fromJulian(jNoon - half), sunset: fromJulian(jNoon + half) };
+  // Declination moves up to ~0.4°/day, which is minutes of sunrise/sunset
+  // near the equinoxes, so each event is evaluated at its own estimate.
+  const event = (sign: 1 | -1): Date | null => {
+    let j = base;
+    for (let i = 0; i < 4; i++) {
+      const { dec, eot } = sunNoaa(j);
+      const half = halfDay(dec);
+      if (Number.isNaN(half)) return null;
+      j = base - eot + sign * half;
+    }
+    return new Date((j + 0.5 - J1970) * DAY_MS);
+  };
+  const sunrise = event(-1);
+  const sunset = event(1);
+  return sunrise && sunset ? { sunrise, sunset } : { sunrise: null, sunset: null };
 }
 
 function moonCoords(d: number): { ra: number; dec: number; dist: number } {

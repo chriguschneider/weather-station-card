@@ -2,12 +2,55 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import '../src/main.js';
 import { sunTimes } from '../src/moon.js';
+import { SUN_SUN, SUN_SUN_HOME } from './fixtures/sun-sun.js';
 
 const HOUR = 3_600_000;
+const TOL_MS = 60_000;
 
-// Properties that hold for any correct sunrise/sunset implementation;
-// reference-table values (NOAA / astral) are tracked in the PR.
-describe('sunTimes', () => {
+// Reference values: astral 3.x, refraction −0.833°, 2026-10-27 / 2026-12-21.
+// Local times converted to UTC (Zurich +1, Denver −6, Oslo +1).
+const ASTRAL = [
+  { name: 'Bern', lat: 46.948, lon: 7.447, at: '2026-10-27T12:00:00Z',
+    sunrise: '2026-10-27T06:05:27Z', sunset: '2026-10-27T16:21:56Z' },
+  { name: 'Missoula', lat: 46.872, lon: -113.994, at: '2026-10-27T19:00:00Z',
+    sunrise: '2026-10-27T14:11:34Z', sunset: '2026-10-28T00:27:18Z' },
+  { name: 'Tromsø', lat: 69.649, lon: 18.956, at: '2026-10-27T12:00:00Z',
+    sunrise: '2026-10-27T06:47:37Z', sunset: '2026-10-27T14:06:56Z' },
+];
+
+describe('sunTimes vs astral (±60 s)', () => {
+  for (const p of ASTRAL) {
+    it(p.name, () => {
+      const { sunrise, sunset } = sunTimes(new Date(p.at), p.lat, p.lon);
+      expect(Math.abs(sunrise - new Date(p.sunrise))).toBeLessThanOrEqual(TOL_MS);
+      expect(Math.abs(sunset - new Date(p.sunset))).toBeLessThanOrEqual(TOL_MS);
+    });
+  }
+
+  it('Tromsø polar night (2026-12-21) is null/null', () => {
+    expect(sunTimes(new Date('2026-12-21T12:00:00Z'), 69.649, 18.956))
+      .toEqual({ sunrise: null, sunset: null });
+  });
+});
+
+// HA's sun integration (astral) applies the observer's elevation, which
+// lowers the horizon and widens the day by a few minutes at a hill-top home;
+// the fixture carries no elevation, so only a 5 min bound is asserted, and
+// the sea-level astral cases above carry the ±60 s accuracy claim.
+const SUN_SUN_TOL_MS = 5 * 60_000;
+
+describe('sunTimes vs a real sun.sun payload', () => {
+  it('lands within 5 min of next_setting today and next_rising tomorrow', () => {
+    const { latitude, longitude } = SUN_SUN_HOME;
+    const a = SUN_SUN.attributes;
+    const today = sunTimes(new Date('2026-10-27T12:00:00Z'), latitude, longitude);
+    const tomorrow = sunTimes(new Date('2026-10-28T12:00:00Z'), latitude, longitude);
+    expect(Math.abs(today.sunset - new Date(a.next_setting))).toBeLessThanOrEqual(SUN_SUN_TOL_MS);
+    expect(Math.abs(tomorrow.sunrise - new Date(a.next_rising))).toBeLessThanOrEqual(SUN_SUN_TOL_MS);
+  });
+});
+
+describe('sunTimes properties', () => {
   it('Bern, midsummer: ~16 h day centred on local solar noon', () => {
     const { sunrise, sunset } = sunTimes(new Date('2026-06-21T12:00:00Z'), 46.95, 7.45);
     const lenH = (sunset - sunrise) / HOUR;
