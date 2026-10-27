@@ -2,7 +2,7 @@
 // waxing/waning, and rise/set times, computed client-side so the card
 // needs no Moon integration (or any entity) at all. Illumination is
 // geocentric (identical worldwide); rise/set take the site coordinates
-// from `hass.config`.
+// from the card location (`location` option, else `hass.config`).
 //
 // The formulas are the standard low-precision series from Meeus,
 // "Astronomical Algorithms", as popularized by the BSD-2-licensed
@@ -50,6 +50,44 @@ function sunCoords(d: number): { ra: number; dec: number } {
     RAD * 102.9372 +
     Math.PI;
   return { ra: rightAscension(l, 0), dec: declination(l, 0) };
+}
+
+export interface SunTimes {
+  sunrise: Date | null;
+  sunset: Date | null;
+}
+
+// suncalc 1.9 getTimes() for the single "sunrise"/"sunset" pair.
+const J0 = 0.0009;
+// Sun's centre at −0.833°: standard refraction plus the solar semi-diameter.
+const SUN_HORIZON = -0.833 * RAD;
+
+/** Sunrise/sunset around the solar noon nearest `date` at the site.
+ *  Both are null when the sun never crosses the horizon that day
+ *  (polar day / polar night). */
+export function sunTimes(date: Date, lat: number, lon: number): SunTimes {
+  const lw = RAD * -lon;
+  const phi = RAD * lat;
+  const d = toDays(date);
+  const n = Math.round(d - J0 - lw / (2 * Math.PI));
+  const ds = J0 + lw / (2 * Math.PI) + n;
+  const m = RAD * (357.5291 + 0.98560028 * ds);
+  const c = RAD * (1.9148 * Math.sin(m) + 0.02 * Math.sin(2 * m) + 0.0003 * Math.sin(3 * m));
+  const L = m + c + RAD * 102.9372 + Math.PI;
+  const dec = declination(L, 0);
+  const jNoon = J2000 + ds + 0.0053 * Math.sin(m) - 0.0069 * Math.sin(2 * L);
+
+  const cosH =
+    (Math.sin(SUN_HORIZON) - Math.sin(phi) * Math.sin(dec)) /
+    (Math.cos(phi) * Math.cos(dec));
+  if (!Number.isFinite(cosH) || cosH < -1 || cosH > 1) return { sunrise: null, sunset: null };
+
+  // Hour angle as a fraction of a day; the sun's declination is held at
+  // its solar-noon value, which is accurate to well under a minute below
+  // the polar circles.
+  const half = Math.acos(cosH) / (2 * Math.PI);
+  const fromJulian = (j: number): Date => new Date((j + 0.5 - J1970) * DAY_MS);
+  return { sunrise: fromJulian(jNoon - half), sunset: fromJulian(jNoon + half) };
 }
 
 function moonCoords(d: number): { ra: number; dec: number; dist: number } {

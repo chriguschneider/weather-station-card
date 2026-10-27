@@ -10,7 +10,7 @@
 // sensor's high-resolution history via the lux/clearsky_lux ratio.
 
 import { clearSkyLuxFactory } from './condition-classifier.js';
-import { parseLocation } from './location.js';
+import { resolveLocation } from './location.js';
 import type { Calendar } from './utils/time-zone.js';
 
 
@@ -436,7 +436,7 @@ export function overlayFromOpenMeteo<T extends SunshineForecastEntry>(
   cloudCoverageExponent: number | null = null,
   location: unknown = null,
 ): T[] {
-  const lat = parseLocation(location)?.latitude ?? (hass?.config ? hass.config.latitude : null);
+  const lat = resolveLocation({ location }, hass)?.latitude ?? null;
   const dailyValues = source && typeof source.getDailyValues === 'function'
     ? source.getDailyValues()
     : null;

@@ -1,5 +1,6 @@
 import { LitElement, html, type TemplateResult } from 'lit';
 import type { HomeAssistant } from './editor/types.js';
+import { resolveLocation } from './location.js';
 import locale, { ensureLocaleLoaded, resolveLocaleKey } from './locale.js';
 import { readCachedAvailability } from './openmeteo-source.js';
 import { Calendar } from './utils/time-zone.js';
@@ -489,11 +490,10 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     const fc = cfg && cfg.forecast as { show_sunshine?: boolean } | undefined;
     if (fc?.show_sunshine !== true) return '';
     const hass = this.hass;
-    const lat = hass?.config ? hass.config.latitude : null;
-    const lon = hass?.config ? hass.config.longitude : null;
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return '';
+    const loc = resolveLocation(cfg, hass);
+    if (!loc) return '';
 
-    const av = readCachedAvailability(lat as number, lon as number, new Calendar(hass?.config?.time_zone));
+    const av = readCachedAvailability(loc.latitude, loc.longitude, new Calendar(hass?.config?.time_zone));
     if (!av) {
       return html`<div class="hint" style="margin-top:4px;">
         ${t('sunshine_availability_pending')}
