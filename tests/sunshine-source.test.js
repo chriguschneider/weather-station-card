@@ -591,11 +591,11 @@ describe('sunshineFromLuxHistory (#66 Method B2)', () => {
   const LON = 7.42;
   const MIN = 60 * 1000;
 
-  // Build a deterministic local-noon timestamp for a known summer day —
-  // far from sunrise / sunset so the clearsky_lux is well above 0.
+  // Solar noon at 7.42°E is ~11:30 UTC in late June. Build the samples
+  // from UTC instants: a runner-local `new Date(2026, 5, 21, 12)` is a
+  // different sun position in every zone other than Bern's.
   function summerNoon() {
-    const d = new Date(2026, 5, 21, 12, 0, 0, 0); // June 21 local
-    return d.getTime();
+    return Date.UTC(2026, 5, 21, 11, 30);
   }
 
   it('returns [] for empty / single-sample input', () => {
@@ -662,8 +662,8 @@ describe('sunshineFromLuxHistory (#66 Method B2)', () => {
   });
 
   it('returns 0 sunshine at night even with bright lux readings (clearsky=0 path)', () => {
-    // 03:00 in summer — sun below horizon at 46.91°N: clearsky_lux is 0.
-    const night = new Date(2026, 5, 21, 3, 0, 0, 0).getTime();
+    // 01:00 UTC (03:00 CEST) in summer — sun below horizon at 46.91°N: clearsky_lux is 0.
+    const night = Date.UTC(2026, 5, 21, 1, 0);
     const samples = [
       { ts: night, lux: 80000 }, // anomalous bright reading at 03:00 (e.g. headlights)
       { ts: night + MIN, lux: 80000 },
@@ -672,8 +672,8 @@ describe('sunshineFromLuxHistory (#66 Method B2)', () => {
   });
 
   it('buckets samples by local date — multiple days in one history pull', () => {
-    const day1Noon = new Date(2026, 5, 21, 12, 0, 0, 0).getTime();
-    const day2Noon = new Date(2026, 5, 22, 12, 0, 0, 0).getTime();
+    const day1Noon = Date.UTC(2026, 5, 21, 11, 30);
+    const day2Noon = Date.UTC(2026, 5, 22, 11, 30);
     const samples = [
       { ts: day1Noon, lux: 80000 },
       { ts: day1Noon + MIN, lux: 80000 },

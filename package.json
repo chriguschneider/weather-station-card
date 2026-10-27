@@ -64,6 +64,7 @@
     "depcheck": "depcruise src",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:tz": "cross-env TZ=UTC vitest run tests/openmeteo-source.test.js tests/sunshine-source.test.js && cross-env TZ=Europe/Zurich vitest run tests/openmeteo-source.test.js tests/sunshine-source.test.js && cross-env TZ=America/Denver vitest run tests/openmeteo-source.test.js tests/sunshine-source.test.js",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
     "rollup": "rollup -c",
