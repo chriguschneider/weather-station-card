@@ -20,7 +20,7 @@ import {
 } from './condition-classifier.js';
 import { WeatherEntityFeature, type ConditionId } from './const.js';
 import type { ForecastEntry } from './forecast-utils.js';
-import { parseLocation } from './location.js';
+import { resolveLocation } from './location.js';
 import { sunshineFromLuxHistory, type LuxSample } from './sunshine-source.js';
 import {
   PRESSURE_CONVERSION,
@@ -617,9 +617,9 @@ export class MeasuredDataSource {
     if (!this.hass) return null;
     const luxId = sensors.illuminance;
     if (!luxId || sensors.sunshine_duration) return null;
-    const lat = this.hass.config?.latitude;
-    const lon = this.hass.config?.longitude;
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    const loc = resolveLocation(this.config, this.hass);
+    if (!loc) return null;
+    const { latitude: lat, longitude: lon } = loc;
 
     const cm = this.config.condition_mapping ?? {};
     const threshold = (cm.sunshine_lux_ratio != null && Number.isFinite(cm.sunshine_lux_ratio))
@@ -935,8 +935,7 @@ export class MeasuredDataSource {
   }
 
   private _mapCondition(day: ClassifyInputs, dayOfYear: number): ConditionId {
-    const lat = parseLocation(this.config.location)?.latitude
-      ?? (this.hass?.config ? this.hass.config.latitude : null);
+    const lat = resolveLocation(this.config, this.hass)?.latitude ?? null;
     const clearsky_lux = lat != null
       ? clearSkyNoonLux(lat, dayOfYear)
       : 110000; // sea-level perpendicular-sun fallback (IES)
@@ -975,8 +974,8 @@ export class MeasuredDataSource {
     // ~168 hourly rows × ~5 trig calls in clearSkyLuxAt would be ~840 trig
     // ops; with this factory it's ~168 (one cos(hourAngle) per row, the
     // rest reused from the cache).
-    const cfg = this.hass?.config;
-    const luxFor = clearSkyLuxFactory(cfg ? cfg.latitude : null, cfg ? cfg.longitude : null);
+    const loc = resolveLocation(this.config, this.hass);
+    const luxFor = clearSkyLuxFactory(loc ? loc.latitude : null, loc ? loc.longitude : null);
 
     const hourMs = (date: Date): number => this.calendar.startOfHour(date).getTime();
 
@@ -1081,9 +1080,9 @@ export class MeasuredDataSource {
     // it (e.g. tests).
     let clearsky_lux = hour.clearsky_lux;
     if (clearsky_lux == null) {
-      const cfg = this.hass?.config;
-      const lat = cfg ? cfg.latitude : null;
-      const lon = cfg ? cfg.longitude : null;
+      const loc = resolveLocation(this.config, this.hass);
+      const lat = loc ? loc.latitude : null;
+      const lon = loc ? loc.longitude : null;
       clearsky_lux = (lat != null && lon != null)
         ? clearSkyLuxAt(lat, lon, hour.hourStart)
         : 110000;

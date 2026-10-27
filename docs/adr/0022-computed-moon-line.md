@@ -110,3 +110,16 @@ Compute everything in-card and drop the entity dependency entirely.
   lineage for `src/moon.ts`.
 - HA feature requests left unanswered: moon illumination percentage
   (community #681346), moonrise/moonset (community #898228).
+
+## Amendment 2026-10-27 (#356)
+
+The sun row is computed the same way: `sunTimes` in `src/moon.ts` (NOAA/Meeus
+low-precision, horizon −0.833°, not suncalc: declination and equation of
+time are re-evaluated at each event, which keeps it within about 40 s of
+`astral`) replaces the
+`sun.sun` `next_rising` / `next_setting` attributes. The row shows the
+card calendar day's pair, tomorrow's once both are past, and nothing at
+polar day/night. All site coordinates (sun, moon, solar strength, lux
+derivation, live and daily condition, Open-Meteo) now come from
+`resolveLocation`: the card's `location`, else `hass.config`. `sun.sun`
+stays only for the day/night state of the weather icons.

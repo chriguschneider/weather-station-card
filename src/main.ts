@@ -120,7 +120,7 @@ import { sanitizeForecastEntries } from './chart/sanitize.js';
 import { renderChartSkeleton } from './chart/skeleton.js';
 import { cardStyles } from './chart/styles.js';
 import { getDateTimeFormat, getNumberFormat } from './utils/intl-cache.js';
-import { moonIllumination, nextMoonEvent, litMoonPath } from './moon.js';
+import { moonIllumination, nextMoonEvent, litMoonPath, sunTimes } from './moon.js';
 import { classifyNextRain, findNextRainEntity, formatCheckedUntil, formatNextRain, nextRainIcon } from './next-rain.js';
 import { parseZeroDegreeCurve, ZeroDegreePopup, type ZeroDegreePoint } from './zero-degree-popup.js';
 import {
@@ -1230,6 +1230,7 @@ _weatherSynthesisEquals(a: any, b: any): boolean {
 // deno-lint-ignore no-explicit-any
 _resolveLiveClassifierInputs(hass: HassMain): any {
   const sensors = this.config.sensors || {};
+  const loc = resolveLocation(this.config, hass);
   const wxEntity = this.config.weather_entity ? hass.states?.[this.config.weather_entity] : null;
   const illuminanceState = sensors.illuminance ? hass.states?.[sensors.illuminance] : null;
   const dewState = sensors.dew_point ? hass.states?.[sensors.dew_point] : null;
@@ -1259,8 +1260,8 @@ _resolveLiveClassifierInputs(hass: HassMain): any {
     tempUnit: this._sourceTempUnit,
     dewUnit: typeof dewUnitRaw === 'string' ? dewUnitRaw : this._sourceTempUnit,
     precipUnit,
-    lat: hass.config?.latitude,
-    lon: hass.config?.longitude,
+    lat: loc?.latitude,
+    lon: loc?.longitude,
   };
 }
 
@@ -3942,9 +3943,10 @@ _sunRow_sunStrength(
 // used to ride inside this cell); in automatic mode
 // resolveAttributesLayout only turns it on together with the sun.
 // deno-lint-ignore no-explicit-any
-_sunRow_sun(show: boolean, sun: any, language: string) {
-  if (!show || sun === undefined || sun === null) return null;
-  return this._entityLink('sun.sun', this.renderSun({ sun, language } as unknown as this));
+_sunRow_sun(show: boolean, language: string) {
+  if (!show) return null;
+  const tpl = this.renderSun(language);
+  return tpl === null ? null : html`<span>${tpl}</span>`;
 }
 
 // Zero-degree level row: the altitude of the 0 °C isotherm, i.e. the
@@ -4276,14 +4278,12 @@ renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, la
   // turned into a live rate by `_maybeDerivePrecipRate`. The display
   // unit (mm | in) defaults to the sensor's own unit and can be
   // overridden via `units.precipitation`.
-  // Site lat/lon for the sun-strength row's clear-sky reference. Pulled
-  // from `hass.config` (Home Assistant's configured location) rather
-  // than the card config — chrigu's setup wires it once and the live
-  // panel inherits. Missing/non-finite values fall through to the
+  // Site lat/lon for the sun-strength row's clear-sky reference: the
+  // card's `location`, else HA's. Missing values fall through to the
   // 110 000 lx constant inside `classifySunStrength`.
-  const haCfg = this._hass?.config as { latitude?: number; longitude?: number } | undefined;
-  const lat = haCfg && Number.isFinite(haCfg.latitude) ? haCfg.latitude as number : null;
-  const lon = haCfg && Number.isFinite(haCfg.longitude) ? haCfg.longitude as number : null;
+  const loc = resolveLocation(config, this._hass);
+  const lat = loc ? loc.latitude : null;
+  const lon = loc ? loc.longitude : null;
 
   const ctx = {
     on,
@@ -4351,7 +4351,7 @@ _renderAttributeLine(token: AttributeToken, ctx: any) {
     case 'illuminance':
       return this._sunRow_sunStrength(false, true, ctx.uv_index, ctx.illuminance, ctx.lat, ctx.lon);
     case 'sun':
-      return this._sunRow_sun(true, ctx.sun, ctx.language);
+      return this._sunRow_sun(true, ctx.language);
     case 'moon':
       return this._renderMoonLine(ctx.language);
     case 'wind_direction':
@@ -4367,12 +4367,20 @@ _renderAttributeLine(token: AttributeToken, ctx: any) {
 
 // Both sun events share one line (rise first, set second) — the pre-v2.2
 // two-line layout compressed so the second line stays free for the moon
-// phase (see _renderMoonLine). sun.sun only exposes the NEXT rise/set,
-// so during the day the rise column is tomorrow's sunrise.
-renderSun({ sun, language } = this) {
-  if (sun == undefined) {
-    return html``;
+// phase (see _renderMoonLine). Computed in-card from the card location
+// (src/moon.ts, ADR-0022): today's pair for the card's calendar day,
+// tomorrow's once both are past. Null when there is no location or the
+// sun does not cross the horizon (polar day/night).
+renderSun(language: string) {
+  const loc = resolveLocation(this.config, this._hass);
+  if (!loc) return null;
+  const now = new Date();
+  const noon = this.calendar.withHour(now, 12);
+  let { sunrise, sunset } = sunTimes(noon, loc.latitude, loc.longitude);
+  if (sunrise && sunset && sunrise < now && sunset < now) {
+    ({ sunrise, sunset } = sunTimes(this.calendar.addDays(noon, 1), loc.latitude, loc.longitude));
   }
+  if (!sunrise || !sunset) return null;
 
 const use12HourFormat = this.config.use_12hour_format;
 const timeOptions = {
@@ -4383,13 +4391,11 @@ const timeOptions = {
 } as Intl.DateTimeFormatOptions;
 
   const timeFmt = getDateTimeFormat(language, timeOptions as Intl.DateTimeFormatOptions & { timeZone: string });
-  const rising = new Date(sun.attributes.next_rising);
-  const setting = new Date(sun.attributes.next_setting);
   return html`
     <ha-icon icon="mdi:weather-sunset-up"></ha-icon>
-      ${timeFmt.format(rising)}
+      ${timeFmt.format(sunrise)}
     <ha-icon icon="mdi:weather-sunset-down"></ha-icon>
-      ${timeFmt.format(setting)}
+      ${timeFmt.format(sunset)}
   `;
 }
 
@@ -4404,12 +4410,12 @@ _renderMoonLine(language: string) {
   const now = new Date();
   const { fraction, waxing } = moonIllumination(now);
 
-  // Site coordinates from hass.config (same source as the sun-strength
-  // row). Missing/non-finite → the rise/set part is simply omitted;
+  // Site coordinates from the card location (same source as the
+  // sun-strength row). Missing → the rise/set part is simply omitted;
   // the illumination is geocentric and renders regardless.
-  const haCfg = this._hass?.config as { latitude?: number; longitude?: number } | undefined;
-  const lat = haCfg && Number.isFinite(haCfg.latitude) ? haCfg.latitude as number : null;
-  const lon = haCfg && Number.isFinite(haCfg.longitude) ? haCfg.longitude as number : null;
+  const loc = resolveLocation(this.config, this._hass);
+  const lat = loc ? loc.latitude : null;
+  const lon = loc ? loc.longitude : null;
 
   // Southern-hemisphere observers see the moon mirrored — the waxing
   // moon grows from the LEFT there, so the lit side flips with lat.

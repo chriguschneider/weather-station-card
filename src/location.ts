@@ -1,6 +1,7 @@
 // Coordinates for Open-Meteo requests and the sunshine day length: the
 // card's `location` option when valid, else Home Assistant's home
-// location. Sun/moon rise times deliberately keep using HA's location.
+// location. Sun and moon times, solar strength and the lux derivation
+// read it too (#356), so a card for another place shows that place's sun.
 
 export interface LatLon {
   latitude: number;
