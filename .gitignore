@@ -1,4 +1,4 @@
-/node_modules/
+node_modules/
 # Machine-local Claude Code notes (testing workflow, host names, deploy
 # recipes from the maintainer's setup that don't belong on GitHub). The
 # shared conventions live in AGENTS.md; the tracked CLAUDE.md only
