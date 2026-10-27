@@ -24,7 +24,9 @@ export type CachedSeriesEntry = Record<string, unknown>;
 
 const PREFIX = 'wsc_series_';
 // v2: keys carry the card's time zone (ADR-0030).
-const VERSION = 2;
+// v3: daily entries are card days (#355): station days reduced from
+// hourly statistics, forecast days anchored at the card's midnight.
+const VERSION = 3;
 
 /** Reject cached payloads older than this. Stale data is *shown* on
  *  purpose (that's the point), but a payload from last week would

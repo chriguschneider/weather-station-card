@@ -95,6 +95,15 @@ recorder `stats:` / `history:` dedup keys carry it, so cards in
 different zones never share data derived from another zone's days.
 Decided by: ADR-0030.
 
+## Amendment 2026-10-27 (#355)
+
+Daily mode no longer asks for `period: 'day'`: it sends the same
+`period: 'hour'` request as hourly and 'today' mode and reduces the
+hours to card days, so all three modes share one recorder roundtrip.
+The separate hourly sunshine request is gone; its buckets come from
+that shared response. `wsc_series_*` goes to schema v3. Decided by:
+ADR-0030 (amendment of 2026-10-27).
+
 ## Related
 
 - ADR-0017 (entity-delta gate — same "idle dashboards must be cheap"

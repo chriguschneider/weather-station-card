@@ -101,9 +101,43 @@ per-card zone on top of a singleton. It has to be passed explicitly.
   approximate (unchanged from ADR-0026). The zone in the cache keys
   stops two cards from sharing a misaligned entry.
 
+## Amendment 2026-10-27 (#355): day boundaries follow the calendar
+
+`recorder/statistics_during_period` with `period: 'day'` cuts at the
+server's midnight (`reduce_day_ts_factory` uses
+`dt_util.get_default_time_zone()`), and the WS command takes no zone.
+Weather integrations write daily forecast `datetime`s in different
+forms. Core only says "UTC, RFC 3339" (core issue #166294 and
+architecture issue #221 closed without a change).
+
+- **Recorder days are reduced in the card.** Every mode sends the same
+  `period: 'hour'` request (one deduplicated roundtrip,
+  [ADR-0020](0020-cross-card-request-dedup-and-persistent-caches.md)).
+  `reduceHourlyToDays` assigns each hour to the calendar day that
+  contains its start and reduces like HA's `_reduce_statistics`: min
+  of mins, max of maxes, sum of `change`, the last hour's `sum` (a
+  running total), arithmetic mean of the hour means (equal weight per
+  hour, an approximation). DST days have 23 / 25 hours. In a half-hour
+  zone the UTC-aligned hour that straddles midnight counts for the day
+  it starts in.
+- **Sunshine counters reset at the server's midnight.**
+  `sunshineDailyTotals` follows the reset in the server's calendar and
+  credits each hour's growth to the card day the hour starts in.
+- **Daily forecast entries are calendar days.** `normalizeDailyEntry`
+  turns `datetime` into a `YYYY-MM-DD` key: bare date as is; explicit
+  non-zero offset → the date in that offset; UTC at exactly midnight →
+  the UTC date; anything else → the date in the server zone. The entry
+  is re-anchored at the card calendar's midnight, the station's daily
+  convention, and the daily de-overlap keeps a forecast entry on the
+  station's last day (the doubled-today column). Hourly entries stay
+  instants; one without an offset is read in the server zone (warned
+  once).
+- The `wsc_series_*` schema goes to v3 (daily payloads changed shape).
+
 ## Related
 
 - Issue #354 — this change; #343 / #358 — one card per location (v3.0)
+- Issue #355 — the day-boundary amendment above
 - [ADR-0026](0026-server-time-zone.md) — superseded by this ADR
 - [ADR-0020](0020-cross-card-request-dedup-and-persistent-caches.md) —
   amended: the zone is part of the cache and dedup keys
