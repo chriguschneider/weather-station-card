@@ -12,6 +12,9 @@ import {
   forecastsEqual,
   sunshineFromCloudCoverage,
 } from '../src/forecast-utils.js';
+import { Calendar } from '../src/utils/time-zone.js';
+
+const cal = new Calendar();
 
 // Build N consecutive hourly ISO timestamps starting at the given base.
 // Default base is a midnight so every 24th entry lands on a day boundary —
@@ -25,20 +28,20 @@ function hourlyTimes(n, base = '2026-05-05T00:00:00') {
 
 describe('pickHourlyTickIndices', () => {
   it('returns [] for empty input', () => {
-    expect(pickHourlyTickIndices([])).toEqual([]);
+    expect(pickHourlyTickIndices([], cal)).toEqual([]);
   });
 
   it('returns [0] for a single entry', () => {
-    expect(pickHourlyTickIndices(hourlyTimes(1))).toEqual([0]);
+    expect(pickHourlyTickIndices(hourlyTimes(1), cal)).toEqual([0]);
   });
 
   it('keeps every hour for 24 entries (step 1)', () => {
-    const idx = pickHourlyTickIndices(hourlyTimes(24));
+    const idx = pickHourlyTickIndices(hourlyTimes(24), cal);
     expect(idx).toEqual(Array.from({ length: 24 }, (_, i) => i));
   });
 
   it('switches to step 3 for 25–48 entries', () => {
-    const idx = pickHourlyTickIndices(hourlyTimes(48));
+    const idx = pickHourlyTickIndices(hourlyTimes(48), cal);
     // every 3rd: 0, 3, 6, …, 45  → 16 entries; +47 likely added (47-45=2 ≥ 1.5)
     expect(idx[0]).toBe(0);
     expect(idx[idx.length - 1]).toBe(47);
@@ -51,7 +54,7 @@ describe('pickHourlyTickIndices', () => {
   });
 
   it('switches to step 6 for 49–96 entries', () => {
-    const idx = pickHourlyTickIndices(hourlyTimes(72));
+    const idx = pickHourlyTickIndices(hourlyTimes(72), cal);
     expect(idx[0]).toBe(0);
     expect(idx).toContain(6);
     expect(idx).toContain(12);
@@ -59,7 +62,7 @@ describe('pickHourlyTickIndices', () => {
   });
 
   it('switches to step 12 + forces midnights for ≥97 entries', () => {
-    const idx = pickHourlyTickIndices(hourlyTimes(168));
+    const idx = pickHourlyTickIndices(hourlyTimes(168), cal);
     // 168 hours starting at midnight → midnights at 0, 24, 48, 72, 96, 120, 144.
     // step 12 hits all of those AND noons (12, 36, 60, …). Both sets land in idx.
     for (const m of [0, 24, 48, 72, 96, 120, 144]) {
@@ -74,7 +77,7 @@ describe('pickHourlyTickIndices', () => {
   it('forces midnights even when they would not land on the step grid', () => {
     // 100 hourly entries starting at 03:00 — the first midnight is at index 21
     // (which is not a multiple of 12). Without forcing it would be skipped.
-    const idx = pickHourlyTickIndices(hourlyTimes(100, '2026-05-05T03:00:00'));
+    const idx = pickHourlyTickIndices(hourlyTimes(100, '2026-05-05T03:00:00'), cal);
     // 03:00 + 21h = 00:00 next day → index 21 must be present
     expect(idx).toContain(21);
     // 21 is not a multiple of step=12, so it could only have come from
@@ -84,7 +87,7 @@ describe('pickHourlyTickIndices', () => {
 
   it('does not duplicate the last index when it is already on the grid', () => {
     // 25 entries: step=3, grid hits 0,3,…,24. Last index 24 is on the grid.
-    const idx = pickHourlyTickIndices(hourlyTimes(25));
+    const idx = pickHourlyTickIndices(hourlyTimes(25), cal);
     expect(idx).toContain(24);
     expect(idx.filter((v) => v === 24).length).toBe(1);
   });
@@ -93,28 +96,28 @@ describe('pickHourlyTickIndices', () => {
     // step 12, 98 entries. Grid: 0,12,24,…,96. Last is 97. 97-96 = 1 < 12/2 = 6
     // → 97 should be skipped (it would crowd 96). But 96 is a midnight (since
     // base starts at 00:00, hour 96 = 4 days later, also 00:00) and remains.
-    const idx = pickHourlyTickIndices(hourlyTimes(98));
+    const idx = pickHourlyTickIndices(hourlyTimes(98), cal);
     expect(idx).toContain(96);
     expect(idx).not.toContain(97);
   });
 
   it('honours an explicit stepHours override', () => {
-    const idx = pickHourlyTickIndices(hourlyTimes(24), { stepHours: 4 });
+    const idx = pickHourlyTickIndices(hourlyTimes(24), cal, { stepHours: 4 });
     // 0, 4, 8, 12, 16, 20 — last index 23 is 3 away from 20, ≥ 4/2=2 → kept.
     expect(idx).toEqual([0, 4, 8, 12, 16, 20, 23]);
   });
 
   it('accepts Date objects in the array', () => {
     const dates = hourlyTimes(24).map((s) => new Date(s));
-    const idx = pickHourlyTickIndices(dates);
+    const idx = pickHourlyTickIndices(dates, cal);
     expect(idx.length).toBe(24);
   });
 
   it('survives invalid timestamps without throwing', () => {
     const dts = ['not-a-date', '2026-05-05T00:00:00', null, undefined];
     // Length 4 falls under step=1 — every index kept regardless of midnight test.
-    expect(() => pickHourlyTickIndices(dts)).not.toThrow();
-    expect(pickHourlyTickIndices(dts)).toEqual([0, 1, 2, 3]);
+    expect(() => pickHourlyTickIndices(dts, cal)).not.toThrow();
+    expect(pickHourlyTickIndices(dts, cal)).toEqual([0, 1, 2, 3]);
   });
 });
 
@@ -301,7 +304,7 @@ describe('normalizeForecastMode', () => {
 
 describe('startOfTodayMs', () => {
   it('returns ms-since-epoch at local-midnight today', () => {
-    const got = startOfTodayMs();
+    const got = startOfTodayMs(cal);
     const d = new Date(got);
     expect(d.getHours()).toBe(0);
     expect(d.getMinutes()).toBe(0);
@@ -313,7 +316,7 @@ describe('startOfTodayMs', () => {
   });
 
   it('is finite', () => {
-    expect(Number.isFinite(startOfTodayMs())).toBe(true);
+    expect(Number.isFinite(startOfTodayMs(cal))).toBe(true);
   });
 });
 

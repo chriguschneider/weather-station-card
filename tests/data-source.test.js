@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { bucketPrecipitation, MeasuredDataSource, ForecastDataSource } from '../src/data-source.js';
 import { WeatherEntityFeature } from '../src/const.js';
 import { clearDedupeCaches } from '../src/utils/shared-requests.js';
-import { addDays, dayKey, setCardTimeZone, startOfDay } from '../src/utils/time-zone.js';
+import { Calendar } from '../src/utils/time-zone.js';
+
+const cal = new Calendar();
 
 // Recorder WS calls are deduplicated module-wide (cross-card sharing in
 // production) — reset between tests so identical request signatures in
@@ -102,7 +104,7 @@ describe('MeasuredDataSource._buildForecast', () => {
   };
 
   it('produces one entry per requested day, in chronological order', () => {
-    const ds = new MeasuredDataSource(fakeHass, { sensors, days: 3 });
+    const ds = new MeasuredDataSource(fakeHass, { sensors, days: 3 }, cal);
     // Fixture: stats start at startDay (offset 0). Loop in _buildForecast
     // iterates i=1..days, so day starts come from offsets 1..3.
     const stats = {
@@ -121,7 +123,7 @@ describe('MeasuredDataSource._buildForecast', () => {
   });
 
   it('returns null fields for days without data, never throws', () => {
-    const ds = new MeasuredDataSource(fakeHass, { sensors, days: 3 });
+    const ds = new MeasuredDataSource(fakeHass, { sensors, days: 3 }, cal);
     const stats = {
       'sensor.temp': [
         { start: dayMs(1).date.toISOString(), max: 20, min: 10, mean: 15 },
@@ -139,7 +141,7 @@ describe('MeasuredDataSource._buildForecast', () => {
   });
 
   it('emits the canonical forecast shape', () => {
-    const ds = new MeasuredDataSource(fakeHass, { sensors, days: 1 });
+    const ds = new MeasuredDataSource(fakeHass, { sensors, days: 1 }, cal);
     const stats = {
       'sensor.temp': [{ start: dayMs(1).date.toISOString(), max: 20, min: 10, mean: 15 }],
     };
@@ -171,7 +173,7 @@ describe('MeasuredDataSource._buildForecast', () => {
   };
 
   it('normalises a km/h breeze to m/s so it is not flagged exceptional (#197)', () => {
-    const ds = new MeasuredDataSource(kmhHass, { sensors, days: 1 });
+    const ds = new MeasuredDataSource(kmhHass, { sensors, days: 1 }, cal);
     const stats = {
       'sensor.temp': [{ start: dayMs(1).date.toISOString(), max: 20, min: 10, mean: 15 }],
       'sensor.wind': [{ start: dayMs(1).date.toISOString(), mean: 15 }], // ≈ 4.2 m/s
@@ -182,7 +184,7 @@ describe('MeasuredDataSource._buildForecast', () => {
   });
 
   it('still flags a genuine storm-force km/h gust as exceptional (#197)', () => {
-    const ds = new MeasuredDataSource(kmhHass, { sensors, days: 1 });
+    const ds = new MeasuredDataSource(kmhHass, { sensors, days: 1 }, cal);
     const stats = {
       'sensor.temp': [{ start: dayMs(1).date.toISOString(), max: 20, min: 10, mean: 15 }],
       'sensor.gust': [{ start: dayMs(1).date.toISOString(), max: 95 }], // ≈ 26.4 m/s
@@ -193,7 +195,7 @@ describe('MeasuredDataSource._buildForecast', () => {
 
   it('treats a raw gust as m/s when the sensor reports no unit (back-compat)', () => {
     // No states → unit undefined → identity. 31 (m/s) is a real storm.
-    const ds = new MeasuredDataSource(fakeHass, { sensors, days: 1 });
+    const ds = new MeasuredDataSource(fakeHass, { sensors, days: 1 }, cal);
     const stats = {
       'sensor.temp': [{ start: dayMs(1).date.toISOString(), max: 20, min: 10, mean: 15 }],
       'sensor.gust': [{ start: dayMs(1).date.toISOString(), max: 31 }],
@@ -213,7 +215,7 @@ describe('MeasuredDataSource._buildForecast', () => {
         'sensor.rain': { attributes: { unit_of_measurement: 'mm' } },
       },
     };
-    const ds = new MeasuredDataSource(fHass, { sensors, days: 1 });
+    const ds = new MeasuredDataSource(fHass, { sensors, days: 1 }, cal);
     const stats = {
       'sensor.temp': [{ start: dayMs(1).date.toISOString(), max: 30, min: 25, mean: 27 }],
       'sensor.rain': [{ start: dayMs(1).date.toISOString(), change: 5, max: 30 }],
@@ -224,7 +226,7 @@ describe('MeasuredDataSource._buildForecast', () => {
 
   it('the same fixture without a °F unit misclassifies as rainy (guards the conversion)', () => {
     // No temp unit → treated as °C. 30 °C + 5 mm → rainy, not snowy.
-    const ds = new MeasuredDataSource(fakeHass, { sensors, days: 1 });
+    const ds = new MeasuredDataSource(fakeHass, { sensors, days: 1 }, cal);
     const stats = {
       'sensor.temp': [{ start: dayMs(1).date.toISOString(), max: 30, min: 25, mean: 27 }],
       'sensor.rain': [{ start: dayMs(1).date.toISOString(), change: 5, max: 30 }],
@@ -244,7 +246,7 @@ describe('MeasuredDataSource._buildForecast', () => {
         'sensor.rain': { attributes: { unit_of_measurement: 'in' } },
       },
     };
-    const ds = new MeasuredDataSource(inHass, { sensors, days: 1 });
+    const ds = new MeasuredDataSource(inHass, { sensors, days: 1 }, cal);
     const stats = {
       'sensor.temp': [{ start: dayMs(1).date.toISOString(), max: 15, min: 10, mean: 12 }],
       'sensor.rain': [{ start: dayMs(1).date.toISOString(), change: 0.5, max: 5 }],
@@ -255,7 +257,7 @@ describe('MeasuredDataSource._buildForecast', () => {
 
   it("emits the recorder daily-max for today's sunshine bucket (#37 reverts the #16 substitution)", () => {
     const sensorsWithSunshine = { ...sensors, sunshine_duration: 'sensor.sun' };
-    const ds = new MeasuredDataSource(fakeHass, { sensors: sensorsWithSunshine, days: 3 });
+    const ds = new MeasuredDataSource(fakeHass, { sensors: sensorsWithSunshine, days: 3 }, cal);
     // 3-day window starting at today's midnight: index 0 is "tomorrow" (skipped
     // by the loop's i=1 start), so out[0]..out[2] cover days+1..days+3.
     // We're verifying the today-bucket via the per-day loop reaching the
@@ -289,7 +291,7 @@ describe('MeasuredDataSource._buildForecast', () => {
       ...fakeHass,
       states: { 'sensor.sun': { state: '0.501444', attributes: { unit_of_measurement: 'h' } } },
     };
-    const ds = new MeasuredDataSource(hass, { sensors: sensorsWithSunshine, days: 3 });
+    const ds = new MeasuredDataSource(hass, { sensors: sensorsWithSunshine, days: 3 }, cal);
     const stats = {
       'sensor.sun': [
         // Yesterday: its own genuine end-of-day total.
@@ -327,7 +329,7 @@ describe('MeasuredDataSource._buildForecast', () => {
         ],
       }),
     };
-    const ds = new MeasuredDataSource(hass, { sensors: sensorsWithSunshine, days: 3 });
+    const ds = new MeasuredDataSource(hass, { sensors: sensorsWithSunshine, days: 3 }, cal);
     const map = await ds._fetchSunshineDailyTotals(
       sensorsWithSunshine, day, new Date(day.getTime() + 24 * 3600_000),
     );
@@ -336,7 +338,7 @@ describe('MeasuredDataSource._buildForecast', () => {
   });
 
   it('_fetchSunshineDailyTotals is a no-op without a sunshine sensor', async () => {
-    const ds = new MeasuredDataSource(fakeHass, { sensors, days: 3 });
+    const ds = new MeasuredDataSource(fakeHass, { sensors, days: 3 }, cal);
     const day = dayMs(2).date;
     await expect(
       ds._fetchSunshineDailyTotals(sensors, day, new Date(day.getTime() + 24 * 3600_000)),
@@ -349,7 +351,7 @@ describe('MeasuredDataSource._buildForecast', () => {
     // leaves yesterday's final value in this day's 00:00 bucket. Here
     // the day itself only reached 3 h but its daily max reads 10.94.
     const sensorsWithSunshine = { ...sensors, sunshine_duration: 'sensor.sun' };
-    const ds = new MeasuredDataSource(fakeHass, { sensors: sensorsWithSunshine, days: 3 });
+    const ds = new MeasuredDataSource(fakeHass, { sensors: sensorsWithSunshine, days: 3 }, cal);
     const day = dayMs(2).date;
     const stats = {
       'sensor.sun': [{ start: day.toISOString(), max: 10.9375 }],
@@ -362,7 +364,7 @@ describe('MeasuredDataSource._buildForecast', () => {
 
   it('keeps the daily max when the hourly recovery has no entry for a day', () => {
     const sensorsWithSunshine = { ...sensors, sunshine_duration: 'sensor.sun' };
-    const ds = new MeasuredDataSource(fakeHass, { sensors: sensorsWithSunshine, days: 3 });
+    const ds = new MeasuredDataSource(fakeHass, { sensors: sensorsWithSunshine, days: 3 }, cal);
     const stats = {
       'sensor.sun': [{ start: dayMs(2).date.toISOString(), max: 7.5 }],
     };
@@ -374,7 +376,7 @@ describe('MeasuredDataSource._buildForecast', () => {
     // No `states` entry (entity unavailable / not yet loaded): the fold
     // is skipped rather than blanking the column.
     const sensorsWithSunshine = { ...sensors, sunshine_duration: 'sensor.sun' };
-    const ds = new MeasuredDataSource(fakeHass, { sensors: sensorsWithSunshine, days: 3 });
+    const ds = new MeasuredDataSource(fakeHass, { sensors: sensorsWithSunshine, days: 3 }, cal);
     const stats = {
       'sensor.sun': [{ start: dayMs(3).date.toISOString(), max: 8.25 }],
     };
@@ -383,7 +385,7 @@ describe('MeasuredDataSource._buildForecast', () => {
   });
 
   it('falls back to the lux-derivation map when no sunshine_duration sensor is set (#66 B2)', () => {
-    const ds = new MeasuredDataSource(fakeHass, { sensors, days: 3 });
+    const ds = new MeasuredDataSource(fakeHass, { sensors, days: 3 }, cal);
     const stats = {};
     // Pre-computed lux-derivation result (as if `_fetchLuxSunshine`
     // returned this map). Keys are local-date YYYY-MM-DD.
@@ -396,7 +398,7 @@ describe('MeasuredDataSource._buildForecast', () => {
 
   it('recorder sunshine_duration sensor still wins over the lux-derivation map (#66 precedence)', () => {
     const sensorsWithSunshine = { ...sensors, sunshine_duration: 'sensor.sun' };
-    const ds = new MeasuredDataSource(fakeHass, { sensors: sensorsWithSunshine, days: 3 });
+    const ds = new MeasuredDataSource(fakeHass, { sensors: sensorsWithSunshine, days: 3 }, cal);
     const todayStart = dayMs(1).date;
     const stats = {
       'sensor.sun': [{ start: todayStart.toISOString(), max: 999 }],
@@ -416,14 +418,14 @@ describe('MeasuredDataSource._buildForecast', () => {
     // with a forecast value. That is the overcast-morning bug: the lux
     // derivation finds no above-threshold interval, emits no entry, and
     // the station-today column borrows the full-day forecast.
-    const ds = new MeasuredDataSource(fakeHass, { sensors, days: 3 });
+    const ds = new MeasuredDataSource(fakeHass, { sensors, days: 3 }, cal);
     const out = ds._buildForecast({}, sensors, startDay, 3, new Map());
     expect(out[0].sunshine).toBe(0);
   });
 
   it('emits 0 when a sunshine_duration sensor is configured but the recorder has no bucket for the day', () => {
     const sensorsWithSunshine = { ...sensors, sunshine_duration: 'sensor.sun' };
-    const ds = new MeasuredDataSource(fakeHass, { sensors: sensorsWithSunshine, days: 3 });
+    const ds = new MeasuredDataSource(fakeHass, { sensors: sensorsWithSunshine, days: 3 }, cal);
     // Empty stats → at(sensors.sunshine_duration, 'max') resolves null.
     // The sensor is configured, so the column is still 0 h, not forecast.
     const out = ds._buildForecast({}, sensorsWithSunshine, startDay, 3);
@@ -435,7 +437,7 @@ describe('MeasuredDataSource._buildForecast', () => {
     // source for these columns, so null is correct: the Open-Meteo
     // overlay is the only data available and SHOULD fill them.
     const sensorsNoSun = { temperature: 'sensor.temp', precipitation: 'sensor.rain' };
-    const ds = new MeasuredDataSource(fakeHass, { sensors: sensorsNoSun, days: 3 });
+    const ds = new MeasuredDataSource(fakeHass, { sensors: sensorsNoSun, days: 3 }, cal);
     const out = ds._buildForecast({}, sensorsNoSun, startDay, 3, null);
     expect(out[0].sunshine).toBeNull();
   });
@@ -456,7 +458,7 @@ describe('MeasuredDataSource._buildForecast', () => {
   };
 
   it("anchors today's empty bucket to the live temperature state", () => {
-    const ds = new MeasuredDataSource(liveHass, { sensors, days: 3 });
+    const ds = new MeasuredDataSource(liveHass, { sensors, days: 3 }, cal);
     // Recorder has the two prior days but today's bucket (offset 3, the
     // last) is missing — the just-started, in-progress day.
     const stats = {
@@ -472,7 +474,7 @@ describe('MeasuredDataSource._buildForecast', () => {
   });
 
   it("folds a warmer live reading into today's running high, keeps the recorded low", () => {
-    const ds = new MeasuredDataSource(liveHass, { sensors, days: 3 });
+    const ds = new MeasuredDataSource(liveHass, { sensors, days: 3 }, cal);
     // Today's bucket exists from completed hours (max 14, min 9) but the
     // live reading (16.4) is warmer than any completed hour → the high
     // rises to the live value; the low stays the recorded 9.
@@ -492,7 +494,7 @@ describe('MeasuredDataSource._buildForecast', () => {
       callWS: vi.fn(),
       states: { 'sensor.temp': { state: '7.5' } },
     };
-    const ds = new MeasuredDataSource(coldHass, { sensors, days: 3 });
+    const ds = new MeasuredDataSource(coldHass, { sensors, days: 3 }, cal);
     const stats = {
       'sensor.temp': [
         { start: dayMs(3).date.toISOString(), max: 14, min: 9, mean: 11 },
@@ -504,7 +506,7 @@ describe('MeasuredDataSource._buildForecast', () => {
   });
 
   it('does not live-fill a historic day’s missing bucket (today only)', () => {
-    const ds = new MeasuredDataSource(liveHass, { sensors, days: 3 });
+    const ds = new MeasuredDataSource(liveHass, { sensors, days: 3 }, cal);
     // Offset 1 (a past day) is missing; today (offset 3) is present.
     // The past gap must stay null — live-fill is for today only.
     const stats = {
@@ -538,14 +540,14 @@ describe('MeasuredDataSource._fetchLuxSunshine (#56 + #66)', () => {
   }
 
   it('returns null when no illuminance sensor is configured', async () => {
-    const ds = new MeasuredDataSource(makeHass(async () => ({})), { sensors: {} });
+    const ds = new MeasuredDataSource(makeHass(async () => ({})), { sensors: {} }, cal);
     const result = await ds._fetchLuxSunshine({}, new Date(0), new Date(1));
     expect(result).toBeNull();
   });
 
   it('returns null when sunshine_duration sensor is configured (Method C wins)', async () => {
     const sensors = { illuminance: 'sensor.lux', sunshine_duration: 'sensor.sun' };
-    const ds = new MeasuredDataSource(makeHass(async () => ({})), { sensors });
+    const ds = new MeasuredDataSource(makeHass(async () => ({})), { sensors }, cal);
     const result = await ds._fetchLuxSunshine(sensors, new Date(0), new Date(1));
     expect(result).toBeNull();
   });
@@ -553,7 +555,7 @@ describe('MeasuredDataSource._fetchLuxSunshine (#56 + #66)', () => {
   it('returns null when latitude / longitude are missing', async () => {
     const sensors = { illuminance: 'sensor.lux' };
     const hass = { config: {}, callWS: vi.fn() };
-    const ds = new MeasuredDataSource(hass, { sensors });
+    const ds = new MeasuredDataSource(hass, { sensors }, cal);
     const result = await ds._fetchLuxSunshine(sensors, new Date(0), new Date(1));
     expect(result).toBeNull();
     expect(hass.callWS).not.toHaveBeenCalled();
@@ -562,7 +564,7 @@ describe('MeasuredDataSource._fetchLuxSunshine (#56 + #66)', () => {
   it('returns null when the WS call rejects (recorder unavailable)', async () => {
     const sensors = { illuminance: 'sensor.lux' };
     const hass = makeHass(async () => { throw new Error('recorder offline'); });
-    const ds = new MeasuredDataSource(hass, { sensors });
+    const ds = new MeasuredDataSource(hass, { sensors }, cal);
     const result = await ds._fetchLuxSunshine(sensors, new Date(0), new Date(1));
     expect(result).toBeNull();
   });
@@ -570,7 +572,7 @@ describe('MeasuredDataSource._fetchLuxSunshine (#56 + #66)', () => {
   it('returns null when fewer than 2 valid samples come back', async () => {
     const sensors = { illuminance: 'sensor.lux' };
     const hass = makeHass(async () => ({ 'sensor.lux': [{ s: '50000', lu: summerNoonUTC() / 1000 }] }));
-    const ds = new MeasuredDataSource(hass, { sensors });
+    const ds = new MeasuredDataSource(hass, { sensors }, cal);
     const result = await ds._fetchLuxSunshine(sensors, new Date(0), new Date(1));
     expect(result).toBeNull();
   });
@@ -589,7 +591,7 @@ describe('MeasuredDataSource._fetchLuxSunshine (#56 + #66)', () => {
     hass.states = {
       'sensor.solar': { state: '650', attributes: { unit_of_measurement: 'W/m²' } },
     };
-    const ds = new MeasuredDataSource(hass, { sensors });
+    const ds = new MeasuredDataSource(hass, { sensors }, cal);
     const result = await ds._fetchLuxSunshine(sensors, new Date(t0 - HOUR_MS), new Date(t0 + HOUR_MS));
     expect(result).not.toBeNull();
     const totalHours = Array.from(result.values()).reduce((s, h) => s + h, 0);
@@ -607,7 +609,7 @@ describe('MeasuredDataSource._fetchLuxSunshine (#56 + #66)', () => {
     hass.states = {
       'sensor.solar': { state: '650', attributes: { device_class: 'irradiance' } },
     };
-    const ds = new MeasuredDataSource(hass, { sensors });
+    const ds = new MeasuredDataSource(hass, { sensors }, cal);
     const result = await ds._fetchLuxSunshine(sensors, new Date(t0 - HOUR_MS), new Date(t0 + HOUR_MS));
     const totalHours = Array.from(result.values()).reduce((s, h) => s + h, 0);
     expect(totalHours).toBeGreaterThan(0.4);
@@ -623,7 +625,7 @@ describe('MeasuredDataSource._fetchLuxSunshine (#56 + #66)', () => {
     // Plain lux sensor (no irradiance unit) — 650 lx stays 650 lx.
     const hass = makeHass(async () => ({ 'sensor.lux': samples }));
     hass.states = { 'sensor.lux': { state: '650', attributes: { unit_of_measurement: 'lx' } } };
-    const ds = new MeasuredDataSource(hass, { sensors });
+    const ds = new MeasuredDataSource(hass, { sensors }, cal);
     const result = await ds._fetchLuxSunshine(sensors, new Date(t0 - HOUR_MS), new Date(t0 + HOUR_MS));
     const totalHours = result ? Array.from(result.values()).reduce((s, h) => s + h, 0) : 0;
     expect(totalHours).toBe(0);
@@ -638,7 +640,7 @@ describe('MeasuredDataSource._fetchLuxSunshine (#56 + #66)', () => {
       samples.push({ s: '80000', lu: (t0 + i * 60 * 1000) / 1000 });
     }
     const hass = makeHass(async () => ({ 'sensor.lux': samples }));
-    const ds = new MeasuredDataSource(hass, { sensors });
+    const ds = new MeasuredDataSource(hass, { sensors }, cal);
     const result = await ds._fetchLuxSunshine(sensors, new Date(t0 - HOUR_MS), new Date(t0 + HOUR_MS));
     expect(result).not.toBeNull();
     expect(result.size).toBeGreaterThanOrEqual(1);
@@ -656,7 +658,7 @@ describe('MeasuredDataSource._fetchLuxSunshine (#56 + #66)', () => {
     }
     const hass = makeHass(async () => ({ 'sensor.lux': samples }));
 
-    const dsDefault = new MeasuredDataSource(hass, { sensors });
+    const dsDefault = new MeasuredDataSource(hass, { sensors }, cal);
     const r1 = await dsDefault._fetchLuxSunshine(sensors, new Date(t0 - HOUR_MS), new Date(t0 + HOUR_MS));
     // Default threshold 0.6 — 0.5 ratio doesn't qualify; empty per-day map.
     expect(r1?.size ?? 0).toBe(0);
@@ -664,7 +666,7 @@ describe('MeasuredDataSource._fetchLuxSunshine (#56 + #66)', () => {
     const dsLower = new MeasuredDataSource(hass, {
       sensors,
       condition_mapping: { sunshine_lux_ratio: 0.4 },
-    });
+    }, cal);
     const r2 = await dsLower._fetchLuxSunshine(sensors, new Date(t0 - HOUR_MS), new Date(t0 + HOUR_MS));
     // Lower threshold 0.4 — qualifies.
     expect(r2).not.toBeNull();
@@ -681,7 +683,7 @@ describe('MeasuredDataSource._fetchLuxSunshine (#56 + #66)', () => {
       { s: '80000', lu: (t0 + 60 * 1000) / 1000 }, // valid
     ];
     const hass = makeHass(async () => ({ 'sensor.lux': samples }));
-    const ds = new MeasuredDataSource(hass, { sensors });
+    const ds = new MeasuredDataSource(hass, { sensors }, cal);
     // Only 2 valid samples — gives one interval, may or may not bucket
     // a non-zero day depending on timing — but no throw.
     await expect(ds._fetchLuxSunshine(sensors, new Date(t0 - HOUR_MS), new Date(t0 + HOUR_MS))).resolves.not.toThrow();
@@ -696,6 +698,7 @@ describe('lux day cache with the browser east of the server zone (#352)', () => 
   let savedTZ;
   let storage;
   let hass;
+  let ny;
 
   beforeEach(() => {
     savedTZ = process.env.TZ;
@@ -707,7 +710,7 @@ describe('lux day cache with the browser east of the server zone (#352)', () => 
         setItem: (k, v) => storage.set(k, String(v)),
       },
     };
-    setCardTimeZone('America/New_York');
+    ny = new Calendar('America/New_York');
     vi.useFakeTimers({ now: new Date('2026-10-26T15:00:00Z') });
     hass = {
       config: { latitude: 40.71, longitude: -74.0 },
@@ -722,7 +725,6 @@ describe('lux day cache with the browser east of the server zone (#352)', () => 
 
   afterEach(() => {
     vi.useRealTimers();
-    setCardTimeZone(undefined);
     delete globalThis.window;
     if (savedTZ === undefined) delete process.env.TZ;
     else process.env.TZ = savedTZ;
@@ -731,14 +733,14 @@ describe('lux day cache with the browser east of the server zone (#352)', () => 
   // Same window the daily path builds: today's midnight + 1 day, back
   // `days + 1` days.
   const dailyWindow = (days) => {
-    const end = addDays(startOfDay(Date.now()), 1);
-    return { start: addDays(end, -(days + 1)), end };
+    const end = ny.addDays(ny.startOfDay(Date.now()), 1);
+    return { start: ny.addDays(end, -(days + 1)), end };
   };
 
   it('caches the oldest completed day and stops refetching the window on the next poll', async () => {
     const { start, end } = dailyWindow(2);
-    const oldestKey = dayKey(start);
-    const ds = new MeasuredDataSource(hass, { sensors });
+    const oldestKey = ny.dayKey(start);
+    const ds = new MeasuredDataSource(hass, { sensors }, ny);
 
     clearDedupeCaches();
     await ds._fetchLuxSunshine(sensors, start, end);
@@ -749,7 +751,7 @@ describe('lux day cache with the browser east of the server zone (#352)', () => 
     clearDedupeCaches();
     await ds._fetchLuxSunshine(sensors, start, end);
     // No completed day is missing, so only today's samples are fetched.
-    expect(hass.callWS.mock.calls[1][0].start_time).toBe(startOfDay(Date.now()).toISOString());
+    expect(hass.callWS.mock.calls[1][0].start_time).toBe(ny.startOfDay(Date.now()).toISOString());
   });
 });
 
@@ -786,7 +788,7 @@ describe('MeasuredDataSource hourly mode', () => {
   it('produces one entry per hour, in chronological order', () => {
     const ds = new MeasuredDataSource(fakeHass, {
       sensors, days: 1, forecast: { type: 'hourly' },
-    });
+    }, cal);
     // _buildHourlyForecast iterates i=1..hours from `start`.
     const stats = {
       'sensor.temp': [
@@ -812,7 +814,7 @@ describe('MeasuredDataSource hourly mode', () => {
     // presentation.
     const ds = new MeasuredDataSource(fakeHass, {
       sensors, days: 1, forecast: { type: 'hourly' },
-    });
+    }, cal);
     const stats = {
       'sensor.temp': [{ start: hourMs(1).date.toISOString(), max: 21, min: 19, mean: 20 }],
     };
@@ -824,7 +826,7 @@ describe('MeasuredDataSource hourly mode', () => {
   it('uses bucketPrecipitation for hourly precipitation', () => {
     const ds = new MeasuredDataSource(fakeHass, {
       sensors, days: 1, forecast: { type: 'hourly' },
-    });
+    }, cal);
     const stats = {
       'sensor.rain': [
         { start: hourMs(1).date.toISOString(), change: 0.4 },
@@ -837,7 +839,7 @@ describe('MeasuredDataSource hourly mode', () => {
   it('returns null fields for hours without data, never throws', () => {
     const ds = new MeasuredDataSource(fakeHass, {
       sensors, days: 1, forecast: { type: 'hourly' },
-    });
+    }, cal);
     // Stats only carries hour 1; hour 2 is missing entirely.
     const stats = {
       'sensor.temp': [{ start: hourMs(1).date.toISOString(), max: 21, min: 19, mean: 20 }],
@@ -863,7 +865,7 @@ describe('MeasuredDataSource hourly mode', () => {
     };
     const ds = new MeasuredDataSource(hass, {
       sensors, days: 1, forecast: { type: 'hourly' },
-    });
+    }, cal);
     // 3 hours requested. Recorder only has data for the first two
     // hours. The third (last) entry must be live-filled.
     const stats = {
@@ -891,7 +893,7 @@ describe('MeasuredDataSource hourly mode', () => {
     };
     const ds = new MeasuredDataSource(hass, {
       sensors, days: 1, forecast: { type: 'hourly' },
-    });
+    }, cal);
     // Two hours requested. Hour 1 has a complete bucket; hour 2 (last,
     // current) has no bucket yet. The live state stands in for the
     // synthetic "current.max" so we can still compute the diff.
@@ -914,7 +916,7 @@ describe('MeasuredDataSource hourly mode', () => {
     };
     const ds = new MeasuredDataSource(hass, {
       sensors, days: 1, forecast: { type: 'hourly' },
-    });
+    }, cal);
     // Historic hour 1 is missing; the LAST hour (2) is the only one
     // that should benefit from the live-fill.
     const stats = {
@@ -930,7 +932,7 @@ describe('MeasuredDataSource hourly mode', () => {
   it('emits the canonical forecast shape (no templow, has condition)', () => {
     const ds = new MeasuredDataSource(fakeHass, {
       sensors, days: 1, forecast: { type: 'hourly' },
-    });
+    }, cal);
     const stats = {
       'sensor.temp': [{ start: hourMs(1).date.toISOString(), max: 21, min: 19, mean: 20 }],
     };
@@ -952,7 +954,7 @@ describe('MeasuredDataSource hourly mode', () => {
     };
     const ds = new MeasuredDataSource(hass, {
       sensors, days: 2, forecast: { type: 'hourly' },
-    });
+    }, cal);
     await ds._fetchAggregates();
     expect(hass.callWS).toHaveBeenCalledTimes(1);
     const [msg] = hass.callWS.mock.calls[0];
@@ -972,7 +974,7 @@ describe('MeasuredDataSource hourly mode', () => {
       config: { latitude: 47.4 },
       callWS: vi.fn().mockResolvedValue({}),
     };
-    const ds = new MeasuredDataSource(hass, { sensors, days: 3 });
+    const ds = new MeasuredDataSource(hass, { sensors, days: 3 }, cal);
     await ds._fetchAggregates();
     const [msg] = hass.callWS.mock.calls[0];
     expect(msg.period).toBe('day');
@@ -996,7 +998,7 @@ describe('MeasuredDataSource hourly mode', () => {
       forecast: { type: 'today' },
       show_forecast: true,
       show_station: true,
-    });
+    }, cal);
     await ds._fetchAggregates();
     const [msg] = hass.callWS.mock.calls[0];
     expect(msg.period).toBe('hour');
@@ -1020,13 +1022,13 @@ describe('MeasuredDataSource hourly mode', () => {
     const hassHourly = mkHass();
     await new MeasuredDataSource(hassToday, {
       sensors, days: 5, forecast: { type: 'today' }, show_forecast: true,
-    })._fetchAggregates();
+    }, cal)._fetchAggregates();
     // Identical requests dedupe module-wide — clear so the hourly
     // source actually issues its own callWS for the comparison.
     clearDedupeCaches();
     await new MeasuredDataSource(hassHourly, {
       sensors, days: 5, forecast: { type: 'hourly' }, show_forecast: true,
-    })._fetchAggregates();
+    }, cal)._fetchAggregates();
     const [msgToday] = hassToday.callWS.mock.calls[0];
     const [msgHourly] = hassHourly.callWS.mock.calls[0];
     expect(msgToday).toEqual(msgHourly);
@@ -1197,7 +1199,7 @@ describe('MeasuredDataSource lifecycle', () => {
 
   it('subscribe → unsubscribe clears the polling timer', () => {
     const callWS = vi.fn().mockResolvedValue({});
-    const ds = new MeasuredDataSource(makeHass(callWS), { sensors, days: 3 });
+    const ds = new MeasuredDataSource(makeHass(callWS), { sensors, days: 3 }, cal);
     const unsub = ds.subscribe(() => {});
     expect(callWS).toHaveBeenCalledTimes(1); // initial poll
     unsub();
@@ -1207,7 +1209,7 @@ describe('MeasuredDataSource lifecycle', () => {
   });
 
   it('unsubscribe is idempotent (second call is a no-op)', () => {
-    const ds = new MeasuredDataSource(makeHass(vi.fn().mockResolvedValue({})), { sensors, days: 3 });
+    const ds = new MeasuredDataSource(makeHass(vi.fn().mockResolvedValue({})), { sensors, days: 3 }, cal);
     const unsub = ds.subscribe(() => {});
     unsub();
     expect(() => unsub()).not.toThrow();
@@ -1215,7 +1217,7 @@ describe('MeasuredDataSource lifecycle', () => {
 
   it('surfaces an error event after 3 consecutive fetch failures', async () => {
     const callWS = vi.fn().mockRejectedValue(new Error('recorder down'));
-    const ds = new MeasuredDataSource(makeHass(callWS), { sensors, days: 3 });
+    const ds = new MeasuredDataSource(makeHass(callWS), { sensors, days: 3 }, cal);
     const events = [];
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const unsub = ds.subscribe((e) => events.push(e));
@@ -1240,7 +1242,7 @@ describe('MeasuredDataSource lifecycle', () => {
       if (calls <= 2) return Promise.reject(new Error('hiccup'));
       return Promise.resolve({});
     });
-    const ds = new MeasuredDataSource(makeHass(callWS), { sensors, days: 3 });
+    const ds = new MeasuredDataSource(makeHass(callWS), { sensors, days: 3 }, cal);
     const events = [];
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const unsub = ds.subscribe((e) => events.push(e));
@@ -1271,7 +1273,7 @@ describe('MeasuredDataSource._fetchAggregates statistic_ids', () => {
         precipitation_rate: 'sensor.excl_rain_rate',
         moon_phase: 'sensor.excl_moon',
       },
-    });
+    }, cal);
     await ds._fetchAggregates();
     const ids = callWS.mock.calls[0][0].statistic_ids;
     expect(ids).toContain('sensor.excl_temp');

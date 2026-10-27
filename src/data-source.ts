@@ -30,7 +30,7 @@ import {
   toMillimeters,
 } from './utils/unit-converters.js';
 import { dedupeRequest } from './utils/shared-requests.js';
-import { addDays, dayKey, dayOfYear, hourOf, startOfDay, startOfHour } from './utils/time-zone.js';
+import type { Calendar } from './utils/time-zone.js';
 
 // Dedup TTL for identical recorder requests across sibling cards on
 // the same dashboard. Long enough to absorb staggered card mounts and
@@ -214,6 +214,7 @@ function toHpa(value: number, sourceUnit: string | undefined): number {
 export async function fetchPressure3hDelta(
   hass: HassLike | null,
   entityId: string | undefined,
+  calendar: Calendar,
   cache?: PressureDeltaCache,
 ): Promise<number | null> {
   if (!hass || !entityId) return null;
@@ -221,7 +222,7 @@ export async function fetchPressure3hDelta(
   // Window ends at the start of the current hour (exclusive) so we only
   // pull finalized buckets. The newest bucket starts at `bucketMs - 1h`
   // and the 3 h-earlier bucket starts at `bucketMs - 4h`.
-  const bucketMs = startOfHour(Date.now()).getTime();
+  const bucketMs = calendar.startOfHour(Date.now()).getTime();
   if (cache?.bucketMs === bucketMs) return cache.value;
 
   const end = new Date(bucketMs);
@@ -295,7 +296,8 @@ interface HourClassifyBag extends ClassifyInputs {
 // location change invalidates cleanly.
 
 const LUX_CACHE_PREFIX = 'wsc_lux_days_';
-const LUX_CACHE_VERSION = 1;
+// v2: the key carries the time zone the days were cut in (ADR-0030).
+const LUX_CACHE_VERSION = 2;
 const LUX_CACHE_MAX_DAYS = 120;
 
 interface LuxDayCacheShape {
@@ -310,7 +312,7 @@ interface LuxDayCacheShape {
   days: Record<string, number>;
 }
 
-function luxStorage(): { getItem(k: string): string | null; setItem(k: string, v: string): void } | null {
+function luxStorage(): Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | null {
   try {
     return typeof window !== 'undefined' && window.localStorage ? window.localStorage : null;
   } catch {
@@ -318,7 +320,12 @@ function luxStorage(): { getItem(k: string): string | null; setItem(k: string, v
   }
 }
 
+function luxCacheKey(entityId: string, timeZone: string): string {
+  return `${LUX_CACHE_PREFIX}${timeZone}_${entityId}`;
+}
+
 function loadLuxDayCache(
+  timeZone: string,
   entityId: string,
   threshold: number,
   lat: number,
@@ -328,7 +335,7 @@ function loadLuxDayCache(
   const storage = luxStorage();
   if (!storage) return null;
   try {
-    const raw = storage.getItem(`${LUX_CACHE_PREFIX}${entityId}`);
+    const raw = storage.getItem(luxCacheKey(entityId, timeZone));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as LuxDayCacheShape | null;
     if (parsed?.v !== LUX_CACHE_VERSION) return null;
@@ -343,6 +350,7 @@ function loadLuxDayCache(
 }
 
 function saveLuxDayCache(
+  timeZone: string,
   entityId: string,
   threshold: number,
   lat: number,
@@ -357,9 +365,12 @@ function saveLuxDayCache(
   for (let i = 0; i < keys.length - LUX_CACHE_MAX_DAYS; i++) delete days[keys[i]];
   try {
     storage.setItem(
-      `${LUX_CACHE_PREFIX}${entityId}`,
+      luxCacheKey(entityId, timeZone),
       JSON.stringify({ v: LUX_CACHE_VERSION, threshold, lat, lon, scale, days } satisfies LuxDayCacheShape),
     );
+    // The v1 slot was keyed by entity alone; drop it so it does not
+    // linger in localStorage.
+    storage.removeItem(`${LUX_CACHE_PREFIX}${entityId}`);
   } catch {
     // Quota / private mode — best-effort.
   }
@@ -378,7 +389,7 @@ export class MeasuredDataSource {
   // as soon as the card is on screen again.
   private _pollDeferredWhileHidden = false;
 
-  constructor(hass: HassLike | null, config: DataSourceConfig) {
+  constructor(hass: HassLike | null, config: DataSourceConfig, readonly calendar: Calendar) {
     this.hass = hass;
     this.config = config;
   }
@@ -473,8 +484,8 @@ export class MeasuredDataSource {
       // first page carries real data instead of gap columns. One
       // extra hour before that start so a cumulative precipitation
       // sensor has a baseline to diff against on the oldest hour.
-      const end = new Date(startOfHour(Date.now()).getTime() + HOUR_MS);
-      const dayStart = addDays(startOfDay(Date.now()), -days);
+      const end = new Date(this.calendar.startOfHour(Date.now()).getTime() + HOUR_MS);
+      const dayStart = this.calendar.addDays(this.calendar.startOfDay(Date.now()), -days);
       const start = new Date(dayStart.getTime() - HOUR_MS);
       const hours = Math.round((end.getTime() - start.getTime()) / HOUR_MS) - 1;
 
@@ -494,8 +505,8 @@ export class MeasuredDataSource {
     // partial-day bucket is included as the rightmost column. We fetch
     // one extra day at the start (days+1) so a cumulative precipitation
     // sensor has a baseline value to diff against on the oldest day.
-    const end = addDays(startOfDay(Date.now()), 1);
-    const start = addDays(end, -(days + 1));
+    const end = this.calendar.addDays(this.calendar.startOfDay(Date.now()), 1);
+    const start = this.calendar.addDays(end, -(days + 1));
 
     const stats = await this._callStatsDeduped({
       type: 'recorder/statistics_during_period',
@@ -529,7 +540,7 @@ export class MeasuredDataSource {
   private _callStatsDeduped(msg: Record<string, unknown>): Promise<StatsResponse> {
     const hass = this.hass as HassLike;
     return dedupeRequest(
-      `stats:${JSON.stringify(msg)}`,
+      `stats:${this.calendar.timeZone}:${JSON.stringify(msg)}`,
       STATS_DEDUPE_TTL_MS,
       () => hass.callWS<StatsResponse>(msg),
     );
@@ -583,9 +594,9 @@ export class MeasuredDataSource {
     const byDay = new Map<string, number>();
     for (const b of series) {
       const d = new Date(b.start);
-      const v = hourOf(d) === 0 ? b.min : b.max;
+      const v = this.calendar.hourOf(d) === 0 ? b.min : b.max;
       if (v == null || !Number.isFinite(v)) continue;
-      const key = dayKey(d);
+      const key = this.calendar.dayKey(d);
       const prev = byDay.get(key);
       if (prev === undefined || v > prev) byDay.set(key, v);
     }
@@ -619,17 +630,17 @@ export class MeasuredDataSource {
     // full-window fetch every subsequent poll only needs TODAY's
     // samples. `neededDays` walks the completed local days inside the
     // requested window (start is midnight-aligned in the daily path).
-    const today = startOfDay(Date.now());
+    const today = this.calendar.startOfDay(Date.now());
     const todayMs = today.getTime();
     const neededDays: string[] = [];
-    for (let d = startOfDay(start); d.getTime() < todayMs; d = addDays(d, 1)) {
-      neededDays.push(dayKey(d));
+    for (let d = this.calendar.startOfDay(start); d.getTime() < todayMs; d = this.calendar.addDays(d, 1)) {
+      neededDays.push(this.calendar.dayKey(d));
     }
     // W/m² irradiance sensors convert to lux before the
     // ratio-vs-clear-sky derivation (scale 1 for plain lux sensors);
     // the cache is keyed on the scale so a unit change invalidates.
     const luxScale = this._luxScale(luxId);
-    const cachedDays = loadLuxDayCache(luxId, threshold, lat as number, lon as number, luxScale);
+    const cachedDays = loadLuxDayCache(this.calendar.timeZone, luxId, threshold, lat as number, lon as number, luxScale);
     const missingDays = cachedDays
       ? neededDays.filter((k) => cachedDays[k] === undefined)
       : neededDays;
@@ -653,7 +664,7 @@ export class MeasuredDataSource {
       // Same cross-card dedup as the stats call — the lux history is
       // by far the heaviest recorder payload the card requests.
       history = await dedupeRequest(
-        `history:${JSON.stringify(msg)}`,
+        `history:${this.calendar.timeZone}:${JSON.stringify(msg)}`,
         STATS_DEDUPE_TTL_MS,
         () => hass.callWS<typeof history>(msg),
       );
@@ -676,7 +687,7 @@ export class MeasuredDataSource {
     }
     if (samples.length < 2) return this._luxMapFromCache(cachedDays, neededDays);
 
-    const perDay = sunshineFromLuxHistory(samples, lat as number, lon as number, threshold);
+    const perDay = sunshineFromLuxHistory(samples, lat as number, lon as number, this.calendar, threshold);
 
     // Result map: cached completed days first, freshly-derived values
     // (today, plus any completed days this fetch covered) on top.
@@ -698,7 +709,7 @@ export class MeasuredDataSource {
     // Compare day keys as strings: YYYY-MM-DD sorts chronologically, and
     // parsing the key as a local time would read it in the browser's
     // zone rather than the server's (ADR-0026).
-    const fetchedFromKey = dayKey(fetchStart);
+    const fetchedFromKey = this.calendar.dayKey(fetchStart);
     const updated: Record<string, number> = { ...(cachedDays ?? {}) };
     let dirty = false;
     for (const k of neededDays) {
@@ -706,7 +717,7 @@ export class MeasuredDataSource {
       const v = map.get(k) ?? 0;
       if (updated[k] !== v) { updated[k] = v; dirty = true; }
     }
-    if (dirty) saveLuxDayCache(luxId, threshold, lat as number, lon as number, luxScale, updated);
+    if (dirty) saveLuxDayCache(this.calendar.timeZone, luxId, threshold, lat as number, lon as number, luxScale, updated);
     return map;
   }
 
@@ -739,12 +750,12 @@ export class MeasuredDataSource {
     for (const [eid, series] of Object.entries(stats || {})) {
       const m: BucketMap = new Map();
       for (const entry of series ?? []) {
-        m.set(startOfDay(new Date(entry.start)).getTime(), entry);
+        m.set(this.calendar.startOfDay(new Date(entry.start)).getTime(), entry);
       }
       byDate[eid] = m;
     }
 
-    const dayMs = (date: Date): number => startOfDay(date).getTime();
+    const dayMs = (date: Date): number => this.calendar.startOfDay(date).getTime();
 
     const windUnit = this._sensorUnit(sensors.wind_speed) || this._sensorUnit(sensors.gust_speed);
     const tempUnit = this._sensorUnit(sensors.temperature);
@@ -752,9 +763,9 @@ export class MeasuredDataSource {
     const precipUnit = this._sensorUnit(sensors.precipitation);
     const out: ForecastEntry[] = [];
     for (let i = 1; i <= days; i++) {
-      const dayStart = addDays(start, i);
+      const dayStart = this.calendar.addDays(start, i);
       const dayStartMs = dayMs(dayStart);
-      const prevKey = dayMs(addDays(dayStart, -1));
+      const prevKey = dayMs(this.calendar.addDays(dayStart, -1));
       // Today is always the LAST bucket in the daily window (the caller
       // sizes start so start+days lands on today).
       const isToday = i === days;
@@ -822,7 +833,7 @@ export class MeasuredDataSource {
       // `max(yesterday, this day)` because the midnight reset leaves the
       // previous day's final value inside this day's 00:00 bucket.
       if (sensors.sunshine_duration && sunshineByDate) {
-        const recovered = sunshineByDate.get(dayKey(dayStart));
+        const recovered = sunshineByDate.get(this.calendar.dayKey(dayStart));
         if (recovered != null) sunshineRaw = recovered;
       }
       // On TODAY the live state beats both. Statistics roll up
@@ -844,7 +855,7 @@ export class MeasuredDataSource {
       // shape `sunshineFromLuxHistory` emits. Recorder sensor
       // (Method C) still wins when both are available.
       if (sunshineRaw == null && luxByDate) {
-        const luxHours = luxByDate.get(dayKey(dayStart));
+        const luxHours = luxByDate.get(this.calendar.dayKey(dayStart));
         if (luxHours != null && Number.isFinite(luxHours)) {
           sunshineRaw = luxHours;
         }
@@ -881,7 +892,7 @@ export class MeasuredDataSource {
           wind_mean: toMetersPerSecond(windMean, windUnit),
           gust_max: toMetersPerSecond(gustMax, windUnit),
           dew_point_mean: toCelsius(dewPointMean, dewUnit),
-        }, dayOfYear(dayStart)),
+        }, this.calendar.dayOfYear(dayStart)),
       });
     }
     return out;
@@ -955,7 +966,7 @@ export class MeasuredDataSource {
     for (const [eid, series] of Object.entries(stats || {})) {
       const m: BucketMap = new Map();
       for (const entry of series ?? []) {
-        m.set(startOfHour(new Date(entry.start)).getTime(), entry);
+        m.set(this.calendar.startOfHour(new Date(entry.start)).getTime(), entry);
       }
       byHour[eid] = m;
     }
@@ -967,7 +978,7 @@ export class MeasuredDataSource {
     const cfg = this.hass?.config;
     const luxFor = clearSkyLuxFactory(cfg ? cfg.latitude : null, cfg ? cfg.longitude : null);
 
-    const hourMs = (date: Date): number => startOfHour(date).getTime();
+    const hourMs = (date: Date): number => this.calendar.startOfHour(date).getTime();
 
     const windUnit = this._sensorUnit(sensors.wind_speed) || this._sensorUnit(sensors.gust_speed);
     const tempUnit = this._sensorUnit(sensors.temperature);

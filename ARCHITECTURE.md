@@ -202,11 +202,11 @@ src/
 │   │                          stale-while-revalidate cache for the
 │   │                          station / forecast series — instant
 │   │                          paint after reload (ADR-0020).
-│   └── time-zone.ts           (v2.7)  Calendar math in the HA server's
-│                              zone (ADR-0026): start of day, add days,
-│                              hour / day keys. Every day boundary and
-│                              (via intl-cache) every displayed time
-│                              goes through it instead of Date's local
+│   └── time-zone.ts           (v2.7)  `Calendar`: day / hour math in
+│                              one IANA zone (ADR-0030). Each card owns
+│                              one (server zone) and passes it to every
+│                              module that cuts days or formats times;
+│                              no module state. Replaces Date's local
 │                              getters.
 │
 ├── chart/

@@ -35,6 +35,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The configuration reference no longer marks shipped features as
   unreleased and corrects several defaults.
 
+### Under the hood
+
+- Each card keeps its own time zone instead of sharing one per page, the groundwork for cards at different locations (#354, ADR-0030).
+
 ## [2.14.0] — 2026-10-21
 
 ### Changed

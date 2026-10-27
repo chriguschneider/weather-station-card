@@ -12,6 +12,9 @@ import {
   entitySunshineHours,
   forecastCoversSunshine,
 } from '../src/sunshine-source.js';
+import { Calendar } from '../src/utils/time-zone.js';
+
+const cal = new Calendar();
 
 describe('entitySunshineHours', () => {
   it('converts minutes to hours', () => {
@@ -51,7 +54,7 @@ describe('attachEntitySunshine', () => {
       { datetime: '2026-10-20T12:00:00', sunshine_duration: 120 },
       { datetime: '2026-10-21T12:00:00' },
     ]);
-    const out = attachSunshine(entries, {
+    const out = attachSunshine(entries, cal, {
       dailyValues: [
         { date: '2026-10-20', value: 9 },
         { date: '2026-10-21', value: 5 },

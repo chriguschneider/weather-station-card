@@ -11,50 +11,53 @@ import {
   sunshineFractions,
   sunshineFromLuxHistory,
 } from '../src/sunshine-source.js';
+import { Calendar } from '../src/utils/time-zone.js';
+
+const cal = new Calendar();
 
 describe('dayLengthHours', () => {
   it('returns 12 hours at the equator (any date)', () => {
-    expect(dayLengthHours(0, new Date(2026, 5, 21))).toBeCloseTo(12, 1);
-    expect(dayLengthHours(0, new Date(2026, 11, 21))).toBeCloseTo(12, 1);
+    expect(dayLengthHours(0, new Date(2026, 5, 21), cal)).toBeCloseTo(12, 1);
+    expect(dayLengthHours(0, new Date(2026, 11, 21), cal)).toBeCloseTo(12, 1);
   });
 
   it('returns ~15.7 h at Zürich on summer solstice (canonical reference)', () => {
     // Issue #6 plan §7 cites this as a verification anchor.
     const zurich = 47.37;
     const summerSolstice = new Date(2026, 5, 21); // 21 Jun 2026
-    expect(dayLengthHours(zurich, summerSolstice)).toBeCloseTo(15.7, 0);
+    expect(dayLengthHours(zurich, summerSolstice, cal)).toBeCloseTo(15.7, 0);
   });
 
   it('returns ~8.5 h at Zürich on winter solstice', () => {
     const zurich = 47.37;
     const winterSolstice = new Date(2026, 11, 21);
-    expect(dayLengthHours(zurich, winterSolstice)).toBeCloseTo(8.5, 0);
+    expect(dayLengthHours(zurich, winterSolstice, cal)).toBeCloseTo(8.5, 0);
   });
 
   it('handles polar night (24-hour darkness) with 0 hours', () => {
     // 80°N at winter solstice — sun never rises.
-    const result = dayLengthHours(80, new Date(2026, 11, 21));
+    const result = dayLengthHours(80, new Date(2026, 11, 21), cal);
     expect(result).toBe(0);
   });
 
   it('handles midnight sun (24-hour daylight) with 24 hours', () => {
-    const result = dayLengthHours(80, new Date(2026, 5, 21));
+    const result = dayLengthHours(80, new Date(2026, 5, 21), cal);
     expect(result).toBe(24);
   });
 
   it('falls back to 12 h for non-finite latitude', () => {
-    expect(dayLengthHours(NaN, new Date())).toBe(12);
-    expect(dayLengthHours(undefined, new Date())).toBe(12);
+    expect(dayLengthHours(NaN, new Date(), cal)).toBe(12);
+    expect(dayLengthHours(undefined, new Date(), cal)).toBe(12);
   });
 
   it('falls back to 12 h for invalid date', () => {
-    expect(dayLengthHours(47, new Date('invalid'))).toBe(12);
+    expect(dayLengthHours(47, new Date('invalid'), cal)).toBe(12);
   });
 
   it('northern and southern hemispheres are mirrored', () => {
     const summer = new Date(2026, 5, 21);
-    const north = dayLengthHours(47, summer);
-    const south = dayLengthHours(-47, summer);
+    const north = dayLengthHours(47, summer, cal);
+    const south = dayLengthHours(-47, summer, cal);
     expect(north + south).toBeCloseTo(24, 0);
   });
 });
@@ -98,36 +101,36 @@ describe('normalizeSunshineValue', () => {
 
 describe('localDateString', () => {
   it('returns YYYY-MM-DD for a Date', () => {
-    expect(localDateString(new Date(2026, 4, 5))).toBe('2026-05-05');
-    expect(localDateString(new Date(2026, 0, 1))).toBe('2026-01-01');
-    expect(localDateString(new Date(2026, 11, 31))).toBe('2026-12-31');
+    expect(localDateString(new Date(2026, 4, 5), cal)).toBe('2026-05-05');
+    expect(localDateString(new Date(2026, 0, 1), cal)).toBe('2026-01-01');
+    expect(localDateString(new Date(2026, 11, 31), cal)).toBe('2026-12-31');
   });
 
   it('parses ISO strings', () => {
     // Use a non-UTC-midnight time so timezones don't flip the date.
     const noon = new Date(2026, 4, 5, 12, 0, 0);
-    expect(localDateString(noon.toISOString())).toBe('2026-05-05');
+    expect(localDateString(noon.toISOString(), cal)).toBe('2026-05-05');
   });
 
   it('returns null for invalid dates', () => {
-    expect(localDateString('garbage')).toBe(null);
-    expect(localDateString(new Date('invalid'))).toBe(null);
+    expect(localDateString('garbage', cal)).toBe(null);
+    expect(localDateString(new Date('invalid'), cal)).toBe(null);
   });
 });
 
 describe('localHourString', () => {
   it('returns YYYY-MM-DDTHH:00 for a Date', () => {
-    expect(localHourString(new Date(2026, 4, 5, 14, 0, 0))).toBe('2026-05-05T14:00');
-    expect(localHourString(new Date(2026, 4, 5, 0, 0, 0))).toBe('2026-05-05T00:00');
-    expect(localHourString(new Date(2026, 4, 5, 23, 0, 0))).toBe('2026-05-05T23:00');
+    expect(localHourString(new Date(2026, 4, 5, 14, 0, 0), cal)).toBe('2026-05-05T14:00');
+    expect(localHourString(new Date(2026, 4, 5, 0, 0, 0), cal)).toBe('2026-05-05T00:00');
+    expect(localHourString(new Date(2026, 4, 5, 23, 0, 0), cal)).toBe('2026-05-05T23:00');
   });
 
   it('rounds the minutes off (drift on the entry datetime is fine)', () => {
-    expect(localHourString(new Date(2026, 4, 5, 14, 30, 15))).toBe('2026-05-05T14:00');
+    expect(localHourString(new Date(2026, 4, 5, 14, 30, 15), cal)).toBe('2026-05-05T14:00');
   });
 
   it('returns null for invalid dates', () => {
-    expect(localHourString('garbage')).toBe(null);
+    expect(localHourString('garbage', cal)).toBe(null);
   });
 });
 
@@ -241,13 +244,13 @@ describe('attachSunshine', () => {
   const iso = (date) => date.toISOString();
 
   it('returns [] for non-array input', () => {
-    expect(attachSunshine(null, {})).toEqual([]);
-    expect(attachSunshine(undefined, {})).toEqual([]);
+    expect(attachSunshine(null, cal, {})).toEqual([]);
+    expect(attachSunshine(undefined, cal, {})).toEqual([]);
   });
 
   it('passes through forecasts with sunshine=null when no opts given', () => {
     const fc = [{ datetime: iso(dayMs(-1)), temperature: 15 }];
-    const result = attachSunshine(fc);
+    const result = attachSunshine(fc, cal);
     expect(result).toHaveLength(1);
     expect(result[0].temperature).toBe(15);
   });
@@ -258,7 +261,7 @@ describe('attachSunshine', () => {
       { datetime: iso(dayMs(0)) },
       { datetime: iso(dayMs(1)) },
     ];
-    const result = attachSunshine(fc, { latitude: 47.37 });
+    const result = attachSunshine(fc, cal, { latitude: 47.37 });
     expect(result.every((e) => Number.isFinite(e.day_length))).toBe(true);
     expect(result[0].day_length).toBeGreaterThan(0);
     expect(result[0].day_length).toBeLessThanOrEqual(24);
@@ -266,7 +269,7 @@ describe('attachSunshine', () => {
 
   it('sets sunshine=null and day_length=null for entries with invalid datetime', () => {
     const fc = [{ datetime: 'not-a-date' }];
-    const [out] = attachSunshine(fc, { latitude: 47, dailyValues: [] });
+    const [out] = attachSunshine(fc, cal, { latitude: 47, dailyValues: [] });
     expect(out.sunshine).toBe(null);
     expect(out.day_length).toBe(null);
   });
@@ -280,19 +283,19 @@ describe('attachSunshine', () => {
       { datetime: iso(dayMs(2)) },  // forecast
     ];
     const dailyValues = [
-      { date: localDateString(dayMs(-2)), value: 3.1 },
-      { date: localDateString(dayMs(-1)), value: 5.9 },
-      { date: localDateString(dayMs(0)), value: 7.0 },
-      { date: localDateString(dayMs(1)), value: 9.1 },
-      { date: localDateString(dayMs(2)), value: 4.0 },
+      { date: localDateString(dayMs(-2), cal), value: 3.1 },
+      { date: localDateString(dayMs(-1), cal), value: 5.9 },
+      { date: localDateString(dayMs(0), cal), value: 7.0 },
+      { date: localDateString(dayMs(1), cal), value: 9.1 },
+      { date: localDateString(dayMs(2), cal), value: 4.0 },
     ];
-    const result = attachSunshine(fc, { dailyValues, latitude: 47 });
+    const result = attachSunshine(fc, cal, { dailyValues, latitude: 47 });
     expect(result.map((r) => r.sunshine)).toEqual([3.1, 5.9, 7.0, 9.1, 4.0]);
   });
 
   it('omits columns silently when no dailyValues given (sunshine stays null)', () => {
     const fc = [{ datetime: iso(dayMs(0)) }, { datetime: iso(dayMs(1)) }];
-    const result = attachSunshine(fc, { latitude: 47 });
+    const result = attachSunshine(fc, cal, { latitude: 47 });
     expect(result[0].sunshine).toBe(null);
     expect(result[1].sunshine).toBe(null);
   });
@@ -300,21 +303,21 @@ describe('attachSunshine', () => {
   it('caps each value at the day length (no 26-hour days)', () => {
     const fc = [{ datetime: iso(dayMs(-1)) }];
     // 99 hours of sun in a single day — clearly bogus.
-    const dailyValues = [{ date: localDateString(dayMs(-1)), value: 99 }];
-    const result = attachSunshine(fc, { dailyValues, latitude: 47 });
+    const dailyValues = [{ date: localDateString(dayMs(-1), cal), value: 99 }];
+    const result = attachSunshine(fc, cal, { dailyValues, latitude: 47 });
     expect(result[0].sunshine).toBeLessThanOrEqual(result[0].day_length);
   });
 
   it('clamps negative values to zero', () => {
     const fc = [{ datetime: iso(dayMs(-1)) }];
-    const dailyValues = [{ date: localDateString(dayMs(-1)), value: -1 }];
-    const result = attachSunshine(fc, { dailyValues, latitude: 47 });
+    const dailyValues = [{ date: localDateString(dayMs(-1), cal), value: -1 }];
+    const result = attachSunshine(fc, cal, { dailyValues, latitude: 47 });
     expect(result[0].sunshine).toBe(0);
   });
 
   it('returns a new array — does not mutate the input forecasts', () => {
     const original = [{ datetime: iso(dayMs(-1)), temperature: 10 }];
-    const result = attachSunshine(original, { latitude: 47 });
+    const result = attachSunshine(original, cal, { latitude: 47 });
     expect(result).not.toBe(original);
     expect(result[0]).not.toBe(original[0]);
     expect(original[0].sunshine).toBeUndefined();
@@ -323,8 +326,8 @@ describe('attachSunshine', () => {
   it('normalizes seconds → hours via the same auto-detect as scalar sensors', () => {
     // 28800 s = 8 h. Open-Meteo emits sunshine_duration in seconds.
     const fc = [{ datetime: iso(dayMs(0)) }];
-    const dailyValues = [{ date: localDateString(dayMs(0)), value: 28800 }];
-    const result = attachSunshine(fc, { dailyValues, latitude: 47 });
+    const dailyValues = [{ date: localDateString(dayMs(0), cal), value: 28800 }];
+    const result = attachSunshine(fc, cal, { dailyValues, latitude: 47 });
     expect(result[0].sunshine).toBe(8);
   });
 
@@ -341,23 +344,23 @@ describe('attachSunshine', () => {
       const fc = [{ datetime: iso(dayMs(-1)), sunshine: 6.5 }];
       // Open-Meteo would also have a value for that date; the
       // overlay must NOT overwrite the recorder's measured number.
-      const dailyValues = [{ date: localDateString(dayMs(-1)), value: 28800 }]; // 8h forecast
-      const result = attachSunshine(fc, { dailyValues, latitude: 47 });
+      const dailyValues = [{ date: localDateString(dayMs(-1), cal), value: 28800 }]; // 8h forecast
+      const result = attachSunshine(fc, cal, { dailyValues, latitude: 47 });
       expect(result[0].sunshine).toBe(6.5);
     });
 
     it('overlays the Open-Meteo value when upstream is null (today substitution)', () => {
       const fc = [{ datetime: iso(dayMs(0)), sunshine: null }];
       // Open-Meteo's daily-forecast for today: 8h.
-      const dailyValues = [{ date: localDateString(dayMs(0)), value: 28800 }];
-      const result = attachSunshine(fc, { dailyValues, latitude: 47 });
+      const dailyValues = [{ date: localDateString(dayMs(0), cal), value: 28800 }];
+      const result = attachSunshine(fc, cal, { dailyValues, latitude: 47 });
       expect(result[0].sunshine).toBe(8);
     });
 
     it('overlays when upstream is undefined (no sensors.sunshine_duration configured)', () => {
       const fc = [{ datetime: iso(dayMs(0)) }];
-      const dailyValues = [{ date: localDateString(dayMs(0)), value: 28800 }];
-      const result = attachSunshine(fc, { dailyValues, latitude: 47 });
+      const dailyValues = [{ date: localDateString(dayMs(0), cal), value: 28800 }];
+      const result = attachSunshine(fc, cal, { dailyValues, latitude: 47 });
       expect(result[0].sunshine).toBe(8);
     });
 
@@ -368,11 +371,11 @@ describe('attachSunshine', () => {
         { datetime: iso(dayMs(0)), sunshine: null }, // today — recorder skipped
       ];
       const dailyValues = [
-        { date: localDateString(dayMs(-2)), value: 18000 }, // would have been 5h
-        { date: localDateString(dayMs(-1)), value: 28800 }, // would have been 8h
-        { date: localDateString(dayMs(0)), value: 32400 },  // 9h forecast for today
+        { date: localDateString(dayMs(-2), cal), value: 18000 }, // would have been 5h
+        { date: localDateString(dayMs(-1), cal), value: 28800 }, // would have been 8h
+        { date: localDateString(dayMs(0), cal), value: 32400 },  // 9h forecast for today
       ];
-      const result = attachSunshine(fc, { dailyValues, latitude: 47 });
+      const result = attachSunshine(fc, cal, { dailyValues, latitude: 47 });
       expect(result[0].sunshine).toBe(4.2); // recorder preserved
       expect(result[1].sunshine).toBe(6.5); // recorder preserved
       expect(result[2].sunshine).toBe(9);   // today filled from overlay
@@ -387,7 +390,7 @@ describe('attachSunshine', () => {
       return d;
     };
     const hourIso = (h) => hourAt(h).toISOString();
-    const hourKey = (h) => localHourString(hourAt(h));
+    const hourKey = (h) => localHourString(hourAt(h), cal);
 
     it('matches each hourly entry against hourlyValues by hour key', () => {
       const fc = [
@@ -400,7 +403,7 @@ describe('attachSunshine', () => {
         { datetime: hourKey(13), value: 1800 }, // half hour
         // 23:00 absent — night
       ];
-      const result = attachSunshine(fc, {
+      const result = attachSunshine(fc, cal, {
         hourlyValues, latitude: 47, granularity: 'hourly',
       });
       expect(result[0].sunshine).toBe(1);
@@ -411,7 +414,7 @@ describe('attachSunshine', () => {
     it('sets day_length to 1h for every hourly entry', () => {
       const fc = [{ datetime: hourIso(12) }, { datetime: hourIso(0) }];
       const hourlyValues = [];
-      const result = attachSunshine(fc, {
+      const result = attachSunshine(fc, cal, {
         hourlyValues, latitude: 47, granularity: 'hourly',
       });
       expect(result[0].day_length).toBe(1);
@@ -421,7 +424,7 @@ describe('attachSunshine', () => {
     it('caps over-1h hourly values (defensive — should never happen in practice)', () => {
       const fc = [{ datetime: hourIso(12) }];
       const hourlyValues = [{ datetime: hourKey(12), value: 7200 }]; // 2h in 1h bucket
-      const result = attachSunshine(fc, {
+      const result = attachSunshine(fc, cal, {
         hourlyValues, latitude: 47, granularity: 'hourly',
       });
       expect(result[0].sunshine).toBe(1);
@@ -429,8 +432,8 @@ describe('attachSunshine', () => {
 
     it('does NOT match daily entries when granularity is hourly', () => {
       const fc = [{ datetime: hourIso(12) }];
-      const dailyValues = [{ date: localDateString(today), value: 28800 }];
-      const result = attachSunshine(fc, {
+      const dailyValues = [{ date: localDateString(today, cal), value: 28800 }];
+      const result = attachSunshine(fc, cal, {
         dailyValues, latitude: 47, granularity: 'hourly',
       });
       // No hourlyValues → null even though daily would match.
@@ -440,7 +443,7 @@ describe('attachSunshine', () => {
     it('does NOT match hourly entries when granularity is daily (default)', () => {
       const fc = [{ datetime: hourIso(12) }];
       const hourlyValues = [{ datetime: hourKey(12), value: 3600 }];
-      const result = attachSunshine(fc, {
+      const result = attachSunshine(fc, cal, {
         hourlyValues, latitude: 47, // granularity defaults daily
       });
       // Daily lookup falls through — would need dailyValues.
@@ -467,12 +470,12 @@ describe('overlayFromOpenMeteo', () => {
       { datetime: iso(dayMs(1)) },
     ];
     const source = makeSource([
-      { date: localDateString(dayMs(-1)), value: 5.5 },
-      { date: localDateString(dayMs(0)), value: 7.2 },
-      { date: localDateString(dayMs(1)), value: 9.1 },
+      { date: localDateString(dayMs(-1), cal), value: 5.5 },
+      { date: localDateString(dayMs(0), cal), value: 7.2 },
+      { date: localDateString(dayMs(1), cal), value: 9.1 },
     ]);
     const hass = { config: { latitude: 46.91 } };
-    const out = overlayFromOpenMeteo(forecasts, hass, source);
+    const out = overlayFromOpenMeteo(forecasts, hass, source, cal);
     expect(out.map((r) => r.sunshine)).toEqual([5.5, 7.2, 9.1]);
   });
 
@@ -482,18 +485,18 @@ describe('overlayFromOpenMeteo', () => {
       { datetime: iso(dayMs(7)) },
     ];
     const source = makeSource([
-      { date: localDateString(dayMs(0)), value: 7 },
+      { date: localDateString(dayMs(0), cal), value: 7 },
       // Day +7 not in source.
     ]);
-    const out = overlayFromOpenMeteo(forecasts, { config: { latitude: 47 } }, source);
+    const out = overlayFromOpenMeteo(forecasts, { config: { latitude: 47 } }, source, cal);
     expect(out[0].sunshine).toBe(7);
     expect(out[1].sunshine).toBe(null);
   });
 
   it('handles a hass object with no config gracefully', () => {
     const forecasts = [{ datetime: iso(dayMs(0)) }];
-    const source = makeSource([{ date: localDateString(dayMs(0)), value: 5 }]);
-    const out = overlayFromOpenMeteo(forecasts, {}, source);
+    const source = makeSource([{ date: localDateString(dayMs(0), cal), value: 5 }]);
+    const out = overlayFromOpenMeteo(forecasts, {}, source, cal);
     expect(out[0].sunshine).toBe(5);
     // day_length falls back to 12h equinox default when no latitude.
     expect(out[0].day_length).toBe(12);
@@ -501,7 +504,7 @@ describe('overlayFromOpenMeteo', () => {
 
   it('survives a null / undefined source (empty cache state)', () => {
     const forecasts = [{ datetime: iso(dayMs(0)) }];
-    const out = overlayFromOpenMeteo(forecasts, { config: { latitude: 47 } }, null);
+    const out = overlayFromOpenMeteo(forecasts, { config: { latitude: 47 } }, null, cal);
     expect(out[0].sunshine).toBe(null);
     expect(out[0].day_length).toBeGreaterThan(0);
   });
@@ -510,8 +513,8 @@ describe('overlayFromOpenMeteo', () => {
     // Open-Meteo emits seconds; parseDailySunshine doesn't normalize,
     // attachSunshine does at lookup time.
     const forecasts = [{ datetime: iso(dayMs(0)) }];
-    const source = makeSource([{ date: localDateString(dayMs(0)), value: 28800 }]);
-    const out = overlayFromOpenMeteo(forecasts, { config: { latitude: 47 } }, source);
+    const source = makeSource([{ date: localDateString(dayMs(0), cal), value: 28800 }]);
+    const out = overlayFromOpenMeteo(forecasts, { config: { latitude: 47 } }, source, cal);
     expect(out[0].sunshine).toBe(8);
   });
 
@@ -524,11 +527,11 @@ describe('overlayFromOpenMeteo', () => {
     const sourceWithHourly = {
       getDailyValues: () => [],
       getHourlyValues: () => [
-        { datetime: localHourString(hourAt(12)), value: 3600 },
+        { datetime: localHourString(hourAt(12), cal), value: 3600 },
       ],
     };
     const out = overlayFromOpenMeteo(
-      forecasts, { config: { latitude: 47 } }, sourceWithHourly, 'hourly',
+      forecasts, { config: { latitude: 47 } }, sourceWithHourly, cal, 'hourly',
     );
     expect(out[0].sunshine).toBe(1);
     expect(out[1].sunshine).toBe(null); // 23:00 missing → no sun
@@ -596,8 +599,8 @@ describe('sunshineFromLuxHistory (#66 Method B2)', () => {
   }
 
   it('returns [] for empty / single-sample input', () => {
-    expect(sunshineFromLuxHistory([], LAT, LON)).toEqual([]);
-    expect(sunshineFromLuxHistory([{ ts: 0, lux: 50000 }], LAT, LON)).toEqual([]);
+    expect(sunshineFromLuxHistory([], LAT, LON, cal)).toEqual([]);
+    expect(sunshineFromLuxHistory([{ ts: 0, lux: 50000 }], LAT, LON, cal)).toEqual([]);
   });
 
   it('returns [] for missing lat / lon', () => {
@@ -605,8 +608,8 @@ describe('sunshineFromLuxHistory (#66 Method B2)', () => {
       { ts: summerNoon(), lux: 80000 },
       { ts: summerNoon() + MIN, lux: 80000 },
     ];
-    expect(sunshineFromLuxHistory(samples, NaN, LON)).toEqual([]);
-    expect(sunshineFromLuxHistory(samples, LAT, NaN)).toEqual([]);
+    expect(sunshineFromLuxHistory(samples, NaN, LON, cal)).toEqual([]);
+    expect(sunshineFromLuxHistory(samples, LAT, NaN, cal)).toEqual([]);
   });
 
   it('counts an above-threshold interval at solar noon as sunshine', () => {
@@ -617,7 +620,7 @@ describe('sunshineFromLuxHistory (#66 Method B2)', () => {
     for (let i = 0; i <= 10; i++) {
       samples.push({ ts: start + i * MIN, lux: 80000 });
     }
-    const result = sunshineFromLuxHistory(samples, LAT, LON);
+    const result = sunshineFromLuxHistory(samples, LAT, LON, cal);
     expect(result).toHaveLength(1);
     expect(result[0].hours).toBeCloseTo(10 / 60, 5);
   });
@@ -629,7 +632,7 @@ describe('sunshineFromLuxHistory (#66 Method B2)', () => {
       // 20 000 lx at noon is ~0.2 ratio — well below default 0.6.
       samples.push({ ts: start + i * MIN, lux: 20000 });
     }
-    expect(sunshineFromLuxHistory(samples, LAT, LON)).toEqual([]);
+    expect(sunshineFromLuxHistory(samples, LAT, LON, cal)).toEqual([]);
   });
 
   it('respects a custom threshold (lower → more sunshine counted)', () => {
@@ -639,8 +642,8 @@ describe('sunshineFromLuxHistory (#66 Method B2)', () => {
     for (let i = 0; i <= 10; i++) {
       samples.push({ ts: start + i * MIN, lux: 50000 });
     }
-    expect(sunshineFromLuxHistory(samples, LAT, LON, 0.6)).toEqual([]);
-    const out = sunshineFromLuxHistory(samples, LAT, LON, 0.4);
+    expect(sunshineFromLuxHistory(samples, LAT, LON, cal, 0.6)).toEqual([]);
+    const out = sunshineFromLuxHistory(samples, LAT, LON, cal, 0.4);
     expect(out).toHaveLength(1);
     expect(out[0].hours).toBeGreaterThan(0);
   });
@@ -652,7 +655,7 @@ describe('sunshineFromLuxHistory (#66 Method B2)', () => {
       { ts: start + 30 * MIN, lux: 80000 }, // 30-min gap — skip
       { ts: start + 31 * MIN, lux: 80000 }, // 1-min gap right after — count
     ];
-    const result = sunshineFromLuxHistory(samples, LAT, LON);
+    const result = sunshineFromLuxHistory(samples, LAT, LON, cal);
     expect(result).toHaveLength(1);
     // Only the second pair (1 min) counts, not the 30-min skip.
     expect(result[0].hours).toBeCloseTo(1 / 60, 5);
@@ -665,7 +668,7 @@ describe('sunshineFromLuxHistory (#66 Method B2)', () => {
       { ts: night, lux: 80000 }, // anomalous bright reading at 03:00 (e.g. headlights)
       { ts: night + MIN, lux: 80000 },
     ];
-    expect(sunshineFromLuxHistory(samples, LAT, LON)).toEqual([]);
+    expect(sunshineFromLuxHistory(samples, LAT, LON, cal)).toEqual([]);
   });
 
   it('buckets samples by local date — multiple days in one history pull', () => {
@@ -677,7 +680,7 @@ describe('sunshineFromLuxHistory (#66 Method B2)', () => {
       { ts: day2Noon, lux: 80000 },
       { ts: day2Noon + MIN, lux: 80000 },
     ];
-    const result = sunshineFromLuxHistory(samples, LAT, LON);
+    const result = sunshineFromLuxHistory(samples, LAT, LON, cal);
     expect(result).toHaveLength(2);
     expect(result[0].date < result[1].date).toBe(true);
     expect(result[0].hours).toBeCloseTo(1 / 60, 5);
@@ -693,8 +696,8 @@ describe('sunshineFromLuxHistory (#66 Method B2)', () => {
       { ts: start + 2 * MIN, lux: -50 }, // negative — filtered
       { ts: start + 3 * MIN, lux: 80000 },
     ];
-    expect(() => sunshineFromLuxHistory(samples, LAT, LON)).not.toThrow();
-    const result = sunshineFromLuxHistory(samples, LAT, LON);
+    expect(() => sunshineFromLuxHistory(samples, LAT, LON, cal)).not.toThrow();
+    const result = sunshineFromLuxHistory(samples, LAT, LON, cal);
     // After filtering NaN and negative, valid samples are at start, +1m,
     // and +3m. The first interval (1 min) is sunshine; the second
     // interval (2 min) — but second sample paired with the +3m bumps

@@ -17,7 +17,7 @@
 
 import uPlot from 'uplot';
 import { getDateTimeFormat, getNumberFormat } from './utils/intl-cache.js';
-import { addDays, startOfDay } from './utils/time-zone.js';
+import type { Calendar } from './utils/time-zone.js';
 
 export interface ZeroDegreePoint {
   /** Epoch ms. */
@@ -66,14 +66,14 @@ export function paddedLevelRange(min: number, max: number): [number, number] {
   return [lo, hi];
 }
 
-/** Local midnights (HA server zone, ADR-0026) strictly after `t0` and
+/** Midnights in the card's zone (ADR-0030) strictly after `t0` and
  *  up to `t1`. */
-export function dayStartsBetween(t0: number, t1: number): number[] {
+export function dayStartsBetween(t0: number, t1: number, calendar: Calendar): number[] {
   const out: number[] = [];
-  let d = addDays(startOfDay(t0), 1).getTime();
+  let d = calendar.addDays(calendar.startOfDay(t0), 1).getTime();
   while (d <= t1) {
     out.push(d);
-    d = addDays(d, 1).getTime();
+    d = calendar.addDays(d, 1).getTime();
   }
   return out;
 }
@@ -82,6 +82,8 @@ export interface ZeroDegreeFormatOpts {
   language: string;
   unit: string | undefined;
   hour12?: boolean;
+  /** The card's calendar; days and clock times follow its zone. */
+  calendar: Calendar;
   /** Level formatter supplied by the card so the popup reads like the
    *  row beside it (HA number format). Absent: plain Intl in `language`. */
   formatValue?(level: number, withUnit: boolean): string;
@@ -101,16 +103,16 @@ export function findWindowMinimum(curve: readonly ZeroDegreePoint[], hours: numb
 }
 
 /** Weekday + clock, the next-rain tooltip's style ("Thu 05:00"). */
-export function formatWeekdayTime(t: number, { language, hour12 }: ZeroDegreeFormatOpts): string {
+export function formatWeekdayTime(t: number, { language, hour12, calendar }: ZeroDegreeFormatOpts): string {
   return getDateTimeFormat(language, {
-    weekday: 'short', hour: 'numeric', minute: 'numeric', hour12,
+    weekday: 'short', hour: 'numeric', minute: 'numeric', hour12, timeZone: calendar.timeZone,
   }).format(new Date(t));
 }
 
 /** "Wed 21 Oct 07:00 – Sat 24 Oct 21:00" in the HA locale. */
-export function formatCurveRange(t0: number, t1: number, { language, hour12 }: ZeroDegreeFormatOpts): string {
+export function formatCurveRange(t0: number, t1: number, { language, hour12, calendar }: ZeroDegreeFormatOpts): string {
   const fmt = getDateTimeFormat(language, {
-    weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: 'numeric', hour12,
+    weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: 'numeric', hour12, timeZone: calendar.timeZone,
   });
   return `${fmt.format(new Date(t0))} – ${fmt.format(new Date(t1))}`;
 }
@@ -162,7 +164,7 @@ function overlayPlugin(
   min: ZeroDegreePoint | null,
   opts: ZeroDegreeChartOpts,
 ): uPlot.Plugin {
-  const midnights = dayStartsBetween(curve[0].t, curve[curve.length - 1].t);
+  const midnights = dayStartsBetween(curve[0].t, curve[curve.length - 1].t, opts.calendar);
   return {
     hooks: {
       draw: (u) => {
@@ -222,8 +224,8 @@ export const buildZeroDegreeChart: ZeroDegreeChartFactory = (target, curve, opts
   const yRange = paddedLevelRange(lo, hi);
   const t0 = curve[0].t;
   const t1 = curve[curve.length - 1].t;
-  const midnights = dayStartsBetween(t0, t1);
-  const weekdayFmt = getDateTimeFormat(opts.language, { weekday: 'short' });
+  const midnights = dayStartsBetween(t0, t1, opts.calendar);
+  const weekdayFmt = getDateTimeFormat(opts.language, { weekday: 'short', timeZone: opts.calendar.timeZone });
   const axisFont = '11px sans-serif';
   const data: uPlot.AlignedData = [curve.map((p) => p.t), curve.map((p) => p.level)];
   const u = new uPlot({
@@ -237,7 +239,7 @@ export const buildZeroDegreeChart: ZeroDegreeChartFactory = (target, curve, opts
     },
     select: { show: false, left: 0, top: 0, width: 0, height: 0 },
     // Epoch ms on a plain numeric scale: uPlot's own time axis formats in
-    // the browser zone, the card follows the HA server zone (ADR-0026).
+    // the browser zone, the card follows its own calendar (ADR-0030).
     scales: {
       x: { time: false, range: [t0, t1] },
       y: { range: yRange },
@@ -458,6 +460,7 @@ export class ZeroDegreePopup {
       language: opts.language,
       unit: opts.unit,
       hour12: opts.hour12,
+      calendar: opts.calendar,
       formatValue: opts.formatValue,
       width: chartTarget.clientWidth || panel.clientWidth || 488,
       height: CHART_HEIGHT,

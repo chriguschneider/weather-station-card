@@ -2,6 +2,7 @@ import { LitElement, html, type TemplateResult } from 'lit';
 import type { HomeAssistant } from './editor/types.js';
 import locale, { ensureLocaleLoaded, resolveLocaleKey } from './locale.js';
 import { readCachedAvailability } from './openmeteo-source.js';
+import { Calendar } from './utils/time-zone.js';
 import { renderBasicsSection } from './editor/render-basics.js';
 import { renderSensorsSection } from './editor/render-sensors.js';
 import { renderChartSection } from './editor/render-chart.js';
@@ -492,7 +493,7 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     const lon = hass?.config ? hass.config.longitude : null;
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return '';
 
-    const av = readCachedAvailability(lat as number, lon as number);
+    const av = readCachedAvailability(lat as number, lon as number, new Calendar(hass?.config?.time_zone));
     if (!av) {
       return html`<div class="hint" style="margin-top:4px;">
         ${t('sunshine_availability_pending')}

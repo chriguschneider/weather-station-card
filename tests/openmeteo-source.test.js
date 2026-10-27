@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { setCardTimeZone, zonedPartsIn } from '../src/utils/time-zone.js';
+import { Calendar, zonedPartsIn } from '../src/utils/time-zone.js';
 import {
   buildOpenMeteoUrl,
   parseDailySunshine,
@@ -16,8 +16,7 @@ import {
 // Open-Meteo hourly `time` is epoch seconds (timeformat=unixtime).
 const utc = (iso) => Date.parse(`${iso}:00Z`) / 1000;
 
-setCardTimeZone('UTC');
-afterAll(() => setCardTimeZone(undefined));
+const cal = new Calendar('UTC');
 
 // ── Chance of rain (#288, ADR-0027) ─────────────────────────────────
 describe('chance-of-rain fields', () => {
@@ -34,7 +33,7 @@ describe('chance-of-rain fields', () => {
         time: ['2026-05-06', '2026-05-07', '2026-05-08'],
         precipitation_probability_max: [85, null, 20],
       },
-    });
+    }, cal);
     expect(out).toEqual([
       { date: '2026-05-06', value: 85 },
       { date: '2026-05-08', value: 20 },
@@ -47,14 +46,14 @@ describe('chance-of-rain fields', () => {
         time: [utc('2026-05-06T14:00'), utc('2026-05-06T15:00')],
         precipitation_probability: [70, null],
       },
-    });
+    }, cal);
     expect(out).toEqual([{ datetime: '2026-05-06T14:00', value: 70 }]);
   });
 
   it('both parsers return [] for malformed / missing sections', () => {
-    expect(parseDailyProbability(null)).toEqual([]);
-    expect(parseDailyProbability({ daily: {} })).toEqual([]);
-    expect(parseHourlyProbability({})).toEqual([]);
+    expect(parseDailyProbability(null, cal)).toEqual([]);
+    expect(parseDailyProbability({ daily: {} }, cal)).toEqual([]);
+    expect(parseHourlyProbability({}, cal)).toEqual([]);
   });
 
   it('OpenMeteoSource exposes the parsed arrays and persists them', async () => {
@@ -67,12 +66,12 @@ describe('chance-of-rain fields', () => {
         hourly: { time: [utc('2026-05-06T14:00')], sunshine_duration: [1800], precipitation_probability: [70] },
       }),
     }));
-    const src = new OpenMeteoSource({ latitude: 46.9, longitude: 7.4, includeHourly: true, fetchImpl, storage });
+    const src = new OpenMeteoSource({ calendar: cal, latitude: 46.9, longitude: 7.4, includeHourly: true, fetchImpl, storage });
     await src.ensureFresh();
     expect(src.getDailyProbability()).toEqual([{ date: '2026-05-06', value: 85 }]);
     expect(src.getHourlyProbability()).toEqual([{ datetime: '2026-05-06T14:00', value: 70 }]);
 
-    const src2 = new OpenMeteoSource({ latitude: 46.9, longitude: 7.4, includeHourly: true, fetchImpl, storage });
+    const src2 = new OpenMeteoSource({ calendar: cal, latitude: 46.9, longitude: 7.4, includeHourly: true, fetchImpl, storage });
     expect(src2.getDailyProbability()).toHaveLength(1);
     expect(src2.getHourlyProbability()).toHaveLength(1);
     expect(src2.isStale()).toBe(false);
@@ -87,7 +86,7 @@ describe('chance-of-rain fields', () => {
       dailyForecast: [{ datetime: '2026-05-06T00:00:00.000Z' }],
       lastFetchMs: Date.now(),
     }));
-    const src = new OpenMeteoSource({ latitude: 46.9, longitude: 7.4, fetchImpl: null, storage });
+    const src = new OpenMeteoSource({ calendar: cal, latitude: 46.9, longitude: 7.4, fetchImpl: null, storage });
     expect(src.isStale()).toBe(true);
   });
 
@@ -96,7 +95,7 @@ describe('chance-of-rain fields', () => {
       ok: true,
       json: async () => ({ daily: { time: ['2026-05-06'], sunshine_duration: [3600] } }),
     }));
-    const src = new OpenMeteoSource({ latitude: 46.9, longitude: 7.4, fetchImpl, storage: null });
+    const src = new OpenMeteoSource({ calendar: cal, latitude: 46.9, longitude: 7.4, fetchImpl, storage: null });
     await src.ensureFresh();
     expect(src.getDailyProbability()).toEqual([]);
     expect(src.isStale()).toBe(false);
@@ -170,7 +169,7 @@ describe('parseDailySunshine', () => {
         sunshine_duration: [43296.27, 48214.79, 48495.05],
       },
     };
-    expect(parseDailySunshine(response)).toEqual([
+    expect(parseDailySunshine(response, cal)).toEqual([
       { date: '2026-04-29', value: 43296.27 },
       { date: '2026-04-30', value: 48214.79 },
       { date: '2026-05-01', value: 48495.05 },
@@ -184,17 +183,17 @@ describe('parseDailySunshine', () => {
         sunshine_duration: [43296, null, 48495],
       },
     };
-    expect(parseDailySunshine(response)).toEqual([
+    expect(parseDailySunshine(response, cal)).toEqual([
       { date: '2026-04-29', value: 43296 },
       { date: '2026-05-01', value: 48495 },
     ]);
   });
 
   it('returns [] for malformed / empty responses', () => {
-    expect(parseDailySunshine(null)).toEqual([]);
-    expect(parseDailySunshine({})).toEqual([]);
-    expect(parseDailySunshine({ daily: null })).toEqual([]);
-    expect(parseDailySunshine({ daily: { time: [] } })).toEqual([]);
+    expect(parseDailySunshine(null, cal)).toEqual([]);
+    expect(parseDailySunshine({}, cal)).toEqual([]);
+    expect(parseDailySunshine({ daily: null }, cal)).toEqual([]);
+    expect(parseDailySunshine({ daily: { time: [] } }, cal)).toEqual([]);
   });
 });
 
@@ -206,7 +205,7 @@ describe('parseHourlySunshine', () => {
         sunshine_duration: [3600, 1800, 0],
       },
     };
-    expect(parseHourlySunshine(response)).toEqual([
+    expect(parseHourlySunshine(response, cal)).toEqual([
       { datetime: '2026-05-05T12:00', value: 3600 },
       { datetime: '2026-05-05T13:00', value: 1800 },
       { datetime: '2026-05-05T14:00', value: 0 },
@@ -220,16 +219,16 @@ describe('parseHourlySunshine', () => {
         sunshine_duration: [3600, null],
       },
     };
-    expect(parseHourlySunshine(response)).toEqual([
+    expect(parseHourlySunshine(response, cal)).toEqual([
       { datetime: '2026-05-05T12:00', value: 3600 },
     ]);
   });
 
   it('returns [] for malformed / missing hourly section', () => {
-    expect(parseHourlySunshine(null)).toEqual([]);
-    expect(parseHourlySunshine({})).toEqual([]);
-    expect(parseHourlySunshine({ hourly: null })).toEqual([]);
-    expect(parseHourlySunshine({ daily: { time: [] } })).toEqual([]);
+    expect(parseHourlySunshine(null, cal)).toEqual([]);
+    expect(parseHourlySunshine({}, cal)).toEqual([]);
+    expect(parseHourlySunshine({ hourly: null }, cal)).toEqual([]);
+    expect(parseHourlySunshine({ daily: { time: [] } }, cal)).toEqual([]);
   });
 });
 
@@ -249,7 +248,7 @@ describe('buildDailyForecast', () => {
   };
 
   it('maps daily arrays into station-shaped ForecastEntry objects', () => {
-    const out = buildDailyForecast(sample);
+    const out = buildDailyForecast(sample, cal);
     expect(out).toHaveLength(3);
     const e = out[1];
     expect(e.temperature).toBe(15.0); // daily HIGH
@@ -261,24 +260,24 @@ describe('buildDailyForecast', () => {
   });
 
   it('derives condition from the WMO weather_code', () => {
-    const out = buildDailyForecast(sample);
+    const out = buildDailyForecast(sample, cal);
     expect(out[0].condition).toBe('sunny'); // code 0
     expect(out[1].condition).toBe('pouring'); // code 65, heavy rain
     expect(out[2].condition).toBe('cloudy'); // code 3, overcast
   });
 
   it('emits local-midnight ISO datetimes (MeasuredDataSource convention)', () => {
-    const out = buildDailyForecast(sample);
+    const out = buildDailyForecast(sample, cal);
     // Local midnight of the civil date — TZ-independent assertion.
     expect(out[2].datetime).toBe(new Date(2026, 4, 20).toISOString());
   });
 
   it('tags wind_speed_unit so the renderer can convert wind', () => {
-    expect(buildDailyForecast(sample)[0].wind_speed_unit).toBe('m/s');
+    expect(buildDailyForecast(sample, cal)[0].wind_speed_unit).toBe('m/s');
   });
 
   it('leaves sunshine unset and humidity/pressure/uv null', () => {
-    const e = buildDailyForecast(sample)[0];
+    const e = buildDailyForecast(sample, cal)[0];
     // sunshine is filled later by the overlay, not by this builder.
     expect(e.sunshine).toBeUndefined();
     // Open-Meteo daily has no humidity / pressure / uv fields.
@@ -299,7 +298,7 @@ describe('buildDailyForecast', () => {
         wind_gusts_10m_max: [null],
         wind_direction_10m_dominant: [null],
       },
-    });
+    }, cal);
     expect(out).toHaveLength(1);
     expect(out[0].temperature).toBe(null);
     expect(out[0].precipitation).toBe(null);
@@ -309,10 +308,10 @@ describe('buildDailyForecast', () => {
   });
 
   it('returns [] for malformed / empty responses', () => {
-    expect(buildDailyForecast(null)).toEqual([]);
-    expect(buildDailyForecast({})).toEqual([]);
-    expect(buildDailyForecast({ daily: null })).toEqual([]);
-    expect(buildDailyForecast({ daily: { time: [] } })).toEqual([]);
+    expect(buildDailyForecast(null, cal)).toEqual([]);
+    expect(buildDailyForecast({}, cal)).toEqual([]);
+    expect(buildDailyForecast({ daily: null }, cal)).toEqual([]);
+    expect(buildDailyForecast({ daily: { time: [] } }, cal)).toEqual([]);
   });
 });
 
@@ -405,7 +404,7 @@ describe('OpenMeteoSource', () => {
   const now = () => nowMs;
 
   it('starts with empty values when no cache and no fetch yet', () => {
-    const src = new OpenMeteoSource({
+    const src = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon,
       fetchImpl: makeFetchOk(sampleResponse),
       storage: makeStorage(),
@@ -423,7 +422,7 @@ describe('OpenMeteoSource', () => {
         sunshine_duration: [3600, 1800],
       },
     });
-    const src = new OpenMeteoSource({
+    const src = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon, includeHourly: true,
       fetchImpl: fetchSpy, storage: makeStorage(), now,
     });
@@ -438,7 +437,7 @@ describe('OpenMeteoSource', () => {
 
   it('does not request hourly when includeHourly:false', async () => {
     const fetchSpy = makeFetchOk(sampleResponse);
-    const src = new OpenMeteoSource({
+    const src = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon, // includeHourly defaults false
       fetchImpl: fetchSpy, storage: makeStorage(), now,
     });
@@ -451,7 +450,7 @@ describe('OpenMeteoSource', () => {
   it('populates values via ensureFresh and reports via listener', async () => {
     const fetchSpy = makeFetchOk(sampleResponse);
     const listener = vi.fn();
-    const src = new OpenMeteoSource({
+    const src = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon,
       fetchImpl: fetchSpy, storage: makeStorage(), now,
     });
@@ -465,7 +464,7 @@ describe('OpenMeteoSource', () => {
   it('does not refire when a fetch is already in flight (de-dup)', async () => {
     let resolveFetch;
     const fetchSpy = vi.fn(() => new Promise((resolve) => { resolveFetch = resolve; }));
-    const src = new OpenMeteoSource({
+    const src = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon,
       fetchImpl: fetchSpy, storage: makeStorage(), now,
     });
@@ -479,7 +478,7 @@ describe('OpenMeteoSource', () => {
 
   it('skips refresh when cache is fresh (within TTL)', async () => {
     const fetchSpy = makeFetchOk(sampleResponse);
-    const src = new OpenMeteoSource({
+    const src = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon,
       fetchImpl: fetchSpy, storage: makeStorage(), now,
     });
@@ -492,7 +491,7 @@ describe('OpenMeteoSource', () => {
 
   it('refreshes again once TTL has elapsed (1h)', async () => {
     const fetchSpy = makeFetchOk(sampleResponse);
-    const src = new OpenMeteoSource({
+    const src = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon,
       fetchImpl: fetchSpy, storage: makeStorage(), now,
     });
@@ -506,14 +505,14 @@ describe('OpenMeteoSource', () => {
   it('persists to storage and rehydrates on a fresh instance', async () => {
     const storage = makeStorage();
     const fetchSpy = makeFetchOk(sampleResponse);
-    const src = new OpenMeteoSource({
+    const src = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon,
       fetchImpl: fetchSpy, storage, now,
     });
     await src.ensureFresh();
     // Second instance — should pick up the stored cache without fetching.
     const fetchSpy2 = makeFetchOk(sampleResponse);
-    const src2 = new OpenMeteoSource({
+    const src2 = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon,
       fetchImpl: fetchSpy2, storage, now,
     });
@@ -532,12 +531,12 @@ describe('OpenMeteoSource', () => {
         sunshine_duration: [3600, 1800],
       },
     });
-    const src = new OpenMeteoSource({
+    const src = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon, includeHourly: true,
       fetchImpl: fetchSpy, storage, now,
     });
     await src.ensureFresh();
-    const src2 = new OpenMeteoSource({
+    const src2 = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon, includeHourly: true,
       fetchImpl: vi.fn(), storage, now,
     });
@@ -549,7 +548,7 @@ describe('OpenMeteoSource', () => {
   it('considers cache stale when hourly is requested but not in cache', async () => {
     const storage = makeStorage();
     // Warm the cache without hourly first.
-    const dailyOnly = new OpenMeteoSource({
+    const dailyOnly = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon, includeHourly: false,
       fetchImpl: makeFetchOk(sampleResponse), storage, now,
     });
@@ -563,7 +562,7 @@ describe('OpenMeteoSource', () => {
         sunshine_duration: [3600],
       },
     });
-    const withHourly = new OpenMeteoSource({
+    const withHourly = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon, includeHourly: true,
       fetchImpl: fetchSpy, storage, now,
     });
@@ -576,7 +575,7 @@ describe('OpenMeteoSource', () => {
   it('keeps the previous cache and notifies listener on HTTP failure', async () => {
     const storage = makeStorage();
     // First call: warm the cache.
-    const ok = new OpenMeteoSource({
+    const ok = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon,
       fetchImpl: makeFetchOk(sampleResponse), storage, now,
     });
@@ -585,7 +584,7 @@ describe('OpenMeteoSource', () => {
     // wipe the on-disk cache, and should notify the listener.
     nowMs += 60 * 60 * 1000 + 1;
     const fetchSpy = makeFetchFail(503);
-    const fail = new OpenMeteoSource({
+    const fail = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon,
       fetchImpl: fetchSpy, storage, now,
     });
@@ -599,7 +598,7 @@ describe('OpenMeteoSource', () => {
 
   it('skips fetch when latitude / longitude are non-finite', async () => {
     const fetchSpy = makeFetchOk(sampleResponse);
-    const src = new OpenMeteoSource({
+    const src = new OpenMeteoSource({ calendar: cal,
       latitude: NaN, longitude: undefined,
       fetchImpl: fetchSpy, storage: makeStorage(), now,
     });
@@ -621,7 +620,7 @@ describe('OpenMeteoSource', () => {
         }
       });
     });
-    const src = new OpenMeteoSource({
+    const src = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon,
       fetchImpl: fetchSpy, storage: makeStorage(), now,
     });
@@ -640,7 +639,7 @@ describe('OpenMeteoSource', () => {
       getItem: () => { throw new Error('storage corrupted'); },
       setItem: () => {},
     };
-    expect(() => new OpenMeteoSource({
+    expect(() => new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon,
       fetchImpl: vi.fn(() => Promise.reject(new Error('no fetch'))),
       storage: throwingStorage, now,
@@ -655,7 +654,7 @@ describe('OpenMeteoSource', () => {
     const fetchSpy = vi.fn(async () => new Response(JSON.stringify({
       daily: { time: ['2026-05-21'], sunshine_duration: [50000] },
     })));
-    const src = new OpenMeteoSource({
+    const src = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon, fetchImpl: fetchSpy, storage: throwingStorage, now,
     });
     src.setListener(vi.fn());
@@ -663,7 +662,7 @@ describe('OpenMeteoSource', () => {
   });
 
   it('abort() is safe when AbortController.abort() throws (older-polyfill path, #56 coverage)', () => {
-    const src = new OpenMeteoSource({
+    const src = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon,
       fetchImpl: vi.fn(() => new Promise(() => {})), // never-resolving
       storage: makeStorage(), now,
@@ -686,12 +685,12 @@ describe('readCachedAvailability', () => {
   })();
 
   it('returns null when nothing is cached for that location', () => {
-    expect(readCachedAvailability(lat, lon, makeStorage())).toBe(null);
+    expect(readCachedAvailability(lat, lon, cal, makeStorage())).toBe(null);
   });
 
   it('returns null on non-finite coordinates or no storage', () => {
-    expect(readCachedAvailability(NaN, lon, makeStorage())).toBe(null);
-    expect(readCachedAvailability(lat, lon, null)).toBe(null);
+    expect(readCachedAvailability(NaN, lon, cal, makeStorage())).toBe(null);
+    expect(readCachedAvailability(lat, lon, cal, null)).toBe(null);
   });
 
   it('counts past + forecast days from a cached daily array', () => {
@@ -708,7 +707,7 @@ describe('readCachedAvailability', () => {
         lastFetchMs: todayMidnightMs,
       }),
     });
-    const result = readCachedAvailability(lat, lon, storage, today.getTime());
+    const result = readCachedAvailability(lat, lon, cal, storage, today.getTime());
     expect(result.pastDays).toBe(2);
     expect(result.forecastDays).toBe(3);
     expect(result.lastFetchMs).toBe(todayMidnightMs);
@@ -726,7 +725,7 @@ describe('readCachedAvailability', () => {
         lastFetchMs: 0,
       }),
     });
-    const result = readCachedAvailability(lat, lon, storage, today.getTime());
+    const result = readCachedAvailability(lat, lon, cal, storage, today.getTime());
     expect(result.pastDays).toBe(0);
     expect(result.forecastDays).toBe(1);
   });
@@ -739,7 +738,7 @@ describe('readCachedAvailability', () => {
         lastFetchMs: 0,
       }),
     });
-    const result = readCachedAvailability(lat, lon, storage, today.getTime());
+    const result = readCachedAvailability(lat, lon, cal, storage, today.getTime());
     expect(result.pastDays).toBe(0);
     expect(result.forecastDays).toBe(0);
   });
@@ -762,7 +761,7 @@ describe('OpenMeteoSource.ensureFresh edge cases', () => {
   }
 
   it('returns early when no fetch implementation is available', async () => {
-    const src = new OpenMeteoSource({
+    const src = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon,
       fetchImpl: null, // explicit no-fetch
       storage: makeStorage(),
@@ -775,7 +774,7 @@ describe('OpenMeteoSource.ensureFresh edge cases', () => {
 
   it('returns early when latitude / longitude are non-finite', async () => {
     const fetchImpl = vi.fn();
-    const src = new OpenMeteoSource({
+    const src = new OpenMeteoSource({ calendar: cal,
       latitude: NaN, longitude: lon,
       fetchImpl,
       storage: makeStorage(),
@@ -792,7 +791,7 @@ describe('OpenMeteoSource.ensureFresh edge cases', () => {
       json: vi.fn(),
     });
     const listener = vi.fn();
-    const src = new OpenMeteoSource({
+    const src = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon,
       fetchImpl,
       storage: makeStorage(),
@@ -812,7 +811,7 @@ describe('OpenMeteoSource.ensureFresh edge cases', () => {
     const abortError = Object.assign(new Error('aborted'), { name: 'AbortError' });
     const fetchImpl = vi.fn().mockRejectedValue(abortError);
     const listener = vi.fn();
-    const src = new OpenMeteoSource({
+    const src = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon,
       fetchImpl,
       storage: makeStorage(),
@@ -831,7 +830,7 @@ describe('OpenMeteoSource.ensureFresh edge cases', () => {
     });
     const fetchImpl = vi.fn().mockResolvedValue({ ok: true, json });
     const listener = vi.fn();
-    const src = new OpenMeteoSource({
+    const src = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon,
       fetchImpl,
       storage: makeStorage(),
@@ -847,7 +846,7 @@ describe('OpenMeteoSource.ensureFresh edge cases', () => {
   it('coalesces concurrent ensureFresh calls (one fetch for two waiters)', async () => {
     let resolveFetch;
     const fetchImpl = vi.fn().mockReturnValue(new Promise((r) => { resolveFetch = r; }));
-    const src = new OpenMeteoSource({
+    const src = new OpenMeteoSource({ calendar: cal,
       latitude: lat, longitude: lon,
       fetchImpl,
       storage: makeStorage(),
@@ -875,83 +874,71 @@ describe('unixtime responses', () => {
   });
 
   it('a location in America/Denver keeps its own hours and days under a Zurich card', () => {
-    setCardTimeZone('Europe/Zurich');
-    try {
-      const response = fixture('openmeteo-denver');
-      // Denver midnights (MDT) of 25th-27th.
-      expect(parseDailySunshine(response)).toEqual([
-        { date: '2026-10-25', value: 21600 },
-        { date: '2026-10-26', value: 3600 },
-        { date: '2026-10-27', value: 19278.43 },
-      ]);
-      expect(parseDailyProbability(response).map((e) => e.value)).toEqual([14, 59, 0]);
-      // Same instants keyed in the Zurich card zone (CET from the 25th).
-      expect(parseHourlySunshine(response).map((e) => e.datetime)).toEqual([
-        '2026-10-26T06:00',
-        '2026-10-26T07:00',
-        '2026-10-26T08:00',
-        '2026-10-26T13:00',
-        '2026-10-26T14:00',
-      ]);
-      expect(buildHourlyForecast(response).map((e) => e.datetime)).toEqual([
-        '2026-10-26T05:00:00.000Z',
-        '2026-10-26T06:00:00.000Z',
-        '2026-10-26T07:00:00.000Z',
-        '2026-10-26T12:00:00.000Z',
-        '2026-10-26T13:00:00.000Z',
-      ]);
-      // Zurich midnight of each Denver day.
-      expect(buildDailyForecast(response).map((e) => e.datetime)).toEqual([
-        '2026-10-24T22:00:00.000Z',
-        '2026-10-25T23:00:00.000Z',
-        '2026-10-26T23:00:00.000Z',
-      ]);
-    } finally {
-      setCardTimeZone('UTC');
-    }
+    const cal = new Calendar('Europe/Zurich');
+    const response = fixture('openmeteo-denver');
+    // Denver midnights (MDT) of 25th-27th.
+    expect(parseDailySunshine(response, cal)).toEqual([
+      { date: '2026-10-25', value: 21600 },
+      { date: '2026-10-26', value: 3600 },
+      { date: '2026-10-27', value: 19278.43 },
+    ]);
+    expect(parseDailyProbability(response, cal).map((e) => e.value)).toEqual([14, 59, 0]);
+    // Same instants keyed in the Zurich card zone (CET from the 25th).
+    expect(parseHourlySunshine(response, cal).map((e) => e.datetime)).toEqual([
+      '2026-10-26T06:00',
+      '2026-10-26T07:00',
+      '2026-10-26T08:00',
+      '2026-10-26T13:00',
+      '2026-10-26T14:00',
+    ]);
+    expect(buildHourlyForecast(response).map((e) => e.datetime)).toEqual([
+      '2026-10-26T05:00:00.000Z',
+      '2026-10-26T06:00:00.000Z',
+      '2026-10-26T07:00:00.000Z',
+      '2026-10-26T12:00:00.000Z',
+      '2026-10-26T13:00:00.000Z',
+    ]);
+    // Zurich midnight of each Denver day.
+    expect(buildDailyForecast(response, cal).map((e) => e.datetime)).toEqual([
+      '2026-10-24T22:00:00.000Z',
+      '2026-10-25T23:00:00.000Z',
+      '2026-10-26T23:00:00.000Z',
+    ]);
   });
 
   it('hours on both sides of the Zurich DST end map to the right local hour', () => {
-    setCardTimeZone('Europe/Zurich');
-    try {
-      const response = fixture('openmeteo-zurich-dst-2026-10-25');
-      // 01:00Z and 00:00Z of the 25th are 02:00 CET and 02:00 CEST.
-      expect(parseHourlySunshine(response).map((e) => e.datetime)).toEqual([
-        '2026-10-23T23:00',
-        '2026-10-24T00:00',
-        '2026-10-24T01:00',
-        '2026-10-24T23:00',
-        '2026-10-25T00:00',
-        '2026-10-25T01:00',
-        '2026-10-25T02:00',
-        '2026-10-25T02:00',
-        '2026-10-25T03:00',
-        '2026-10-25T04:00',
-      ]);
-      expect(buildHourlyForecast(response).map((e) => e.datetime).slice(5, 8)).toEqual([
-        '2026-10-24T23:00:00.000Z',
-        '2026-10-25T00:00:00.000Z',
-        '2026-10-25T01:00:00.000Z',
-      ]);
-    } finally {
-      setCardTimeZone('UTC');
-    }
+    const cal = new Calendar('Europe/Zurich');
+    const response = fixture('openmeteo-zurich-dst-2026-10-25');
+    // 01:00Z and 00:00Z of the 25th are 02:00 CET and 02:00 CEST.
+    expect(parseHourlySunshine(response, cal).map((e) => e.datetime)).toEqual([
+      '2026-10-23T23:00',
+      '2026-10-24T00:00',
+      '2026-10-24T01:00',
+      '2026-10-24T23:00',
+      '2026-10-25T00:00',
+      '2026-10-25T01:00',
+      '2026-10-25T02:00',
+      '2026-10-25T02:00',
+      '2026-10-25T03:00',
+      '2026-10-25T04:00',
+    ]);
+    expect(buildHourlyForecast(response).map((e) => e.datetime).slice(5, 8)).toEqual([
+      '2026-10-24T23:00:00.000Z',
+      '2026-10-25T00:00:00.000Z',
+      '2026-10-25T01:00:00.000Z',
+    ]);
   });
 
   it('day keys survive the single-offset midnight error after the DST end', () => {
-    setCardTimeZone('Europe/Zurich');
-    try {
-      // One fixed +1 h offset for all days: the 23rd and 24th arrive as 23:00Z.
-      const response = fixture('openmeteo-zurich-dst-2026-10-25');
-      expect(parseDailySunshine(response).map((e) => e.date)).toEqual([
-        '2026-10-23',
-        '2026-10-24',
-        '2026-10-25',
-        '2026-10-26',
-      ]);
-    } finally {
-      setCardTimeZone('UTC');
-    }
+    const cal = new Calendar('Europe/Zurich');
+    // One fixed +1 h offset for all days: the 23rd and 24th arrive as 23:00Z.
+    const response = fixture('openmeteo-zurich-dst-2026-10-25');
+    expect(parseDailySunshine(response, cal).map((e) => e.date)).toEqual([
+      '2026-10-23',
+      '2026-10-24',
+      '2026-10-25',
+      '2026-10-26',
+    ]);
   });
 
   it('sunrise epochs are instants, right despite the single response offset', () => {
@@ -967,8 +954,8 @@ describe('unixtime responses', () => {
       ['wsc_sunshine_46.90_7.40', JSON.stringify({ daily: [{ date: '2026-05-06', value: 1 }], lastFetchMs: Date.now() })],
     ]);
     const storage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
-    const src = new OpenMeteoSource({ latitude: 46.9, longitude: 7.4, fetchImpl: vi.fn(), storage });
+    const src = new OpenMeteoSource({ calendar: cal, latitude: 46.9, longitude: 7.4, fetchImpl: vi.fn(), storage });
     expect(src.getDailyValues()).toEqual([]);
-    expect(readCachedAvailability(46.9, 7.4, storage)).toBeNull();
+    expect(readCachedAvailability(46.9, 7.4, cal, storage)).toBeNull();
   });
 });

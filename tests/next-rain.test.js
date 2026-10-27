@@ -9,6 +9,9 @@ import {
   radarNowcastDisabled,
 } from '../src/next-rain.js';
 import '../src/main.js';
+import { Calendar } from '../src/utils/time-zone.js';
+
+const cal = new Calendar();
 
 const NOW = Date.UTC(2026, 9, 3, 12, 0, 0);
 const iso = (minutes) => new Date(NOW + minutes * 60_000).toISOString();
@@ -72,17 +75,17 @@ describe('classifyNextRain', () => {
 
 describe('formatNextRain', () => {
   it('formats each view kind', () => {
-    expect(formatNextRain({ kind: 'now', source: 'radar' }, 'en', false, STRINGS)).toBe('Now');
-    expect(formatNextRain({ kind: 'minutes', minutes: 12, source: 'radar' }, 'en', false, STRINGS))
+    expect(formatNextRain({ kind: 'now', source: 'radar' }, 'en', false, STRINGS, cal)).toBe('Now');
+    expect(formatNextRain({ kind: 'minutes', minutes: 12, source: 'radar' }, 'en', false, STRINGS, cal))
       .toBe('in 12 min.');
-    expect(formatNextRain({ kind: 'text', text: 'Kein Regen' }, 'en', false, STRINGS)).toBe('Kein Regen');
+    expect(formatNextRain({ kind: 'text', text: 'Kein Regen' }, 'en', false, STRINGS, cal)).toBe('Kein Regen');
   });
 
   it('marks forecast times as approximate', () => {
     const at = new Date(NOW + 5 * 3_600_000);
-    const out = formatNextRain({ kind: 'time', at, withWeekday: false, source: 'forecast' }, 'en', false, STRINGS);
+    const out = formatNextRain({ kind: 'time', at, withWeekday: false, source: 'forecast' }, 'en', false, STRINGS, cal);
     expect(out.startsWith('~')).toBe(true);
-    expect(formatNextRain({ kind: 'time', at, withWeekday: false, source: 'radar' }, 'en', false, STRINGS))
+    expect(formatNextRain({ kind: 'time', at, withWeekday: false, source: 'radar' }, 'en', false, STRINGS, cal))
       .toBe(out.slice(1));
   });
 
@@ -90,8 +93,8 @@ describe('formatNextRain', () => {
   // belongs in the tooltip, not the row.
   it('keeps the dry text plain and puts the horizon in the tooltip', () => {
     const view = { kind: 'none', until: new Date(NOW + 3 * 3_600_000) };
-    expect(formatNextRain(view, 'en', false, STRINGS)).toBe('No rain');
-    expect(formatCheckedUntil(view, NOW, 'en', false, STRINGS)).toMatch(/^Checked until \d/);
+    expect(formatNextRain(view, 'en', false, STRINGS, cal)).toBe('No rain');
+    expect(formatCheckedUntil(view, NOW, 'en', false, STRINGS, cal)).toMatch(/^Checked until \d/);
   });
 });
 

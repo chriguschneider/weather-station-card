@@ -18,7 +18,7 @@
 // Pure; unit-tested in tests/precip-probability.test.js.
 
 import { localDateString, localHourString } from './sunshine-source.js';
-import { startOfDay } from './utils/time-zone.js';
+import type { Calendar } from './utils/time-zone.js';
 
 /** One Open-Meteo daily value: civil date "YYYY-MM-DD" → max chance of
  *  rain that day, integer percent. */
@@ -68,6 +68,7 @@ export function normalizeProbability(value: unknown): number | null {
  *  matches nothing keeps `null` so the pill prints the amount alone. */
 export function attachPrecipProbability<T extends ProbabilityForecastEntry>(
   forecasts: ReadonlyArray<T>,
+  calendar: Calendar,
   opts?: AttachPrecipProbabilityOpts | null,
 ): T[] {
   if (!Array.isArray(forecasts)) return [];
@@ -87,8 +88,8 @@ export function attachPrecipProbability<T extends ProbabilityForecastEntry>(
       return out;
     }
     const key = isHourly
-      ? localHourString(dt)?.slice(0, 13)
-      : localDateString(startOfDay(dt));
+      ? localHourString(dt, calendar)?.slice(0, 13)
+      : localDateString(calendar.startOfDay(dt), calendar);
     out.precipitation_probability = key != null ? (lookup.get(key) ?? null) : null;
     return out;
   });
@@ -121,6 +122,7 @@ function buildLookup(
 export function overlayPrecipProbability<T extends ProbabilityForecastEntry>(
   forecasts: ReadonlyArray<T>,
   source: Partial<ProbabilitySource> | null | undefined,
+  calendar: Calendar,
   granularity: 'daily' | 'hourly' = 'daily',
 ): T[] {
   const dailyValues = source && typeof source.getDailyProbability === 'function'
@@ -129,7 +131,7 @@ export function overlayPrecipProbability<T extends ProbabilityForecastEntry>(
   const hourlyValues = source && typeof source.getHourlyProbability === 'function'
     ? source.getHourlyProbability()
     : null;
-  return attachPrecipProbability(forecasts, { dailyValues, hourlyValues, granularity });
+  return attachPrecipProbability(forecasts, calendar, { dailyValues, hourlyValues, granularity });
 }
 
 /** True when at least one entry carries a usable probability — the

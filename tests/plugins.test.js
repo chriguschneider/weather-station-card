@@ -24,6 +24,9 @@ import {
   PROBABILITY_ONLY_MIN,
   createTempLabelsPlugin,
 } from '../src/chart/plugins.js';
+import { Calendar } from '../src/utils/time-zone.js';
+
+const cal = new Calendar();
 
 function mockCtx() {
   return {
@@ -143,7 +146,7 @@ describe('createDailyTickLabelsPlugin', () => {
   };
 
   it('returns a plugin object with id and afterDraw hook', () => {
-    const p = createDailyTickLabelsPlugin({
+    const p = createDailyTickLabelsPlugin({ calendar: cal,
       config: baseConfig, language: 'en', data: baseData,
       textColor: '#000', backgroundColor: '#fff', style: mockStyle,
       stationCount: 0, doubledToday: false,
@@ -158,7 +161,7 @@ describe('createDailyTickLabelsPlugin', () => {
     // overlay below owns all label rendering. Each visible tick gets
     // a 24h time stamp; the leftmost visible tick (and any midnight
     // tick) additionally gets a stacked bold date label above.
-    const p = createDailyTickLabelsPlugin({
+    const p = createDailyTickLabelsPlugin({ calendar: cal,
       config: { forecast: { ...baseConfig.forecast, type: 'hourly' } },
       language: 'en', data: baseData,
       textColor: '#000', backgroundColor: '#fff', style: mockStyle,
@@ -183,7 +186,7 @@ describe('createDailyTickLabelsPlugin', () => {
     // per column, date label on leftmost (i=0) and on midnight
     // columns. Mid-block (non-midnight) columns show only the time —
     // the date carries over from the most recent labelled column.
-    const p = createDailyTickLabelsPlugin({
+    const p = createDailyTickLabelsPlugin({ calendar: cal,
       config: { forecast: { ...baseConfig.forecast, type: 'today' } },
       language: 'en',
       data: {
@@ -217,7 +220,7 @@ describe('createDailyTickLabelsPlugin', () => {
     const dateTime = [];
     for (let h = 18; h <= 23; h++) dateTime.push(`2026-05-06T${String(h).padStart(2, '0')}:00:00`);
     for (let h = 0; h <= 5; h++) dateTime.push(`2026-05-07T${String(h).padStart(2, '0')}:00:00`);
-    const p = createDailyTickLabelsPlugin({
+    const p = createDailyTickLabelsPlugin({ calendar: cal,
       config: { forecast: { ...baseConfig.forecast, type: 'today' } },
       language: 'en',
       data: { dateTime },
@@ -240,7 +243,7 @@ describe('createDailyTickLabelsPlugin', () => {
     // The `.scroll-date-left/right` DOM overlays (scroll-ux.ts) carry
     // the edge date now, so non-boundary columns render ONLY their
     // time label and the canvas output is scroll-invariant.
-    const p = createDailyTickLabelsPlugin({
+    const p = createDailyTickLabelsPlugin({ calendar: cal,
       config: { forecast: { ...baseConfig.forecast, type: 'hourly' } },
       language: 'en',
       data: {
@@ -266,7 +269,7 @@ describe('createDailyTickLabelsPlugin', () => {
   });
 
   it('bails out when xScale is missing', () => {
-    const p = createDailyTickLabelsPlugin({
+    const p = createDailyTickLabelsPlugin({ calendar: cal,
       config: baseConfig, language: 'en', data: baseData,
       textColor: '#000', backgroundColor: '#fff', style: mockStyle,
       stationCount: 0, doubledToday: false,
@@ -277,7 +280,7 @@ describe('createDailyTickLabelsPlugin', () => {
   });
 
   it('draws weekday + date for each tick at daily mode', () => {
-    const p = createDailyTickLabelsPlugin({
+    const p = createDailyTickLabelsPlugin({ calendar: cal,
       config: baseConfig, language: 'en', data: baseData,
       textColor: '#000', backgroundColor: '#fff', style: mockStyle,
       stationCount: 0, doubledToday: false,
@@ -293,7 +296,7 @@ describe('createDailyTickLabelsPlugin', () => {
   });
 
   it('skips one label at the doubled-today seam (combination, daily)', () => {
-    const p = createDailyTickLabelsPlugin({
+    const p = createDailyTickLabelsPlugin({ calendar: cal,
       config: baseConfig, language: 'en', data: baseData,
       textColor: '#000', backgroundColor: '#fff', style: mockStyle,
       stationCount: 1, doubledToday: true,
@@ -309,7 +312,7 @@ describe('createDailyTickLabelsPlugin', () => {
 
   it('honours show_date: false by drawing only the weekday line', () => {
     const cfg = { forecast: { ...baseConfig.forecast, show_date: false } };
-    const p = createDailyTickLabelsPlugin({
+    const p = createDailyTickLabelsPlugin({ calendar: cal,
       config: cfg, language: 'en', data: baseData,
       textColor: '#000', backgroundColor: '#fff', style: mockStyle,
       stationCount: 0, doubledToday: false,
@@ -761,7 +764,7 @@ describe('createTempLabelsPlugin', () => {
   }
 
   function makePlugin(extra = {}) {
-    return createTempLabelsPlugin({
+    return createTempLabelsPlugin({ calendar: cal,
       config: { forecast: { style: 'style2', labels_font_size: 11, round_temp: true } },
       data: {
         dateTime: ['2000-01-01T12:00:00', '2000-01-02T12:00:00'],
@@ -782,7 +785,7 @@ describe('createTempLabelsPlugin', () => {
   });
 
   it('no-ops for style1 (no per-point labels there)', () => {
-    const p = createTempLabelsPlugin({
+    const p = createTempLabelsPlugin({ calendar: cal,
       config: { forecast: { style: 'style1', labels_font_size: 11 } },
       data: { dateTime: [], tempHigh: [20], tempLow: [10] },
       tempHighColor: '#f00', tempLowColor: '#00f', roundTemp: true,

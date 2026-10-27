@@ -7,6 +7,9 @@ import '../src/main.js';
 import { parseLocation, resolveLocation } from '../src/location.js';
 import { validateConfig } from '../src/config-validation.js';
 import { overlayFromOpenMeteo, dayLengthHours, localDateString } from '../src/sunshine-source.js';
+import { Calendar } from '../src/utils/time-zone.js';
+
+const cal = new Calendar();
 
 const HA = { config: { latitude: 46.92, longitude: 7.41 } };
 const SKI = { latitude: 46.5853, longitude: 7.9611 };
@@ -61,19 +64,19 @@ describe('overlayFromOpenMeteo — day length', () => {
   day.setHours(0, 0, 0, 0);
   const forecasts = [{ datetime: day.toISOString() }];
   const source = {
-    getDailyValues: () => [{ date: localDateString(day), value: 5 }],
+    getDailyValues: () => [{ date: localDateString(day, cal), value: 5 }],
     getHourlyValues: () => null,
   };
 
   it('uses the configured latitude', () => {
-    const out = overlayFromOpenMeteo(forecasts, HA, source, 'daily', null, { latitude: 70, longitude: 20 });
-    expect(out[0].day_length).toBeCloseTo(dayLengthHours(70, day), 6);
+    const out = overlayFromOpenMeteo(forecasts, HA, source, cal, 'daily', null, { latitude: 70, longitude: 20 });
+    expect(out[0].day_length).toBeCloseTo(dayLengthHours(70, day, cal), 6);
   });
 
   it('uses the HA latitude without a location, and for an invalid one', () => {
-    const expected = dayLengthHours(46.92, day);
-    expect(overlayFromOpenMeteo(forecasts, HA, source)[0].day_length).toBeCloseTo(expected, 6);
-    const bad = overlayFromOpenMeteo(forecasts, HA, source, 'daily', null, { latitude: 99, longitude: 0 });
+    const expected = dayLengthHours(46.92, day, cal);
+    expect(overlayFromOpenMeteo(forecasts, HA, source, cal)[0].day_length).toBeCloseTo(expected, 6);
+    const bad = overlayFromOpenMeteo(forecasts, HA, source, cal, 'daily', null, { latitude: 99, longitude: 0 });
     expect(bad[0].day_length).toBeCloseTo(expected, 6);
   });
 });

@@ -14,6 +14,9 @@ import {
   computeDayPageScrollLeft,
   computeTodayPagerScrollLeft,
 } from '../src/forecast-utils.js';
+import { Calendar } from '../src/utils/time-zone.js';
+
+const cal = new Calendar();
 
 /** Local-time hourly entry — the aggregator anchors on LOCAL hours. */
 function entry(y, m, d, h, fields = {}) {
@@ -22,14 +25,14 @@ function entry(y, m, d, h, fields = {}) {
 
 describe('aggregateThreeHourCalendar', () => {
   it('returns [] for empty or invalid input', () => {
-    expect(aggregateThreeHourCalendar([])).toEqual([]);
-    expect(aggregateThreeHourCalendar([{ datetime: 'not-a-date' }])).toEqual([]);
+    expect(aggregateThreeHourCalendar([], cal)).toEqual([]);
+    expect(aggregateThreeHourCalendar([{ datetime: 'not-a-date' }], cal)).toEqual([]);
   });
 
   it('gap-fills every covered day to exactly 8 calendar blocks', () => {
     // Single entry at 13:00 → one whole day, 8 blocks, data in the
     // 12:00 block only.
-    const out = aggregateThreeHourCalendar([entry(2026, 7, 5, 13, { temperature: 20 })]);
+    const out = aggregateThreeHourCalendar([entry(2026, 7, 5, 13, { temperature: 20 })], cal);
     expect(out).toHaveLength(8);
     const hours = out.map((b) => new Date(b.datetime).getHours());
     expect(hours).toEqual([0, 3, 6, 9, 12, 15, 18, 21]);
@@ -43,7 +46,7 @@ describe('aggregateThreeHourCalendar', () => {
     const out = aggregateThreeHourCalendar([
       entry(2026, 7, 5, 1, { temperature: 10 }),
       entry(2026, 7, 5, 22, { temperature: 16 }),
-    ]);
+    ], cal);
     expect(out).toHaveLength(8);
     expect(out[0].temperature).toBe(10); // 00-03 block
     expect(out[7].temperature).toBe(16); // 21-24 block
@@ -54,7 +57,7 @@ describe('aggregateThreeHourCalendar', () => {
     const out = aggregateThreeHourCalendar([
       entry(2026, 7, 5, 23, { temperature: 12 }),
       entry(2026, 7, 7, 0, { temperature: 14 }),
-    ]);
+    ], cal);
     expect(out).toHaveLength(24); // 3 calendar days × 8 blocks
   });
 
@@ -63,7 +66,7 @@ describe('aggregateThreeHourCalendar', () => {
       entry(2026, 7, 5, 12, { temperature: 18, templow: 12, precipitation: 1.0, condition: 'rainy' }),
       entry(2026, 7, 5, 13, { temperature: 21, precipitation: 0.5, condition: 'rainy' }),
       entry(2026, 7, 5, 14, { temperature: 19, precipitation: 0.2, condition: 'cloudy' }),
-    ]);
+    ], cal);
     const block = out[4]; // 12:00 block
     expect(block.temperature).toBe(21); // pooled max
     expect(block.templow).toBe(12);     // pooled min
@@ -77,7 +80,7 @@ describe('trimLeadingEmptyBlocks', () => {
     aggregateThreeHourCalendar(
       withDataAtHour === null
         ? [entry(y, m, d, 0)] // datetime-only entries → all-null blocks
-        : [entry(y, m, d, withDataAtHour, { temperature: 15 })],
+        : [entry(y, m, d, withDataAtHour, { temperature: 15 })], cal,
     );
 
   it('drops whole leading empty days', () => {
@@ -113,7 +116,7 @@ describe('trimLeadingEmptyBlocks', () => {
 
 describe('trimTrailingEmptyBlocks', () => {
   it('keeps trailing empty evening blocks when a forecast side exists', () => {
-    const blocks = aggregateThreeHourCalendar([entry(2026, 7, 5, 9, { temperature: 15 })]);
+    const blocks = aggregateThreeHourCalendar([entry(2026, 7, 5, 9, { temperature: 15 })], cal);
     const out = trimTrailingEmptyBlocks(blocks, false);
     expect(out).toHaveLength(8); // page stays a full calendar day
   });
@@ -122,7 +125,7 @@ describe('trimTrailingEmptyBlocks', () => {
     const blocks = aggregateThreeHourCalendar([
       entry(2026, 7, 5, 3, { temperature: 12 }),
       entry(2026, 7, 5, 14, { temperature: 18 }),
-    ]);
+    ], cal);
     const out = trimTrailingEmptyBlocks(blocks, true);
     // Last kept block is the 12:00 block that holds the 14:00 entry.
     expect(new Date(out[out.length - 1].datetime).getHours()).toBe(12);
@@ -130,7 +133,7 @@ describe('trimTrailingEmptyBlocks', () => {
   });
 
   it('returns a copy even when nothing is trimmed', () => {
-    const blocks = aggregateThreeHourCalendar([entry(2026, 7, 5, 23, { temperature: 9 })]);
+    const blocks = aggregateThreeHourCalendar([entry(2026, 7, 5, 23, { temperature: 9 })], cal);
     const out = trimTrailingEmptyBlocks(blocks, true);
     expect(out).toEqual(blocks);
     expect(out).not.toBe(blocks);
@@ -144,7 +147,7 @@ describe('computeTodayPagerScrollLeft', () => {
     const left = computeTodayPagerScrollLeft({
       forecasts: series, stationCount: 8, forecastCount: 0,
       contentWidth: 1600, viewportWidth: 400,
-    });
+    }, cal);
     expect(left).toBe(1200);
   });
 
@@ -152,7 +155,7 @@ describe('computeTodayPagerScrollLeft', () => {
     const left = computeTodayPagerScrollLeft({
       forecasts: series, stationCount: 0, forecastCount: 8,
       contentWidth: 1600, viewportWidth: 400,
-    });
+    }, cal);
     expect(left).toBe(0);
   });
 
@@ -161,11 +164,11 @@ describe('computeTodayPagerScrollLeft', () => {
     const twoDays = aggregateThreeHourCalendar([
       entry(2026, 7, 5, 0, { temperature: 10 }),
       entry(2026, 7, 6, 23, { temperature: 12 }),
-    ]);
+    ], cal);
     const left = computeTodayPagerScrollLeft({
       forecasts: twoDays, stationCount: 10, forecastCount: 6,
       contentWidth: 1600, viewportWidth: 800, now,
-    });
+    }, cal);
     expect(left).toBe(800); // today's midnight block at index 8 of 16
   });
 
@@ -173,11 +176,11 @@ describe('computeTodayPagerScrollLeft', () => {
     expect(computeTodayPagerScrollLeft({
       forecasts: [], stationCount: 1, forecastCount: 0,
       contentWidth: 800, viewportWidth: 400,
-    })).toBeNull();
+    }, cal)).toBeNull();
     expect(computeTodayPagerScrollLeft({
       forecasts: series, stationCount: 1, forecastCount: 0,
       contentWidth: 0, viewportWidth: 400,
-    })).toBeNull();
+    }, cal)).toBeNull();
   });
 });
 
@@ -195,31 +198,31 @@ describe('whole-day windowing (trimToWholeDayStart / trimToWholeDayEnd)', () => 
     // Thu full day + one lone Friday 00:00 hour — the sliver that grew
     // a near-empty "Fri" segment on the day timeline.
     const entries = [...hours(2026, 7, 13, 0, 24), ...hours(2026, 7, 14, 0, 1)];
-    const out = trimToWholeDayEnd(entries);
+    const out = trimToWholeDayEnd(entries, cal);
     expect(out).toHaveLength(24);
     expect(new Date(out[out.length - 1].datetime).getDate()).toBe(13);
   });
 
   it('end: drops a half-covered last day', () => {
     const entries = [...hours(2026, 7, 13, 0, 24), ...hours(2026, 7, 14, 0, 13)];
-    expect(trimToWholeDayEnd(entries)).toHaveLength(24);
+    expect(trimToWholeDayEnd(entries, cal)).toHaveLength(24);
   });
 
   it('end: keeps a last day that reaches the 23:00 hour', () => {
     const entries = [...hours(2026, 7, 13, 0, 24), ...hours(2026, 7, 14, 0, 24)];
-    expect(trimToWholeDayEnd(entries)).toHaveLength(48);
+    expect(trimToWholeDayEnd(entries, cal)).toHaveLength(48);
   });
 
   it('end: never drops the only day (short forecast survives)', () => {
     const entries = hours(2026, 7, 13, 9, 5); // 09:00–13:00, one day
-    expect(trimToWholeDayEnd(entries)).toHaveLength(5);
+    expect(trimToWholeDayEnd(entries, cal)).toHaveLength(5);
   });
 
   it('start: drops a leading partial day', () => {
     // Station history starting Fri 14:00 → the partial Friday goes,
     // Saturday 00:00 becomes the first entry.
     const entries = [...hours(2026, 6, 31, 14, 10), ...hours(2026, 7, 1, 0, 24)];
-    const out = trimToWholeDayStart(entries);
+    const out = trimToWholeDayStart(entries, cal);
     expect(out).toHaveLength(24);
     expect(new Date(out[0].datetime).getHours()).toBe(0);
     expect(new Date(out[0].datetime).getDate()).toBe(1);
@@ -227,17 +230,17 @@ describe('whole-day windowing (trimToWholeDayStart / trimToWholeDayEnd)', () => 
 
   it('start: keeps a first day that begins at 00:00', () => {
     const entries = hours(2026, 7, 1, 0, 30);
-    expect(trimToWholeDayStart(entries)).toHaveLength(30);
+    expect(trimToWholeDayStart(entries, cal)).toHaveLength(30);
   });
 
   it('start: never drops the only day', () => {
     const entries = hours(2026, 7, 1, 14, 6);
-    expect(trimToWholeDayStart(entries)).toHaveLength(6);
+    expect(trimToWholeDayStart(entries, cal)).toHaveLength(6);
   });
 
   it('both: empty input stays empty', () => {
-    expect(trimToWholeDayEnd([])).toEqual([]);
-    expect(trimToWholeDayStart([])).toEqual([]);
+    expect(trimToWholeDayEnd([], cal)).toEqual([]);
+    expect(trimToWholeDayStart([], cal)).toEqual([]);
   });
 });
 
@@ -261,21 +264,21 @@ describe('computeDayPageScrollLeft', () => {
   const twoDays = aggregateThreeHourCalendar([
     entry(2026, 7, 5, 0, { temperature: 10 }),
     entry(2026, 7, 6, 23, { temperature: 12 }),
-  ]); // 16 blocks: Aug 5 + Aug 6
+  ], cal); // 16 blocks: Aug 5 + Aug 6
 
   it("puts today's first block at the left edge", () => {
     // Today's midnight block is index 8 of 16 → half the content width.
-    expect(computeDayPageScrollLeft(twoDays, 1600, now)).toBe(800);
+    expect(computeDayPageScrollLeft(twoDays, 1600, cal, now)).toBe(800);
   });
 
   it('returns null when no block anchors at today\'s local midnight', () => {
     const yesterdayOnly = twoDays.slice(0, 8);
-    expect(computeDayPageScrollLeft(yesterdayOnly, 800, now)).toBeNull();
+    expect(computeDayPageScrollLeft(yesterdayOnly, 800, cal, now)).toBeNull();
   });
 
   it('returns null on empty series or non-positive width', () => {
-    expect(computeDayPageScrollLeft([], 800, now)).toBeNull();
-    expect(computeDayPageScrollLeft(twoDays, 0, now)).toBeNull();
-    expect(computeDayPageScrollLeft(null, 800, now)).toBeNull();
+    expect(computeDayPageScrollLeft([], 800, cal, now)).toBeNull();
+    expect(computeDayPageScrollLeft(twoDays, 0, cal, now)).toBeNull();
+    expect(computeDayPageScrollLeft(null, 800, cal, now)).toBeNull();
   });
 });

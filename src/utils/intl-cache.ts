@@ -22,8 +22,6 @@
 // stop a pathological caller (e.g. a fuzzed options bag) from
 // growing the cache without bound.
 
-import { configuredTimeZone } from './time-zone.js';
-
 const MAX_ENTRIES = 32;
 
 const dateTimeCache = new Map<string, Intl.DateTimeFormat>();
@@ -47,15 +45,13 @@ function bump<T>(cache: Map<string, T>, key: string, value: T): T {
 }
 
 /** Cached `Intl.DateTimeFormat`. Same `(language, options)` pair
- *  returns the same instance across the process. Formats in the HA
- *  server's zone (#285) unless the caller names a `timeZone`; the zone
- *  is part of the key, so a zone change never reuses a stale instance. */
+ *  returns the same instance across the process. `timeZone` is required
+ *  so every displayed time names its card's zone (ADR-0030); it is part
+ *  of the key, so cards in different zones never share an instance. */
 export function getDateTimeFormat(
   language: string,
-  options?: Intl.DateTimeFormatOptions,
+  options: Intl.DateTimeFormatOptions & { timeZone: string },
 ): Intl.DateTimeFormat {
-  const tz = configuredTimeZone();
-  if (tz && options?.timeZone === undefined) options = { ...options, timeZone: tz };
   const key = stableKey(language, options);
   const hit = dateTimeCache.get(key);
   if (hit) return hit;

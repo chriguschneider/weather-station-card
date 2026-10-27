@@ -1,6 +1,6 @@
 # 0026: Calendar math and displayed times follow the HA server's time zone
 
-**Status:** Accepted
+**Status:** Superseded by 0030
 
 **Date:** 2026-10-08
 

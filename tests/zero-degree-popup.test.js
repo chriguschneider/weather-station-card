@@ -14,7 +14,7 @@ import {
   buildZeroDegreeChart,
   ZeroDegreePopup,
 } from '../src/zero-degree-popup.js';
-import { setCardTimeZone } from '../src/utils/time-zone.js';
+import { Calendar } from '../src/utils/time-zone.js';
 import { _clearIntlCaches } from '../src/utils/intl-cache.js';
 import '../src/main.js';
 
@@ -29,14 +29,13 @@ const ROWS = [
 ];
 
 const ms = (iso) => Date.parse(iso);
+const cal = new Calendar('Europe/Zurich');
 
 beforeEach(() => {
-  setCardTimeZone('Europe/Zurich');
   _clearIntlCaches();
 });
 
 afterEach(() => {
-  setCardTimeZone(undefined);
   vi.restoreAllMocks();
   document.body.innerHTML = '';
 });
@@ -122,7 +121,7 @@ describe('paddedLevelRange', () => {
 
 describe('dayStartsBetween', () => {
   it('lists local midnights in the HA zone', () => {
-    const days = dayStartsBetween(ms(ROWS[0].datetime), ms(ROWS[4].datetime));
+    const days = dayStartsBetween(ms(ROWS[0].datetime), ms(ROWS[4].datetime), cal);
     expect(days).toEqual([
       ms('2026-10-22T00:00:00+02:00'),
       ms('2026-10-23T00:00:00+02:00'),
@@ -130,12 +129,12 @@ describe('dayStartsBetween', () => {
   });
 
   it('is empty inside one day', () => {
-    expect(dayStartsBetween(ms(ROWS[0].datetime), ms(ROWS[1].datetime))).toEqual([]);
+    expect(dayStartsBetween(ms(ROWS[0].datetime), ms(ROWS[1].datetime), cal)).toEqual([]);
   });
 });
 
 describe('text', () => {
-  const opts = { language: 'en-GB', unit: 'm', hour12: false };
+  const opts = { language: 'en-GB', unit: 'm', hour12: false, calendar: cal };
 
   it('formats the lowest line with weekday and time', () => {
     const min = findCurveMinimum(parseZeroDegreeCurve(ROWS));
@@ -207,6 +206,7 @@ function openPopup(extra = {}) {
     unit: 'm',
     language: 'en-GB',
     hour12: false,
+    calendar: cal,
     strings: { title: 'Zero-degree level', lowest: 'Lowest', history: 'History', close: 'Close' },
     returnFocus: row,
     onHistory,
@@ -288,6 +288,7 @@ describe('ZeroDegreePopup', () => {
       curve: parseZeroDegreeCurve(ROWS.slice(0, 3)),
       unit: 'm',
       language: 'en-GB',
+      calendar: cal,
       strings: { title: 'T', lowest: 'L', history: 'H', close: 'C' },
       createChart: factory,
     });
@@ -364,6 +365,7 @@ describe('buildZeroDegreeChart (uPlot)', () => {
     const onCursor = vi.fn();
     const chart = buildZeroDegreeChart(target, parseZeroDegreeCurve(ROWS), {
       language: 'en-GB',
+      calendar: cal,
       unit: 'm',
       width: 480,
       height: 220,

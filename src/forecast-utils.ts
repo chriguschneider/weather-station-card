@@ -2,7 +2,7 @@
 // they can be unit-tested without pulling in Lit, Chart.js, or HA — vitest
 // runs in node (no jsdom) and these stay fully exercisable there.
 
-import { addDays, dayKey, hourOf, minuteOf, startOfDay, withHour } from './utils/time-zone.js';
+import type { Calendar } from './utils/time-zone.js';
 
 /** Forecast entry shape consumed by the chart. Both data sources
  *  (`MeasuredDataSource`, `ForecastDataSource`) emit objects matching
@@ -82,6 +82,7 @@ interface PickHourlyTickOpts {
  *  just won't trigger the midnight-force branch. */
 export function pickHourlyTickIndices(
   datetimes: ReadonlyArray<string | Date>,
+  calendar: Calendar,
   opts: PickHourlyTickOpts = {},
 ): number[] {
   if (!Array.isArray(datetimes) || datetimes.length === 0) return [];
@@ -108,7 +109,7 @@ export function pickHourlyTickIndices(
       const dt = datetimes[i];
       const d = dt instanceof Date ? dt : new Date(dt);
       if (!Number.isFinite(d.getTime())) continue;
-      if (hourOf(d) === 0 && minuteOf(d) === 0) kept.add(i);
+      if (calendar.hourOf(d) === 0 && calendar.minuteOf(d) === 0) kept.add(i);
     }
   }
 
@@ -317,6 +318,7 @@ export function sunshineFromCloudCoverage(
  *  other numerics averaged, condition = most frequent. */
 export function aggregateThreeHourCalendar<T extends Partial<ForecastEntry>>(
   entries: ReadonlyArray<T>,
+  calendar: Calendar,
 ): ForecastEntry[] {
   if (!Array.isArray(entries) || entries.length === 0) return [];
 
@@ -329,7 +331,7 @@ export function aggregateThreeHourCalendar<T extends Partial<ForecastEntry>>(
     const d = new Date(e.datetime);
     const t = d.getTime();
     if (!Number.isFinite(t)) continue;
-    const key = withHour(d, Math.floor(hourOf(d) / 3) * 3).getTime();
+    const key = calendar.withHour(d, Math.floor(calendar.hourOf(d) / 3) * 3).getTime();
     if (!buckets.has(key)) buckets.set(key, []);
     buckets.get(key)!.push(e);
     if (key < minMs) minMs = key;
@@ -342,10 +344,10 @@ export function aggregateThreeHourCalendar<T extends Partial<ForecastEntry>>(
   // withHour) keeps this DST-correct — a 23/25-hour day still yields
   // exactly 8 calendar blocks.
   const out: ForecastEntry[] = [];
-  const lastDayMs = startOfDay(maxMs).getTime();
-  for (let cursor = startOfDay(minMs); cursor.getTime() <= lastDayMs; cursor = addDays(cursor, 1)) {
+  const lastDayMs = calendar.startOfDay(maxMs).getTime();
+  for (let cursor = calendar.startOfDay(minMs); cursor.getTime() <= lastDayMs; cursor = calendar.addDays(cursor, 1)) {
     for (let blk = 0; blk < 8; blk++) {
-      const anchor = withHour(cursor, blk * 3);
+      const anchor = calendar.withHour(cursor, blk * 3);
       const slice = buckets.get(anchor.getTime()) ?? [];
       out.push(aggregateBlock(slice, anchor.toISOString()));
     }
@@ -418,11 +420,11 @@ export function trimTrailingEmptyBlocks(
 }
 
 /** Local day key (y-m-d) of an entry; null for unparseable datetimes. */
-function localDayKeyOf(e: { datetime?: string } | null | undefined): string | null {
+function localDayKeyOf(e: { datetime?: string } | null | undefined, calendar: Calendar): string | null {
   if (!e?.datetime) return null;
   const d = new Date(e.datetime);
   if (!Number.isFinite(d.getTime())) return null;
-  return dayKey(d);
+  return calendar.dayKey(d);
 }
 
 /** Whole-day windowing for the hourly-ish modes (2026-08, user
@@ -437,16 +439,17 @@ function localDayKeyOf(e: { datetime?: string } | null | undefined): string | nu
  *  only day left (a forecast shorter than a day must survive). */
 export function trimToWholeDayEnd<T extends { datetime?: string }>(
   entries: ReadonlyArray<T>,
+  calendar: Calendar,
 ): T[] {
   if (entries.length === 0) return [];
   const last = entries[entries.length - 1];
-  const lastKey = localDayKeyOf(last);
+  const lastKey = localDayKeyOf(last, calendar);
   if (lastKey === null) return [...entries];
-  const lastHour = hourOf(new Date(last.datetime as string));
+  const lastHour = calendar.hourOf(new Date(last.datetime as string));
   if (lastHour >= 23) return [...entries];
   // Find where the incomplete last day begins.
   let cut = entries.length;
-  while (cut > 0 && localDayKeyOf(entries[cut - 1]) === lastKey) cut--;
+  while (cut > 0 && localDayKeyOf(entries[cut - 1], calendar) === lastKey) cut--;
   if (cut === 0) return [...entries]; // single-day series — keep
   return entries.slice(0, cut);
 }
@@ -457,14 +460,15 @@ export function trimToWholeDayEnd<T extends { datetime?: string }>(
  *  timeline segment is a full day, mirroring the forecast tail. */
 export function trimToWholeDayStart<T extends { datetime?: string }>(
   entries: ReadonlyArray<T>,
+  calendar: Calendar,
 ): T[] {
   if (entries.length === 0) return [];
   const first = entries[0];
-  const firstKey = localDayKeyOf(first);
+  const firstKey = localDayKeyOf(first, calendar);
   if (firstKey === null) return [...entries];
-  if (hourOf(new Date(first.datetime as string)) === 0) return [...entries];
+  if (calendar.hourOf(new Date(first.datetime as string)) === 0) return [...entries];
   let cut = 0;
-  while (cut < entries.length && localDayKeyOf(entries[cut]) === firstKey) cut++;
+  while (cut < entries.length && localDayKeyOf(entries[cut], calendar) === firstKey) cut++;
   if (cut >= entries.length) return [...entries]; // single-day series — keep
   return entries.slice(cut);
 }
@@ -489,7 +493,7 @@ export function computeTodayPagerScrollLeft(opts: {
   contentWidth: number;
   viewportWidth: number;
   now?: Date;
-}): number | null {
+}, calendar: Calendar): number | null {
   const { forecasts, stationCount, forecastCount, contentWidth, viewportWidth } = opts;
   if (!forecasts?.length || !Number.isFinite(contentWidth) || contentWidth <= 0) return null;
   if (forecastCount <= 0 && stationCount > 0) {
@@ -497,7 +501,7 @@ export function computeTodayPagerScrollLeft(opts: {
     return Math.max(0, contentWidth - vw);
   }
   if (stationCount <= 0 && forecastCount > 0) return 0;
-  return computeDayPageScrollLeft(forecasts, contentWidth, opts.now ?? new Date());
+  return computeDayPageScrollLeft(forecasts, contentWidth, calendar, opts.now ?? new Date());
 }
 
 /** Effective viewport size in bars. 'today' is a DAY PAGER: the
@@ -521,10 +525,11 @@ export function effectiveVisibleBars(
 export function computeDayPageScrollLeft(
   forecasts: ReadonlyArray<{ datetime?: string }> | null | undefined,
   contentWidth: number,
+  calendar: Calendar,
   now: Date = new Date(),
 ): number | null {
   if (!forecasts?.length || !Number.isFinite(contentWidth) || contentWidth <= 0) return null;
-  const targetMs = startOfDay(now).getTime();
+  const targetMs = calendar.startOfDay(now).getTime();
   const idx = forecasts.findIndex((e) => {
     if (!e?.datetime) return false;
     return new Date(e.datetime).getTime() === targetMs;
@@ -559,8 +564,8 @@ export function forecastsEqual(
  *  Used by the midnight-transition guards below — kept as a function
  *  (rather than `Date.now() - Date.now() % DAY_MS`) so each caller
  *  picks up the zone's DST behaviour. */
-export function startOfTodayMs(): number {
-  return startOfDay(Date.now()).getTime();
+export function startOfTodayMs(calendar: Calendar): number {
+  return calendar.startOfDay(Date.now()).getTime();
 }
 
 // Just past local midnight, forecast data can still carry yesterday's

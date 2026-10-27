@@ -119,7 +119,6 @@ import {
 import { sanitizeForecastEntries } from './chart/sanitize.js';
 import { renderChartSkeleton } from './chart/skeleton.js';
 import { cardStyles } from './chart/styles.js';
-import { validTimeZone } from './utils/time-zone.js';
 import { getDateTimeFormat, getNumberFormat } from './utils/intl-cache.js';
 import { moonIllumination, nextMoonEvent, litMoonPath } from './moon.js';
 import { classifyNextRain, findNextRainEntity, formatCheckedUntil, formatNextRain, nextRainIcon } from './next-rain.js';
@@ -138,7 +137,7 @@ import {
   resolveAttributesLayout,
   type AttributeToken,
 } from './attributes-layout.js';
-import { addDays, dayKey, hourOf, setCardTimeZone, startOfDay, startOfHour, withHour } from './utils/time-zone.js';
+import { Calendar, validTimeZone } from './utils/time-zone.js';
 // Chart library: uPlot. Imported transitively via ./chart/draw.js —
 // there is no global registration step (uPlot has no plugin registry;
 // per-instance hooks/plugins are passed directly to the constructor).
@@ -230,6 +229,10 @@ class WeatherStationCard extends LitElement {
   // deno-lint-ignore no-explicit-any
   config: any = null;
   language: string = 'en';
+  // Every day boundary and displayed time goes through this (ADR-0030).
+  // The browser's zone until the first `set hass` brings the server's.
+  calendar: Calendar = new Calendar();
+  _calendarZoneInput: unknown = undefined;
   // deno-lint-ignore no-explicit-any
   sun: any = null;
   // deno-lint-ignore no-explicit-any
@@ -766,10 +769,7 @@ setConfig(config: any) {
 // subscription churn in phase 3.
 set hass(hass: HassMain) {
   this._hass = hass;
-  // Day boundaries and every displayed time follow the HA server's zone
-  // (#285): the station, the forecast and HA's own daily statistics all
-  // belong to that location, wherever the viewer sits.
-  setCardTimeZone((hass.config as { time_zone?: unknown } | undefined)?.time_zone);
+  this._syncCalendar((hass.config as { time_zone?: unknown } | undefined)?.time_zone);
   const lang = this.config.locale || hass.selectedLanguage || hass.language || 'en';
   if (lang !== this.language) {
     this.language = lang;
@@ -1385,7 +1385,7 @@ _syncDataSources(hass: HassMain): void {
           this._stationDataReady = true;
         }
       }
-      this._dataSource = new MeasuredDataSource(hass, this.config);
+      this._dataSource = new MeasuredDataSource(hass, this.config, this.calendar);
       this._dataUnsubscribe = this._dataSource.subscribe((event) => {
         try {
           // Refresh the 3-h pressure tendency on the same cadence as the
@@ -1551,6 +1551,7 @@ _stationSeriesKey(): string {
     .map(([role, eid]) => `${role}=${eid}`)
     .sort((a, b) => a.localeCompare(b));
   return seriesCacheKey('station', [
+    this.calendar.timeZone,
     stationFetchKey(this.config),
     parseInt(String(this.config?.days), 10) || 7,
     ...roleEids,
@@ -1559,6 +1560,7 @@ _stationSeriesKey(): string {
 
 _forecastSeriesKey(): string {
   return seriesCacheKey('forecast', [
+    this.calendar.timeZone,
     forecastFetchKey(this.config),
     String(this.config?.weather_entity || ''),
   ]);
@@ -1579,6 +1581,7 @@ async _refreshPressureDelta(): Promise<void> {
     const delta = await fetchPressure3hDelta(
       this._hass as HassLike | null,
       pressureId,
+      this.calendar,
       this._pressureDeltaCache,
     );
     if (delta !== this._pressureDelta3h) {
@@ -1757,7 +1760,7 @@ async _refreshPressureDelta(): Promise<void> {
     // cache populates `_stationData` synchronously here, so the
     // `station` capture below sees it on the same render.
     this._ensureOpenMeteoSource(effectiveCfg);
-    const todayStartMs = startOfTodayMs();
+    const todayStartMs = startOfTodayMs(this.calendar);
     const fcType = effectiveCfg.forecast.type;
     const isToday = fcType === 'today';
 
@@ -1844,7 +1847,7 @@ async _refreshPressureDelta(): Promise<void> {
     // the count cap lands mid-day (days × 24 h from now), which grew a
     // sliver segment on the day timeline — a "day" holding a single
     // trailing hour. Daily mode is day-granular already.
-    return isHourlyish ? trimToWholeDayEnd(sliced) : sliced;
+    return isHourlyish ? trimToWholeDayEnd(sliced, this.calendar) : sliced;
   }
 
   // 'today' flow (day pager, 2026-08 rework):
@@ -1869,11 +1872,12 @@ async _refreshPressureDelta(): Promise<void> {
       [...station, ...this._withPrecipProbability(forecast, 0, 'hourly')],
       this._hass,
       this._openMeteoSource,
+      this.calendar,
       'hourly',
       null,
       this.config.location,
     );
-    const allBlocks = aggregateThreeHourCalendar(merged);
+    const allBlocks = aggregateThreeHourCalendar(merged, this.calendar);
     // Drop data-less leading blocks: whole empty days always (short
     // recorder history), and in FORECAST-ONLY mode the empty start of
     // the first day too — otherwise an evening mount shows a
@@ -1895,7 +1899,7 @@ async _refreshPressureDelta(): Promise<void> {
       const lastDt = (station[station.length - 1] as { datetime?: string }).datetime;
       const d = lastDt ? new Date(lastDt) : null;
       if (d && Number.isFinite(d.getTime())) {
-        lastStationAnchorMs = withHour(d, Math.floor(hourOf(d) / 3) * 3).getTime();
+        lastStationAnchorMs = this.calendar.withHour(d, Math.floor(this.calendar.hourOf(d) / 3) * 3).getTime();
       }
     }
     let stationBlocks = 0;
@@ -1927,6 +1931,7 @@ async _refreshPressureDelta(): Promise<void> {
       [...station, ...this._withPrecipProbability(forecast, 0, granularity)],
       this._hass,
       this._openMeteoSource,
+      this.calendar,
       granularity,
       granularity === 'daily' ? cloudExp : null,
       this.config.location,
@@ -1943,7 +1948,7 @@ async _refreshPressureDelta(): Promise<void> {
     if (this.config?.forecast?.show_precip_probability !== true) return entries;
     if (!entries.length || fromIndex >= entries.length) return entries;
     const head = entries.slice(0, fromIndex);
-    const tail = overlayPrecipProbability(entries.slice(fromIndex), this._openMeteoSource, granularity);
+    const tail = overlayPrecipProbability(entries.slice(fromIndex), this._openMeteoSource, this.calendar, granularity);
     return head.length ? [...head, ...tail] : tail;
   }
 
@@ -1977,6 +1982,7 @@ async _refreshPressureDelta(): Promise<void> {
         [...this.forecasts] as any,
         this._hass,
         this._openMeteoSource,
+        this.calendar,
         granularity,
         granularity === 'daily' ? cloudExp : null,
         this.config.location,
@@ -2026,7 +2032,7 @@ async _refreshPressureDelta(): Promise<void> {
     }
     const raw = this._forecastData;
     if (!Array.isArray(raw) || raw.length === 0) return false;
-    const slice = this._sliceForecast(effectiveCfg, fcType, fcType === 'today', startOfTodayMs());
+    const slice = this._sliceForecast(effectiveCfg, fcType, fcType === 'today', startOfTodayMs(this.calendar));
     return !forecastCoversSunshine(slice);
   }
 
@@ -2071,7 +2077,7 @@ async _refreshPressureDelta(): Promise<void> {
     if (type === 'daily') {
       if (typeof src.getDailyStationForecast !== 'function') return [];
       const all = src.getDailyStationForecast() || [];
-      const tomorrowMs = addDays(startOfDay(Date.now()), 1).getTime();
+      const tomorrowMs = this.calendar.addDays(this.calendar.startOfDay(Date.now()), 1).getTime();
       const past = all.filter((e: { datetime?: string }) => {
         const t = new Date(e.datetime ?? '').getTime();
         return Number.isFinite(t) && t < tomorrowMs;
@@ -2083,7 +2089,7 @@ async _refreshPressureDelta(): Promise<void> {
     // hourly / today — slice the hourly entries up to the current hour.
     if (typeof src.getHourlyStationForecast !== 'function') return [];
     const all = src.getHourlyStationForecast() || [];
-    const nowHourMs = startOfHour(Date.now()).getTime();
+    const nowHourMs = this.calendar.startOfHour(Date.now()).getTime();
     const past = all.filter((e: { datetime?: string }) => {
       const t = new Date(e.datetime ?? '').getTime();
       return Number.isFinite(t) && t <= nowHourMs;
@@ -2094,7 +2100,7 @@ async _refreshPressureDelta(): Promise<void> {
     // forecast tail's whole-day rule) so the day timeline's first
     // segment is a full day; the "now" end stays untouched.
     const count = (parseInt(String(this.config?.days), 10) || 7) * 24;
-    return trimToWholeDayStart(past.slice(-count));
+    return trimToWholeDayStart(past.slice(-count), this.calendar);
   }
 
   // Lazy-init the Open-Meteo source and trigger a fetch when the cache
@@ -2162,6 +2168,7 @@ async _refreshPressureDelta(): Promise<void> {
         pastDays,
         forecastDays,
         includeHourly,
+        calendar: this.calendar,
       });
       this._openMeteoSource.setListener((event: { ok: boolean; error?: string } | null) => {
         // When the source feeds the station block, every completed
@@ -2626,6 +2633,25 @@ _invalidateStaleSources(oldConfig: any) {
   this._refreshForecasts();
 }
 
+// Day boundaries and every displayed time follow the HA server's zone
+// (#285): the station, the forecast and HA's own daily statistics all
+// belong to that location, wherever the viewer sits. A zone change
+// rebuilds the sources that hold the old calendar or cached its days.
+_syncCalendar(zone: unknown): void {
+  if (zone === this._calendarZoneInput) return;
+  this._calendarZoneInput = zone;
+  const next = new Calendar(zone);
+  if (next.timeZone === this.calendar.timeZone) return;
+  this.calendar = next;
+  this._stationCache = {};
+  this._pressureDeltaCache = { bucketMs: null, value: null };
+  if (this._dataSource) this._teardownStation();
+  if (this._openMeteoSource) {
+    this._openMeteoSource.abort();
+    this._openMeteoSource = null;
+  }
+}
+
 _teardownStation() {
   if (this._dataUnsubscribe) { this._dataUnsubscribe(); this._dataUnsubscribe = null; }
   this._dataSource = null;
@@ -2913,18 +2939,18 @@ renderScrollTimeline() {
     if (!dt) continue;
     const d = new Date(dt);
     if (!Number.isFinite(d.getTime())) continue;
-    const key = dayKey(d);
+    const key = this.calendar.dayKey(d);
     if (key !== curKey) {
       curKey = key;
-      segs.push({ start: i, count: 0, ms: startOfDay(d).getTime() });
+      segs.push({ start: i, count: 0, ms: this.calendar.startOfDay(d).getTime() });
     }
     segs[segs.length - 1].count++;
   }
   if (!segs.length) return html``;
 
-  const todayMs = startOfTodayMs();
-  const wdFmt = getDateTimeFormat(this.language, { weekday: 'short' });
-  const dayFmt = getDateTimeFormat(this.language, { day: 'numeric' });
+  const todayMs = startOfTodayMs(this.calendar);
+  const wdFmt = getDateTimeFormat(this.language, { weekday: 'short', timeZone: this.calendar.timeZone });
+  const dayFmt = getDateTimeFormat(this.language, { day: 'numeric', timeZone: this.calendar.timeZone });
   const visible = effectiveVisibleBars(this.config);
   const thumbPct = visible > 0 ? Math.min(100, (visible / total) * 100) : 100;
 
@@ -3549,7 +3575,7 @@ renderMain({ config, sun, weather, temperature } = this) {
 _updateClock(): void {
   const cfg = this.config || {};
   const currentDate = new Date();
-  const timeZone = validTimeZone(cfg.time_zone);
+  const timeZone = validTimeZone(cfg.time_zone) ?? this.calendar.timeZone;
   const timeOptions = {
     hour12: cfg.use_12hour_format,
     hour: 'numeric',
@@ -3557,7 +3583,7 @@ _updateClock(): void {
     second: cfg.show_time_seconds === true ? 'numeric' : undefined,
     timeZone,
   };
-  const currentTime = getDateTimeFormat(this.language, timeOptions as Intl.DateTimeFormatOptions).format(currentDate);
+  const currentTime = getDateTimeFormat(this.language, timeOptions as Intl.DateTimeFormatOptions & { timeZone: string }).format(currentDate);
   const mainDiv = this.shadowRoot?.querySelector('.main');
   if (!mainDiv) return;
   const clockElement = mainDiv.querySelector('#digital-clock');
@@ -3679,6 +3705,7 @@ _openZeroDegreePopup(returnFocus: HTMLElement | null): void {
     unit: this.zero_degree_48h_unit,
     language: this.language,
     hour12: this.config?.use_12hour_format,
+    calendar: this.calendar,
     formatValue: (level, withUnit) => this._zeroDegreeFormat(level, withUnit),
     strings: {
       title: str('zero_degree_popup_title'),
@@ -4001,8 +4028,8 @@ _zeroDegreeWhen(t: number): { day: string; time: string } {
   const hour12 = this.config?.use_12hour_format;
   const d = new Date(t);
   return {
-    day: getDateTimeFormat(lang, { weekday: 'short' }).format(d),
-    time: getDateTimeFormat(lang, { hour: 'numeric', minute: 'numeric', hour12 }).format(d),
+    day: getDateTimeFormat(lang, { weekday: 'short', timeZone: this.calendar.timeZone }).format(d),
+    time: getDateTimeFormat(lang, { hour: 'numeric', minute: 'numeric', hour12, timeZone: this.calendar.timeZone }).format(d),
   };
 }
 
@@ -4087,6 +4114,7 @@ _zeroDegree48hFallback(value: unknown, unit: string | undefined, change: number 
       (this.ll(k) || (locale.en as Record<string, unknown>)[k] || '') as string;
     const when = getDateTimeFormat(this.language || 'en', {
       weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: this.config?.use_12hour_format,
+      timeZone: this.calendar.timeZone,
     }).format(atDate);
     title = `${str('zero_degree_lowest')} ${text} ${when}`;
     if (nowValue !== undefined && nowValue !== '') {
@@ -4131,9 +4159,9 @@ _refreshNextRain(): void {
       none: str('next_rain_none'),
       checked_until: str('next_rain_checked_until'),
     };
-    text = formatNextRain(view, lang, hour12, strings);
+    text = formatNextRain(view, lang, hour12, strings, this.calendar);
     icon = nextRainIcon(view);
-    if (view.kind === 'none') title = formatCheckedUntil(view, now, lang, hour12, strings);
+    if (view.kind === 'none') title = formatCheckedUntil(view, now, lang, hour12, strings, this.calendar);
     else if ('source' in view && view.source) title = str(`next_rain_source_${view.source}`);
   }
   this.next_rain_text = text;
@@ -4351,10 +4379,10 @@ const timeOptions = {
     hour12: use12HourFormat,
     hour: 'numeric',
     minute: 'numeric',
-    timeZone: validTimeZone(this.config.time_zone),
+    timeZone: validTimeZone(this.config.time_zone) ?? this.calendar.timeZone,
 } as Intl.DateTimeFormatOptions;
 
-  const timeFmt = getDateTimeFormat(language, timeOptions);
+  const timeFmt = getDateTimeFormat(language, timeOptions as Intl.DateTimeFormatOptions & { timeZone: string });
   const rising = new Date(sun.attributes.next_rising);
   const setting = new Date(sun.attributes.next_setting);
   return html`
@@ -4389,7 +4417,7 @@ _renderMoonLine(language: string) {
   const pct = getNumberFormat(language, { style: 'percent', maximumFractionDigits: 0 })
     .format(fraction);
 
-  const ev = lat !== null && lon !== null ? nextMoonEvent(now, lat, lon) : undefined;
+  const ev = lat !== null && lon !== null ? nextMoonEvent(now, lat, lon, this.calendar) : undefined;
   const evIcon = ev?.kind === 'rise' ? 'mdi:weather-moonset-up' : 'mdi:weather-moonset-down';
   const evPart = ev
     ? html` <ha-icon icon="${evIcon}"></ha-icon>
@@ -4397,6 +4425,7 @@ _renderMoonLine(language: string) {
           hour12: this.config.use_12hour_format,
           hour: 'numeric',
           minute: 'numeric',
+          timeZone: this.calendar.timeZone,
         }).format(ev.time)}`
     : html``;
 
@@ -4707,7 +4736,7 @@ _convertWindSpeed(raw: unknown, sourceUnit?: string): number | null {
             forecastCount: this._forecastCount || 0,
             contentWidth: wrapper.scrollWidth,
             viewportWidth: wrapper.clientWidth,
-          })
+          }, this.calendar)
         : null;
       const scrollLeft = dayPage ?? computeInitialScrollLeft({
         stationCount: this._stationCount || 0,
