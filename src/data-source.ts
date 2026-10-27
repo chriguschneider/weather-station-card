@@ -19,7 +19,11 @@ import {
   type ConditionThresholdOverrides,
 } from './condition-classifier.js';
 import { WeatherEntityFeature, type ConditionId } from './const.js';
-import type { ForecastEntry } from './forecast-utils.js';
+import {
+  anchorDailyDatetime,
+  normalizeHourlyDatetime,
+  type ForecastEntry,
+} from './forecast-utils.js';
 import { resolveLocation } from './location.js';
 import { sunshineFromLuxHistory, type LuxSample } from './sunshine-source.js';
 import {
@@ -30,7 +34,7 @@ import {
   toMillimeters,
 } from './utils/unit-converters.js';
 import { dedupeRequest } from './utils/shared-requests.js';
-import type { Calendar } from './utils/time-zone.js';
+import { Calendar } from './utils/time-zone.js';
 
 // Dedup TTL for identical recorder requests across sibling cards on
 // the same dashboard. Long enough to absorb staggered card mounts and
@@ -137,7 +141,13 @@ interface HassConnection {
  *  comes from custom-card-helpers but importing it here would pull
  *  Lit and a chunk of the editor types. */
 export interface HassLike {
-  config?: { latitude?: number | null; longitude?: number | null; version?: string };
+  config?: {
+    latitude?: number | null;
+    longitude?: number | null;
+    version?: string;
+    /** The HA server's IANA zone. */
+    time_zone?: string;
+  };
   states?: Record<string, { state: string; attributes?: Record<string, unknown> } | undefined>;
   connection?: HassConnection;
   callWS<T = unknown>(msg: Record<string, unknown>): Promise<T>;
@@ -184,6 +194,108 @@ export function bucketPrecipitation(
     return delta >= 0 ? delta : current.max;
   }
   return current.max;
+}
+
+/** A card-day bucket reduced from hourly statistics; `hours` counts the
+ *  hour buckets that fell into the day (23 / 25 on DST days). */
+export interface DayStatBucket extends StatBucket {
+  hours: number;
+}
+
+/** Reduce hourly recorder buckets to days of `calendar` (#355). HA's
+ *  `period: 'day'` cuts at the SERVER's midnight and the WS command
+ *  takes no zone, so the card cuts its own days from `period: 'hour'`.
+ *
+ *  Each hour goes to the day containing its start. In a half-hour zone
+ *  (Asia/Kolkata) HA's UTC-aligned hour straddles the card midnight;
+ *  it counts for the day it starts in.
+ *
+ *  Per field, mirroring HA's own day reduction
+ *  (`homeassistant/components/recorder/statistics.py`,
+ *  `_reduce_statistics`): min of mins, max of maxes, sum of `change`,
+ *  the last hour's `sum` (a running total, not a per-hour amount), and
+ *  the arithmetic mean of the hour means — an approximation that
+ *  weights every hour equally. A field no hour carried stays absent. */
+export function reduceHourlyToDays(
+  series: ReadonlyArray<StatBucket> | null | undefined,
+  calendar: Calendar,
+): DayStatBucket[] {
+  const byDay = new Map<string, DayAcc>();
+  for (const { b, t } of byStart(series)) {
+    const key = calendar.dayKey(t);
+    let acc = byDay.get(key);
+    if (!acc) {
+      acc = { day: { start: calendar.startOfDay(t).toISOString(), hours: 0 }, meanTotal: 0, meanCount: 0 };
+      byDay.set(key, acc);
+    }
+    addHour(acc, b);
+  }
+  return [...byDay.values()].map((acc) => {
+    if (acc.meanCount > 0) acc.day.mean = acc.meanTotal / acc.meanCount;
+    return acc.day;
+  });
+}
+
+interface DayAcc {
+  day: DayStatBucket;
+  meanTotal: number;
+  meanCount: number;
+}
+
+const finite = (v: number | null | undefined): v is number => typeof v === 'number' && Number.isFinite(v);
+
+function addHour(acc: DayAcc, b: StatBucket): void {
+  const day = acc.day;
+  day.hours += 1;
+  if (finite(b.min)) day.min = finite(day.min) ? Math.min(day.min, b.min) : b.min;
+  if (finite(b.max)) day.max = finite(day.max) ? Math.max(day.max, b.max) : b.max;
+  if (finite(b.change)) day.change = (day.change ?? 0) + b.change;
+  if (finite(b.sum)) day.sum = b.sum;
+  if (finite(b.mean)) { acc.meanTotal += b.mean; acc.meanCount += 1; }
+}
+
+/** Buckets with a parseable start, oldest first. */
+function byStart(series: ReadonlyArray<StatBucket> | null | undefined): Array<{ b: StatBucket; t: number }> {
+  return (series ?? [])
+    .map((b) => ({ b, t: new Date(b.start).getTime() }))
+    .filter((x) => Number.isFinite(x.t))
+    .sort((x, y) => x.t - y.t);
+}
+
+/** Each card day's sunshine total from a sunshine-duration counter's
+ *  HOURLY statistics.
+ *
+ *  The counter resets at the SENSOR's midnight (a utility meter runs
+ *  in the server zone), and the reset lands a beat AFTER the hour rolls
+ *  over, so HA records the server's 00:00 bucket as `min 0, max
+ *  <yesterday's final>`. Its `min` is the post-reset floor; every other
+ *  hour's `max` is the running total at the hour's end. (Verified
+ *  against a live recorder on 2026-08-28: Aug 27's 00:00 bucket carried
+ *  Aug 26's 10.3992.)
+ *
+ *  Within one server day the running maximum of those values only
+ *  grows; each hour credits its growth to the card day the hour starts
+ *  in. With the card in the server zone this is the server day's
+ *  maximum, as before #355. */
+export function sunshineDailyTotals(
+  series: ReadonlyArray<StatBucket> | null | undefined,
+  calendar: Calendar,
+  serverCalendar: Calendar,
+): Map<string, number> | null {
+  const byDay = new Map<string, number>();
+  let serverDay = '';
+  let runningMax = 0;
+  for (const { b, t } of byStart(series)) {
+    const v = serverCalendar.hourOf(t) === 0 ? b.min : b.max;
+    if (!finite(v)) continue;
+    const sKey = serverCalendar.dayKey(t);
+    if (sKey !== serverDay) { serverDay = sKey; runningMax = 0; }
+    const grow = Math.max(0, v - runningMax);
+    runningMax = Math.max(runningMax, v);
+    const key = calendar.dayKey(t);
+    byDay.set(key, (byDay.get(key) ?? 0) + grow);
+  }
+  return byDay.size ? byDay : null;
 }
 
 /** 1-entry cache shared between the call site and `fetchPressure3hDelta`.
@@ -388,6 +500,8 @@ export class MeasuredDataSource {
   // dashboard are pure waste); `notifyVisible` runs the deferred poll
   // as soon as the card is on screen again.
   private _pollDeferredWhileHidden = false;
+  private _serverCal: Calendar | null = null;
+  private _serverZoneInput: string | undefined;
 
   constructor(hass: HassLike | null, config: DataSourceConfig, readonly calendar: Calendar) {
     this.hass = hass;
@@ -475,61 +589,65 @@ export class MeasuredDataSource {
     const entityIds = Object.values(chartSensors).filter(Boolean) as string[];
     if (entityIds.length === 0) return [];
 
-    if (isHourly) {
-      // Window ends at the next full hour (exclusive) and starts at
-      // LOCAL MIDNIGHT `days` days back (2026-08): anchoring the start
-      // to a day boundary keeps the first day complete, so the scroll
-      // timeline's first segment is a full-width day (not a 2px
-      // sliver whose label can't render) and the 'today' day pager's
-      // first page carries real data instead of gap columns. One
-      // extra hour before that start so a cumulative precipitation
-      // sensor has a baseline to diff against on the oldest hour.
-      const end = new Date(this.calendar.startOfHour(Date.now()).getTime() + HOUR_MS);
-      const dayStart = this.calendar.addDays(this.calendar.startOfDay(Date.now()), -days);
-      const start = new Date(dayStart.getTime() - HOUR_MS);
-      const hours = Math.round((end.getTime() - start.getTime()) / HOUR_MS) - 1;
-
-      const stats = await this._callStatsDeduped({
-        type: 'recorder/statistics_during_period',
-        start_time: start.toISOString(),
-        end_time: end.toISOString(),
-        statistic_ids: entityIds,
-        period: 'hour',
-        types: ['min', 'max', 'mean', 'change', 'sum'],
-      });
-
-      return this._buildHourlyForecast(stats, sensors, start, hours);
-    }
-
-    // Daily path. Window ends at tomorrow midnight (exclusive) so today's
-    // partial-day bucket is included as the rightmost column. We fetch
-    // one extra day at the start (days+1) so a cumulative precipitation
-    // sensor has a baseline value to diff against on the oldest day.
-    const end = this.calendar.addDays(this.calendar.startOfDay(Date.now()), 1);
-    const start = this.calendar.addDays(end, -(days + 1));
+    // One hourly request serves every mode. The window ends at the
+    // next full hour (exclusive) and starts at the card's midnight
+    // `days` days back (2026-08): anchoring the start to a day boundary
+    // keeps the first day complete, so the scroll timeline's first
+    // segment is a full-width day (not a 2px sliver whose label can't
+    // render) and the 'today' day pager's first page carries real data
+    // instead of gap columns. One extra hour before that start gives a
+    // cumulative precipitation sensor a baseline on the oldest hour.
+    //
+    // Daily mode reduces the same hours to card days (#355) instead of
+    // asking for `period: 'day'`, which HA cuts at the server's
+    // midnight. That day before the oldest column is the daily
+    // precipitation baseline. Identical requests share one roundtrip
+    // across modes and cards (ADR-0020).
+    const todayStart = this.calendar.startOfDay(Date.now());
+    const end = new Date(this.calendar.startOfHour(Date.now()).getTime() + HOUR_MS);
+    const dayStart = this.calendar.addDays(todayStart, -days);
+    const start = new Date(dayStart.getTime() - HOUR_MS);
+    const hours = Math.round((end.getTime() - start.getTime()) / HOUR_MS) - 1;
 
     const stats = await this._callStatsDeduped({
       type: 'recorder/statistics_during_period',
       start_time: start.toISOString(),
       end_time: end.toISOString(),
       statistic_ids: entityIds,
-      period: 'day',
+      period: 'hour',
       types: ['min', 'max', 'mean', 'change', 'sum'],
     });
+
+    if (isHourly) return this._buildHourlyForecast(stats, sensors, start, hours);
+
+    const daily: StatsResponse = {};
+    for (const [eid, series] of Object.entries(stats || {})) {
+      daily[eid] = reduceHourlyToDays(series, this.calendar);
+    }
 
     // Method B2 fallback: when the user has an illuminance sensor
     // configured but no `sensors.sunshine_duration`, derive sunshine
     // duration from the high-resolution illuminance history via the
     // lux/clearsky_lux ratio. Skipped silently if either input is
     // missing — Open-Meteo overlay or F3 then fills the row.
-    const luxByDate = await this._fetchLuxSunshine(sensors, start, end);
-    // Hourly recovery of the sunshine column (see the helper): the
-    // daily bucket's max carries the previous day's midnight leftover.
-    // Only fires when a sunshine sensor is configured, and rides the
-    // same dedup as every other stats call.
-    const sunshineByDate = await this._fetchSunshineDailyTotals(sensors, start, end);
+    const luxByDate = await this._fetchLuxSunshine(sensors, dayStart, this.calendar.addDays(todayStart, 1));
+    const sunshineByDate = sensors.sunshine_duration
+      ? sunshineDailyTotals(stats?.[sensors.sunshine_duration], this.calendar, this._serverCalendar())
+      : null;
 
-    return this._buildForecast(stats, sensors, start, days, luxByDate, sunshineByDate);
+    return this._buildForecast(daily, sensors, dayStart, days, luxByDate, sunshineByDate);
+  }
+
+  /** The HA server's calendar. Counters that reset at midnight (a
+   *  sunshine utility meter) reset at the server's, whatever the card's
+   *  calendar is. */
+  private _serverCalendar(): Calendar {
+    const zone = this.hass?.config?.time_zone;
+    if (!this._serverCal || this._serverZoneInput !== zone) {
+      this._serverZoneInput = zone;
+      this._serverCal = new Calendar(zone);
+    }
+    return this._serverCal;
   }
 
   /** Recorder statistics call routed through the module-level request
@@ -544,63 +662,6 @@ export class MeasuredDataSource {
       STATS_DEDUPE_TTL_MS,
       () => hass.callWS<StatsResponse>(msg),
     );
-  }
-
-  /** Recover each day's true sunshine total from HOURLY statistics.
-   *
-   *  A sunshine-duration sensor is a counter that resets at local
-   *  midnight, but the reset lands a beat AFTER the hour rolls over, so
-   *  HA records the 00:00 bucket as `min 0, max <yesterday's final>`.
-   *  The DAILY max is therefore `max(yesterday, today)` — correct only
-   *  while the series happens to rise, and silently wrong the first
-   *  time a day is dimmer than the one before it: that day's bar shows
-   *  its neighbour's total. (Verified against a live recorder on
-   *  2026-08-28: Aug 27's 00:00 bucket carried Aug 26's 10.3992.)
-   *
-   *  Hours 01:00–23:00 cannot hold a carry-over, so their max is the
-   *  day's own running total. The 00:00 hour is not dropped blindly —
-   *  its `min` is the post-reset floor, which keeps genuine small-hours
-   *  accumulation (polar summer) from being thrown away.
-   *
-   *  Returns `null` when inapplicable (no sensor, no data, failed call)
-   *  so the caller falls back to the daily bucket. */
-  private async _fetchSunshineDailyTotals(
-    sensors: SensorMap,
-    start: Date,
-    end: Date,
-  ): Promise<Map<string, number> | null> {
-    if (!this.hass) return null;
-    const eid = sensors.sunshine_duration;
-    if (!eid) return null;
-
-    let stats: StatsResponse;
-    try {
-      stats = await this._callStatsDeduped({
-        type: 'recorder/statistics_during_period',
-        start_time: start.toISOString(),
-        end_time: end.toISOString(),
-        statistic_ids: [eid],
-        period: 'hour',
-        types: ['min', 'max'],
-      });
-    } catch (err) {
-      console.debug('[weather-station-card] sunshine hourly fetch failed', err);
-      return null;
-    }
-
-    const series = stats?.[eid];
-    if (!series || series.length === 0) return null;
-
-    const byDay = new Map<string, number>();
-    for (const b of series) {
-      const d = new Date(b.start);
-      const v = this.calendar.hourOf(d) === 0 ? b.min : b.max;
-      if (v == null || !Number.isFinite(v)) continue;
-      const key = this.calendar.dayKey(d);
-      const prev = byDay.get(key);
-      if (prev === undefined || v > prev) byDay.set(key, v);
-    }
-    return byDay.size ? byDay : null;
   }
 
   /** B2 past-tier helper: fetch the configured illuminance sensor's
@@ -1103,7 +1164,7 @@ export class ForecastDataSource {
   private _lastEntity: string | null = null;
   private _lastType: string | null = null;
 
-  constructor(hass: HassLike | null, config: DataSourceConfig) {
+  constructor(hass: HassLike | null, config: DataSourceConfig, readonly calendar: Calendar) {
     this.hass = hass;
     this.config = config;
   }
@@ -1195,10 +1256,12 @@ export class ForecastDataSource {
       this._unsubPromise = this.hass.connection.subscribeMessage(
         (event) => {
           const raw = (event.forecast as ForecastEntry[]) || [];
-          const tagged = wxWindUnit
-            ? raw.map((e) => ({ ...e, wind_speed_unit: wxWindUnit }))
-            : raw;
-          this._emit({ forecast: tagged });
+          // Read in the server zone at event time: `hass` may have been
+          // swapped since the subscription.
+          const serverZone = new Calendar(this.hass?.config?.time_zone).timeZone;
+          this._emit({
+            forecast: raw.map((e) => this._normalizeEntry(e, isHourly, serverZone, wxWindUnit)),
+          });
         },
         {
           type: 'weather/subscribe_forecast',
@@ -1210,6 +1273,31 @@ export class ForecastDataSource {
       const e = err as { message?: string } | null;
       this._emit({ forecast: [], error: String(e?.message ? e.message : err) });
     }
+  }
+
+  /** Daily entries are calendar days (#355), re-anchored at the card's
+   *  midnight; hourly entries stay instants. Untouched entries pass
+   *  through by reference. */
+  private _normalizeEntry(
+    e: ForecastEntry,
+    isHourly: boolean,
+    serverZone: string,
+    windUnit: string | undefined,
+  ): ForecastEntry {
+    const raw: unknown = e?.datetime;
+    let datetime: string | null = null;
+    if (typeof raw === 'string') {
+      const fixed = isHourly
+        ? normalizeHourlyDatetime(raw, serverZone)
+        : anchorDailyDatetime(raw, serverZone, this.calendar);
+      if (fixed && fixed !== raw) datetime = fixed;
+    }
+    if (datetime === null && !windUnit) return e;
+    return {
+      ...e,
+      ...(datetime === null ? {} : { datetime }),
+      ...(windUnit ? { wind_speed_unit: windUnit } : {}),
+    };
   }
 
   private _emit(event: DataSourceEvent): void {

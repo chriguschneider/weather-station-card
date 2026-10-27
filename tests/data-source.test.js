@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { bucketPrecipitation, MeasuredDataSource, ForecastDataSource } from '../src/data-source.js';
+import {
+  bucketPrecipitation,
+  MeasuredDataSource,
+  ForecastDataSource,
+  sunshineDailyTotals,
+} from '../src/data-source.js';
 import { WeatherEntityFeature } from '../src/const.js';
 import { clearDedupeCaches } from '../src/utils/shared-requests.js';
 import { Calendar } from '../src/utils/time-zone.js';
@@ -307,42 +312,49 @@ describe('MeasuredDataSource._buildForecast', () => {
     expect(out[1].sunshine).toBe(10.9375);
   });
 
-  it("_fetchSunshineDailyTotals reads the 00:00 bucket's min, not its max", async () => {
+  it("sunshineDailyTotals reads the 00:00 bucket's min, not its max", () => {
     // The midnight bucket straddles the reset, so its max belongs to
     // YESTERDAY and its min is the post-reset floor. Taking min there
     // and max everywhere else recovers the day's own total. Bucket
     // shapes copied from a live recorder (2026-08-27).
-    const sensorsWithSunshine = { ...sensors, sunshine_duration: 'sensor.sun' };
     const day = dayMs(2).date;
     const hour = (h) => {
       const d = new Date(day);
       d.setHours(h, 0, 0, 0);
       return d.toISOString();
     };
+    const map = sunshineDailyTotals([
+      { start: hour(0), min: 0, max: 10.3992 }, // carry-over in max
+      { start: hour(10), min: 2, max: 3 },
+      { start: hour(20), min: 3.25, max: 3.25 }, // the day's real end
+    ], cal, cal);
+    expect(map.get(cal.dayKey(day))).toBe(3.25);
+  });
+
+  it('sunshineDailyTotals is null without data', () => {
+    expect(sunshineDailyTotals(undefined, cal, cal)).toBe(null);
+    expect(sunshineDailyTotals([{ start: dayMs(1).date.toISOString(), max: null }], cal, cal)).toBe(null);
+  });
+
+  it('_fetchAggregates feeds the sunshine column from the shared hourly request', async () => {
+    const sensorsWithSunshine = { temperature: 'sensor.temp', sunshine_duration: 'sensor.sun' };
+    const today = cal.startOfDay(Date.now());
+    const yesterday = cal.addDays(today, -1);
+    const at = (d, h) => new Date(d.getTime() + h * 3600_000).toISOString();
     const hass = {
-      ...fakeHass,
+      config: { latitude: 47.4, longitude: 8.5 },
+      states: {},
       callWS: vi.fn().mockResolvedValue({
         'sensor.sun': [
-          { start: hour(0), min: 0, max: 10.3992 }, // carry-over in max
-          { start: hour(10), min: 2, max: 3 },
-          { start: hour(20), min: 3.25, max: 3.25 }, // the day's real end
+          { start: at(yesterday, 0), min: 0, max: 9 }, // day-before carry-over
+          { start: at(yesterday, 12), min: 1, max: 2.5 },
         ],
       }),
     };
-    const ds = new MeasuredDataSource(hass, { sensors: sensorsWithSunshine, days: 3 }, cal);
-    const map = await ds._fetchSunshineDailyTotals(
-      sensorsWithSunshine, day, new Date(day.getTime() + 24 * 3600_000),
-    );
-    const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
-    expect(map.get(key)).toBe(3.25);
-  });
-
-  it('_fetchSunshineDailyTotals is a no-op without a sunshine sensor', async () => {
-    const ds = new MeasuredDataSource(fakeHass, { sensors, days: 3 }, cal);
-    const day = dayMs(2).date;
-    await expect(
-      ds._fetchSunshineDailyTotals(sensors, day, new Date(day.getTime() + 24 * 3600_000)),
-    ).resolves.toBe(null);
+    const ds = new MeasuredDataSource(hass, { sensors: sensorsWithSunshine, days: 2 }, cal);
+    const out = await ds._fetchAggregates();
+    expect(hass.callWS).toHaveBeenCalledTimes(1);
+    expect(out[0].sunshine).toBe(2.5);
   });
 
   it("recovers a completed day's own total when the daily max is the previous day's", () => {
@@ -969,15 +981,51 @@ describe('MeasuredDataSource hourly mode', () => {
     expect(new Date(msg.start_time).getTime()).toBe(expectedStart.getTime() - HOUR_MS);
   });
 
-  it('_fetchAggregates falls back to period:day at default forecast.type', async () => {
-    const hass = {
-      config: { latitude: 47.4 },
+  // #355: HA cuts period:'day' at the server's midnight, so daily mode
+  // reduces hour buckets itself — with the very request hourly mode
+  // sends, so one deduplicated roundtrip serves both (ADR-0020).
+  it('_fetchAggregates in daily mode sends the hourly-mode request', async () => {
+    const mkHass = () => ({
+      config: { latitude: 47.4, longitude: 8.5 },
       callWS: vi.fn().mockResolvedValue({}),
+    });
+    const hassDaily = mkHass();
+    const hassHourly = mkHass();
+    await new MeasuredDataSource(hassDaily, { sensors, days: 3 }, cal)._fetchAggregates();
+    clearDedupeCaches();
+    await new MeasuredDataSource(hassHourly, { sensors, days: 3, forecast: { type: 'hourly' } }, cal)._fetchAggregates();
+    const stats = (h) => h.callWS.mock.calls.map(([m]) => m).filter((m) => m.type === 'recorder/statistics_during_period');
+    expect(stats(hassDaily)).toHaveLength(1);
+    expect(stats(hassDaily)[0].period).toBe('hour');
+    expect(stats(hassDaily)[0]).toEqual(stats(hassHourly)[0]);
+  });
+
+  it('_fetchAggregates shares one recorder roundtrip between daily and hourly cards', async () => {
+    const hass = { config: { latitude: 47.4, longitude: 8.5 }, callWS: vi.fn().mockResolvedValue({}) };
+    await Promise.all([
+      new MeasuredDataSource(hass, { sensors, days: 3 }, cal)._fetchAggregates(),
+      new MeasuredDataSource(hass, { sensors, days: 3, forecast: { type: 'hourly' } }, cal)._fetchAggregates(),
+    ]);
+    const statsCalls = hass.callWS.mock.calls.filter(([m]) => m.type === 'recorder/statistics_during_period');
+    expect(statsCalls).toHaveLength(1);
+  });
+
+  it('_fetchAggregates in daily mode reduces hour buckets to card days', async () => {
+    const today = cal.startOfDay(Date.now());
+    const day0 = cal.addDays(today, -1); // yesterday
+    const hours = [];
+    for (let h = 0; day0.getTime() + h * HOUR_MS < today.getTime(); h++) {
+      hours.push({ start: new Date(day0.getTime() + h * HOUR_MS).toISOString(), min: h, max: h + 1, mean: h + 0.5 });
+    }
+    const hass = {
+      config: { latitude: 47.4, longitude: 8.5 },
+      callWS: vi.fn().mockResolvedValue({ 'sensor.temp': hours }),
     };
-    const ds = new MeasuredDataSource(hass, { sensors, days: 3 }, cal);
-    await ds._fetchAggregates();
-    const [msg] = hass.callWS.mock.calls[0];
-    expect(msg.period).toBe('day');
+    const out = await new MeasuredDataSource(hass, { sensors: { temperature: 'sensor.temp' }, days: 2 }, cal)._fetchAggregates();
+    expect(out).toHaveLength(2);
+    expect(out[0].datetime).toBe(day0.toISOString());
+    expect(out[0].temperature).toBe(hours.length);
+    expect(out[0].templow).toBe(0);
   });
 
   // 'today' became the DAY PAGER in the 2026-08 rework: it shares the
@@ -1060,7 +1108,7 @@ describe('ForecastDataSource', () => {
   });
 
   it('emits an error event when weather_entity is not configured', async () => {
-    const ds = new ForecastDataSource(hass, {});
+    const ds = new ForecastDataSource(hass, {}, cal);
     const events = [];
     ds.subscribe((e) => events.push(e));
     await Promise.resolve();
@@ -1069,7 +1117,7 @@ describe('ForecastDataSource', () => {
   });
 
   it('emits an error event when entity is missing from hass.states', async () => {
-    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.ghost' });
+    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.ghost' }, cal);
     const events = [];
     ds.subscribe((e) => events.push(e));
     await Promise.resolve();
@@ -1078,7 +1126,7 @@ describe('ForecastDataSource', () => {
   });
 
   it('emits an error event when entity does not support daily forecast', async () => {
-    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.no_daily' });
+    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.no_daily' }, cal);
     const events = [];
     ds.subscribe((e) => events.push(e));
     await Promise.resolve();
@@ -1086,7 +1134,7 @@ describe('ForecastDataSource', () => {
   });
 
   it('subscribes to weather/subscribe_forecast for a supported entity', async () => {
-    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.home', forecast: { type: 'daily' } });
+    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.home', forecast: { type: 'daily' } }, cal);
     const events = [];
     ds.subscribe((e) => events.push(e));
     await Promise.resolve();
@@ -1104,7 +1152,7 @@ describe('ForecastDataSource', () => {
   // hourly data shape is added separately (forecast-utils + tick plugin); this
   // test guards the data layer entry point.
   it('subscribes with forecast_type "hourly" when configured for an hourly-capable entity', async () => {
-    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.no_daily', forecast: { type: 'hourly' } });
+    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.no_daily', forecast: { type: 'hourly' } }, cal);
     ds.subscribe(() => {});
     await Promise.resolve();
     expect(conn.subscribeMessage).toHaveBeenCalledTimes(1);
@@ -1117,7 +1165,7 @@ describe('ForecastDataSource', () => {
   });
 
   it('emits an error when hourly is requested but entity only supports daily', async () => {
-    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.home', forecast: { type: 'hourly' } });
+    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.home', forecast: { type: 'hourly' } }, cal);
     const events = [];
     ds.subscribe((e) => events.push(e));
     await Promise.resolve();
@@ -1126,13 +1174,50 @@ describe('ForecastDataSource', () => {
   });
 
   it('forwards forecast events to the listener', async () => {
-    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.home' });
+    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.home' }, cal);
     const events = [];
     ds.subscribe((e) => events.push(e));
     await Promise.resolve();
     const [callback] = conn.subscribeMessage.mock.calls[0];
     callback({ forecast: [{ datetime: '2026-05-01T00:00:00Z', temperature: 20 }] });
-    expect(events.at(-1)).toEqual({ forecast: [{ datetime: '2026-05-01T00:00:00Z', temperature: 20 }] });
+    // A daily entry is a calendar day, re-anchored at the card's midnight.
+    expect(events.at(-1)).toEqual({
+      forecast: [{ datetime: cal.zonedDate(2026, 5, 1).toISOString(), temperature: 20 }],
+    });
+  });
+
+  it('anchors daily entries at the card calendar midnight of the provider date', async () => {
+    hass.config = { time_zone: 'America/Denver' };
+    const denver = new Calendar('America/Denver');
+    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.home' }, denver);
+    const events = [];
+    ds.subscribe((e) => events.push(e));
+    await Promise.resolve();
+    const [callback] = conn.subscribeMessage.mock.calls[0];
+    callback({
+      forecast: [
+        { datetime: '2026-10-22T00:00:00+00:00' }, // core Open-Meteo
+        { datetime: '2026-10-23' }, // MeteoSwiss
+        { datetime: '2026-10-24T06:00:00+00:00' }, // AccuWeather, Denver midnight in UTC
+        { datetime: '2026-10-25T07:00:00-06:00' }, // NWS
+      ],
+    });
+    const keys = events.at(-1).forecast.map((e) => denver.dayKey(new Date(e.datetime)));
+    expect(keys).toEqual(['2026-10-22', '2026-10-23', '2026-10-24', '2026-10-25']);
+    expect(events.at(-1).forecast[0].datetime).toBe('2026-10-22T06:00:00.000Z');
+  });
+
+  it('keeps hourly entries as instants', async () => {
+    hass.states['weather.hourly'] = { attributes: { supported_features: WeatherEntityFeature.FORECAST_HOURLY } };
+    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.hourly', forecast: { type: 'hourly' } }, cal);
+    const events = [];
+    ds.subscribe((e) => events.push(e));
+    await Promise.resolve();
+    const [callback] = conn.subscribeMessage.mock.calls[0];
+    const entry = { datetime: '2026-05-01T13:00:00+00:00', temperature: 20 };
+    callback({ forecast: [entry] });
+    // Untouched entries pass through by reference.
+    expect(events.at(-1).forecast[0]).toBe(entry);
   });
 
   // Bug fix: the renderer's _convertWindSpeed defaults the source unit
@@ -1143,7 +1228,7 @@ describe('ForecastDataSource', () => {
   // the renderer pick the right source unit per-entry.
   it('tags forecast entries with the weather entity wind_speed_unit when available', async () => {
     hass.states['weather.home'].attributes.wind_speed_unit = 'km/h';
-    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.home' });
+    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.home' }, cal);
     const events = [];
     ds.subscribe((e) => events.push(e));
     await Promise.resolve();
@@ -1155,14 +1240,14 @@ describe('ForecastDataSource', () => {
       ],
     });
     expect(events.at(-1).forecast).toEqual([
-      { datetime: '2026-05-01T00:00:00Z', wind_speed: 20, wind_speed_unit: 'km/h' },
-      { datetime: '2026-05-02T00:00:00Z', wind_speed: 15, wind_speed_unit: 'km/h' },
+      { datetime: cal.zonedDate(2026, 5, 1).toISOString(), wind_speed: 20, wind_speed_unit: 'km/h' },
+      { datetime: cal.zonedDate(2026, 5, 2).toISOString(), wind_speed: 15, wind_speed_unit: 'km/h' },
     ]);
   });
 
   it('does not tag forecast entries when the weather entity exposes no wind_speed_unit', async () => {
     // weather.home fixture has supported_features only — no wind_speed_unit.
-    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.home' });
+    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.home' }, cal);
     const events = [];
     ds.subscribe((e) => events.push(e));
     await Promise.resolve();
@@ -1173,7 +1258,7 @@ describe('ForecastDataSource', () => {
   });
 
   it('unsubscribe disposes the underlying subscription', async () => {
-    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.home' });
+    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.home' }, cal);
     const cleanup = ds.subscribe(() => {});
     await Promise.resolve();
     await cleanup();

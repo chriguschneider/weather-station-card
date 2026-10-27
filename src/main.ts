@@ -1440,7 +1440,7 @@ _syncDataSources(hass: HassMain): void {
           this._forecastDataReady = true;
         }
       }
-      this._forecastSource = new ForecastDataSource(hass, this.config);
+      this._forecastSource = new ForecastDataSource(hass, this.config, this.calendar);
       this._forecastUnsubscribe = this._forecastSource.subscribe((event) => {
         try {
           const newData = event.forecast || [];
@@ -1779,10 +1779,14 @@ async _refreshPressureDelta(): Promise<void> {
     const lastStationMs = station.length
       ? new Date((station[station.length - 1] as { datetime?: string }).datetime ?? '').getTime()
       : -Infinity;
+    // Daily entries on both sides sit at the card's midnight (#355), so
+    // the forecast's own today shares the station's last datetime and
+    // stays: that is the doubled-today column.
+    const isDaily = fcType === 'daily';
     const trimmed = Number.isFinite(lastStationMs)
       ? rawForecast.filter((e: { datetime?: string }) => {
           const t = new Date(e.datetime ?? '').getTime();
-          return !Number.isFinite(t) || t > lastStationMs;
+          return !Number.isFinite(t) || t > lastStationMs || (isDaily && t === lastStationMs);
         })
       : rawForecast;
     // The entity's own sunshine goes on first (ADR-0028); the overlays
@@ -2647,6 +2651,9 @@ _syncCalendar(zone: unknown): void {
   this._stationCache = {};
   this._pressureDeltaCache = { bucketMs: null, value: null };
   if (this._dataSource) this._teardownStation();
+  // Daily forecast entries are anchored at the calendar's midnight.
+  this._forecastCache = {};
+  if (this._forecastSource) this._teardownForecast();
   if (this._openMeteoSource) {
     this._openMeteoSource.abort();
     this._openMeteoSource = null;

@@ -2,7 +2,7 @@
 // they can be unit-tested without pulling in Lit, Chart.js, or HA — vitest
 // runs in node (no jsdom) and these stay fully exercisable there.
 
-import type { Calendar } from './utils/time-zone.js';
+import { Calendar } from './utils/time-zone.js';
 
 /** Forecast entry shape consumed by the chart. Both data sources
  *  (`MeasuredDataSource`, `ForecastDataSource`) emit objects matching
@@ -584,6 +584,109 @@ export function startOfTodayMs(calendar: Calendar): number {
 // (e.g. 1 mm precip since midnight) render immediately, missing
 // fields render as gaps just like an offline sensor on a historical
 // day.
+
+// ── Forecast datetimes (#355) ───────────────────────────────────────
+//
+// `weather/subscribe_forecast` documents `datetime` only as "UTC, RFC
+// 3339" and leaves daily semantics open (core issue #166294 and
+// architecture issue #221 closed without a change). Integrations
+// differ: core Open-Meteo writes UTC midnight (`T00:00:00+00:00`),
+// MeteoSwiss a bare date, AccuWeather the provider's local midnight
+// expressed in UTC, NWS the local offset. A daily entry is therefore
+// read as a calendar day, not as an instant.
+
+const ISO_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})/;
+const ISO_TIME_RE = /^[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?/i;
+const ISO_OFFSET_RE = /^(?:Z|([+-])(\d{2}):?(\d{2})?)$/i;
+
+interface IsoParts {
+  year: number;
+  month: number;
+  day: number;
+  /** undefined for a bare date */
+  hour?: number;
+  minute: number;
+  second: number;
+  /** Offset in minutes; undefined when the string has none. */
+  offsetMin?: number;
+}
+
+function parseIso(s: string): IsoParts | null {
+  let rest = s.trim();
+  const date = ISO_DATE_RE.exec(rest);
+  if (!date) return null;
+  const out: IsoParts = {
+    year: Number(date[1]), month: Number(date[2]), day: Number(date[3]), minute: 0, second: 0,
+  };
+  rest = rest.slice(date[0].length);
+  if (rest === '') return out;
+  const time = ISO_TIME_RE.exec(rest);
+  if (!time) return null;
+  out.hour = Number(time[1]);
+  out.minute = Number(time[2]);
+  out.second = Number(time[3] ?? 0);
+  rest = rest.slice(time[0].length);
+  if (rest === '') return out;
+  const off = ISO_OFFSET_RE.exec(rest);
+  if (!off) return null;
+  const sign = off[1] === '-' ? -1 : 1;
+  out.offsetMin = off[1] === undefined ? 0 : sign * (Number(off[2]) * 60 + Number(off[3] ?? 0));
+  return out;
+}
+
+const pad2 = (n: number): string => String(n).padStart(2, '0');
+
+/** `YYYY-MM-DD` day key of a daily forecast entry's `datetime`:
+ *    - bare date → that date
+ *    - explicit non-zero offset → the date in that offset (as written)
+ *    - UTC at exactly midnight → the UTC date
+ *    - anything else (UTC at another hour, no offset) → the date in
+ *      the server zone, which is how the card read it before #355.
+ *  null when the string is not a date. */
+export function normalizeDailyEntry(datetime: string, serverZone: string): string | null {
+  const p = parseIso(datetime);
+  if (!p) {
+    const t = Date.parse(datetime);
+    return Number.isFinite(t) ? new Calendar(serverZone).dayKey(t) : null;
+  }
+  const written = `${p.year}-${pad2(p.month)}-${pad2(p.day)}`;
+  if (p.hour === undefined || p.offsetMin === undefined) return written;
+  if (p.offsetMin !== 0) return written;
+  if (p.hour === 0 && p.minute === 0 && p.second === 0) return written;
+  return new Calendar(serverZone).dayKey(Date.parse(datetime));
+}
+
+/** Daily forecast `datetime` re-anchored at the card-calendar midnight
+ *  of its day key, the same convention as the station's daily entries.
+ *  null when the string is not a date. */
+export function anchorDailyDatetime(
+  datetime: string,
+  serverZone: string,
+  calendar: Calendar,
+): string | null {
+  const key = normalizeDailyEntry(datetime, serverZone);
+  if (!key) return null;
+  const [y, m, d] = key.split('-').map(Number);
+  return calendar.zonedDate(y, m, d).toISOString();
+}
+
+let warnedBareHourly = false;
+
+/** Hourly forecast `datetime` as an absolute ISO instant. Core requires
+ *  an offset; a string without one is read as server-zone wall time
+ *  (warned once per page) instead of the browser's zone. Strings with
+ *  an offset, and anything unparseable, pass through unchanged. */
+export function normalizeHourlyDatetime(datetime: string, serverZone: string): string {
+  const p = parseIso(datetime);
+  if (!p || p.offsetMin !== undefined) return datetime;
+  if (!warnedBareHourly) {
+    warnedBareHourly = true;
+    console.warn(
+      `[weather-station-card] hourly forecast datetime "${datetime}" has no UTC offset; reading it in ${serverZone}`,
+    );
+  }
+  return new Calendar(serverZone).zonedDate(p.year, p.month, p.day, p.hour ?? 0, p.minute).toISOString();
+}
 
 /** Drop forecast entries whose datetime is strictly before today's
  *  local midnight. Idempotent on already-clean arrays. Hourly forecasts
