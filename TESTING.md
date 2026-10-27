@@ -14,7 +14,8 @@ blocks the release pipeline.
 
 ```bash
 # Unit
-npm test                    # one-shot, used by CI
+npm test                    # one-shot, used by CI (runner's zone, UTC in CI)
+npm run test:tz             # time-zone-sensitive specs under UTC, Zurich, Denver
 npm run test:watch          # live-reload while writing tests
 npm run coverage            # vitest run --coverage with v8 provider
 

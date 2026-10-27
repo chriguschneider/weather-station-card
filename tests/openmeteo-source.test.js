@@ -266,10 +266,10 @@ describe('buildDailyForecast', () => {
     expect(out[2].condition).toBe('cloudy'); // code 3, overcast
   });
 
-  it('emits local-midnight ISO datetimes (MeasuredDataSource convention)', () => {
-    const out = buildDailyForecast(sample, cal);
-    // Local midnight of the civil date — TZ-independent assertion.
-    expect(out[2].datetime).toBe(new Date(2026, 4, 20).toISOString());
+  it('emits card-zone midnight ISO datetimes (MeasuredDataSource convention)', () => {
+    // Zurich is UTC+2 in May: local midnight of 2026-05-20 is 22:00Z the day before.
+    const out = buildDailyForecast(sample, new Calendar('Europe/Zurich'));
+    expect(out[2].datetime).toBe('2026-05-19T22:00:00.000Z');
   });
 
   it('tags wind_speed_unit so the renderer can convert wind', () => {
@@ -350,8 +350,8 @@ describe('buildHourlyForecast', () => {
 
   it('emits on-the-hour ISO datetimes (MeasuredDataSource convention)', () => {
     const out = buildHourlyForecast(sample);
-    // On-the-hour local time — TZ-independent assertion.
-    expect(out[2].datetime).toBe(new Date(2026, 4, 20, 12, 0).toISOString());
+    // The sample's epoch-seconds `time` is an instant: 12:00Z in every zone.
+    expect(out[2].datetime).toBe('2026-05-20T12:00:00.000Z');
   });
 
   it('returns [] for malformed / missing hourly section', () => {
