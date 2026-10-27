@@ -87,6 +87,14 @@ Three mechanisms, all keyed by full fetch signature:
 - 60 s result TTL: long enough to absorb staggered card mounts,
   short enough that a manual dashboard refresh still fetches fresh.
 
+## Amendment 2026-10-27 (#354)
+
+The card's time zone is part of the signature: `wsc_series_*` and
+`wsc_lux_days_*` keys include it (both schemas bumped to v2), and the
+recorder `stats:` / `history:` dedup keys carry it, so cards in
+different zones never share data derived from another zone's days.
+Decided by: ADR-0030.
+
 ## Related
 
 - ADR-0017 (entity-delta gate — same "idle dashboards must be cheap"
