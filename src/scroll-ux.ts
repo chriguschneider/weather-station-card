@@ -19,6 +19,7 @@ import { safeQuery } from './utils/safe-query.js';
 import { computeInitialScrollLeft } from './format-utils.js';
 import { computeTodayPagerScrollLeft } from './forecast-utils.js';
 import type { ForecastEntry } from './forecast-utils.js';
+import type { Calendar } from './utils/time-zone.js';
 
 const DRAG_THRESHOLD = 5;
 const STEP_BY = 0.85; // scroll about one viewport, leave a hint of overlap
@@ -38,6 +39,7 @@ export interface ScrollUxCard {
   forecasts: ReadonlyArray<ForecastEntry> | null;
   config: { locale?: string; [k: string]: unknown };
   language?: string;
+  calendar: Calendar;
   _stationCount?: number;
   _forecastCount?: number;
   _dragMoved: boolean;
@@ -268,7 +270,7 @@ export function setupScrollUx(card: ScrollUxCard): void {
           forecastCount: card._forecastCount || 0,
           contentWidth: wrapper.scrollWidth,
           viewportWidth: wrapper.clientWidth,
-        })
+        }, card.calendar)
       : null;
     const target = dayPage ?? computeInitialScrollLeft({
       stationCount: card._stationCount || 0,

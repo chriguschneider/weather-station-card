@@ -9,6 +9,9 @@ import {
   normalizeProbability,
   overlayPrecipProbability,
 } from '../src/precip-probability.js';
+import { Calendar } from '../src/utils/time-zone.js';
+
+const cal = new Calendar();
 
 describe('normalizeProbability', () => {
   it('rounds and clamps finite numbers to an integer 0..100', () => {
@@ -40,7 +43,7 @@ describe('attachPrecipProbability — daily', () => {
   const d2 = new Date(2026, 4, 7).toISOString();
 
   it('matches Open-Meteo daily values by civil date', () => {
-    const out = attachPrecipProbability([day(d1), day(d2)], {
+    const out = attachPrecipProbability([day(d1), day(d2)], cal, {
       dailyValues: [{ date: '2026-05-06', value: 85 }, { date: '2026-05-07', value: 60 }],
       granularity: 'daily',
     });
@@ -48,7 +51,7 @@ describe('attachPrecipProbability — daily', () => {
   });
 
   it('keeps an entity-provided value and only normalizes it', () => {
-    const out = attachPrecipProbability([{ ...day(d1), precipitation_probability: 72.4 }], {
+    const out = attachPrecipProbability([{ ...day(d1), precipitation_probability: 72.4 }], cal, {
       dailyValues: [{ date: '2026-05-06', value: 10 }],
       granularity: 'daily',
     });
@@ -56,30 +59,30 @@ describe('attachPrecipProbability — daily', () => {
   });
 
   it('sets null when nothing matches and when there is no source at all', () => {
-    const withSource = attachPrecipProbability([day(d1)], {
+    const withSource = attachPrecipProbability([day(d1)], cal, {
       dailyValues: [{ date: '2026-05-09', value: 40 }],
       granularity: 'daily',
     });
     expect(withSource[0].precipitation_probability).toBe(null);
-    const noSource = attachPrecipProbability([day(d1)], null);
+    const noSource = attachPrecipProbability([day(d1)], cal, null);
     expect(noSource[0].precipitation_probability).toBe(null);
   });
 
   it('does not mutate the input entries', () => {
     const input = [day(d1)];
-    attachPrecipProbability(input, { dailyValues: [{ date: '2026-05-06', value: 85 }] });
+    attachPrecipProbability(input, cal, { dailyValues: [{ date: '2026-05-06', value: 85 }] });
     expect(input[0].precipitation_probability).toBeUndefined();
   });
 
   it('returns [] for a non-array input', () => {
-    expect(attachPrecipProbability(null)).toEqual([]);
+    expect(attachPrecipProbability(null, cal)).toEqual([]);
   });
 });
 
 describe('attachPrecipProbability — hourly', () => {
   it('matches Open-Meteo hourly values on the hour, tolerating :MM drift', () => {
     const h = new Date(2026, 4, 6, 14, 0).toISOString();
-    const out = attachPrecipProbability([{ datetime: h, precipitation: 0 }], {
+    const out = attachPrecipProbability([{ datetime: h, precipitation: 0 }], cal, {
       hourlyValues: [{ datetime: '2026-05-06T14:00', value: 70 }],
       granularity: 'hourly',
     });
@@ -88,7 +91,7 @@ describe('attachPrecipProbability — hourly', () => {
 
   it('ignores the daily array at hourly granularity', () => {
     const h = new Date(2026, 4, 6, 14, 0).toISOString();
-    const out = attachPrecipProbability([{ datetime: h }], {
+    const out = attachPrecipProbability([{ datetime: h }], cal, {
       dailyValues: [{ date: '2026-05-06', value: 85 }],
       granularity: 'hourly',
     });
@@ -97,7 +100,7 @@ describe('attachPrecipProbability — hourly', () => {
 
   it('skips malformed source items without throwing', () => {
     const h = new Date(2026, 4, 6, 14, 0).toISOString();
-    const out = attachPrecipProbability([{ datetime: h }], {
+    const out = attachPrecipProbability([{ datetime: h }], cal, {
       hourlyValues: [null, 'junk', { datetime: 42, value: 5 }, { datetime: '2026-05-06T14:00', value: 'x' }],
       granularity: 'hourly',
     });
@@ -112,12 +115,12 @@ describe('overlayPrecipProbability', () => {
       getDailyProbability: () => [{ date: '2026-05-06', value: 55 }],
       getHourlyProbability: () => [],
     };
-    const out = overlayPrecipProbability([{ datetime: d1 }], source, 'daily');
+    const out = overlayPrecipProbability([{ datetime: d1 }], source, cal, 'daily');
     expect(out[0].precipitation_probability).toBe(55);
   });
 
   it('tolerates a missing source (entity values still normalize)', () => {
-    const out = overlayPrecipProbability([{ datetime: 'x', precipitation_probability: '33' }], null);
+    const out = overlayPrecipProbability([{ datetime: 'x', precipitation_probability: '33' }], null, cal);
     expect(out[0].precipitation_probability).toBe(33);
   });
 });

@@ -23,7 +23,8 @@
 export type CachedSeriesEntry = Record<string, unknown>;
 
 const PREFIX = 'wsc_series_';
-const VERSION = 1;
+// v2: keys carry the card's time zone (ADR-0030).
+const VERSION = 2;
 
 /** Reject cached payloads older than this. Stale data is *shown* on
  *  purpose (that's the point), but a payload from last week would
@@ -48,8 +49,8 @@ function storageOrNull(): Storage | null {
 }
 
 /** Stable cache key for a data source's fetch signature. `parts` should
- *  contain everything that changes the fetched payload (fetch key,
- *  window size, entity ids). */
+ *  contain everything that changes the fetched payload (time zone, fetch
+ *  key, window size, entity ids). */
 export function seriesCacheKey(kind: 'station' | 'forecast', parts: ReadonlyArray<string | number>): string {
   return `${PREFIX}${kind}_${parts.join('|')}`;
 }

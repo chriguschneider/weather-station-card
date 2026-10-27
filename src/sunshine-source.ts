@@ -11,7 +11,7 @@
 
 import { clearSkyLuxFactory } from './condition-classifier.js';
 import { parseLocation } from './location.js';
-import { dayKey, dayOfYear, hourOf, startOfDay } from './utils/time-zone.js';
+import type { Calendar } from './utils/time-zone.js';
 
 
 /** Date-input shapes the lookup helpers accept. Strings go through `new
@@ -92,11 +92,11 @@ function declinationDeg(dayOfYear: number): number {
  *
  *  Edge cases: polar night → 0, midnight sun → 24, non-finite latitude
  *  → 12 (equinox fallback). */
-export function dayLengthHours(latDeg: number | null | undefined, date: DateLike): number {
+export function dayLengthHours(latDeg: number | null | undefined, date: DateLike, calendar: Calendar): number {
   if (!Number.isFinite(latDeg)) return 12;
   const d = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(d.getTime())) return 12;
-  const decl = declinationDeg(dayOfYear(d)) * Math.PI / 180;
+  const decl = declinationDeg(calendar.dayOfYear(d)) * Math.PI / 180;
   const lat = (latDeg as number) * Math.PI / 180;
   const cosH = -Math.tan(lat) * Math.tan(decl);
   if (cosH <= -1) return 24;
@@ -128,20 +128,20 @@ export function normalizeSunshineValue(raw: unknown): number | null {
  *  Open-Meteo's `daily=…` response uses the civil dates of the
  *  requested coordinates (`timezone=auto`) — the HA location, so the
  *  match runs in the card's (server) zone, not UTC or the browser's. */
-export function localDateString(date: DateLike): string | null {
+export function localDateString(date: DateLike, calendar: Calendar): string | null {
   const d = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(d.getTime())) return null;
-  return dayKey(d);
+  return calendar.dayKey(d);
 }
 
 /** Local-hour string YYYY-MM-DDTHH:00 for matching hourly attribute
  *  entries against Open-Meteo's hourly=sunshine_duration response.
  *  Minutes forced to :00 since the chart's hourly entries align to the
  *  hour and Open-Meteo emits one value per full hour. */
-export function localHourString(date: DateLike): string | null {
+export function localHourString(date: DateLike, calendar: Calendar): string | null {
   const d = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(d.getTime())) return null;
-  return `${dayKey(d)}T${String(hourOf(d)).padStart(2, '0')}:00`;
+  return `${calendar.dayKey(d)}T${String(calendar.hourOf(d)).padStart(2, '0')}:00`;
 }
 
 /** Find an entry by hourly key in an array of {datetime, value} items.
@@ -246,6 +246,7 @@ function matchDailyEntry(item: unknown, dateString: string): number | null | und
  *  `normalizeSunshineValue` at lookup time. */
 export function attachSunshine<T extends SunshineForecastEntry>(
   forecasts: ReadonlyArray<T>,
+  calendar: Calendar,
   opts?: AttachSunshineOpts | null,
 ): T[] {
   if (!Array.isArray(forecasts)) return [];
@@ -266,14 +267,14 @@ export function attachSunshine<T extends SunshineForecastEntry>(
     let value: number | null;
     let cap: number;
     if (isHourly) {
-      const hourKey = localHourString(dt);
+      const hourKey = localHourString(dt, calendar);
       value = findInHourArray(hourlyValues, hourKey);
       out.day_length = 1;
       cap = 1;
     } else {
-      const entryMidnight = startOfDay(new Date(dt));
-      const dateKey = localDateString(entryMidnight);
-      out.day_length = dayLengthHours(latitude, entryMidnight);
+      const entryMidnight = calendar.startOfDay(new Date(dt));
+      const dateKey = localDateString(entryMidnight, calendar);
+      out.day_length = dayLengthHours(latitude, entryMidnight, calendar);
       value = findInDateArray(dailyValues, dateKey);
       cap = out.day_length;
     }
@@ -430,6 +431,7 @@ export function overlayFromOpenMeteo<T extends SunshineForecastEntry>(
   forecasts: ReadonlyArray<T>,
   hass: HassLatLon | null | undefined,
   source: Partial<SunshineSource> | null | undefined,
+  calendar: Calendar,
   granularity: 'daily' | 'hourly' = 'daily',
   cloudCoverageExponent: number | null = null,
   location: unknown = null,
@@ -441,7 +443,7 @@ export function overlayFromOpenMeteo<T extends SunshineForecastEntry>(
   const hourlyValues = source && typeof source.getHourlyValues === 'function'
     ? source.getHourlyValues()
     : null;
-  return attachSunshine(forecasts, {
+  return attachSunshine(forecasts, calendar, {
     dailyValues,
     hourlyValues,
     latitude: Number.isFinite(lat as number) ? lat as number : null,
@@ -487,6 +489,7 @@ export interface DailyLuxSunshine {
  *                 malformed entries are filtered out.
  *  @param latitude Decimal degrees (positive north).
  *  @param longitude Decimal degrees (positive east).
+ *  @param calendar Zone the per-day buckets are cut in.
  *  @param threshold lux/clearsky ratio threshold (#6 spec default 0.6).
  *  @param maxIntervalMs Skip pathological gaps longer than this — a
  *                      multi-hour gap shouldn't all count as one
@@ -499,6 +502,7 @@ export function sunshineFromLuxHistory(
   samples: ReadonlyArray<LuxSample>,
   latitude: number,
   longitude: number,
+  calendar: Calendar,
   threshold = 0.6,
   maxIntervalMs = 10 * 60 * 1000,
 ): DailyLuxSunshine[] {
@@ -532,7 +536,7 @@ export function sunshineFromLuxHistory(
     // is rare in practice — when the sun is up across midnight the
     // station is in polar summer, far from this card's typical
     // user; ignore the edge case and let the start day take credit.)
-    const dateKey = dayKey(s.ts);
+    const dateKey = calendar.dayKey(s.ts);
     totals.set(dateKey, (totals.get(dateKey) ?? 0) + gap);
   }
 

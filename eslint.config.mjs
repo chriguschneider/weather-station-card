@@ -171,6 +171,21 @@ export default tseslint.config(
     },
   },
 
+  // ADR-0030: the page-wide zone is gone; each card passes its own
+  // `Calendar`. Stops the removed singleton API from coming back.
+  {
+    files: ['src/**/*.ts', 'tests/**/*.{js,ts}'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [{
+          group: ['**/time-zone', '**/time-zone.js'],
+          importNames: ['setCardTimeZone', 'configuredTimeZone', 'cardTimeZone'],
+          message: 'Removed in ADR-0030 — pass the card\'s Calendar instead.',
+        }],
+      }],
+    },
+  },
+
   // Build / config files — node CJS or ESM at root.
   {
     files: ['*.js', '*.cjs', '*.mjs', 'rollup.config*.js'],

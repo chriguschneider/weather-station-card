@@ -4,7 +4,6 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import '../src/main.js';
-import { setCardTimeZone } from '../src/utils/time-zone.js';
 
 const NOW = new Date('2026-07-01T16:30:00Z'); // 12:30 New York, 18:30 Zurich
 const SUN = {
@@ -22,7 +21,7 @@ function makeCard(config) {
   main.className = 'main';
   main.innerHTML = '<span id="digital-clock"></span>';
   (card.shadowRoot ?? card.attachShadow({ mode: 'open' })).appendChild(main);
-  setCardTimeZone('Europe/Zurich');
+  card._syncCalendar('Europe/Zurich');
   return card;
 }
 
@@ -32,7 +31,6 @@ const sunText = (card) =>
 
 afterEach(() => {
   vi.useRealTimers();
-  setCardTimeZone(undefined);
 });
 
 describe('time_zone option', () => {

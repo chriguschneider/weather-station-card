@@ -10,6 +10,7 @@
 // uses the detection helpers.
 
 import { getDateTimeFormat } from './utils/intl-cache.js';
+import type { Calendar } from './utils/time-zone.js';
 
 /** 'station' = the card's own live rain rate said it is raining; the
  *  radar sensor was overruled (or absent). */
@@ -93,12 +94,13 @@ export function classifyNextRain(
   return { kind: 'text', text: raw };
 }
 
-function formatClock(date: Date, withWeekday: boolean, language: string, hour12: boolean | undefined): string {
+function formatClock(date: Date, withWeekday: boolean, language: string, hour12: boolean | undefined, timeZone: string): string {
   return getDateTimeFormat(language, {
     ...(withWeekday ? { weekday: 'short' } : {}),
     hour: 'numeric',
     minute: 'numeric',
     hour12,
+    timeZone,
   }).format(date);
 }
 
@@ -107,6 +109,7 @@ export function formatNextRain(
   language: string,
   hour12: boolean | undefined,
   strings: NextRainStrings,
+  calendar: Calendar,
 ): string {
   switch (view.kind) {
     case 'now':
@@ -115,7 +118,7 @@ export function formatNextRain(
       return new Intl.RelativeTimeFormat(language, { style: 'short', numeric: 'always' })
         .format(view.minutes, 'minute');
     case 'time': {
-      const clock = formatClock(view.at, view.withWeekday, language, hour12);
+      const clock = formatClock(view.at, view.withWeekday, language, hour12, calendar.timeZone);
       return view.source === 'forecast' ? `~${clock}` : clock;
     }
     case 'none':
@@ -134,10 +137,11 @@ export function formatCheckedUntil(
   language: string,
   hour12: boolean | undefined,
   strings: NextRainStrings,
+  calendar: Calendar,
 ): string {
   if (view.kind !== 'none') return '';
   const withWeekday = view.until.getTime() - now > CLOCK_ONLY_MS;
-  return strings.checked_until.replace('{time}', formatClock(view.until, withWeekday, language, hour12));
+  return strings.checked_until.replace('{time}', formatClock(view.until, withWeekday, language, hour12, calendar.timeZone));
 }
 
 export function nextRainIcon(view: NextRainView): string {

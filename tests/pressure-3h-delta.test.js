@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { fetchPressure3hDelta } from '../src/data-source.js';
 import { clearDedupeCaches } from '../src/utils/shared-requests.js';
+import { Calendar } from '../src/utils/time-zone.js';
+
+const cal = new Calendar();
 
 // Build a hass-like mock with stubbable callWS + an entity-state map for
 // unit-of-measurement lookup. Each test constructs the recorder fixture
@@ -44,12 +47,12 @@ describe('fetchPressure3hDelta', () => {
   });
 
   it('returns null when hass is missing', async () => {
-    expect(await fetchPressure3hDelta(null, 'sensor.pressure')).toBe(null);
+    expect(await fetchPressure3hDelta(null, 'sensor.pressure', cal)).toBe(null);
   });
 
   it('returns null when entityId is missing', async () => {
     const hass = mockHass();
-    expect(await fetchPressure3hDelta(hass, undefined)).toBe(null);
+    expect(await fetchPressure3hDelta(hass, undefined, cal)).toBe(null);
     expect(hass.callWS).not.toHaveBeenCalled();
   });
 
@@ -60,7 +63,7 @@ describe('fetchPressure3hDelta', () => {
     const hass = mockHass({
       stats: { 'sensor.pressure': strip(endMs, [1015, 1016, 1017, 1018]) },
     });
-    const delta = await fetchPressure3hDelta(hass, 'sensor.pressure');
+    const delta = await fetchPressure3hDelta(hass, 'sensor.pressure', cal);
     expect(delta).toBeCloseTo(3, 5);
   });
 
@@ -72,7 +75,7 @@ describe('fetchPressure3hDelta', () => {
         { start: new Date(endMs - 3600_000).toISOString(), mean: 1018 },
       ] },
     });
-    expect(await fetchPressure3hDelta(hass, 'sensor.pressure')).toBe(null);
+    expect(await fetchPressure3hDelta(hass, 'sensor.pressure', cal)).toBe(null);
   });
 
   it('returns null when the 3h-earlier bucket has a null mean', async () => {
@@ -80,13 +83,13 @@ describe('fetchPressure3hDelta', () => {
     const hass = mockHass({
       stats: { 'sensor.pressure': strip(endMs, [null, 1016, 1017, 1018]) },
     });
-    expect(await fetchPressure3hDelta(hass, 'sensor.pressure')).toBe(null);
+    expect(await fetchPressure3hDelta(hass, 'sensor.pressure', cal)).toBe(null);
   });
 
   it('returns null on fetch error (graceful degrade)', async () => {
     const hass = mockHass();
     hass.callWS = vi.fn().mockRejectedValue(new Error('boom'));
-    expect(await fetchPressure3hDelta(hass, 'sensor.pressure')).toBe(null);
+    expect(await fetchPressure3hDelta(hass, 'sensor.pressure', cal)).toBe(null);
   });
 
   it('converts an inHg source delta into hPa', async () => {
@@ -97,7 +100,7 @@ describe('fetchPressure3hDelta', () => {
       stateUnit: 'inHg',
       stats: { 'sensor.pressure': strip(endMs, [29.91, 29.94, 29.97, 30.0]) },
     });
-    const delta = await fetchPressure3hDelta(hass, 'sensor.pressure');
+    const delta = await fetchPressure3hDelta(hass, 'sensor.pressure', cal);
     expect(delta).toBeCloseTo(0.09 * 33.8639, 3);
   });
 
@@ -107,8 +110,8 @@ describe('fetchPressure3hDelta', () => {
       stats: { 'sensor.pressure': strip(endMs, [1015, 1016, 1017, 1018]) },
     });
     const cache = { bucketMs: null, value: null };
-    const first = await fetchPressure3hDelta(hass, 'sensor.pressure', cache);
-    const second = await fetchPressure3hDelta(hass, 'sensor.pressure', cache);
+    const first = await fetchPressure3hDelta(hass, 'sensor.pressure', cal, cache);
+    const second = await fetchPressure3hDelta(hass, 'sensor.pressure', cal, cache);
     expect(first).toBeCloseTo(3, 5);
     expect(second).toBe(first);
     // The second call must hit the cache — one WS roundtrip total.
@@ -121,7 +124,7 @@ describe('fetchPressure3hDelta', () => {
       stats: { 'sensor.pressure': strip(endMs1, [1015, 1016, 1017, 1018]) },
     });
     const cache = { bucketMs: null, value: null };
-    await fetchPressure3hDelta(hass, 'sensor.pressure', cache);
+    await fetchPressure3hDelta(hass, 'sensor.pressure', cal, cache);
     expect(hass.callWS).toHaveBeenCalledTimes(1);
 
     // Advance one hour — cache bucket no longer matches.
@@ -130,7 +133,7 @@ describe('fetchPressure3hDelta', () => {
     hass.callWS.mockResolvedValueOnce({
       'sensor.pressure': strip(endMs2, [1016, 1017, 1018, 1019]),
     });
-    await fetchPressure3hDelta(hass, 'sensor.pressure', cache);
+    await fetchPressure3hDelta(hass, 'sensor.pressure', cal, cache);
     expect(hass.callWS).toHaveBeenCalledTimes(2);
   });
 });

@@ -1,21 +1,21 @@
-// Calendar math in the Home Assistant server's time zone (issue #285).
+// Calendar math in one IANA time zone (issue #285, ADR-0030).
 //
-// The card shows the weather at the HA location — station sensors,
-// the forecast for home, and the recorder's daily statistics, which HA
-// buckets by the SERVER's midnight. Doing day boundaries in the
+// The card shows the weather at a location — station sensors, the
+// forecast for that place, and the recorder's daily statistics, which
+// HA buckets by the SERVER's midnight. Doing day boundaries in the
 // browser's zone made a remote viewer's day columns cut at the wrong
-// midnight, so every day / hour computation goes through here instead
-// of Date's local getters and setters.
+// midnight, so every day / hour computation goes through a `Calendar`
+// instead of Date's local getters and setters.
 //
-// One zone per page: every card on a dashboard talks to the same HA
-// instance, so the zone is module state set from `set hass` rather
-// than threaded through every helper. When it matches the browser's
-// own zone (the common case) the helpers take Date's native path, so
-// behaviour there is identical to the pre-#285 code.
+// Each card owns one `Calendar` and passes it explicitly: clock ticks,
+// fetch callbacks and chart plugins run asynchronously, so a page-wide
+// zone would let two cards in two zones read each other's. When the
+// zone matches the browser's own (the common case) the methods take
+// Date's native path, so behaviour there is identical to the pre-#285
+// code.
 
 const DAY_MS = 86_400_000;
 
-let activeZone: string | undefined;
 let browserZoneCache: string | undefined;
 const validZones = new Map<string, boolean>();
 const partsFormatters = new Map<string, Intl.DateTimeFormat>();
@@ -39,30 +39,10 @@ function isValidZone(tz: string): boolean {
   return ok;
 }
 
-/** Set from `hass.config.time_zone`. Anything missing or unknown to
- *  the browser's Intl falls back to the browser's own zone. */
-export function setCardTimeZone(tz: unknown): void {
-  activeZone = typeof tz === 'string' && tz !== '' && isValidZone(tz) ? tz : undefined;
-}
-
 /** The given IANA zone when it is a non-empty string the browser's Intl
- *  knows, else undefined. Backs the display-only `time_zone` card option. */
+ *  knows, else undefined. */
 export function validTimeZone(tz: unknown): string | undefined {
   return typeof tz === 'string' && tz !== '' && isValidZone(tz) ? tz : undefined;
-}
-
-/** The configured server zone, or undefined while none is set — the
- *  shape `Intl.DateTimeFormat`'s `timeZone` option expects. */
-export function configuredTimeZone(): string | undefined {
-  return activeZone;
-}
-
-export function cardTimeZone(): string {
-  return activeZone ?? browserZone();
-}
-
-function isNative(): boolean {
-  return activeZone === undefined || activeZone === browserZone();
 }
 
 function formatterFor(tz: string): Intl.DateTimeFormat {
@@ -95,8 +75,8 @@ export interface ZonedParts {
 
 const toMs = (d: Date | number): number => (typeof d === 'number' ? d : d.getTime());
 
-/** Calendar parts of an instant in an explicit IANA zone, independent of
- *  the card's zone. Callers pass a zone already checked with `validTimeZone`. */
+/** Calendar parts of an instant in an explicit IANA zone. Callers pass
+ *  a zone already checked with `validTimeZone`. */
 export function zonedPartsIn(d: Date | number, tz: string): ZonedParts {
   const out: ZonedParts = { year: 0, month: 0, day: 0, hour: 0, minute: 0, second: 0 };
   for (const part of formatterFor(tz).formatToParts(new Date(toMs(d)))) {
@@ -105,95 +85,107 @@ export function zonedPartsIn(d: Date | number, tz: string): ZonedParts {
   return out;
 }
 
-export function zonedParts(d: Date | number): ZonedParts {
-  const ms = toMs(d);
-  if (isNative()) {
-    const x = new Date(ms);
-    return {
-      year: x.getFullYear(),
-      month: x.getMonth() + 1,
-      day: x.getDate(),
-      hour: x.getHours(),
-      minute: x.getMinutes(),
-      second: x.getSeconds(),
-    };
+/** Calendar math in one IANA zone. Immutable: a zone change means a
+ *  new instance. */
+export class Calendar {
+  /** The resolved IANA zone — always set, ready for `Intl`'s `timeZone`. */
+  readonly timeZone: string;
+  private readonly native: boolean;
+
+  /** Anything missing or unknown to the browser's Intl falls back to
+   *  the browser's own zone. */
+  constructor(tz?: unknown) {
+    this.timeZone = validTimeZone(tz) ?? browserZone();
+    this.native = this.timeZone === browserZone();
   }
-  const out: ZonedParts = { year: 0, month: 0, day: 0, hour: 0, minute: 0, second: 0 };
-  for (const part of formatterFor(cardTimeZone()).formatToParts(new Date(ms))) {
-    if (part.type in out) out[part.type as keyof ZonedParts] = Number(part.value);
+
+  zonedParts(d: Date | number): ZonedParts {
+    const ms = toMs(d);
+    if (this.native) {
+      const x = new Date(ms);
+      return {
+        year: x.getFullYear(),
+        month: x.getMonth() + 1,
+        day: x.getDate(),
+        hour: x.getHours(),
+        minute: x.getMinutes(),
+        second: x.getSeconds(),
+      };
+    }
+    return zonedPartsIn(ms, this.timeZone);
   }
-  return out;
-}
 
-// Wall-clock offset of the zone at `ms`, in ms (UTC+2 → +7 200 000).
-function offsetAt(ms: number): number {
-  const p = zonedParts(ms);
-  const wall = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
-  return wall - (ms - (((ms % 1000) + 1000) % 1000));
-}
+  // Wall-clock offset of the zone at `ms`, in ms (UTC+2 → +7 200 000).
+  private offsetAt(ms: number): number {
+    const p = this.zonedParts(ms);
+    const wall = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+    return wall - (ms - (((ms % 1000) + 1000) % 1000));
+  }
 
-/** The instant a wall-clock time occurs in the card's zone. Out-of-range
- *  fields roll over like `Date.UTC` (day 32 → next month), which is
- *  what `addDays` relies on. A time skipped by a DST jump resolves to
- *  the instant after the jump. */
-export function zonedDate(year: number, month: number, day: number, hour = 0, minute = 0): Date {
-  if (isNative()) return new Date(year, month - 1, day, hour, minute);
-  const guess = Date.UTC(year, month - 1, day, hour, minute);
-  const first = offsetAt(guess - offsetAt(guess));
-  let t = guess - first;
-  // Second pass settles the DST case where the guess and the result
-  // sit on different sides of a transition.
-  const second = offsetAt(t);
-  if (second !== first) t = guess - second;
-  return new Date(t);
-}
+  /** The instant a wall-clock time occurs in this zone. Out-of-range
+   *  fields roll over like `Date.UTC` (day 32 → next month), which is
+   *  what `addDays` relies on. A time skipped by a DST jump resolves to
+   *  the instant after the jump. */
+  zonedDate(year: number, month: number, day: number, hour = 0, minute = 0): Date {
+    if (this.native) return new Date(year, month - 1, day, hour, minute);
+    const guess = Date.UTC(year, month - 1, day, hour, minute);
+    const first = this.offsetAt(guess - this.offsetAt(guess));
+    let t = guess - first;
+    // Second pass settles the DST case where the guess and the result
+    // sit on different sides of a transition.
+    const second = this.offsetAt(t);
+    if (second !== first) t = guess - second;
+    return new Date(t);
+  }
 
-export function startOfDay(d: Date | number): Date {
-  const p = zonedParts(d);
-  return zonedDate(p.year, p.month, p.day);
-}
+  startOfDay(d: Date | number): Date {
+    const p = this.zonedParts(d);
+    return this.zonedDate(p.year, p.month, p.day);
+  }
 
-/** Same wall-clock time (to the minute) `n` calendar days later — a
- *  23- or 25-hour DST day still advances exactly one day. */
-export function addDays(d: Date | number, n: number): Date {
-  const p = zonedParts(d);
-  return zonedDate(p.year, p.month, p.day + n, p.hour, p.minute);
-}
+  /** Same wall-clock time (to the minute) `n` calendar days later — a
+   *  23- or 25-hour DST day still advances exactly one day. */
+  addDays(d: Date | number, n: number): Date {
+    const p = this.zonedParts(d);
+    return this.zonedDate(p.year, p.month, p.day + n, p.hour, p.minute);
+  }
 
-/** `hour`:00 on the same calendar day. */
-export function withHour(d: Date | number, hour: number): Date {
-  const p = zonedParts(d);
-  return zonedDate(p.year, p.month, p.day, hour);
-}
+  /** `hour`:00 on the same calendar day. */
+  withHour(d: Date | number, hour: number): Date {
+    const p = this.zonedParts(d);
+    return this.zonedDate(p.year, p.month, p.day, hour);
+  }
 
-/** Floor to the full hour. Done arithmetically so the repeated hour of
- *  a DST fall-back keeps its own instant. */
-export function startOfHour(d: Date | number): Date {
-  const ms = toMs(d);
-  const p = zonedParts(ms);
-  return new Date(ms - (p.minute * 60 + p.second) * 1000 - (((ms % 1000) + 1000) % 1000));
-}
+  /** Floor to the full hour. Done arithmetically so the repeated hour of
+   *  a DST fall-back keeps its own instant. Zones with a half-hour
+   *  offset floor to their own :30 UTC. */
+  startOfHour(d: Date | number): Date {
+    const ms = toMs(d);
+    const p = this.zonedParts(ms);
+    return new Date(ms - (p.minute * 60 + p.second) * 1000 - (((ms % 1000) + 1000) % 1000));
+  }
 
-export function hourOf(d: Date | number): number {
-  return zonedParts(d).hour;
-}
+  hourOf(d: Date | number): number {
+    return this.zonedParts(d).hour;
+  }
 
-export function minuteOf(d: Date | number): number {
-  return zonedParts(d).minute;
-}
+  minuteOf(d: Date | number): number {
+    return this.zonedParts(d).minute;
+  }
 
-/** `YYYY-MM-DD` of the calendar day in the card's zone. */
-export function dayKey(d: Date | number): string {
-  const p = zonedParts(d);
-  return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
-}
+  /** `YYYY-MM-DD` of the calendar day in this zone. */
+  dayKey(d: Date | number): string {
+    const p = this.zonedParts(d);
+    return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
+  }
 
-export function isSameDay(a: Date | number, b: Date | number): boolean {
-  return dayKey(a) === dayKey(b);
-}
+  isSameDay(a: Date | number, b: Date | number): boolean {
+    return this.dayKey(a) === this.dayKey(b);
+  }
 
-/** 1 on 1 January. */
-export function dayOfYear(d: Date | number): number {
-  const p = zonedParts(d);
-  return Math.round((Date.UTC(p.year, p.month - 1, p.day) - Date.UTC(p.year, 0, 0)) / DAY_MS);
+  /** 1 on 1 January. */
+  dayOfYear(d: Date | number): number {
+    const p = this.zonedParts(d);
+    return Math.round((Date.UTC(p.year, p.month - 1, p.day) - Date.UTC(p.year, 0, 0)) / DAY_MS);
+  }
 }

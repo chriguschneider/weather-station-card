@@ -19,11 +19,12 @@
 
 import { getDateTimeFormat } from '../../utils/intl-cache.js';
 import type { ChartLike, ChartPlugin, CssStyleLike, PluginCardConfig, PluginRenderData } from './_shared.js';
-import { startOfDay, zonedParts } from '../../utils/time-zone.js';
+import type { Calendar } from '../../utils/time-zone.js';
 
 export interface DailyTickLabelsPluginOpts {
   config: PluginCardConfig;
   language: string;
+  calendar: Calendar;
   data: PluginRenderData;
   textColor: string;
   style: CssStyleLike;
@@ -53,6 +54,7 @@ interface TickInfo {
  *  instantiation so the per-frame redraws are pure rendering work. */
 interface RenderContext {
   config: PluginCardConfig;
+  calendar: Calendar;
   textColor: string;
   style: CssStyleLike;
   stationCount: number;
@@ -164,7 +166,7 @@ function drawDailyDateWeekdayLabels(chart: ChartLike, ctx: RenderContext): void 
   const weekdayColor = ctx.config.forecast.chart_datetime_color || ctx.textColor;
   const dateColor = ctx.style.getPropertyValue('--secondary-text-color') || weekdayColor;
 
-  const todayMs = startOfDay(Date.now()).getTime();
+  const todayMs = ctx.calendar.startOfDay(Date.now()).getTime();
   c.save();
   c.textAlign = 'center';
   c.textBaseline = 'bottom';
@@ -206,6 +208,7 @@ function drawDailyDateWeekdayLabels(chart: ChartLike, ctx: RenderContext): void 
 export function createDailyTickLabelsPlugin({
   config,
   language,
+  calendar,
   data,
   textColor,
   style,
@@ -223,15 +226,15 @@ export function createDailyTickLabelsPlugin({
   // call, so explicit caching is ~3× faster than the toLocale*
   // shortcut.
   const timeFmt = getDateTimeFormat(language, {
-    hour12: false, hour: '2-digit', minute: '2-digit',
+    hour12: false, hour: '2-digit', minute: '2-digit', timeZone: calendar.timeZone,
   });
   const dateShortFmt = getDateTimeFormat(language, {
-    day: 'numeric', month: 'short',
+    day: 'numeric', month: 'short', timeZone: calendar.timeZone,
   });
   const date2DigitFmt = getDateTimeFormat(language, {
-    day: '2-digit', month: '2-digit',
+    day: '2-digit', month: '2-digit', timeZone: calendar.timeZone,
   });
-  const weekdayFmt = getDateTimeFormat(language, { weekday: 'short' });
+  const weekdayFmt = getDateTimeFormat(language, { weekday: 'short', timeZone: calendar.timeZone });
 
   const tickCache = new Map<number, TickInfo>();
   function getTickInfo(dataIdx: number): TickInfo | null {
@@ -240,8 +243,8 @@ export function createDailyTickLabelsPlugin({
     const datetime = data.dateTime ? data.dateTime[dataIdx] : undefined;
     if (!datetime) return null;
     const d = new Date(datetime);
-    const { hour, minute: minutes } = zonedParts(d);
-    const dKeyDate = startOfDay(d);
+    const { hour, minute: minutes } = calendar.zonedParts(d);
+    const dKeyDate = calendar.startOfDay(d);
     const info: TickInfo = {
       hour,
       minutes,
@@ -257,7 +260,7 @@ export function createDailyTickLabelsPlugin({
   }
 
   const renderCtx: RenderContext = {
-    config, textColor, style, stationCount, doubledToday,
+    config, calendar, textColor, style, stationCount, doubledToday,
     sunshineLabelBand, showDateRow, getTickInfo,
   };
 

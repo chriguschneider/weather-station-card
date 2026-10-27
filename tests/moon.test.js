@@ -5,6 +5,9 @@ import {
   nextMoonEvent,
   litMoonPath,
 } from '../src/moon.js';
+import { Calendar } from '../src/utils/time-zone.js';
+
+const cal = new Calendar();
 
 // Eclipses are astronomy's free ground truth: a solar eclipse happens
 // exactly at new moon, a lunar eclipse exactly at full moon. Four
@@ -79,7 +82,7 @@ describe('moonTimes / nextMoonEvent', () => {
     let sets = 0;
     const start = Date.UTC(2026, 2, 1, 12, 0);
     for (let day = 0; day < 60; day++) {
-      const t = moonTimes(new Date(start + day * DAY_MS), LAT, LON);
+      const t = moonTimes(new Date(start + day * DAY_MS), LAT, LON, cal);
       if (t.rise) rises++;
       if (t.set) sets++;
     }
@@ -95,7 +98,7 @@ describe('moonTimes / nextMoonEvent', () => {
     const rises = [];
     const start = Date.UTC(2026, 4, 1, 12, 0);
     for (let day = 0; day < 30; day++) {
-      const t = moonTimes(new Date(start + day * DAY_MS), LAT, LON);
+      const t = moonTimes(new Date(start + day * DAY_MS), LAT, LON, cal);
       if (t.rise) rises.push(t.rise.valueOf());
     }
     for (let i = 1; i < rises.length; i++) {
@@ -112,7 +115,7 @@ describe('moonTimes / nextMoonEvent', () => {
     let now = new Date(Date.UTC(2026, 7, 21, 12, 0));
     let prev;
     for (let i = 0; i < 8; i++) {
-      const ev = nextMoonEvent(now, LAT, LON);
+      const ev = nextMoonEvent(now, LAT, LON, cal);
       expect(ev).toBeDefined();
       expect(ev.time.valueOf()).toBeGreaterThan(now.valueOf());
       if (prev) expect(ev.kind).not.toBe(prev.kind);

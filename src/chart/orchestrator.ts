@@ -43,7 +43,7 @@ import {
   type PluginCardConfig,
   type PluginRenderData,
 } from './plugins.js';
-import { isSameDay } from '../utils/time-zone.js';
+import type { Calendar } from '../utils/time-zone.js';
 
 /** Per-render data bag — what `card.computeForecastData()` returns.
  *  All arrays are positional. `tempLowAvailable` lets the caller hide
@@ -103,6 +103,7 @@ export interface CardLike {
 export interface DrawChartArgs {
   config: OrchestratorConfig;
   language: string;
+  calendar: Calendar;
   weather?: unknown;
   forecastItems?: unknown;
 }
@@ -120,6 +121,7 @@ interface SegmentCtx {
 export function boundaryIsSameDay(
   dateTime: ReadonlyArray<string | undefined>,
   stationCount: number,
+  calendar: Calendar,
 ): boolean {
   if (stationCount <= 0 || stationCount >= dateTime.length) return false;
   const a = dateTime[stationCount - 1];
@@ -128,7 +130,7 @@ export function boundaryIsSameDay(
   const da = new Date(a);
   const db = new Date(b);
   if (!Number.isFinite(da.getTime()) || !Number.isFinite(db.getTime())) return false;
-  return isSameDay(da, db);
+  return calendar.isSameDay(da, db);
 }
 
 /** Picks the lightened bar colour for forecast columns (or for forecast-only
@@ -328,6 +330,7 @@ function buildDatasets(args: BuildDatasetsArgs): Array<Record<string, unknown>> 
 interface BuildPluginsArgs {
   config: any;
   language: string;
+  calendar: Calendar;
   data: any;
   stationCount: number;
   forecastCount: number;
@@ -357,7 +360,7 @@ interface BuildPluginsArgs {
  *  appended only when the sunshine row is visible. */
 function buildPlugins(args: BuildPluginsArgs): ChartPlugin[] {
   const {
-    config, language, data,
+    config, language, calendar, data,
     stationCount, forecastCount, style, dividerColor,
     textColor, backgroundColor, chartTextColor,
     isHourly, doubledToday, sunshineLabelBand,
@@ -367,7 +370,7 @@ function buildPlugins(args: BuildPluginsArgs): ChartPlugin[] {
   } = args;
 
   const dailyTickLabelsPlugin = createDailyTickLabelsPlugin({
-    config, language, data, textColor, style, stationCount, doubledToday,
+    config, language, calendar, data, textColor, style, stationCount, doubledToday,
     sunshineLabelBand,
   });
   const precipLabelPlugin = createPrecipLabelPlugin({
@@ -401,7 +404,7 @@ function buildPlugins(args: BuildPluginsArgs): ChartPlugin[] {
   // Per-point temperature value labels (style2 only). Plugin no-ops
   // when forecast.style isn't 'style2'.
   plugins.push(createTempLabelsPlugin({
-    config, data,
+    config, data, calendar,
     tempHighColor: temp1Color,
     tempLowColor: temp2Color,
     chartTextColor,
@@ -416,7 +419,7 @@ function buildPlugins(args: BuildPluginsArgs): ChartPlugin[] {
 }
 
 export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unknown[] | undefined {
-  const { config: rawConfig, language, weather, forecastItems } = args ?? (card as unknown as DrawChartArgs);
+  const { config: rawConfig, language, calendar, weather, forecastItems } = args ?? (card as unknown as DrawChartArgs);
   // Silence "unused" lint — `weather` is part of the destructure-from-`card`
   // contract and may be needed by future callers (and was in the prior
   // signature). Discarding here keeps the destructure shape stable.
@@ -593,7 +596,7 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
   const doubledToday = !isHourly
     && stationCount > 0
     && forecastCount > 0
-    && boundaryIsSameDay(data.dateTime, stationCount);
+    && boundaryIsSameDay(data.dateTime, stationCount, calendar);
   // When sunshine is on, draw.ts grows the x-axis box by sunshineLabelBand
   // pixels via afterFit. dailyTickLabelsPlugin then shifts weekday + date
   // up by that amount so the new bottom strip is free for the sunshine
@@ -603,7 +606,7 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
   const sunshineLabelBand = showSunshineLabels ? Math.max(16, labelsBaseSize + 6) : 0;
 
   const plugins = buildPlugins({
-    config, language, data,
+    config, language, calendar, data,
     stationCount, forecastCount, style, dividerColor,
     textColor, backgroundColor, chartTextColor: chart_text_color,
     isHourly, doubledToday, sunshineLabelBand,

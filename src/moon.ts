@@ -14,7 +14,7 @@
 // crossing) — plenty for a display line, and worth staying
 // dependency-free for.
 
-import { startOfDay } from './utils/time-zone.js';
+import type { Calendar } from './utils/time-zone.js';
 
 const RAD = Math.PI / 180;
 const DAY_MS = 86_400_000;
@@ -160,8 +160,8 @@ function windowEvents(
 /** Moonrise/set for the calendar day (card zone, #285) containing `date`. Either
  *  key may be absent: the ~50-minute daily drift produces days with no
  *  rise or no set (and polar latitudes get neither for weeks). */
-export function moonTimes(date: Date, lat: number, lon: number): MoonTimes {
-  const t = startOfDay(date);
+export function moonTimes(date: Date, lat: number, lon: number, calendar: Calendar): MoonTimes {
+  const t = calendar.startOfDay(date);
 
   const hc = 0.133 * RAD; // upper-limb correction (moon's apparent radius)
   let h0 = moonAltitude(t, lat, lon) - hc;
@@ -199,9 +199,10 @@ export function nextMoonEvent(
   now: Date,
   lat: number,
   lon: number,
+  calendar: Calendar,
 ): MoonEvent | undefined {
   for (let day = 0; day < 3; day++) {
-    const times = moonTimes(new Date(now.valueOf() + day * DAY_MS), lat, lon);
+    const times = moonTimes(new Date(now.valueOf() + day * DAY_MS), lat, lon, calendar);
     const candidates: MoonEvent[] = [];
     if (times.rise && times.rise > now) candidates.push({ kind: 'rise', time: times.rise });
     if (times.set && times.set > now) candidates.push({ kind: 'set', time: times.set });

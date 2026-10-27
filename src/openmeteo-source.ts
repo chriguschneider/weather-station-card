@@ -25,7 +25,7 @@ import type { DailyProbabilityEntry, HourlyProbabilityEntry } from './precip-pro
 import type { ForecastEntry } from './forecast-utils.js';
 import { wmoToCondition } from './weather-code-map.js';
 import { dedupeRequest } from './utils/shared-requests.js';
-import { dayKey, hourOf, startOfDay, validTimeZone, zonedDate, zonedPartsIn } from './utils/time-zone.js';
+import { validTimeZone, zonedPartsIn, type Calendar } from './utils/time-zone.js';
 
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 
@@ -161,6 +161,8 @@ export interface OpenMeteoSourceOpts {
   fetchImpl?: FetchLike | null;
   storage?: StorageLike | null;
   now?: () => number;
+  /** The card's calendar: civil dates and hour keys are cut in its zone. */
+  calendar: Calendar;
 }
 
 // ── Pure helpers (testable without instantiating the source class) ──
@@ -208,13 +210,13 @@ export function buildOpenMeteoUrl(
  *
  *  Values come back in seconds; `normalizeSunshineValue` (in
  *  sunshine-source) does the sec→hours conversion at lookup time. */
-export function parseDailySunshine(response: OpenMeteoResponse | null | undefined): DailySunshineEntry[] {
+export function parseDailySunshine(response: OpenMeteoResponse | null | undefined, calendar: Calendar): DailySunshineEntry[] {
   if (!response?.daily) return [];
   const t = response.daily.time ?? [];
   const v = response.daily.sunshine_duration ?? [];
   const out: DailySunshineEntry[] = [];
   for (let i = 0; i < t.length; i++) {
-    const date = responseDayKey(t[i], response);
+    const date = responseDayKey(t[i], response, calendar);
     if (v[i] != null && date) out.push({ date, value: v[i] });
   }
   return out;
@@ -226,13 +228,13 @@ export function parseDailySunshine(response: OpenMeteoResponse | null | undefine
  *  `localHourString`.
  *
  *  Values are seconds of sunshine within that hour, capped at 3600. */
-export function parseHourlySunshine(response: OpenMeteoResponse | null | undefined): HourlySunshineEntry[] {
+export function parseHourlySunshine(response: OpenMeteoResponse | null | undefined, calendar: Calendar): HourlySunshineEntry[] {
   if (!response?.hourly) return [];
   const t = response.hourly.time ?? [];
   const v = response.hourly.sunshine_duration ?? [];
   const out: HourlySunshineEntry[] = [];
   for (let i = 0; i < t.length; i++) {
-    const datetime = cardHourString(t[i]);
+    const datetime = cardHourString(t[i], calendar);
     if (v[i] != null && datetime) out.push({ datetime, value: v[i] });
   }
   return out;
@@ -241,14 +243,14 @@ export function parseHourlySunshine(response: OpenMeteoResponse | null | undefin
 /** Daily chance of rain: Open-Meteo's `precipitation_probability_max`
  *  (integer %, the wettest hour of the civil date) as `{date, value}`
  *  pairs for `attachPrecipProbability`. Null cells are skipped. */
-export function parseDailyProbability(response: OpenMeteoResponse | null | undefined): DailyProbabilityEntry[] {
+export function parseDailyProbability(response: OpenMeteoResponse | null | undefined, calendar: Calendar): DailyProbabilityEntry[] {
   if (!response?.daily) return [];
   const t = response.daily.time ?? [];
   const v = response.daily.precipitation_probability_max ?? [];
   const out: DailyProbabilityEntry[] = [];
   for (let i = 0; i < t.length; i++) {
     const n = numOrNull(v[i]);
-    const date = responseDayKey(t[i], response);
+    const date = responseDayKey(t[i], response, calendar);
     if (n != null && date) out.push({ date, value: n });
   }
   return out;
@@ -256,14 +258,14 @@ export function parseDailyProbability(response: OpenMeteoResponse | null | undef
 
 /** Hourly chance of rain (`precipitation_probability`, integer %) as
  *  `{datetime, value}` pairs keyed like `localHourString` (card zone). */
-export function parseHourlyProbability(response: OpenMeteoResponse | null | undefined): HourlyProbabilityEntry[] {
+export function parseHourlyProbability(response: OpenMeteoResponse | null | undefined, calendar: Calendar): HourlyProbabilityEntry[] {
   if (!response?.hourly) return [];
   const t = response.hourly.time ?? [];
   const v = response.hourly.precipitation_probability ?? [];
   const out: HourlyProbabilityEntry[] = [];
   for (let i = 0; i < t.length; i++) {
     const n = numOrNull(v[i]);
-    const datetime = cardHourString(t[i]);
+    const datetime = cardHourString(t[i], calendar);
     if (n != null && datetime) out.push({ datetime, value: n });
   }
   return out;
@@ -274,12 +276,16 @@ export function parseHourlyProbability(response: OpenMeteoResponse | null | unde
  *  a single UTC offset, so across a DST change the instant can sit an
  *  hour off midnight; reading the zone's date at noon of that day is
  *  immune to a ±1 h error. Civil strings (legacy payloads) pass through. */
-function responseDayKey(t: number | string | undefined, response: OpenMeteoResponse | null | undefined): string | null {
+function responseDayKey(
+  t: number | string | undefined,
+  response: OpenMeteoResponse | null | undefined,
+  calendar: Calendar,
+): string | null {
   if (typeof t === 'string') return /^\d{4}-\d{2}-\d{2}/.test(t) ? t.slice(0, 10) : null;
   if (typeof t !== 'number' || !Number.isFinite(t)) return null;
   const noon = (t + 12 * 3600) * 1000;
   const tz = validTimeZone(response?.timezone);
-  if (!tz) return dayKey(noon);
+  if (!tz) return calendar.dayKey(noon);
   const p = zonedPartsIn(noon, tz);
   return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
 }
@@ -287,16 +293,20 @@ function responseDayKey(t: number | string | undefined, response: OpenMeteoRespo
 /** Midnight (card zone) of the response's calendar day — the daily
  *  `datetime` convention of `MeasuredDataSource`, so the Open-Meteo past
  *  block's columns align with recorder-backed ones. */
-function localMidnightIso(t: number | string | undefined, response: OpenMeteoResponse | null | undefined): string | null {
-  const d = civilMidnight(responseDayKey(t, response) ?? undefined);
+function localMidnightIso(
+  t: number | string | undefined,
+  response: OpenMeteoResponse | null | undefined,
+  calendar: Calendar,
+): string | null {
+  const d = civilMidnight(responseDayKey(t, response, calendar) ?? undefined, calendar);
   return d ? d.toISOString() : null;
 }
 
-function civilMidnight(civilDate: string | undefined): Date | null {
+function civilMidnight(civilDate: string | undefined, calendar: Calendar): Date | null {
   if (!civilDate) return null;
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(civilDate);
   if (!m) return null;
-  const d = zonedDate(Number(m[1]), Number(m[2]), Number(m[3]));
+  const d = calendar.zonedDate(Number(m[1]), Number(m[2]), Number(m[3]));
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
@@ -309,11 +319,11 @@ function hourIso(t: number | string | undefined): string | null {
 
 /** "YYYY-MM-DDTHH:00" of an hourly epoch-seconds `time` in the card's
  *  zone, the key shape `localHourString` produces for chart columns. */
-function cardHourString(t: number | string | undefined): string | null {
+function cardHourString(t: number | string | undefined, calendar: Calendar): string | null {
   const iso = hourIso(t);
   if (!iso) return null;
   const ms = Date.parse(iso);
-  return `${dayKey(ms)}T${String(hourOf(ms)).padStart(2, '0')}:00`;
+  return `${calendar.dayKey(ms)}T${String(calendar.hourOf(ms)).padStart(2, '0')}:00`;
 }
 
 /** Coerce a possibly-null Open-Meteo array cell to `number | null`. */
@@ -342,6 +352,7 @@ function numOrNull(v: unknown): number | null {
  *  today; the future rows are the weather entity's job. */
 export function buildDailyForecast(
   response: OpenMeteoResponse | null | undefined,
+  calendar: Calendar,
 ): ForecastEntry[] {
   const daily = response?.daily;
   if (!daily) return [];
@@ -356,7 +367,7 @@ export function buildDailyForecast(
 
   const out: ForecastEntry[] = [];
   for (let i = 0; i < t.length; i++) {
-    const iso = localMidnightIso(t[i], response);
+    const iso = localMidnightIso(t[i], response, calendar);
     if (!iso) continue;
     out.push({
       datetime: iso,
@@ -465,6 +476,7 @@ function saveToStorage(storage: StorageLike | null, lat: number, lon: number, pa
 export function readCachedAvailability(
   latitude: number,
   longitude: number,
+  calendar: Calendar,
   storage?: StorageLike | null,
   now: number = Date.now(),
 ): CachedAvailability | null {
@@ -475,14 +487,14 @@ export function readCachedAvailability(
   const cached = loadFromStorage(store, latitude, longitude);
   if (!cached) return null;
 
-  const todayMs = startOfDay(now).getTime();
+  const todayMs = calendar.startOfDay(now).getTime();
 
   const daily = Array.isArray(cached.daily) ? cached.daily : [];
   let pastDays = 0;
   let forecastDays = 0;
   for (const item of daily) {
     if (!item?.date) continue;
-    const t = civilMidnight(item.date)?.getTime();
+    const t = civilMidnight(item.date, calendar)?.getTime();
     if (t === undefined) continue;
     if (t < todayMs) pastDays += 1;
     else forecastDays += 1;
@@ -526,6 +538,7 @@ export class OpenMeteoSource {
   private readonly _fetchIsCustom: boolean;
   private readonly _storage: StorageLike | null;
   private readonly _now: () => number;
+  private readonly _calendar: Calendar;
 
   private _daily: DailySunshineEntry[] = [];
   private _hourly: HourlySunshineEntry[] = [];
@@ -552,7 +565,8 @@ export class OpenMeteoSource {
     fetchImpl,
     storage,
     now,
-  }: OpenMeteoSourceOpts = {}) {
+    calendar,
+  }: OpenMeteoSourceOpts) {
     this.latitude = latitude ?? null;
     this.longitude = longitude ?? null;
     this.pastDays = pastDays;
@@ -567,6 +581,7 @@ export class OpenMeteoSource {
     const fallbackStorage = typeof window !== 'undefined' && window.localStorage ? window.localStorage : null;
     this._storage = storage !== undefined ? storage : fallbackStorage;
     this._now = now ?? (() => Date.now());
+    this._calendar = calendar;
 
     if (Number.isFinite(this.latitude) && Number.isFinite(this.longitude)) {
       const cached = loadFromStorage(this._storage, this.latitude as number, this.longitude as number);
@@ -689,12 +704,12 @@ export class OpenMeteoSource {
         const json = this._fetchIsCustom
           ? await doFetch()
           : await dedupeRequest(`openmeteo:${url}`, 60 * 1000, doFetch);
-        this._daily = parseDailySunshine(json);
-        this._hourly = this.includeHourly ? parseHourlySunshine(json) : [];
-        this._dailyForecast = buildDailyForecast(json);
+        this._daily = parseDailySunshine(json, this._calendar);
+        this._hourly = this.includeHourly ? parseHourlySunshine(json, this._calendar) : [];
+        this._dailyForecast = buildDailyForecast(json, this._calendar);
         this._hourlyForecast = this.includeHourly ? buildHourlyForecast(json) : [];
-        this._dailyProbability = parseDailyProbability(json);
-        this._hourlyProbability = this.includeHourly ? parseHourlyProbability(json) : [];
+        this._dailyProbability = parseDailyProbability(json, this._calendar);
+        this._hourlyProbability = this.includeHourly ? parseHourlyProbability(json, this._calendar) : [];
         this._probabilityFetched = true;
         this._lastFetchMs = this._now();
         saveToStorage(this._storage, this.latitude as number, this.longitude as number, {

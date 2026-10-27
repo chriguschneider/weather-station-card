@@ -14,7 +14,7 @@
  *  loose subset here avoids an extra dev-dep purely for typing. */
 export interface HomeAssistant {
   language?: string;
-  config?: { latitude?: number | null; longitude?: number | null };
+  config?: { latitude?: number | null; longitude?: number | null; time_zone?: string };
   states?: Record<string, { state: string } | undefined>;
 }
 

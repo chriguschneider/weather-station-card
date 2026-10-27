@@ -8,7 +8,7 @@
 // (temp1Color for high, temp2Color for low).
 
 import type { ChartLike, ChartPlugin, PluginCardConfig, PluginRenderData } from './_shared.js';
-import { startOfDay } from '../../utils/time-zone.js';
+import type { Calendar } from '../../utils/time-zone.js';
 
 export interface TempLabelsPluginOpts {
   config: PluginCardConfig & { forecast: PluginCardConfig['forecast'] & { style?: string } };
@@ -16,6 +16,7 @@ export interface TempLabelsPluginOpts {
     tempHigh: ReadonlyArray<number | null | undefined>;
     tempLow: ReadonlyArray<number | null | undefined>;
   };
+  calendar: Calendar;
   tempHighColor: string;
   tempLowColor: string;
   chartTextColor?: string;
@@ -33,7 +34,7 @@ export interface TempLabelsPluginOpts {
 }
 
 export function createTempLabelsPlugin(opts: TempLabelsPluginOpts): ChartPlugin {
-  const { config, data, tempHighColor, tempLowColor, chartTextColor, haloColor, roundTemp } = opts;
+  const { config, data, calendar, tempHighColor, tempLowColor, chartTextColor, haloColor, roundTemp } = opts;
   const decimals = roundTemp ? 0 : 1;
   const baseSize = parseInt(String(config.forecast.labels_font_size)) || 11;
   // style2 label is one size larger than the base axis-label size
@@ -43,12 +44,12 @@ export function createTempLabelsPlugin(opts: TempLabelsPluginOpts): ChartPlugin 
   const fontFamily = 'Helvetica, Arial, sans-serif';
 
   // Today's pixel-day key; used to pick bold vs normal per column.
-  const todayMs = startOfDay(Date.now()).getTime();
+  const todayMs = calendar.startOfDay(Date.now()).getTime();
 
   function isTodayAt(i: number): boolean {
     const dt = data.dateTime?.[i];
     if (!dt) return false;
-    return startOfDay(new Date(dt)).getTime() === todayMs;
+    return calendar.startOfDay(new Date(dt)).getTime() === todayMs;
   }
 
   function drawValueColumn(
