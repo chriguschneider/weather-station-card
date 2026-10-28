@@ -22,7 +22,7 @@ import {
   isAttributeToken,
   showKeyOf,
 } from './attributes-layout.js';
-import { parseLocation } from './location.js';
+import { parseLocation, resolveCardTimeZone } from './location.js';
 
 // Top-level keys that are valid YAML but intentionally have no DEFAULTS
 // entry — see the drift-guard test's DELETE_ONLY_PATHS and main.ts.
@@ -32,7 +32,7 @@ const EXTRA_TOP_LEVEL_KEYS = [
   'locale', // language override, read in `set hass`
   'speed', // legacy top-level speed unit, merged into units.speed in setConfig
   'condition_mapping', // classifier threshold overrides — free-form object
-  'location', // {latitude, longitude} override for Open-Meteo, checked by parseLocation
+  'location', // {latitude, longitude, time_zone} of the card's place, checked by parseLocation / resolveCardTimeZone
   'elevation', // site metres for the zero-degree rows; unset falls back to the sensor / HA (#333)
   // Standard Home Assistant card-level keys, written by HA itself (the
   // grid/layout editor, conditional visibility) and never read by this
@@ -237,6 +237,8 @@ export function validateConfig(rawConfig: unknown): string[] {
     validateTopLevelEntry(key, value, problems);
   }
   validateLayoutOverridesToggles(rawConfig, problems);
+  const zoneWarning = resolveCardTimeZone(rawConfig, undefined).warning;
+  if (zoneWarning) problems.push(zoneWarning);
 
   return problems;
 }

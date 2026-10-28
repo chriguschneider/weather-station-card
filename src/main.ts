@@ -76,7 +76,7 @@ import {
   sunshineFractions,
 } from './sunshine-source.js';
 import { OpenMeteoSource } from './openmeteo-source.js';
-import { resolveLocation } from './location.js';
+import { resolveCardTimeZone, resolveLocation } from './location.js';
 import { forecastHasProbability, overlayPrecipProbability } from './precip-probability.js';
 import { PROBABILITY_EXTRA_BOTTOM_PAD } from './chart/plugins/precip-label.js';
 import { safeQuery } from './utils/safe-query.js';
@@ -137,7 +137,7 @@ import {
   resolveAttributesLayout,
   type AttributeToken,
 } from './attributes-layout.js';
-import { Calendar, validTimeZone } from './utils/time-zone.js';
+import { Calendar } from './utils/time-zone.js';
 // Chart library: uPlot. Imported transitively via ./chart/draw.js —
 // there is no global registration step (uPlot has no plugin registry;
 // per-instance hooks/plugins are passed directly to the constructor).
@@ -728,6 +728,11 @@ setConfig(config: any) {
   // the card still renders with defaults. Genuine structural errors are
   // still caught by the mode-aware throws below and `assertConfig`.
   this._configWarnings = validateConfig(config);
+  // A changed `time_zone` / `location.time_zone` must reach the calendar
+  // without waiting for the next hass push.
+  if (this._hass) {
+    this._syncCalendar((this._hass.config as { time_zone?: unknown } | undefined)?.time_zone);
+  }
 
   // Mode-aware completeness check. Each enabled block has a required
   // key: show_station → sensors.temperature, show_forecast →
@@ -2638,11 +2643,12 @@ _invalidateStaleSources(oldConfig: any) {
   this._refreshForecasts();
 }
 
-// Day boundaries and every displayed time follow the HA server's zone
-// (#285): the station, the forecast and HA's own daily statistics all
-// belong to that location, wherever the viewer sits. A zone change
-// rebuilds the sources that hold the old calendar or cached its days.
-_syncCalendar(zone: unknown): void {
+// Day boundaries and every displayed time follow one zone per card: the
+// HA server's by default, `location.time_zone` or an IANA override via
+// the `time_zone` option (#357, ADR-0030). A zone change rebuilds the
+// sources that hold the old calendar or cached its days.
+_syncCalendar(serverZone: unknown): void {
+  const zone = resolveCardTimeZone(this.config, serverZone).zone;
   if (zone === this._calendarZoneInput) return;
   this._calendarZoneInput = zone;
   const next = new Calendar(zone);
@@ -3583,7 +3589,7 @@ renderMain({ config, sun, weather, temperature } = this) {
 _updateClock(): void {
   const cfg = this.config || {};
   const currentDate = new Date();
-  const timeZone = validTimeZone(cfg.time_zone) ?? this.calendar.timeZone;
+  const timeZone = this.calendar.timeZone;
   const timeOptions = {
     hour12: cfg.use_12hour_format,
     hour: 'numeric',
@@ -4394,7 +4400,7 @@ const timeOptions = {
     hour12: use12HourFormat,
     hour: 'numeric',
     minute: 'numeric',
-    timeZone: validTimeZone(this.config.time_zone) ?? this.calendar.timeZone,
+    timeZone: this.calendar.timeZone,
 } as Intl.DateTimeFormatOptions;
 
   const timeFmt = getDateTimeFormat(language, timeOptions as Intl.DateTimeFormatOptions & { timeZone: string });

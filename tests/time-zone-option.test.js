@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-// `time_zone` option: the live clock and the sun row format in the
-// configured IANA zone; everything else stays on the server zone.
+// Legacy `time_zone: <IANA>` YAML (#346) still works; since #357 it
+// drives the whole card, not only the clock and the sun row.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import '../src/main.js';

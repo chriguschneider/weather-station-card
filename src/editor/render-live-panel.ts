@@ -167,7 +167,6 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
     },
   }];
 
-  const timeZoneSchema = [{ name: 'time_zone', selector: { text: {} } }];
   const timeFormatSchema = [{
     name: 'time_format',
     selector: {
@@ -195,7 +194,6 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
       show_main: t('show_main'),
       show_attributes: t('show_attributes'),
       clock_mode: t('clock_label'),
-      time_zone: t('time_zone'),
       time_format: t('time_format_label'),
     };
     return map[schema.name] || t(schema.name);
@@ -234,13 +232,6 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
             .hass=${editor.hass}
             .computeLabel=${labelFor}
             @value-changed=${handleClock}
-          ></ha-form>
-          <ha-form
-            .data=${{ time_zone: typeof cfg.time_zone === 'string' ? cfg.time_zone : '' }}
-            .schema=${timeZoneSchema}
-            .hass=${editor.hass}
-            .computeLabel=${labelFor}
-            @value-changed=${editor._livePanelChanged}
           ></ha-form>
         </div>
       ` : ''}

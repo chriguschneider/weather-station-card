@@ -54,6 +54,10 @@ const REQUIRED_EDITOR_KEYS = [
   'precipitation_rate', 'pressure',
   'wind_speed', 'gust_speed', 'wind_direction', 'uv_index', 'dew_point',
   'sunshine_duration', 'zero_degree_level', 'zero_degree_level_48h', 'elevation', 'next_rain',
+  // location panel (#357)
+  'location_heading', 'location_latitude', 'location_longitude',
+  'location_time_zone', 'time_zone_label', 'time_zone_server',
+  'time_zone_location', 'location_summary_home', 'location_hint',
   // basics
   'required_marker', 'title', 'days', 'forecast_days', 'weather_entity',
   'mode_label', 'mode_station', 'mode_forecast', 'mode_combination',

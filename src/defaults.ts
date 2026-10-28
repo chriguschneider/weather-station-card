@@ -131,9 +131,9 @@ export const DEFAULTS = {
   // src/attributes-layout.ts.
   attributes_layout: [] as ReadonlyArray<ReadonlyArray<string>>,
   use_12hour_format: false,
-  // IANA zone for the clock and the sun row only; '' = the HA server's
-  // zone. Day boundaries and the chart stay on the server zone.
-  time_zone: '',
+  // Zone of the whole card: 'server' (HA's zone), 'location'
+  // (`location.time_zone`) or an IANA name (#357, ADR-0030).
+  time_zone: 'server',
 
   // Sizing
   icons_size: 25,

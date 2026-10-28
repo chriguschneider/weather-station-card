@@ -3,6 +3,8 @@
 // location. Sun and moon times, solar strength and the lux derivation
 // read it too (#356), so a card for another place shows that place's sun.
 
+import { validTimeZone } from './utils/time-zone.js';
+
 export interface LatLon {
   latitude: number;
   longitude: number;
@@ -37,4 +39,44 @@ export function resolveLocation(
     return { latitude: lat, longitude: lon };
   }
   return null;
+}
+
+export interface CardTimeZone {
+  /** Input for the card's Calendar; `Calendar` itself falls back to the
+   *  browser zone when this is unusable. */
+  zone: unknown;
+  /** Set when the configured zone was unusable and the server zone applies. */
+  warning: string | null;
+}
+
+/** Display zone of a card (#357): `server` (default, also '' / unset),
+ *  `location` (`location.time_zone`) or an IANA name. An unusable value
+ *  falls back to the server zone with a warning. */
+export function resolveCardTimeZone(
+  config: { time_zone?: unknown; location?: unknown } | null | undefined,
+  serverZone: unknown,
+): CardTimeZone {
+  const raw = config?.time_zone;
+  if (raw === undefined || raw === null || raw === '' || raw === 'server') {
+    return { zone: serverZone, warning: null };
+  }
+  if (raw === 'location') {
+    const loc = config?.location;
+    const zone = typeof loc === 'object' && loc !== null
+      ? validTimeZone((loc as Record<string, unknown>).time_zone)
+      : undefined;
+    if (zone) return { zone, warning: null };
+    return {
+      zone: serverZone,
+      warning: '`time_zone: location` needs a valid IANA `location.time_zone`'
+        + ' (for example America/Denver); the server time zone is used instead',
+    };
+  }
+  const zone = validTimeZone(raw);
+  if (zone) return { zone, warning: null };
+  return {
+    zone: serverZone,
+    warning: `\`time_zone\` "${String(raw)}" is not a known IANA time zone;`
+      + ' the server time zone is used instead',
+  };
 }
