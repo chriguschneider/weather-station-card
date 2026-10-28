@@ -24,6 +24,7 @@ export default {
         'src/const.ts',
         'src/data-source.ts',
         'src/defaults.ts',
+        'src/location.ts',
         'src/format-utils.ts',
         'src/forecast-utils.ts',
         'src/sunshine-source.ts',

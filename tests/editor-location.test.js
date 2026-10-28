@@ -102,3 +102,49 @@ describe('location section', () => {
     expect('time_zone' in real.configChanged.mock.calls[1][0]).toBe(false);
   });
 });
+
+describe('location section details', () => {
+  it('falls back to a text field when Intl.supportedValuesOf throws', () => {
+    const original = Intl.supportedValuesOf;
+    Intl.supportedValuesOf = () => { throw new RangeError('nope'); };
+    try {
+      const { placeForm } = mount(makeEditor());
+      expect(placeForm.schema.find((s) => s.name === 'time_zone').selector).toEqual({ text: {} });
+    } finally {
+      Intl.supportedValuesOf = original;
+    }
+  });
+
+  it('labels the fields and fills the form from the config', () => {
+    const { placeForm, modeForm } = mount(makeEditor(), {
+      location: { latitude: 47.1, longitude: -111.4, time_zone: 'America/Denver' },
+    });
+    expect(placeForm.computeLabel({ name: 'latitude' })).toBe('location_latitude');
+    expect(placeForm.computeLabel({ name: 'longitude' })).toBe('location_longitude');
+    expect(placeForm.computeLabel({ name: 'time_zone' })).toBe('location_time_zone');
+    expect(modeForm.computeLabel()).toBe('time_zone_label');
+    expect(placeForm.data).toEqual({ latitude: 47.1, longitude: -111.4, time_zone: 'America/Denver' });
+  });
+
+  it('keeps a configured zone the browser does not list', () => {
+    const { placeForm } = mount(makeEditor(), { location: { time_zone: 'Etc/Custom' } });
+    const field = placeForm.schema.find((s) => s.name === 'time_zone');
+    expect(values(field)[0]).toBe('Etc/Custom');
+  });
+
+  it('handlers ignore events without config or from other targets', async () => {
+    const real = await realEditor({});
+    const stray = new CustomEvent('value-changed', { detail: { value: { time_zone: 'location' } } });
+    real._locationChanged(stray);
+    real._timeZoneModeChanged(stray);
+    expect(real.configChanged).not.toHaveBeenCalled();
+
+    const noConfig = await realEditor(undefined);
+    noConfig._config = undefined;
+    const form = document.createElement('ha-form');
+    form.addEventListener('value-changed', noConfig._locationChanged);
+    form.addEventListener('value-changed', noConfig._timeZoneModeChanged);
+    change(form, { time_zone: 'location' });
+    expect(noConfig.configChanged).not.toHaveBeenCalled();
+  });
+});
