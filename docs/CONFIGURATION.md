@@ -475,3 +475,25 @@ row, conditions row, and wind row all scroll horizontally in
 lockstep. Default `8` works for both modes (fits 7-day daily without
 scrolling and caps the hourly viewport at ~8 hours); set `0` to
 disable the viewport and show everything.
+
+### Day boundaries
+
+The card cuts days in its own calendar (today the Home Assistant
+server's time zone). Daily station columns come from the recorder's
+**hourly** statistics, reduced per day by the card: low = lowest hour
+minimum, high = highest hour maximum, rainfall = sum of the hours,
+averages (humidity, pressure, wind, dew point) = mean of the hourly
+means, each hour weighted equally. Daylight-saving days have 23 or 25
+hours. A sunshine-duration counter still resets at its own midnight;
+the card follows that reset when it adds up the day.
+
+Limits:
+
+- **Half-hour zones** (Asia/Kolkata, Australia/Adelaide,
+  America/St_Johns): the recorder's hours start on the full UTC hour,
+  so one hour straddles the card's midnight. It counts for the day it
+  starts in: the 23:30–00:30 hour belongs to the earlier day.
+- **Daily forecasts** are read as calendar days, whatever the
+  integration writes: a bare date, UTC midnight, the provider's local
+  midnight in UTC or a local offset all land on the date the provider
+  meant.

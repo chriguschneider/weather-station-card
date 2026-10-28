@@ -55,6 +55,9 @@ src/
 │                              and ForecastDataSource (weather/subscribe_
 │                              forecast). Both expose subscribe(cb) →
 │                              unsubscribe and emit { forecast, error? }.
+│                              Daily columns are reduced from hourly
+│                              statistics in the card's calendar
+│                              (`reduceHourlyToDays`, ADR-0030).
 │                              Also hosts `fetchPressure3hDelta` +
 │                              `PressureDeltaCache` for the live
 │                              pressure-trend row.
@@ -588,7 +591,9 @@ files**):
 - `data-source.ts` — `bucketPrecipitation` for all three state-class
   paths, `_buildForecast` / `_buildHourlyForecast` chronology / shape /
   live-fallback, both data-source classes' subscribe / error / dispose,
-  the 3-hour pressure-delta fetch.
+  the 3-hour pressure-delta fetch; `card-calendar-days.test.js` covers
+  the hour-to-day reduction (other zone, DST, half-hour zone) and the
+  daily forecast day keys.
 - `config-validation.ts` — unknown key, wrong type, typo suggestion,
   valid config passes clean.
 - `format-utils.ts`, `forecast-utils.ts` — colour parsers, separator
