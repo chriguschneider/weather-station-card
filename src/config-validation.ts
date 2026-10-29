@@ -32,7 +32,7 @@ const EXTRA_TOP_LEVEL_KEYS = [
   'locale', // language override, read in `set hass`
   'speed', // legacy top-level speed unit, merged into units.speed in setConfig
   'condition_mapping', // classifier threshold overrides — free-form object
-  'location', // {latitude, longitude, time_zone} of the card's place, checked by parseLocation / resolveCardTimeZone
+  'location', // {latitude, longitude, elevation, time_zone} of the card's place, checked by parseLocation / resolveCardTimeZone
   'elevation', // site metres for the zero-degree rows; unset falls back to the sensor / HA (#333)
   // Standard Home Assistant card-level keys, written by HA itself (the
   // grid/layout editor, conditional visibility) and never read by this
@@ -325,6 +325,8 @@ function validateTopLevelEntry(
         '`location` is ignored (Home Assistant\'s location is used): expected'
         + ' `latitude` (-90..90) and `longitude` (-180..180) as numbers',
       );
+    } else if (isPlainObject(value)) {
+      checkValueType('location.elevation', (value as Record<string, unknown>).elevation, 0, problems);
     }
     return;
   }

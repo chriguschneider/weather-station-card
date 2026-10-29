@@ -12,6 +12,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Editor: the Location panel is now first and shows the Home Assistant home until "Use another location" is switched on; a place search, a map with draggable marker and a button fetch coordinates, elevation and time zone from Open-Meteo on request. Site elevation moved to the Location panel (`location.elevation`; top-level `elevation` still works). The new labels are English in all languages except German.
 - Daily columns are now cut by the card's calendar from hourly statistics, so a card for another time zone shows that zone's days (#343). Daily forecasts are read as calendar days, so providers that write UTC midnight (core Open-Meteo, MeteoSwiss) no longer show the previous day west of UTC. Nothing to change in your configuration.
 - Sunrise, sunset, moon and solar strength follow the card's `location`, so a card for another place shows that place's sun (#351). The sunrise/sunset row is now computed in the card and shows today's times (tomorrow's once both have passed); it is no longer a link to the `sun.sun` entity.
 - The editor has a "Time format" selector (24-hour / 12-hour) below the attributes board that applies to the clock and the attributes row times, so 12-hour times no longer require the clock. The clock dropdown is now Off / On / On with seconds. Existing configs keep working unchanged (#343).

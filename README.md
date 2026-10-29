@@ -297,6 +297,11 @@ A card can live at its location. With `location`, sunrise, sunset, moon
 and Open-Meteo data are for that place; `time_zone: location` shows the
 whole card, including the chart's days, in that place's time zone.
 
+In the editor, the *Location* panel does it without YAML: switch on
+*Use another location*, search for a place or click it on the map, and
+let *Determine elevation and time zone* fill the rest (Open-Meteo, only on
+a click). `elevation` (metres) is read for the zero-degree rows.
+
 A cabin in Montana, on a dashboard whose Home Assistant is elsewhere:
 
 ```yaml
@@ -305,6 +310,7 @@ weather_entity: weather.montana
 location:
   latitude: 46.87
   longitude: -113.99
+  elevation: 1200
   time_zone: America/Denver
 time_zone: location
 ```

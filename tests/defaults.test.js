@@ -136,8 +136,8 @@ const SCHEMA_KEY_SKIPLIST = new Set([
   'clock_mode',     // show_time / show_time_seconds
   'time_format',    // use_12hour_format ('24h' | '12h')
   'attributes',     // the attribute show_* booleans (live_panel section)
-  'latitude',       // location.latitude (location section, reset via `location`)
-  'longitude',      // location.longitude (idem)
+  'use_location',   // location switch, derived: on iff `location` has coordinates (reset via `location`)
+  'query',          // place-search text, editor state only
 ]);
 
 // Sections whose SECTION_KEYS list contains a parent-path (no dots) —

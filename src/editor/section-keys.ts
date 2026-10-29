@@ -41,8 +41,6 @@ export const SECTION_KEYS: Record<SectionKey, ReadonlyArray<string>> = {
     // The Open-Meteo no-station past-block opt-in (ADR-0015), driven by
     // the past-source dropdown in this section.
     'forecast.openmeteo_history',
-    // Site elevation for the zero-degree rows (#333); no DEFAULTS entry.
-    'elevation',
   ],
   chart: [
     'days',
@@ -91,9 +89,11 @@ export const SECTION_KEYS: Record<SectionKey, ReadonlyArray<string>> = {
     'attributes_layout',
   ],
   location: [
-    // The place of the card and the zone its times are shown in (#357).
+    // The place of the card and the zone its times are shown in (#357, #372).
     'location',
     'time_zone',
+    // Legacy top-level site elevation; the editor writes `location.elevation`.
+    'elevation',
   ],
   units: [
     'units',

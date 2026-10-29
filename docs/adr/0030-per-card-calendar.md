@@ -146,7 +146,9 @@ in `set hass` and in `setConfig`, so an edited option applies at once.
 - Any other string: that IANA zone if `validTimeZone` accepts it, else
   the server zone and a config warning. This keeps the `time_zone: <IANA>`
   YAML of #346 valid; it now applies to the whole card.
-- No automatic zone lookup from coordinates (no network dependency).
+- No automatic zone lookup from coordinates. Zone and elevation can be
+  fetched from Open-Meteo **on button click in the editor only** (#372); the
+  card never looks them up at runtime; hand values win.
 - The recorder's server-midnight counter resets (sunshine) still read
   `hass.config.time_zone` directly; they describe the server, not the
   card.

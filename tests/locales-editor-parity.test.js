@@ -57,7 +57,11 @@ const REQUIRED_EDITOR_KEYS = [
   // location panel (#357)
   'location_heading', 'location_latitude', 'location_longitude',
   'location_time_zone', 'time_zone_label', 'time_zone_server',
-  'time_zone_location', 'location_summary_home', 'location_hint',
+  'time_zone_location', 'location_summary_home',
+  'location_home_label', 'location_use_other', 'location_search_label',
+  'location_search_button', 'location_search_none', 'location_search_error',
+  'location_map_label', 'location_determine_button', 'location_determined',
+  'location_determine_error', 'location_attribution',
   // basics
   'required_marker', 'title', 'days', 'forecast_days', 'weather_entity',
   'mode_label', 'mode_station', 'mode_forecast', 'mode_combination',
@@ -107,6 +111,7 @@ const PLACEHOLDERS = {
   sunshine_availability: ['{past}', '{future}'],
   sunshine_availability_warning: ['{req}', '{gap}'],
   summary_connected: ['{n}'],
+  location_determined: ['{place}'],
 };
 
 describe('locale editor blocks (parity with en)', () => {

@@ -388,4 +388,12 @@ describe('validateConfig — elevation (#333)', () => {
       expect(problems[0]).toContain('Wrong type for `elevation`: expected number');
     }
   });
+
+  it('checks location.elevation as a number', () => {
+    const location = { latitude: 46.5, longitude: 7.9 };
+    expect(validateConfig({ ...validBaseConfig(), location: { ...location, elevation: 1200 } })).toEqual([]);
+    const problems = validateConfig({ ...validBaseConfig(), location: { ...location, elevation: 'high' } });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('location.elevation');
+  });
 });

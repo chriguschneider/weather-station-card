@@ -1,6 +1,7 @@
 import { LitElement, html, type TemplateResult } from 'lit';
-import type { HomeAssistant } from './editor/types.js';
-import { resolveCardTimeZone, resolveLocation } from './location.js';
+import type { HomeAssistant, LocationUiState } from './editor/types.js';
+import { parseLocation, resolveCardTimeZone, resolveLocation } from './location.js';
+import { lookupElevationZone, searchPlaces, type PlaceHit } from './editor/location-lookup.js';
 import locale, { ensureLocaleLoaded, resolveLocaleKey } from './locale.js';
 import { readCachedAvailability } from './openmeteo-source.js';
 import { Calendar, validTimeZone } from './utils/time-zone.js';
@@ -46,6 +47,7 @@ function tEditor(hass: HomeAssistant | null, key: string): string {
 class WeatherStationCardEditor extends LitElement implements EditorLike {
   hass: HomeAssistant | null = null;
   _config: Record<string, unknown> | null = null;
+  _locUi: LocationUiState = { query: '', results: [], status: null };
 
   static get properties() {
     return {
@@ -466,6 +468,122 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     this.requestUpdate();
   };
 
+  // "Use another location" switch. Off drops `location` and `time_zone`
+  // (same as the panel's reset); on presets the home coordinates, the
+  // server zone as the place's zone, no elevation, and "Location time".
+  _locationSwitchChanged = (event: Event): void => {
+    if (!this._config) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.tagName.toLowerCase() !== 'ha-form') return;
+    const on = (event as CustomEvent<{ value: { use_location?: boolean } }>).detail.value?.use_location === true;
+    const newConfig: Record<string, unknown> = { ...this._config };
+    if (on) {
+      const home = this.hass?.config;
+      const zone = validTimeZone(home?.time_zone);
+      const location: Record<string, unknown> = {
+        latitude: typeof home?.latitude === 'number' ? home.latitude : 0,
+        longitude: typeof home?.longitude === 'number' ? home.longitude : 0,
+      };
+      if (zone) location.time_zone = zone;
+      newConfig.location = location;
+      newConfig.time_zone = 'location';
+    } else {
+      delete newConfig.location;
+      delete newConfig.time_zone;
+      this._locUi = { ...this._locUi, results: [], status: null };
+    }
+    this.configChanged(newConfig);
+    this.requestUpdate();
+  };
+
+  // The map selector reports {latitude, longitude, radius}; only the
+  // coordinates are ours. Dragging the marker never triggers a lookup.
+  _locationMapChanged = (event: Event): void => {
+    if (!this._config) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.tagName.toLowerCase() !== 'ha-form') return;
+    const picked = (event as CustomEvent<{ value: { location?: { latitude?: unknown; longitude?: unknown } } }>)
+      .detail.value?.location;
+    if (typeof picked?.latitude !== 'number' || typeof picked?.longitude !== 'number') return;
+    this._writeLocation({ latitude: picked.latitude, longitude: picked.longitude });
+  };
+
+  _locationQueryChanged = (event: Event): void => {
+    const target = event.target as HTMLElement | null;
+    if (target?.tagName.toLowerCase() !== 'ha-form') return;
+    const value = (event as CustomEvent<{ value: { query?: string } }>).detail.value?.query;
+    this._locUi = { ...this._locUi, query: typeof value === 'string' ? value : '' };
+  };
+
+  _writeLocation(patch: Record<string, unknown>): void {
+    if (!this._config) return;
+    const location = {
+      ...((this._config.location as Record<string, unknown> | undefined) || {}),
+      ...patch,
+    };
+    this.configChanged({ ...this._config, location });
+    this.requestUpdate();
+  }
+
+  // One geocoding request per click; never on typing or render.
+  _locationSearch = async (): Promise<void> => {
+    const query = this._locUi.query.trim();
+    if (!query) return;
+    const lang = this.hass?.locale?.language || this.hass?.language || 'en';
+    try {
+      const results = await searchPlaces(query, lang);
+      this._locUi = {
+        ...this._locUi,
+        results,
+        status: results.length ? null : { kind: 'error', text: tEditor(this.hass, 'location_search_none') },
+      };
+    } catch {
+      this._locUi = {
+        ...this._locUi,
+        results: [],
+        status: { kind: 'error', text: tEditor(this.hass, 'location_search_error') },
+      };
+    }
+    this.requestUpdate();
+  };
+
+  // A hit supplies all four fields; it does not trigger "determine".
+  _locationPick = (hit: PlaceHit): void => {
+    const patch: Record<string, unknown> = { latitude: hit.latitude, longitude: hit.longitude };
+    if (hit.elevation !== undefined) patch.elevation = hit.elevation;
+    if (validTimeZone(hit.timezone) !== undefined) patch.time_zone = hit.timezone;
+    this._locUi = { ...this._locUi, results: [], status: null };
+    this._writeLocation(patch);
+  };
+
+  _locationDetermine = async (): Promise<void> => {
+    const start = parseLocation(this._config?.location);
+    if (!start) return;
+    const where = `${start.latitude.toFixed(2)}, ${start.longitude.toFixed(2)}`;
+    try {
+      const found = await lookupElevationZone(start.latitude, start.longitude);
+      // Only the two looked-up fields are written, so coordinates the
+      // user changed while the request was in flight stay as typed.
+      const patch: Record<string, unknown> = {};
+      if (found.elevation !== undefined) patch.elevation = found.elevation;
+      if (validTimeZone(found.timezone) !== undefined) patch.time_zone = found.timezone;
+      this._locUi = {
+        ...this._locUi,
+        status: {
+          kind: 'ok',
+          text: tEditor(this.hass, 'location_determined').replace('{place}', where),
+        },
+      };
+      this._writeLocation(patch);
+    } catch {
+      this._locUi = {
+        ...this._locUi,
+        status: { kind: 'error', text: tEditor(this.hass, 'location_determine_error') },
+      };
+      this.requestUpdate();
+    }
+  };
+
   // Per-section reset-to-defaults. Walks the SECTION_KEYS list for
   // the given section and removes each key from
   // this._config — letting DEFAULTS take over on the next render.
@@ -750,6 +868,23 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
           border-top: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
           margin: 4px 0;
         }
+        .loc-search { display: flex; align-items: center; gap: 8px; }
+        .loc-search ha-form { flex: 1; }
+        .loc-results { display: flex; flex-direction: column; margin: 0 0 12px; }
+        .loc-hit {
+          text-align: left;
+          padding: 8px 12px;
+          background: none;
+          border: 0;
+          border-bottom: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+          color: var(--primary-text-color, #212121);
+          font: inherit;
+          cursor: pointer;
+        }
+        .loc-hit:hover { background: var(--secondary-background-color, rgba(0, 0, 0, 0.05)); }
+        .loc-determine { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .loc-status { font-size: 0.85rem; color: var(--secondary-text-color, #727272); }
+        .loc-status.error { color: var(--error-color, #db4437); }
         .hint {
           font-size: 0.85rem;
           color: var(--secondary-text-color, #727272);
@@ -815,11 +950,11 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
       </style>
 
       <div>
+        ${renderLocationSection(this, ctx)}
         ${renderBasicsSection(this, ctx)}
         ${renderSensorsSection(this, ctx)}
         ${renderChartSection(this, ctx)}
         ${renderLivePanelSection(this, ctx)}
-        ${renderLocationSection(this, ctx)}
         ${renderUnitsSection(this, ctx)}
         ${renderTapSection(this, ctx)}
         <div class="editor-footer">

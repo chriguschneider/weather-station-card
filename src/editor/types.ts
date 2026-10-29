@@ -9,12 +9,21 @@
 // section don't need to touch this file unless their handler isn't
 // covered by the union of `EditorLike`'s existing fields.
 
+import type { PlaceHit } from './location-lookup.js';
+
 /** Subset of Home Assistant's frontend `hass` object the editor
  *  reads. The full type lives in custom-card-helpers — keeping a
  *  loose subset here avoids an extra dev-dep purely for typing. */
 export interface HomeAssistant {
   language?: string;
-  config?: { latitude?: number | null; longitude?: number | null; time_zone?: string };
+  locale?: { language?: string };
+  config?: {
+    latitude?: number | null;
+    longitude?: number | null;
+    elevation?: number | null;
+    time_zone?: string;
+    location_name?: string;
+  };
   states?: Record<string, { state: string } | undefined>;
 }
 
@@ -60,6 +69,14 @@ export interface TogglePath {
   def: boolean;
 }
 
+/** Transient state of the Location panel's place search / determine
+ *  button; never written to the config. */
+export interface LocationUiState {
+  query: string;
+  results: PlaceHit[];
+  status: { kind: 'ok' | 'error'; text: string } | null;
+}
+
 export interface EditorLike {
   hass: HomeAssistant | null;
   _config: Record<string, unknown> | null;
@@ -89,6 +106,13 @@ export interface EditorLike {
   _livePanelChanged(event: Event): void;
   _locationChanged(event: Event): void;
   _timeZoneModeChanged(event: Event): void;
+  _locUi: LocationUiState;
+  _locationSwitchChanged(event: Event): void;
+  _locationMapChanged(event: Event): void;
+  _locationQueryChanged(event: Event): void;
+  _locationSearch(): Promise<void>;
+  _locationPick(hit: PlaceHit): void;
+  _locationDetermine(): Promise<void>;
   _resetSection(sectionKey: string): void;
   _actionChanged(key: string, value: unknown): void;
   _renderSunshineAvailabilityHint(cfg: Record<string, unknown>, t: TFn): unknown;
