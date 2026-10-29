@@ -205,15 +205,19 @@ function toMetres(value: unknown): number | undefined {
   return undefined;
 }
 
-/** Site elevation in metres: the card's `elevation:` option, else an
+/** Site elevation in metres: `location.elevation`, else the legacy
+ *  top-level `elevation:` option, else an
  *  `elevation` attribute on the sensors (48 h first, then the current
  *  level — hass-meteoswiss-weather#227), else HA's configured elevation. */
 export function resolveElevation(
-  config: { elevation?: unknown } | null | undefined,
+  config: { elevation?: unknown; location?: unknown } | null | undefined,
   sensorAttrs: ReadonlyArray<Record<string, unknown> | null | undefined>,
   hass: { config?: { elevation?: unknown } } | null | undefined,
 ): number | undefined {
-  const fromConfig = toMetres(config?.elevation);
+  const loc = config?.location;
+  const fromLocation = typeof loc === 'object' && loc !== null
+    ? toMetres((loc as { elevation?: unknown }).elevation) : undefined;
+  const fromConfig = fromLocation ?? toMetres(config?.elevation);
   if (fromConfig !== undefined) return fromConfig;
   for (const attrs of sensorAttrs) {
     const v = toMetres(attrs?.elevation);
