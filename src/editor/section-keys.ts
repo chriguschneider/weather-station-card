@@ -23,6 +23,7 @@ export type SectionKey =
   | 'sensors'
   | 'chart'
   | 'live_panel'
+  | 'location'
   | 'units'
   | 'actions';
 
@@ -66,7 +67,6 @@ export const SECTION_KEYS: Record<SectionKey, ReadonlyArray<string>> = {
     'show_time',
     'show_time_seconds',
     'use_12hour_format',
-    'time_zone',
     'show_day',
     'show_date',
     'show_attributes',
@@ -89,6 +89,11 @@ export const SECTION_KEYS: Record<SectionKey, ReadonlyArray<string>> = {
     // YAML-only row arrangement (ADR-0025); the attribute pills write
     // into it when set, so a section reset must clear it too.
     'attributes_layout',
+  ],
+  location: [
+    // The place of the card and the zone its times are shown in (#357).
+    'location',
+    'time_zone',
   ],
   units: [
     'units',

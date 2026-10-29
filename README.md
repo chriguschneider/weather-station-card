@@ -261,7 +261,7 @@ weather sensors via ranked auto-detect.
 
 The **visual editor fits one screen**: the four basics (mode, chart
 type, title, weather entity) stay directly visible, everything else
-lives in five collapsible panels whose headers summarise the current
+lives in six collapsible panels whose headers summarise the current
 configuration — readable without opening anything. The editor is fully
 translated into 25 languages. Set `debug: true` in YAML to append a
 diagnostics panel that shows what the card detected.
@@ -283,11 +283,43 @@ diagnostics panel that shows what the card detected.
   pills, a single clock dropdown (off / 24h / 12h, with-seconds
   variants), and an *Arrangement* board to drag the attribute rows
   into the columns you want (saved as `attributes_layout`)
+- **Location** — latitude, longitude and time zone of the card's place,
+  and whether times are shown in server or location time
 - **Units** — pressure / wind-speed / precipitation display units
 - **Actions** — tap, hold, and double-tap behaviour
 
 Every YAML key is documented in **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**
 with type, default, and effect.
+
+## A card for another place
+
+A card can live at its location. With `location`, sunrise, sunset, moon
+and Open-Meteo data are for that place; `time_zone: location` shows the
+whole card, including the chart's days, in that place's time zone.
+
+A cabin in Montana, on a dashboard whose Home Assistant is elsewhere:
+
+```yaml
+type: custom:weather-station-card
+weather_entity: weather.montana
+location:
+  latitude: 46.87
+  longitude: -113.99
+  time_zone: America/Denver
+time_zone: location
+```
+
+A holiday home whose sun you want to see, but with the times you live by
+(`server` is the default):
+
+```yaml
+type: custom:weather-station-card
+weather_entity: weather.holiday_home
+location:
+  latitude: 46.02
+  longitude: 7.75
+time_zone: server
+```
 
 ## Conditions, sensors, and sunshine
 

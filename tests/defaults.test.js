@@ -23,6 +23,7 @@ import { renderBasicsSection } from '../src/editor/render-basics.js';
 import { renderSensorsSection } from '../src/editor/render-sensors.js';
 import { renderChartSection } from '../src/editor/render-chart.js';
 import { renderLivePanelSection } from '../src/editor/render-live-panel.js';
+import { renderLocationSection } from '../src/editor/render-location.js';
 import { renderUnitsSection } from '../src/editor/render-units.js';
 
 const Card = customElements.get('weather-station-card');
@@ -117,6 +118,7 @@ function pathExistsInDefaults(path) {
 const DELETE_ONLY_PATHS = new Set([
   'title',  // free-text user label, runtime fallback in render-chart.ts
   'elevation',  // optional site elevation, falls back to sensor / HA (#333)
+  'location',  // optional {latitude, longitude, time_zone}; unset = HA's location (#357)
 ]);
 
 // Schema field names a render-*.ts treats as UI-only (not config-backed)
@@ -134,6 +136,8 @@ const SCHEMA_KEY_SKIPLIST = new Set([
   'clock_mode',     // show_time / show_time_seconds
   'time_format',    // use_12hour_format ('24h' | '12h')
   'attributes',     // the attribute show_* booleans (live_panel section)
+  'latitude',       // location.latitude (location section, reset via `location`)
+  'longitude',      // location.longitude (idem)
 ]);
 
 // Sections whose SECTION_KEYS list contains a parent-path (no dots) —
@@ -247,6 +251,7 @@ describe('Editor schema fields ↔ SECTION_KEYS drift guard', () => {
     { name: 'sensors', renderFn: renderSensorsSection },
     { name: 'chart', renderFn: renderChartSection },
     { name: 'live_panel', renderFn: renderLivePanelSection },
+    { name: 'location', renderFn: renderLocationSection },
     { name: 'units', renderFn: renderUnitsSection },
     // render-tap.ts uses ha-selector instead of ha-form — its fields
     // (tap_action / hold_action / double_tap_action) are listed

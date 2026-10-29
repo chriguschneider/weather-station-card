@@ -87,6 +87,8 @@ export interface EditorLike {
   _chartTopChanged(event: Event): void;
   _chartForecastChanged(event: Event): void;
   _livePanelChanged(event: Event): void;
+  _locationChanged(event: Event): void;
+  _timeZoneModeChanged(event: Event): void;
   _resetSection(sectionKey: string): void;
   _actionChanged(key: string, value: unknown): void;
   _renderSunshineAvailabilityHint(cfg: Record<string, unknown>, t: TFn): unknown;

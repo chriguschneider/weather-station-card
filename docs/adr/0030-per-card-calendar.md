@@ -134,6 +134,23 @@ architecture issue #221 closed without a change).
   once).
 - The `wsc_series_*` schema goes to v3 (daily payloads changed shape).
 
+## Amendment 2026-10-28 (#357): resolving the card's zone
+
+The calendar's zone comes from `resolveCardTimeZone` (`src/location.ts`),
+the only place that reads the `time_zone` option. `_syncCalendar` runs it
+in `set hass` and in `setConfig`, so an edited option applies at once.
+
+- `time_zone` unset, empty or `server`: `hass.config.time_zone`.
+- `location`: `location.time_zone` if `validTimeZone` accepts it; if it
+  is missing or invalid, the server zone and a config warning.
+- Any other string: that IANA zone if `validTimeZone` accepts it, else
+  the server zone and a config warning. This keeps the `time_zone: <IANA>`
+  YAML of #346 valid; it now applies to the whole card.
+- No automatic zone lookup from coordinates (no network dependency).
+- The recorder's server-midnight counter resets (sunshine) still read
+  `hass.config.time_zone` directly; they describe the server, not the
+  card.
+
 ## Related
 
 - Issue #354 — this change; #343 / #358 — one card per location (v3.0)

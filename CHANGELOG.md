@@ -8,7 +8,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- `time_zone` option to show the clock and sunrise/sunset in another time zone, for cards of a remote home (#343).
+- `location.time_zone` and `time_zone: location`: a card for another place shows everything, clock, sun, moon, next rain and the chart's days, in that place's time zone. `time_zone` accepts `server` (default), `location` or an IANA name, and the editor has a new Location panel (#343, #351). The editor labels are English in all languages except German until native speakers translate them.
 
 ### Changed
 

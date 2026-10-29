@@ -1,13 +1,14 @@
 import { LitElement, html, type TemplateResult } from 'lit';
 import type { HomeAssistant } from './editor/types.js';
-import { resolveLocation } from './location.js';
+import { resolveCardTimeZone, resolveLocation } from './location.js';
 import locale, { ensureLocaleLoaded, resolveLocaleKey } from './locale.js';
 import { readCachedAvailability } from './openmeteo-source.js';
-import { Calendar } from './utils/time-zone.js';
+import { Calendar, validTimeZone } from './utils/time-zone.js';
 import { renderBasicsSection } from './editor/render-basics.js';
 import { renderSensorsSection } from './editor/render-sensors.js';
 import { renderChartSection } from './editor/render-chart.js';
 import { renderLivePanelSection } from './editor/render-live-panel.js';
+import { renderLocationSection } from './editor/render-location.js';
 import { renderUnitsSection } from './editor/render-units.js';
 import { renderTapSection } from './editor/render-tap.js';
 import { SECTION_KEYS, type SectionKey } from './editor/section-keys.js';
@@ -417,6 +418,54 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     this.requestUpdate();
   };
 
+  // Location panel: latitude / longitude / time_zone live under
+  // `location`, which is dropped again once it is empty. A free-text
+  // zone (browsers without Intl.supportedValuesOf) is only written
+  // when it is a real IANA name.
+  _locationChanged = (event: Event): void => {
+    if (!this._config) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.tagName.toLowerCase() !== 'ha-form') return;
+    const detail = (event as CustomEvent<{ value: Record<string, unknown> }>).detail;
+    const location: Record<string, unknown> = {
+      ...((this._config.location as Record<string, unknown> | undefined) || {}),
+    };
+    for (const [key, value] of Object.entries(detail.value)) {
+      const unset = value === undefined || value === null || value === ''
+        || (key === 'time_zone' && validTimeZone(value) === undefined);
+      if (unset) {
+        delete location[key];
+      } else {
+        location[key] = value;
+      }
+    }
+    const newConfig: Record<string, unknown> = { ...this._config };
+    if (Object.keys(location).length) {
+      newConfig.location = location;
+    } else {
+      delete newConfig.location;
+    }
+    this.configChanged(newConfig);
+    this.requestUpdate();
+  };
+
+  // "Show times in": server is the default and stays out of the YAML.
+  _timeZoneModeChanged = (event: Event): void => {
+    if (!this._config) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.tagName.toLowerCase() !== 'ha-form') return;
+    const detail = (event as CustomEvent<{ value: { time_zone?: string } }>).detail;
+    const next = detail.value?.time_zone;
+    const newConfig: Record<string, unknown> = { ...this._config };
+    if (!next || next === 'server') {
+      delete newConfig.time_zone;
+    } else {
+      newConfig.time_zone = next;
+    }
+    this.configChanged(newConfig);
+    this.requestUpdate();
+  };
+
   // Per-section reset-to-defaults. Walks the SECTION_KEYS list for
   // the given section and removes each key from
   // this._config — letting DEFAULTS take over on the next render.
@@ -493,7 +542,7 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     const loc = resolveLocation(cfg, hass);
     if (!loc) return '';
 
-    const av = readCachedAvailability(loc.latitude, loc.longitude, new Calendar(hass?.config?.time_zone));
+    const av = readCachedAvailability(loc.latitude, loc.longitude, new Calendar(resolveCardTimeZone(cfg, hass?.config?.time_zone).zone));
     if (!av) {
       return html`<div class="hint" style="margin-top:4px;">
         ${t('sunshine_availability_pending')}
@@ -770,6 +819,7 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
         ${renderSensorsSection(this, ctx)}
         ${renderChartSection(this, ctx)}
         ${renderLivePanelSection(this, ctx)}
+        ${renderLocationSection(this, ctx)}
         ${renderUnitsSection(this, ctx)}
         ${renderTapSection(this, ctx)}
         <div class="editor-footer">
