@@ -279,8 +279,8 @@ function byStart(series: ReadonlyArray<StatBucket> | null | undefined): Array<{ 
  *  recorder on 2026-08-28: Aug 27's 00:00 bucket carried Aug 26's
  *  10.3992.)
  *
- *  Each SERVER day's end value is credited to the card day its last
- *  hour starts in; a card day spanning two server days sums both. */
+ *  Each hour's signed change is credited to the card day that hour
+ *  starts in; a card day spanning two server days sums both. */
 export function sunshineDailyTotals(
   series: ReadonlyArray<StatBucket> | null | undefined,
   calendar: Calendar,
@@ -296,26 +296,20 @@ export function sunshineDailyTotals(
     else serverDays.set(sKey, [{ t, v }]);
   }
   const byDay = new Map<string, number>();
-  const credit = (t: number, v: number) => {
-    const key = calendar.dayKey(t);
-    byDay.set(key, (byDay.get(key) ?? 0) + v);
-  };
+  // Signed change per hour: within a server day the steps add up to the
+  // last known value, so a downward forecast revision lowers the total
+  // and a missing last bucket falls back to the latest value.
   for (const hours of serverDays.values()) {
-    const last = hours[hours.length - 1];
-    if (serverCalendar.hourOf(last.t) === 23) {
-      credit(last.t, last.v);
-      continue;
-    }
-    // The day's last hour is not rolled up yet (statistics lag) or has
-    // no value: fall back to the running maximum, crediting its growth
-    // to the card day each hour starts in. Exact for a counter, a lower
-    // bound for a revised forecast until the last hour arrives.
-    let runningMax = 0;
+    let prev = 0;
     for (const { t, v } of hours) {
-      credit(t, Math.max(0, v - runningMax));
-      runningMax = Math.max(runningMax, v);
+      const key = calendar.dayKey(t);
+      byDay.set(key, (byDay.get(key) ?? 0) + (v - prev));
+      prev = v;
     }
   }
+  // A cross-zone split can leave a card day below zero after a downward
+  // revision.
+  for (const [key, v] of byDay) if (v < 0) byDay.set(key, 0);
   return byDay.size ? byDay : null;
 }
 

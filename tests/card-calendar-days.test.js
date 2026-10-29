@@ -154,9 +154,26 @@ describe('sunshineDailyTotals', () => {
     expect(map.get('2026-10-25')).toBe(0.5);
   });
 
-  it('falls back to the running maximum when the last hour is missing', () => {
+  it('uses the latest known value when the last hour is missing', () => {
     const series = hourly('2026-10-26', revised, { skip: [23] });
-    expect(sunshineDailyTotals(series, utc, utc).get('2026-10-26')).toBe(3.65);
+    expect(sunshineDailyTotals(series, utc, utc).get('2026-10-26')).toBeCloseTo(2.52, 9);
+  });
+
+  // Tokyo is UTC+9: its day starts at 15:00Z.
+  const tokyo = new Calendar('Asia/Tokyo');
+
+  it('splits a counter by hour across card days east of the server', () => {
+    const counter = Array.from({ length: 24 }, (_, h) => h * 0.5);
+    const map = sunshineDailyTotals(hourly('2026-10-26', counter), tokyo, utc);
+    // 00:00Z-14:00Z are Oct 26 in Tokyo, 15:00Z-23:00Z are Oct 27.
+    expect(map.get('2026-10-26')).toBeCloseTo(7, 9);
+    expect(map.get('2026-10-27')).toBeCloseTo(4.5, 9);
+  });
+
+  it('clamps a card day at 0 when a downward revision lands in it', () => {
+    const map = sunshineDailyTotals(hourly('2026-10-26', revised), tokyo, utc);
+    expect(map.get('2026-10-26')).toBeCloseTo(2.8, 9);
+    expect(map.get('2026-10-27')).toBe(0);
   });
 });
 
