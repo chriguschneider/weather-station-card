@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Past days' sunshine bars from a sunshine sensor now show the day's final value. A sensor that revises its forecast during the day (MeteoSwiss «sunshine duration today») no longer keeps its highest intermediate value.
+
 ## [3.0.0-beta.1] — 2026-10-29
 
 **Beta.** This pre-release is for testing cards at another place. Install it only if you enabled "Show beta versions" for this card in HACS; everybody else keeps 2.14.0 and gets 3.0.0 once the beta has run for about a week without problems. Please report what you see in [#358](https://github.com/chriguschneider/weather-station-card/issues/358). The version is 3.0 because the card's time model changes (see "Changed"); existing configurations keep working unchanged.

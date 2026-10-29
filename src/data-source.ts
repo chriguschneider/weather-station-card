@@ -262,38 +262,59 @@ function byStart(series: ReadonlyArray<StatBucket> | null | undefined): Array<{ 
     .sort((x, y) => x.t - y.t);
 }
 
-/** Each card day's sunshine total from a sunshine-duration counter's
- *  HOURLY statistics.
+/** Each card day's sunshine total from a sunshine-duration sensor's
+ *  HOURLY statistics: the value at the END of the day.
  *
- *  The counter resets at the SENSOR's midnight (a utility meter runs
- *  in the server zone), and the reset lands a beat AFTER the hour rolls
- *  over, so HA records the server's 00:00 bucket as `min 0, max
- *  <yesterday's final>`. Its `min` is the post-reset floor; every other
- *  hour's `max` is the running total at the hour's end. (Verified
- *  against a live recorder on 2026-08-28: Aug 27's 00:00 bucket carried
- *  Aug 26's 10.3992.)
+ *  The sensor is either a counter that resets at the SENSOR's midnight
+ *  (a utility meter runs in the server zone) or a forecast total that
+ *  is revised during the day, up AND down (hass-meteoswiss-weather
+ *  "sunshine duration today"). The last hour's value is the final
+ *  total for both; a running maximum would keep a forecast's highest
+ *  intermediate value.
  *
- *  Within one server day the running maximum of those values only
- *  grows; each hour credits its growth to the card day the hour starts
- *  in. With the card in the server zone this is the server day's
- *  maximum, as before #355. */
+ *  The counter reset lands a beat AFTER the hour rolls over, so HA
+ *  records the server's 00:00 bucket as `min 0, max <yesterday's
+ *  final>`. Its `min` is the post-reset floor; every other hour's
+ *  `max` is the value at the hour's end. (Verified against a live
+ *  recorder on 2026-08-28: Aug 27's 00:00 bucket carried Aug 26's
+ *  10.3992.)
+ *
+ *  Each SERVER day's end value is credited to the card day its last
+ *  hour starts in; a card day spanning two server days sums both. */
 export function sunshineDailyTotals(
   series: ReadonlyArray<StatBucket> | null | undefined,
   calendar: Calendar,
   serverCalendar: Calendar,
 ): Map<string, number> | null {
-  const byDay = new Map<string, number>();
-  let serverDay = '';
-  let runningMax = 0;
+  const serverDays = new Map<string, Array<{ t: number; v: number }>>();
   for (const { b, t } of byStart(series)) {
     const v = serverCalendar.hourOf(t) === 0 ? b.min : b.max;
     if (!finite(v)) continue;
     const sKey = serverCalendar.dayKey(t);
-    if (sKey !== serverDay) { serverDay = sKey; runningMax = 0; }
-    const grow = Math.max(0, v - runningMax);
-    runningMax = Math.max(runningMax, v);
+    const hours = serverDays.get(sKey);
+    if (hours) hours.push({ t, v });
+    else serverDays.set(sKey, [{ t, v }]);
+  }
+  const byDay = new Map<string, number>();
+  const credit = (t: number, v: number) => {
     const key = calendar.dayKey(t);
-    byDay.set(key, (byDay.get(key) ?? 0) + grow);
+    byDay.set(key, (byDay.get(key) ?? 0) + v);
+  };
+  for (const hours of serverDays.values()) {
+    const last = hours[hours.length - 1];
+    if (serverCalendar.hourOf(last.t) === 23) {
+      credit(last.t, last.v);
+      continue;
+    }
+    // The day's last hour is not rolled up yet (statistics lag) or has
+    // no value: fall back to the running maximum, crediting its growth
+    // to the card day each hour starts in. Exact for a counter, a lower
+    // bound for a revised forecast until the last hour arrives.
+    let runningMax = 0;
+    for (const { t, v } of hours) {
+      credit(t, Math.max(0, v - runningMax));
+      runningMax = Math.max(runningMax, v);
+    }
   }
   return byDay.size ? byDay : null;
 }
@@ -890,9 +911,10 @@ export class MeasuredDataSource {
       let sunshineRaw = sensors.sunshine_duration
         ? at(sensors.sunshine_duration, 'max')
         : null;
-      // Prefer the hourly-recovered total: the daily max above reports
+      // Prefer the hourly end-of-day value: the daily max above reports
       // `max(yesterday, this day)` because the midnight reset leaves the
-      // previous day's final value inside this day's 00:00 bucket.
+      // previous day's final value inside this day's 00:00 bucket, and
+      // it keeps a revised forecast's highest intermediate value.
       if (sensors.sunshine_duration && sunshineByDate) {
         const recovered = sunshineByDate.get(this.calendar.dayKey(dayStart));
         if (recovered != null) sunshineRaw = recovered;
