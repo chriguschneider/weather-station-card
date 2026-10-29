@@ -6,41 +6,37 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.0.0-beta.1] — 2026-10-29
+
+**Beta.** This pre-release is for testing cards at another place. Install it only if you enabled "Show beta versions" for this card in HACS; everybody else keeps 2.14.0 and gets 3.0.0 once the beta has run for about a week without problems. Please report what you see in [#358](https://github.com/chriguschneider/weather-station-card/issues/358). The version is 3.0 because the card's time model changes (see "Changed"); existing configurations keep working unchanged.
+
 ### Added
 
-- `location.time_zone` and `time_zone: location`: a card for another place shows everything, clock, sun, moon, next rain and the chart's days, in that place's time zone. `time_zone` accepts `server` (default), `location` or an IANA name, and the editor has a new Location panel (#343, #351). The editor labels are English in all languages except German until native speakers translate them.
+- **A card for another place.** With `location: {latitude, longitude, time_zone}` and `time_zone: location`, everything on the card, clock, sun, moon, next rain, the chart's days and axes, is in that place's time; with `time_zone: server` the card shows that place's weather in your own time. `time_zone` accepts `server` (default), `location` or an IANA name (#343, #351).
+- **Location panel, first in the editor.** It shows your Home Assistant home until "Use another location" is switched on; then a place search, a map with a draggable marker and a button "Determine elevation and time zone" fill in coordinates, elevation and time zone (one Open-Meteo request per click, nothing is fetched on its own). Site elevation lives here now (`location.elevation`; the old top-level `elevation` still works). The new labels are English in all languages except German until native speakers translate them.
+- "Time format" selector (24-hour / 12-hour) below the attributes board, for the clock and the attributes row; the clock dropdown is now Off / On / On with seconds (#343).
 
 ### Changed
 
-- Editor: the Location panel is now first and shows the Home Assistant home until "Use another location" is switched on; a place search, a map with draggable marker and a button fetch coordinates, elevation and time zone from Open-Meteo on request. Site elevation moved to the Location panel (`location.elevation`; top-level `elevation` still works). The new labels are English in all languages except German.
-- Daily columns are now cut by the card's calendar from hourly statistics, so a card for another time zone shows that zone's days (#343). Daily forecasts are read as calendar days, so providers that write UTC midnight (core Open-Meteo, MeteoSwiss) no longer show the previous day west of UTC. Nothing to change in your configuration.
-- Sunrise, sunset, moon and solar strength follow the card's `location`, so a card for another place shows that place's sun (#351). The sunrise/sunset row is now computed in the card and shows today's times (tomorrow's once both have passed); it is no longer a link to the `sun.sun` entity.
-- The editor has a "Time format" selector (24-hour / 12-hour) below the attributes board that applies to the clock and the attributes row times, so 12-hour times no longer require the clock. The clock dropdown is now Off / On / On with seconds. Existing configs keep working unchanged (#343).
+- Daily columns are cut by the card's calendar from hourly statistics, so a card for another time zone shows that zone's days (#343). Daily forecasts are read as calendar days, so providers that write UTC midnight (core Open-Meteo, MeteoSwiss) no longer show the previous day west of UTC. Nothing to change in your configuration.
+- Sunrise, sunset, moon and solar strength follow the card's `location` (#351). The sunrise/sunset row is computed in the card and shows today's times (tomorrow's once both have passed); it is no longer a link to the `sun.sun` entity.
 
 ### Fixed
 
 - Open-Meteo sunshine and past-data hours were shifted when `location` lay in another time zone than the server, and by one hour across a daylight-saving change.
+- Lux sunshine cache refetched the whole history every hour when the browser was east of the Home Assistant server.
 
 ### Removed
 
-- Unused SVG weather icons in `dist/icons/`, left over from the animated icon set removed in v1.9. The card has used Home Assistant's own icons since then; nothing changes on screen.
-
-### Fixed
-
-- Lux sunshine cache refetched the whole history every hour when the browser was east of the Home Assistant server.
+- Unused SVG weather icons in `dist/icons/`, left over from the animated icon set removed in v1.9. Nothing changes on screen.
 
 ### Documentation
 
-- The README now explains the snow line rows (zero-degree level, the
-  48 h trend row, the popup), the sunshine source order, the
-  `forecast.openmeteo`, `location` and `debug` options and how this
-  card works together with MeteoSwiss Weather and MeteoSwiss Radar.
-  The configuration reference no longer marks shipped features as
-  unreleased and corrects several defaults.
+- The README explains the snow line rows, the sunshine source order, the `forecast.openmeteo`, `location` and `debug` options and how this card works together with MeteoSwiss Weather and MeteoSwiss Radar; the configuration reference no longer marks shipped features as unreleased and corrects several defaults.
 
 ### Under the hood
 
-- Each card keeps its own time zone instead of sharing one per page, the groundwork for cards at different locations (#354, ADR-0030).
+- Each card keeps its own time zone instead of sharing one per page (#354, ADR-0030).
 
 ## [2.14.0] — 2026-10-21
 
