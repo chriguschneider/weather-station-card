@@ -9,6 +9,9 @@ import {
   normalizeHourlyDatetime,
 } from '../src/forecast-utils.js';
 import { Calendar } from '../src/utils/time-zone.js';
+import sunshineStats from './fixtures/sunshine-duration-today-statistics.json';
+
+const zurich = new Calendar('Europe/Zurich');
 
 const HOUR_MS = 3600_000;
 
@@ -122,9 +125,18 @@ describe('sunshineDailyTotals', () => {
     expect(own.get('2026-07-02')).toBe(4);
   });
 
-  // Hourly buckets for one UTC day; `values[h]` is the hour's max (the
-  // 00:00 bucket also gets the min). Values follow the table in #370,
-  // not a recorder export.
+  it('reads the final value of each day from a real recorder export (#370)', () => {
+    // recorder/statistics_during_period, hourly, Europe/Zurich (CET since
+    // 2026-10-25). The 27.10. 00:00 bucket carries 2.52 over from 26.10.
+    const rows = sunshineStats['sensor.kleine_scheidegg_sunshine_duration_today'];
+    const map = sunshineDailyTotals(rows, zurich, zurich);
+    expect(map.get('2026-10-26')).toBe(2.52);
+    expect(map.get('2026-10-27')).toBe(6.12);
+  });
+
+  // Synthetic hourly buckets for one UTC day; `values[h]` is the hour's
+  // max (the 00:00 bucket also gets the min). Shape follows the table
+  // in #370.
   const utc = new Calendar('UTC');
   const hourly = (date, values, { skip = [] } = {}) =>
     values.map((max, h) => ({ start: `${date}T${String(h).padStart(2, '0')}:00:00Z`, min: h === 0 ? 0 : max, max }))
