@@ -2,7 +2,7 @@
 // they can be unit-tested without pulling in Lit, Chart.js, or HA — vitest
 // runs in node (no jsdom) and these stay fully exercisable there.
 
-import { Calendar } from './utils/time-zone.js';
+import type { Calendar } from './utils/time-zone.js';
 
 /** Forecast entry shape consumed by the chart. Both data sources
  *  (`MeasuredDataSource`, `ForecastDataSource`) emit objects matching
@@ -636,24 +636,38 @@ function parseIso(s: string): IsoParts | null {
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
 
-/** `YYYY-MM-DD` day key of a daily forecast entry's `datetime`:
+const isMidnightIn = (cal: Calendar, t: number): boolean => cal.startOfDay(t).getTime() === t;
+
+/** `YYYY-MM-DD` day key of a daily forecast entry's `datetime`, a day of
+ *  the card's calendar (ADR-0030, #355, #377):
  *    - bare date → that date
+ *    - no offset → wall time in the card calendar, i.e. the written date
  *    - explicit non-zero offset → the date in that offset (as written)
- *    - UTC at exactly midnight → the UTC date
- *    - anything else (UTC at another hour, no offset) → the date in
- *      the server zone, which is how the card read it before #355.
+ *    - UTC at exactly midnight (core Open-Meteo) → the UTC date
+ *    - UTC at another hour → the card-calendar date, except an instant
+ *      that is midnight in the server zone but not in the card's: that
+ *      is a server-zone provider writing its local midnight in UTC
+ *      (AccuWeather), so the server date.
  *  null when the string is not a date. */
-export function normalizeDailyEntry(datetime: string, serverZone: string): string | null {
+export function normalizeDailyEntry(
+  datetime: string,
+  cardCalendar: Calendar,
+  serverCalendar: Calendar,
+): string | null {
   const p = parseIso(datetime);
   if (!p) {
     const t = Date.parse(datetime);
-    return Number.isFinite(t) ? new Calendar(serverZone).dayKey(t) : null;
+    return Number.isFinite(t) ? cardCalendar.dayKey(t) : null;
   }
   const written = `${p.year}-${pad2(p.month)}-${pad2(p.day)}`;
   if (p.hour === undefined || p.offsetMin === undefined) return written;
   if (p.offsetMin !== 0) return written;
   if (p.hour === 0 && p.minute === 0 && p.second === 0) return written;
-  return new Calendar(serverZone).dayKey(Date.parse(datetime));
+  const t = Date.parse(datetime);
+  if (!isMidnightIn(cardCalendar, t) && isMidnightIn(serverCalendar, t)) {
+    return serverCalendar.dayKey(t);
+  }
+  return cardCalendar.dayKey(t);
 }
 
 /** Daily forecast `datetime` re-anchored at the card-calendar midnight
@@ -661,10 +675,10 @@ export function normalizeDailyEntry(datetime: string, serverZone: string): strin
  *  null when the string is not a date. */
 export function anchorDailyDatetime(
   datetime: string,
-  serverZone: string,
   calendar: Calendar,
+  serverCalendar: Calendar,
 ): string | null {
-  const key = normalizeDailyEntry(datetime, serverZone);
+  const key = normalizeDailyEntry(datetime, calendar, serverCalendar);
   if (!key) return null;
   const [y, m, d] = key.split('-').map(Number);
   return calendar.zonedDate(y, m, d).toISOString();
@@ -673,19 +687,20 @@ export function anchorDailyDatetime(
 let warnedBareHourly = false;
 
 /** Hourly forecast `datetime` as an absolute ISO instant. Core requires
- *  an offset; a string without one is read as server-zone wall time
- *  (warned once per page) instead of the browser's zone. Strings with
- *  an offset, and anything unparseable, pass through unchanged. */
-export function normalizeHourlyDatetime(datetime: string, serverZone: string): string {
+ *  an offset; a string without one is read as wall time of the card's
+ *  calendar (warned once per page) instead of the browser's zone.
+ *  Strings with an offset, and anything unparseable, pass through
+ *  unchanged. */
+export function normalizeHourlyDatetime(datetime: string, calendar: Calendar): string {
   const p = parseIso(datetime);
   if (!p || p.offsetMin !== undefined) return datetime;
   if (!warnedBareHourly) {
     warnedBareHourly = true;
     console.warn(
-      `[weather-station-card] hourly forecast datetime "${datetime}" has no UTC offset; reading it in ${serverZone}`,
+      `[weather-station-card] hourly forecast datetime "${datetime}" has no UTC offset; reading it in ${calendar.timeZone}`,
     );
   }
-  return new Calendar(serverZone).zonedDate(p.year, p.month, p.day, p.hour ?? 0, p.minute).toISOString();
+  return calendar.zonedDate(p.year, p.month, p.day, p.hour ?? 0, p.minute).toISOString();
 }
 
 /** Drop forecast entries whose datetime is strictly before today's
