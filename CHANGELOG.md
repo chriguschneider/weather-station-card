@@ -9,6 +9,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - A card for a place far east of the server showed its daily forecast one day early when the provider writes local midnight in UTC. Hourly forecast times without a time zone are now read in the card's time zone, too.
+- Two cards for the same place in different time zones no longer share cached Open-Meteo sunshine and rain data; changing a card's time zone no longer shows the previous zone's hours until the cache expires.
 
 ## [3.0.0-beta.2] — 2026-10-30
 

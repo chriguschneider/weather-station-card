@@ -69,19 +69,24 @@ const HOURLY_FIELDS = [
 // catches new model runs without hammering the API.
 const REFRESH_TTL_MS = 60 * 60 * 1000;
 
-// LocalStorage key prefix. Keyed by lat/lon-rounded-to-2 so two
-// dashboards at the same location share the cache, but a dashboard at
-// a different location doesn't accidentally see stale far-away data.
-// The `v2` segment is the schema version (ADR-0020): v1 entries held
-// keys built from civil times read in the wrong zone, so they are never
-// read again.
-const STORAGE_PREFIX = 'wsc_sunshine_v2_';
+// LocalStorage key prefix. Keyed by lat/lon-rounded-to-2 plus the
+// card's time zone: the cached hour keys and daily midnights are already
+// cut in that zone (ADR-0030), so two cards at the same place in
+// different zones must not share an entry. The `v3` segment is the
+// schema version (ADR-0020): v1 read civil times in the wrong zone, v2
+// lacked the zone; neither is read again and v2 entries are swept.
+const STORAGE_PREFIX = 'wsc_sunshine_v3_';
+const LEGACY_PREFIX = 'wsc_sunshine_v2_';
 
 /** Subset of the Web Storage API the source uses. Allows tests /
  *  unsupported environments to inject their own. */
 export interface StorageLike {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
+  /** Optional enumeration / removal, used only for the legacy sweep. */
+  readonly length?: number;
+  key?(index: number): string | null;
+  removeItem?(key: string): void;
 }
 
 /** Subset of the Fetch API the source uses. Allows tests to inject a
@@ -433,16 +438,34 @@ export function buildHourlyForecast(
   return out;
 }
 
-function storageKey(lat: number, lon: number): string {
-  return `${STORAGE_PREFIX}${lat.toFixed(2)}_${lon.toFixed(2)}`;
+function storageKey(lat: number, lon: number, timeZone: string): string {
+  // IANA names carry `/` (America/Denver); keep the key one flat token.
+  const zone = timeZone.replace(/[^A-Za-z0-9_+-]/g, '-');
+  return `${STORAGE_PREFIX}${lat.toFixed(2)}_${lon.toFixed(2)}_${zone}`;
+}
+
+/** Remove zone-less `v2` entries: they were cut in whichever zone wrote
+ *  them last, so no card can trust them. */
+function sweepLegacyEntries(storage: StorageLike | null): void {
+  if (!storage?.key || !storage.removeItem || typeof storage.length !== 'number') return;
+  try {
+    const stale: string[] = [];
+    for (let i = 0; i < storage.length; i++) {
+      const k = storage.key(i);
+      if (k?.startsWith(LEGACY_PREFIX)) stale.push(k);
+    }
+    for (const k of stale) storage.removeItem(k);
+  } catch {
+    // Storage iteration can throw in hardened contexts — skip the sweep.
+  }
 }
 
 /** Best-effort persistence so a page reload doesn't always re-fetch.
  *  Returns null on any error (private mode, quota, JSON corruption, …). */
-function loadFromStorage(storage: StorageLike | null, lat: number, lon: number): CachedPayload | null {
+function loadFromStorage(storage: StorageLike | null, lat: number, lon: number, timeZone: string): CachedPayload | null {
   if (!storage) return null;
   try {
-    const raw = storage.getItem(storageKey(lat, lon));
+    const raw = storage.getItem(storageKey(lat, lon, timeZone));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return null;
@@ -455,10 +478,10 @@ function loadFromStorage(storage: StorageLike | null, lat: number, lon: number):
   }
 }
 
-function saveToStorage(storage: StorageLike | null, lat: number, lon: number, payload: CachedPayload): void {
+function saveToStorage(storage: StorageLike | null, lat: number, lon: number, timeZone: string, payload: CachedPayload): void {
   if (!storage) return;
   try {
-    storage.setItem(storageKey(lat, lon), JSON.stringify(payload));
+    storage.setItem(storageKey(lat, lon, timeZone), JSON.stringify(payload));
   } catch (err) {
     // Quota exceeded or private-mode storage rejection — the cache
     // write is best-effort; silent failure is correct here.
@@ -484,7 +507,7 @@ export function readCachedAvailability(
   const store = storage !== undefined ? storage : fallbackStore;
   if (!store) return null;
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-  const cached = loadFromStorage(store, latitude, longitude);
+  const cached = loadFromStorage(store, latitude, longitude, calendar.timeZone);
   if (!cached) return null;
 
   const todayMs = calendar.startOfDay(now).getTime();
@@ -583,8 +606,9 @@ export class OpenMeteoSource {
     this._now = now ?? (() => Date.now());
     this._calendar = calendar;
 
+    sweepLegacyEntries(this._storage);
     if (Number.isFinite(this.latitude) && Number.isFinite(this.longitude)) {
-      const cached = loadFromStorage(this._storage, this.latitude as number, this.longitude as number);
+      const cached = loadFromStorage(this._storage, this.latitude as number, this.longitude as number, calendar.timeZone);
       if (cached) {
         if (Array.isArray(cached.daily)) this._daily = cached.daily;
         if (Array.isArray(cached.hourly)) this._hourly = cached.hourly;
@@ -712,7 +736,7 @@ export class OpenMeteoSource {
         this._hourlyProbability = this.includeHourly ? parseHourlyProbability(json, this._calendar) : [];
         this._probabilityFetched = true;
         this._lastFetchMs = this._now();
-        saveToStorage(this._storage, this.latitude as number, this.longitude as number, {
+        saveToStorage(this._storage, this.latitude as number, this.longitude as number, this._calendar.timeZone, {
           daily: this._daily,
           hourly: this._hourly,
           dailyForecast: this._dailyForecast,

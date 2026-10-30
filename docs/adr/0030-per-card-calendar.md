@@ -153,6 +153,23 @@ in `set hass` and in `setConfig`, so an edited option applies at once.
   `hass.config.time_zone` directly; they describe the server, not the
   card.
 
+## Amendment 2026-10-30 (#378): the sunshine cache carries the zone
+
+The Decision above lists `wsc_sunshine_*` as "versioned in #353", but
+that version had no zone. Its entries hold hour keys and daily
+midnights already cut in the card's zone, so two cards for the same
+place in different zones (or one card after a `time_zone` change) read
+each other's hours until the entry expired.
+
+- The key is now `wsc_sunshine_v3_<lat>_<lon>_<zone>`, the IANA zone
+  with every character outside `[A-Za-z0-9_+-]` replaced by `-`
+  (`America/Denver` → `America-Denver`). `readCachedAvailability` (the
+  editor's day count) uses the same key with the card's calendar.
+- Zone-less `wsc_sunshine_v2_*` entries are never read; the source's
+  constructor removes them in one `localStorage` sweep.
+- Chosen over storing the raw response and cutting on read: the parsed
+  cache and its consumers stay as they are.
+
 ## Related
 
 - Issue #354 — this change; #343 / #358 — one card per location (v3.0)
