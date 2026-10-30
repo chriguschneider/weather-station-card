@@ -210,8 +210,8 @@ describe('normalizeDailyEntry', () => {
     it(`yields the provider's date for a card in ${zone}`, () => {
       const card = new Calendar(zone);
       for (const dt of list) {
-        expect(normalizeDailyEntry(dt, zone)).toBe('2026-10-22');
-        const anchored = anchorDailyDatetime(dt, zone, card);
+        expect(normalizeDailyEntry(dt, card, card)).toBe('2026-10-22');
+        const anchored = anchorDailyDatetime(dt, card, card);
         expect(card.dayKey(new Date(anchored))).toBe('2026-10-22');
         expect(card.hourOf(new Date(anchored))).toBe(0);
       }
@@ -220,36 +220,78 @@ describe('normalizeDailyEntry', () => {
 
   it('keeps the provider date when the card is in another zone than the server', () => {
     const denver = new Calendar('America/Denver');
+    const zurich = new Calendar('Europe/Zurich');
     for (const dt of forms['Europe/Zurich']) {
-      const anchored = anchorDailyDatetime(dt, 'Europe/Zurich', denver);
+      const anchored = anchorDailyDatetime(dt, denver, zurich);
       expect(anchored).toBe('2026-10-22T06:00:00.000Z');
     }
   });
 
+  describe('reads UTC times in the card calendar, not the server one (#377)', () => {
+    const zurich = new Calendar('Europe/Zurich');
+    const tokyo = new Calendar('Asia/Tokyo');
+    const denver = new Calendar('America/Denver');
+
+    it('card east of the server', () => {
+      // 07:00 Tokyo on 27.10. is 23:00 on 26.10. in Zurich (CET).
+      expect(normalizeDailyEntry('2026-10-26T22:00:00+00:00', tokyo, zurich)).toBe('2026-10-27');
+      expect(normalizeDailyEntry('2026-10-27T00:00:00+09:00', tokyo, zurich)).toBe('2026-10-27');
+      expect(anchorDailyDatetime('2026-10-26T22:00:00+00:00', tokyo, zurich)).toBe('2026-10-26T15:00:00.000Z');
+    });
+
+    it('card west of the server', () => {
+      // 00:00 Denver (MDT) on 27.10.
+      expect(normalizeDailyEntry('2026-10-27T06:00:00+00:00', denver, zurich)).toBe('2026-10-27');
+    });
+
+    it('still reads a server-zone provider writing its midnight in UTC as the server date', () => {
+      // 00:00 Zurich (CET) on 27.10.; 08:00 in Tokyo.
+      expect(normalizeDailyEntry('2026-10-26T23:00:00+00:00', tokyo, zurich)).toBe('2026-10-27');
+      // 17:00 on 26.10. in Denver: server midnight wins.
+      expect(normalizeDailyEntry('2026-10-26T23:00:00+00:00', denver, zurich)).toBe('2026-10-27');
+    });
+
+    it('prefers the card midnight over the server one', () => {
+      // UTC+14 and UTC-10 are a day apart: 10:00Z is midnight in both.
+      const kiritimati = new Calendar('Pacific/Kiritimati');
+      const honolulu = new Calendar('Pacific/Honolulu');
+      expect(normalizeDailyEntry('2026-10-26T10:00:00Z', kiritimati, honolulu)).toBe('2026-10-27');
+    });
+
+    it('falls back to Date parsing in the card calendar', () => {
+      expect(normalizeDailyEntry('Mon, 26 Oct 2026 22:00:00 GMT', tokyo, zurich)).toBe('2026-10-27');
+    });
+  });
+
   it('reads Z and offsets without a colon', () => {
-    expect(normalizeDailyEntry('2026-10-22T00:00:00Z', 'America/Denver')).toBe('2026-10-22');
-    expect(normalizeDailyEntry('2026-10-22T00:00:00.000Z', 'America/Denver')).toBe('2026-10-22');
-    expect(normalizeDailyEntry('2026-10-22T12:00:00-0600', 'Europe/Zurich')).toBe('2026-10-22');
-    // UTC, not midnight → server-zone date.
-    expect(normalizeDailyEntry('2026-10-22T03:00:00Z', 'America/Denver')).toBe('2026-10-21');
-    // No offset → server-zone wall time, i.e. the written date.
-    expect(normalizeDailyEntry('2026-10-22T23:00:00', 'Asia/Tokyo')).toBe('2026-10-22');
+    const denver = new Calendar('America/Denver');
+    const zurich = new Calendar('Europe/Zurich');
+    const tokyo = new Calendar('Asia/Tokyo');
+    expect(normalizeDailyEntry('2026-10-22T00:00:00Z', denver, denver)).toBe('2026-10-22');
+    expect(normalizeDailyEntry('2026-10-22T00:00:00.000Z', denver, denver)).toBe('2026-10-22');
+    expect(normalizeDailyEntry('2026-10-22T12:00:00-0600', zurich, zurich)).toBe('2026-10-22');
+    // UTC, not midnight → card-calendar date.
+    expect(normalizeDailyEntry('2026-10-22T03:00:00Z', denver, denver)).toBe('2026-10-21');
+    // No offset → card-calendar wall time, i.e. the written date.
+    expect(normalizeDailyEntry('2026-10-22T23:00:00', tokyo, zurich)).toBe('2026-10-22');
   });
 
   it('falls back to Date parsing, null for garbage', () => {
-    expect(normalizeDailyEntry('Thu, 22 Oct 2026 12:00:00 GMT', 'Europe/Zurich')).toBe('2026-10-22');
-    expect(normalizeDailyEntry('not a date', 'Europe/Zurich')).toBe(null);
-    expect(anchorDailyDatetime('not a date', 'Europe/Zurich', new Calendar('UTC'))).toBe(null);
+    const zurich = new Calendar('Europe/Zurich');
+    expect(normalizeDailyEntry('Thu, 22 Oct 2026 12:00:00 GMT', zurich, zurich)).toBe('2026-10-22');
+    expect(normalizeDailyEntry('not a date', zurich, zurich)).toBe(null);
+    expect(anchorDailyDatetime('not a date', new Calendar('UTC'), zurich)).toBe(null);
   });
 });
 
 describe('normalizeHourlyDatetime', () => {
-  it('passes instants through and reads a bare string in the server zone, warning once', () => {
+  it('passes instants through and reads a bare string in the card calendar, warning once', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(normalizeHourlyDatetime('2026-10-22T13:00:00+00:00', 'Asia/Tokyo')).toBe('2026-10-22T13:00:00+00:00');
-    expect(normalizeHourlyDatetime('garbage', 'Asia/Tokyo')).toBe('garbage');
-    expect(normalizeHourlyDatetime('2026-10-22T13:00:00', 'Asia/Tokyo')).toBe('2026-10-22T04:00:00.000Z');
-    expect(normalizeHourlyDatetime('2026-10-22T14:00', 'Asia/Tokyo')).toBe('2026-10-22T05:00:00.000Z');
+    const tokyo = new Calendar('Asia/Tokyo');
+    expect(normalizeHourlyDatetime('2026-10-22T13:00:00+00:00', tokyo)).toBe('2026-10-22T13:00:00+00:00');
+    expect(normalizeHourlyDatetime('garbage', tokyo)).toBe('garbage');
+    expect(normalizeHourlyDatetime('2026-10-22T13:00:00', tokyo)).toBe('2026-10-22T04:00:00.000Z');
+    expect(normalizeHourlyDatetime('2026-10-22T14:00', tokyo)).toBe('2026-10-22T05:00:00.000Z');
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });

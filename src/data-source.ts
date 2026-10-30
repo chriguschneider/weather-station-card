@@ -1272,11 +1272,11 @@ export class ForecastDataSource {
       this._unsubPromise = this.hass.connection.subscribeMessage(
         (event) => {
           const raw = (event.forecast as ForecastEntry[]) || [];
-          // Read in the server zone at event time: `hass` may have been
-          // swapped since the subscription.
-          const serverZone = new Calendar(this.hass?.config?.time_zone).timeZone;
+          // Resolve the server calendar at event time: `hass` may have
+          // been swapped since the subscription.
+          const serverCal = new Calendar(this.hass?.config?.time_zone);
           this._emit({
-            forecast: raw.map((e) => this._normalizeEntry(e, isHourly, serverZone, wxWindUnit)),
+            forecast: raw.map((e) => this._normalizeEntry(e, isHourly, serverCal, wxWindUnit)),
           });
         },
         {
@@ -1297,15 +1297,15 @@ export class ForecastDataSource {
   private _normalizeEntry(
     e: ForecastEntry,
     isHourly: boolean,
-    serverZone: string,
+    serverCal: Calendar,
     windUnit: string | undefined,
   ): ForecastEntry {
     const raw: unknown = e?.datetime;
     let datetime: string | null = null;
     if (typeof raw === 'string') {
       const fixed = isHourly
-        ? normalizeHourlyDatetime(raw, serverZone)
-        : anchorDailyDatetime(raw, serverZone, this.calendar);
+        ? normalizeHourlyDatetime(raw, this.calendar)
+        : anchorDailyDatetime(raw, this.calendar, serverCal);
       if (fixed && fixed !== raw) datetime = fixed;
     }
     if (datetime === null && !windUnit) return e;
