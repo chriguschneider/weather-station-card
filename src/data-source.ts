@@ -288,7 +288,7 @@ export function sunshineDailyTotals(
 ): Map<string, number> | null {
   const serverDays = new Map<string, Array<{ t: number; v: number }>>();
   for (const { b, t } of byStart(series)) {
-    const v = serverCalendar.hourOf(t) === 0 ? b.min : b.max;
+    const v = sunshineHourValue(b, t, serverCalendar);
     if (!finite(v)) continue;
     const sKey = serverCalendar.dayKey(t);
     const hours = serverDays.get(sKey);
@@ -311,6 +311,31 @@ export function sunshineDailyTotals(
   // revision.
   for (const [key, v] of byDay) if (v < 0) byDay.set(key, 0);
   return byDay.size ? byDay : null;
+}
+
+/** The sensor value an hourly sunshine bucket stands for; see
+ *  `sunshineDailyTotals` for why the server's 00:00 bucket reads `min`. */
+function sunshineHourValue(b: StatBucket, t: number, serverCalendar: Calendar): number | null | undefined {
+  return serverCalendar.hourOf(t) === 0 ? b.min : b.max;
+}
+
+/** The value of the newest hourly bucket inside the server day that
+ *  contains `now`: the part of the live sensor state that
+ *  `sunshineDailyTotals` has already credited to card days. 0 before
+ *  the first bucket of that server day, where the counter starts. */
+export function sunshineServerDayLast(
+  series: ReadonlyArray<StatBucket> | null | undefined,
+  serverCalendar: Calendar,
+  now: number,
+): number {
+  const dayKey = serverCalendar.dayKey(now);
+  let last = 0;
+  for (const { b, t } of byStart(series)) {
+    if (t > now || serverCalendar.dayKey(t) !== dayKey) continue;
+    const v = sunshineHourValue(b, t, serverCalendar);
+    if (finite(v)) last = v;
+  }
+  return last;
 }
 
 /** 1-entry cache shared between the call site and `fetchPressure3hDelta`.
@@ -646,11 +671,20 @@ export class MeasuredDataSource {
     // lux/clearsky_lux ratio. Skipped silently if either input is
     // missing — Open-Meteo overlay or F3 then fills the row.
     const luxByDate = await this._fetchLuxSunshine(sensors, dayStart, this.calendar.addDays(todayStart, 1));
+    const serverCal = this._serverCalendar();
+    const sunshineSeries = sensors.sunshine_duration ? stats?.[sensors.sunshine_duration] : null;
     const sunshineByDate = sensors.sunshine_duration
-      ? sunshineDailyTotals(stats?.[sensors.sunshine_duration], this.calendar, this._serverCalendar())
+      ? sunshineDailyTotals(sunshineSeries, this.calendar, serverCal)
+      : null;
+    // The live sensor state runs since the SERVER's midnight; only when
+    // that is the card's midnight too is it today's value as is (#379).
+    const now = Date.now();
+    const sunshineServerLast = sensors.sunshine_duration
+      && serverCal.startOfDay(now).getTime() !== todayStart.getTime()
+      ? sunshineServerDayLast(sunshineSeries, serverCal, now)
       : null;
 
-    return this._buildForecast(daily, sensors, dayStart, days, luxByDate, sunshineByDate);
+    return this._buildForecast(daily, sensors, dayStart, days, luxByDate, sunshineByDate, sunshineServerLast);
   }
 
   /** The HA server's calendar. Counters that reset at midnight (a
@@ -819,6 +853,7 @@ export class MeasuredDataSource {
     days: number,
     luxByDate: Map<string, number> | null = null,
     sunshineByDate: Map<string, number> | null = null,
+    sunshineServerLast: number | null = null,
   ): ForecastEntry[] {
     // Index each entity's series by midnight-of-day so day alignment doesn't
     // depend on positional indices (the API omits entries for empty days).
@@ -921,9 +956,18 @@ export class MeasuredDataSource {
       // uncorrected daily bucket max() would just re-elect the stale
       // carry-over, which is exactly the reported symptom (a 30-minute
       // morning drawn as yesterday's 11 h).
+      //
+      // `sunshineServerLast` is set when the server's day starts at
+      // another instant than the card's, so the live state spans another
+      // day: take the hourly card-day total plus the live growth since
+      // the last recorded hour of the server day (#379).
       if (isToday && sensors.sunshine_duration) {
         const live = this._liveNumber(sensors.sunshine_duration);
-        if (live != null) sunshineRaw = live;
+        if (live != null) {
+          sunshineRaw = sunshineServerLast == null
+            ? live
+            : Math.max(0, (sunshineByDate?.get(this.calendar.dayKey(dayStart)) ?? 0) + live - sunshineServerLast);
+        }
       }
       // B2 fallback: when no recorder sunshine sensor resolved
       // a value, look up the per-day total from the lux-derivation
