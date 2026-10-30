@@ -80,7 +80,7 @@ describe('chance-of-rain fields', () => {
   it('a cache written before the fields were requested is stale once', async () => {
     const store = new Map();
     const storage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
-    const key = 'wsc_sunshine_v2_46.90_7.40';
+    const key = 'wsc_sunshine_v3_46.90_7.40_UTC';
     store.set(key, JSON.stringify({
       daily: [{ date: '2026-05-06', value: 3600 }],
       dailyForecast: [{ datetime: '2026-05-06T00:00:00.000Z' }],
@@ -673,6 +673,101 @@ describe('OpenMeteoSource', () => {
     src._abort = { abort: () => { throw new Error('double abort'); } };
     expect(() => src.abort()).not.toThrow();
   });
+
+  // #378 — the cache holds values cut in the card's zone, so the key
+  // carries the zone and zone-less v2 entries are dropped.
+  describe('time-zone cache key (#378)', () => {
+    const zurich = new Calendar('Europe/Zurich');
+    const denver = new Calendar('America/Denver');
+
+    // Web Storage–like stand-in with key()/length/removeItem for the sweep.
+    function makeEnumerableStorage(seed = {}) {
+      const map = new Map(Object.entries(seed));
+      return {
+        getItem: vi.fn((k) => (map.has(k) ? map.get(k) : null)),
+        setItem: (k, v) => { map.set(k, String(v)); },
+        removeItem: (k) => { map.delete(k); },
+        key: (i) => [...map.keys()][i] ?? null,
+        get length() { return map.size; },
+        _map: map,
+      };
+    }
+
+    it('writes under a key that carries the sanitised zone', async () => {
+      const storage = makeStorage();
+      const src = new OpenMeteoSource({ calendar: denver,
+        latitude: lat, longitude: lon,
+        fetchImpl: makeFetchOk(sampleResponse), storage, now,
+      });
+      await src.ensureFresh();
+      expect(Object.keys(storage._data)).toEqual(['wsc_sunshine_v3_46.91_7.42_America-Denver']);
+    });
+
+    it('two zones at the same coordinates do not share an entry', async () => {
+      const storage = makeStorage();
+      const zh = new OpenMeteoSource({ calendar: zurich,
+        latitude: lat, longitude: lon,
+        fetchImpl: makeFetchOk(sampleResponse), storage, now,
+      });
+      await zh.ensureFresh();
+      expect(zh.getDailyStationForecast().length).toBeGreaterThan(0);
+
+      const fetchSpy = makeFetchOk(sampleResponse);
+      const den = new OpenMeteoSource({ calendar: denver,
+        latitude: lat, longitude: lon,
+        fetchImpl: fetchSpy, storage, now,
+      });
+      expect(den.getDailyStationForecast()).toEqual([]);
+      expect(den.getDailyValues()).toEqual([]);
+      expect(den.isStale()).toBe(true);
+      await den.ensureFresh();
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(Object.keys(storage._data).sort()).toEqual([
+        'wsc_sunshine_v3_46.91_7.42_America-Denver',
+        'wsc_sunshine_v3_46.91_7.42_Europe-Zurich',
+      ]);
+    });
+
+    it('removes stale v2 entries on construction and never reads them', () => {
+      const v2Key = 'wsc_sunshine_v2_46.91_7.42';
+      const storage = makeEnumerableStorage({
+        [v2Key]: JSON.stringify({
+          daily: [{ date: '2026-05-06', value: 3600 }],
+          dailyForecast: [{ datetime: '2026-05-06T00:00:00.000Z' }],
+          lastFetchMs: nowMs,
+        }),
+        'wsc_sunshine_v2_1.00_2.00': '{}',
+        'wsc_series_other': 'keep',
+      });
+      const src = new OpenMeteoSource({ calendar: zurich,
+        latitude: lat, longitude: lon, fetchImpl: null, storage, now,
+      });
+      expect(src.getDailyValues()).toEqual([]);
+      expect(src.getDailyStationForecast()).toEqual([]);
+      expect(storage.getItem).not.toHaveBeenCalledWith(v2Key);
+      expect([...storage._map.keys()]).toEqual(['wsc_series_other']);
+    });
+
+    it('the sweep tolerates storage whose enumeration throws', () => {
+      const storage = makeEnumerableStorage();
+      storage.key = () => { throw new Error('blocked'); };
+      storage.setItem('wsc_sunshine_v2_1.00_2.00', '{}');
+      expect(() => new OpenMeteoSource({ calendar: zurich,
+        latitude: lat, longitude: lon, fetchImpl: null, storage, now,
+      })).not.toThrow();
+    });
+
+    it('readCachedAvailability reads only the entry for its calendar zone', async () => {
+      const storage = makeStorage();
+      const zh = new OpenMeteoSource({ calendar: zurich,
+        latitude: lat, longitude: lon,
+        fetchImpl: makeFetchOk(sampleResponse), storage, now,
+      });
+      await zh.ensureFresh();
+      expect(readCachedAvailability(lat, lon, zurich, storage, nowMs)).not.toBe(null);
+      expect(readCachedAvailability(lat, lon, denver, storage, nowMs)).toBe(null);
+    });
+  });
 });
 
 describe('readCachedAvailability', () => {
@@ -695,7 +790,7 @@ describe('readCachedAvailability', () => {
 
   it('counts past + forecast days from a cached daily array', () => {
     const storage = makeStorage({
-      [`wsc_sunshine_v2_${lat.toFixed(2)}_${lon.toFixed(2)}`]: JSON.stringify({
+      [`wsc_sunshine_v3_${lat.toFixed(2)}_${lon.toFixed(2)}_UTC`]: JSON.stringify({
         daily: [
           { date: '2026-05-03', value: 28800 }, // -2 (past)
           { date: '2026-05-04', value: 30000 }, // -1 (past)
@@ -715,7 +810,7 @@ describe('readCachedAvailability', () => {
 
   it('handles a daily array with malformed / undated entries', () => {
     const storage = makeStorage({
-      [`wsc_sunshine_v2_${lat.toFixed(2)}_${lon.toFixed(2)}`]: JSON.stringify({
+      [`wsc_sunshine_v3_${lat.toFixed(2)}_${lon.toFixed(2)}_UTC`]: JSON.stringify({
         daily: [
           null,
           { value: 100 }, // no date
@@ -732,7 +827,7 @@ describe('readCachedAvailability', () => {
 
   it('returns zeros for an empty cached payload (post-failure fallback)', () => {
     const storage = makeStorage({
-      [`wsc_sunshine_v2_${lat.toFixed(2)}_${lon.toFixed(2)}`]: JSON.stringify({
+      [`wsc_sunshine_v3_${lat.toFixed(2)}_${lon.toFixed(2)}_UTC`]: JSON.stringify({
         daily: [],
         hourly: [],
         lastFetchMs: 0,
