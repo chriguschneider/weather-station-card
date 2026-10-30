@@ -9,6 +9,9 @@ import {
   normalizeHourlyDatetime,
 } from '../src/forecast-utils.js';
 import { Calendar } from '../src/utils/time-zone.js';
+import sunshineStats from './fixtures/sunshine-duration-today-statistics.json';
+
+const zurich = new Calendar('Europe/Zurich');
 
 const HOUR_MS = 3600_000;
 
@@ -120,6 +123,69 @@ describe('sunshineDailyTotals', () => {
     const own = sunshineDailyTotals(series, zurich, zurich);
     expect(own.get('2026-07-01')).toBe(6);
     expect(own.get('2026-07-02')).toBe(4);
+  });
+
+  it('reads the final value of each day from a real recorder export (#370)', () => {
+    // recorder/statistics_during_period, hourly, Europe/Zurich (CET since
+    // 2026-10-25). The 27.10. 00:00 bucket carries 2.52 over from 26.10.
+    const rows = sunshineStats['sensor.kleine_scheidegg_sunshine_duration_today'];
+    const map = sunshineDailyTotals(rows, zurich, zurich);
+    expect(map.get('2026-10-26')).toBe(2.52);
+    expect(map.get('2026-10-27')).toBe(6.12);
+  });
+
+  // Synthetic hourly buckets for one UTC day; `values[h]` is the hour's
+  // max (the 00:00 bucket also gets the min). Shape follows the table
+  // in #370.
+  const utc = new Calendar('UTC');
+  const hourly = (date, values, { skip = [] } = {}) =>
+    values.map((max, h) => ({ start: `${date}T${String(h).padStart(2, '0')}:00:00Z`, min: h === 0 ? 0 : max, max }))
+      .filter((_, h) => !skip.includes(h));
+  // A forecast total revised up and down; ends at 2.52 after peaking at 3.65.
+  const revised = [3.38, 3.4, 3.5, 3.65, 3.6, 3.5, 3.4, 3.3, 3.2, 3.1, 3.0, 2.9, 2.9, 2.8, 2.8, 2.7, 2.7, 2.6, 2.6, 2.55, 2.55, 2.52, 2.52, 2.52];
+
+  it('takes a revised forecast total at the end of the day, not its peak', () => {
+    const series = hourly('2026-10-26', revised);
+    expect(sunshineDailyTotals(series, utc, utc).get('2026-10-26')).toBe(2.52);
+  });
+
+  it('is unchanged for a monotonic counter', () => {
+    const counter = Array.from({ length: 24 }, (_, h) => Math.min(h, 12) * 0.5);
+    const series = hourly('2026-10-26', counter);
+    expect(sunshineDailyTotals(series, utc, utc).get('2026-10-26')).toBe(6);
+  });
+
+  it('ignores the 00:00 carry-over of the previous day', () => {
+    const series = [
+      ...hourly('2026-10-24', [0.07, ...Array(22).fill(1), 1.32]),
+      { start: '2026-10-25T00:00:00Z', min: 0, max: 1.32 },
+      ...hourly('2026-10-25', [0, 0, 0, 0.5, 0.48, ...Array(18).fill(0.5), 0.5]).slice(1),
+    ];
+    const map = sunshineDailyTotals(series, utc, utc);
+    expect(map.get('2026-10-24')).toBe(1.32);
+    expect(map.get('2026-10-25')).toBe(0.5);
+  });
+
+  it('uses the latest known value when the last hour is missing', () => {
+    const series = hourly('2026-10-26', revised, { skip: [23] });
+    expect(sunshineDailyTotals(series, utc, utc).get('2026-10-26')).toBeCloseTo(2.52, 9);
+  });
+
+  // Tokyo is UTC+9: its day starts at 15:00Z.
+  const tokyo = new Calendar('Asia/Tokyo');
+
+  it('splits a counter by hour across card days east of the server', () => {
+    const counter = Array.from({ length: 24 }, (_, h) => h * 0.5);
+    const map = sunshineDailyTotals(hourly('2026-10-26', counter), tokyo, utc);
+    // 00:00Z-14:00Z are Oct 26 in Tokyo, 15:00Z-23:00Z are Oct 27.
+    expect(map.get('2026-10-26')).toBeCloseTo(7, 9);
+    expect(map.get('2026-10-27')).toBeCloseTo(4.5, 9);
+  });
+
+  it('clamps a card day at 0 when a downward revision lands in it', () => {
+    const map = sunshineDailyTotals(hourly('2026-10-26', revised), tokyo, utc);
+    expect(map.get('2026-10-26')).toBeCloseTo(2.8, 9);
+    expect(map.get('2026-10-27')).toBe(0);
   });
 });
 
