@@ -815,12 +815,12 @@ set hass(hass: HassMain) {
 }
 
 // All entity ids this card reads live values from: every configured
-// sensor, the weather entity, and sun.sun (day/night + sunrise row).
+// sensor, the weather entity, and sun.sun (its attribute tick keeps
+// the computed sun and moon lines fresh).
 // Anything NOT in this list never feeds the live panel — its state
 // changes are irrelevant to this card and safe to ignore.
-// The computed moon line needs no entity here: sun.sun's attribute
-// tick (elevation, ~1/min) already re-renders the card, which keeps
-// the moon % and next-event time fresh without a card-level timer.
+// No card-level timer: sun.sun's ~1/min attribute tick re-renders the
+// card, which refreshes the moon % and next-event time.
 _watchedEntityIds(): string[] {
   const ids: string[] = [];
   const sensors = this.config?.sensors || {};
@@ -2398,7 +2398,7 @@ ll(str: string): any {
     return us?.[unit] || '';
   }
 
-  getWeatherIcon(condition: string, _sun: string | undefined): string {
+  getWeatherIcon(condition: string): string {
     const condKey = condition as keyof typeof weatherIcons;
     return weatherIcons[condKey];
   }
@@ -3229,7 +3229,7 @@ _scheduleForecastRowsReveal(): void {
                   `
                   : html`
                     ${guard(
-                      [this.forecasts, this.forecastItems, this.sun, config],
+                      [this.forecasts, this.forecastItems, config],
                       () => this.renderForecastConditionIcons(),
                     )}
                     ${guard(
@@ -3509,7 +3509,7 @@ renderAvailabilityNote() {
   `;
 }
 
-renderMain({ config, sun, weather, temperature } = this) {
+renderMain({ config, weather, temperature } = this) {
   if (config.show_main === false) {
     // The live block is gone — stop the 1 Hz clock too. Without this a
     // config edit that hides the block would leave the timer ticking
@@ -3539,7 +3539,7 @@ renderMain({ config, sun, weather, temperature } = this) {
   // sensor in station-only setups (same rule as the condition text).
   const iconHtml = this._entityLink(
     this.config?.weather_entity || this.config?.sensors?.temperature,
-    html`<ha-icon icon="${this.getWeatherIcon(weather.state, sun.state)}"></ha-icon>`,
+    html`<ha-icon icon="${this.getWeatherIcon(weather.state)}"></ha-icon>`,
   );
 
   // Clock lifecycle moved out of the render pass (perf pass 2026-08):
@@ -4485,7 +4485,7 @@ _spriteIcon(fullName: string | undefined, cls: string = '') {
   return html`<ha-icon class="${cls}" icon="${fullName}"></ha-icon>`;
 }
 
-renderForecastConditionIcons({ config, forecastItems, sun } = this) {
+renderForecastConditionIcons({ config, forecastItems } = this) {
   if (config.forecast.condition_icons === false) {
     return html``;
   }
@@ -4508,7 +4508,7 @@ renderForecastConditionIcons({ config, forecastItems, sun } = this) {
     <div class="conditions">
       ${forecast.map((item) => html`
         <div class="forecast-item">
-          ${this._spriteIcon(this.getWeatherIcon(item.condition, sun?.state))}
+          ${this._spriteIcon(this.getWeatherIcon(item.condition))}
         </div>
       `)}
     </div>
