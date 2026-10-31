@@ -1,8 +1,9 @@
 // #355: day boundaries follow the card's calendar — recorder hour
 // buckets reduced to card days, daily forecast entries read as
 // calendar days.
-import { describe, it, expect, vi } from 'vitest';
-import { reduceHourlyToDays, sunshineDailyTotals } from '../src/data-source.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { MeasuredDataSource, reduceHourlyToDays, sunshineDailyTotals } from '../src/data-source.js';
+import { clearDedupeCaches } from '../src/utils/shared-requests.js';
 import {
   anchorDailyDatetime,
   normalizeDailyEntry,
@@ -186,6 +187,76 @@ describe('sunshineDailyTotals', () => {
     const map = sunshineDailyTotals(hourly('2026-10-26', revised), tokyo, utc);
     expect(map.get('2026-10-26')).toBeCloseTo(2.8, 9);
     expect(map.get('2026-10-27')).toBe(0);
+  });
+});
+
+describe("today's sunshine on a card outside the server zone (#379)", () => {
+  beforeEach(() => clearDedupeCaches());
+  afterEach(() => vi.useRealTimers());
+
+  // A Zurich server (CET since 2026-10-25): the live state counts from
+  // the server's midnight. Only buckets that ended by `now` exist.
+  async function today(cardZone, nowIso, series, live) {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(nowIso));
+    const now = Date.parse(nowIso);
+    const hass = {
+      config: { time_zone: 'Europe/Zurich', latitude: 46.6, longitude: 7.96 },
+      states: { 'sensor.sun': { state: String(live), attributes: { unit_of_measurement: 'h' } } },
+      callWS: vi.fn().mockResolvedValue({
+        'sensor.sun': series.filter((b) => new Date(b.start).getTime() + HOUR_MS <= now),
+      }),
+    };
+    const ds = new MeasuredDataSource(hass, { sensors: { sunshine_duration: 'sensor.sun' }, days: 2 }, new Calendar(cardZone));
+    const out = await ds._fetchAggregates();
+    return out[out.length - 1].sunshine;
+  }
+
+  // A counter that resets at 00:00 Zurich (the 00:00 bucket's `min` is
+  // the post-reset floor) and gains `rate(h)` hours in Zurich hour `h`.
+  const counter = (zurichMidnightIso, rate) => {
+    const t0 = Date.parse(zurichMidnightIso);
+    let v = 0;
+    return Array.from({ length: 24 }, (_, h) => {
+      v += rate(h);
+      return { start: new Date(t0 + h * HOUR_MS).toISOString(), min: h === 0 ? 0 : v - rate(h), max: v };
+    });
+  };
+  // 2026-10-27, 0.125 h per hour from 01:00 Zurich: 2.0 h by 17:00.
+  const oct27 = counter('2026-10-26T23:00:00Z', (h) => (h >= 1 ? 0.125 : 0));
+
+  it('counts a Denver day from 00:00 Denver, not from the server midnight', async () => {
+    // 10:00 Denver (MDT) = 17:00 Zurich. The Denver day began at 07:00
+    // Zurich, after 0.75 h of the server day's 2.0 h.
+    expect(await today('America/Denver', '2026-10-27T16:00:00Z', oct27, 2.0)).toBeCloseTo(1.25, 9);
+  });
+
+  it('keeps the live state for a card in the server zone', async () => {
+    expect(await today('Europe/Zurich', '2026-10-27T16:00:00Z', oct27, 2.0)).toBe(2.0);
+    expect(await today('Europe/Zurich', '2026-10-27T16:20:00Z', oct27, 2.04)).toBe(2.04);
+  });
+
+  it('adds the live growth since the last recorded hour', async () => {
+    // 10:20 Denver: the 16:00Z bucket is still open, so 0.04 h of growth
+    // since 17:00 Zurich comes from the live state.
+    expect(await today('America/Denver', '2026-10-27T16:20:00Z', oct27, 2.04)).toBeCloseTo(1.29, 9);
+  });
+
+  it('keeps the evening of the previous server day on a Tokyo card', async () => {
+    // 2026-10-26, sun 08:00-17:00 Zurich. At 08:00 Tokyo (= 00:00 Zurich
+    // on the 27th) the live counter just reset; the Tokyo day began at
+    // 16:00 Zurich, one sunny hour before the end of the server day.
+    const oct26 = counter('2026-10-25T23:00:00Z', (h) => (h >= 8 && h < 17 ? 0.25 : 0));
+    expect(await today('Asia/Tokyo', '2026-10-26T23:00:00Z', oct26, 0)).toBeCloseTo(0.25, 9);
+  });
+
+  it('reads the real recorder export for a Denver card', async () => {
+    // A forecast total (hass-meteoswiss-weather) revised from 6.25 at
+    // 00:00 Denver (07:00 Zurich) to 6.18 by 17:00 Zurich: no gain on
+    // the Denver day, then 0.02 h on top of the last bucket.
+    const rows = sunshineStats['sensor.kleine_scheidegg_sunshine_duration_today'];
+    expect(await today('America/Denver', '2026-10-27T16:00:00Z', rows, 6.2)).toBeCloseTo(0.02, 9);
+    expect(await today('Europe/Zurich', '2026-10-27T16:00:00Z', rows, 6.2)).toBe(6.2);
   });
 });
 
