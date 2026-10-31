@@ -62,8 +62,8 @@ export const ATTRIBUTE_PATHS: ReadonlyArray<
   { path: 'show_wind_direction',    def: true,  gate: 'live',   gateKey: 'wind_direction' },
   { path: 'show_wind_speed',        def: true,  gate: 'live',   gateKey: 'wind_speed' },
   { path: 'show_wind_gust_speed',   def: false, gate: 'live',   gateKey: 'gust_speed' },
-  // Sun/moon have no sensor gate — sun uses sun.sun, the moon line is
-  // computed in-card (ADR-0022).
+  // Sun/moon have no sensor gate — both are computed in-card from the
+  // card location (ADR-0022).
   { path: 'show_sun',               def: false },
   { path: 'show_moon',              def: true },
 ];
