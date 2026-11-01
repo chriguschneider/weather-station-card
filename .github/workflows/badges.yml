@@ -43,18 +43,25 @@ jobs:
           set -euo pipefail
 
           stars=$(gh api "repos/${REPO}" --jq '.stargazers_count')
-          # Cumulative downloads of the main bundle across all releases.
-          # Deliberately NOT shields' /downloads/total: every release ships
-          # ~25 assets (language chunks + editor) and HACS fetches all of
-          # them, so /total over-counts by that factor. And NOT HACS's own
-          # "downloads" figure: that only counts the latest release, so it
-          # resets to zero every time we ship. Summing the one asset HACS
-          # names in hacs.json gives a number that is honest and monotonic.
-          # gh applies --jq per page, so sum the per-page subtotals here.
-          downloads=$(gh api --paginate "repos/${REPO}/releases?per_page=100" \
-            --jq '[.[] | .assets[] | select(.name == "weather-station-card.js")
-                   | .download_count] | add // 0' \
-            | awk '{ s += $1 } END { print s + 0 }')
+          # Downloads of the current stable version, counting only the main
+          # bundle: every release ships ~25 assets and HACS fetches all of
+          # them, so summing assets would over-count. Cumulative totals
+          # count the same users again at every update, and HACS's own
+          # figure drops to almost zero on each release. So take the highest
+          # count among stable releases of the last 7 days and the newest
+          # older one: a new release takes over once it passes the previous
+          # count, after 7 days at the latest. Needs no stored state.
+          cutoff=$(( $(date +%s) - 604800 ))
+          downloads=$(gh api --paginate --slurp "repos/${REPO}/releases?per_page=100" \
+            | jq --argjson cutoff "$cutoff" '
+                [ .[][] | select(.prerelease == false and .draft == false)
+                  | { at: (.published_at | fromdateiso8601),
+                      n: ([.assets[] | select(.name == "weather-station-card.js")
+                           | .download_count] | add // 0) } ]
+                | sort_by(.at) | reverse
+                | ([ .[] | select(.at >= $cutoff) ]) as $recent
+                | ([ .[] | select(.at < $cutoff) ][0:1]) as $base
+                | [ ($recent + $base)[].n ] | max // 0')
           release=$(gh api "repos/${REPO}/releases/latest" --jq '.tag_name')
           commit_date=$(gh api "repos/${REPO}/commits?per_page=1" \
             --jq '.[0].commit.committer.date')
