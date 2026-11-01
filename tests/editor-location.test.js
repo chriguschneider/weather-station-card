@@ -293,6 +293,97 @@ describe('location panel: search and determine (mocked fetch)', () => {
     expect(real._locUi.status.kind).toBe('error');
   });
 
+  const deferred = () => {
+    let resolve;
+    const promise = new Promise((r) => { resolve = r; });
+    return { promise, resolve };
+  };
+
+  it('drops a determine response when the coordinates changed meanwhile', async () => {
+    const d = deferred();
+    vi.stubGlobal('fetch', vi.fn(() => d.promise));
+    const real = await realEditor({ location: { latitude: 39.74, longitude: -104.99 } });
+    const pending = real._locationDetermine();
+    real._config = { location: { latitude: 47.0, longitude: 8.0 } };
+    d.resolve(jsonResponse({ elevation: 1609, timezone: 'America/Denver' }));
+    await pending;
+    expect(real.configChanged).not.toHaveBeenCalled();
+    expect(real._locUi.status).toEqual({ kind: 'error', text: 'Coordinates changed. Click again.' });
+  });
+
+  it('two determine clicks: the last request wins even if answered first', async () => {
+    const first = deferred();
+    const second = deferred();
+    const fetchMock = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    vi.stubGlobal('fetch', fetchMock);
+    const real = await realEditor({ location: { latitude: 47.1, longitude: -111.4 } });
+    const a = real._locationDetermine();
+    const b = real._locationDetermine();
+    second.resolve(jsonResponse({ elevation: 2, timezone: 'Europe/Zurich' }));
+    await b;
+    first.resolve(jsonResponse({ elevation: 1, timezone: 'America/Denver' }));
+    await a;
+    expect(real.configChanged).toHaveBeenCalledTimes(1);
+    expect(lastConfig(real).location).toEqual({
+      latitude: 47.1, longitude: -111.4, elevation: 2, time_zone: 'Europe/Zurich',
+    });
+  });
+
+  it('a late search response of an older click is dropped', async () => {
+    const first = deferred();
+    const second = deferred();
+    vi.stubGlobal('fetch', vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise));
+    const real = await realEditor({});
+    real._locUi = { query: 'A', results: [], status: null };
+    const a = real._locationSearch();
+    const b = real._locationSearch();
+    const hit = (name) => jsonResponse({ results: [{ name, latitude: 1, longitude: 2 }] });
+    second.resolve(hit('Second'));
+    await b;
+    first.resolve(hit('First'));
+    await a;
+    expect(real._locUi.results.map((r) => r.name)).toEqual(['Second']);
+  });
+
+  it('a timeout shows the status, keeps the fields editable, and a new click clears it', async () => {
+    vi.useFakeTimers();
+    try {
+      let signal;
+      vi.stubGlobal('fetch', vi.fn((url, init) => {
+        signal = init.signal;
+        return new Promise((_, reject) => {
+          signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+        });
+      }));
+      const real = await realEditor({ location: { latitude: 47.1, longitude: -111.4 } });
+      const pending = real._locationDetermine();
+      await vi.advanceTimersByTimeAsync(10_000);
+      await pending;
+      expect(signal.aborted).toBe(true);
+      expect(real._locUi.status.text).toBe('Lookup timed out. Try again or enter the values by hand.');
+      expect(real.configChanged).not.toHaveBeenCalled();
+
+      const m = mount(makeEditor({ _locationChanged: real._locationChanged }), { location: real._config.location });
+      change(m.fieldsForm, { elevation: 500 });
+      expect(lastConfig(real).location.elevation).toBe(500);
+
+      vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
+      void real._locationDetermine();
+      expect(real._locUi.status).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a search hit without elevation or zone clears both fields', async () => {
+    const real = await realEditor({
+      location: { latitude: 1, longitude: 2, elevation: 900, time_zone: 'America/Denver' },
+    });
+    real._locationPick({ name: 'X', latitude: 46.9, longitude: 7.4 });
+    expect(lastConfig(real).location).toEqual({ latitude: 46.9, longitude: 7.4 });
+    expect(real._locUi.status.text).toBe('Next step: determine elevation and time zone.');
+  });
+
   it('determine without coordinates does nothing', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
