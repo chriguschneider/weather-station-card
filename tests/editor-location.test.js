@@ -6,6 +6,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from 'lit';
 import { renderLocationSection } from '../src/editor/render-location.js';
+import { validateConfig } from '../src/config-validation.js';
 import { resolveElevation } from '../src/zero-degree-trend.js';
 import { DEFAULTS } from '../src/defaults.js';
 
@@ -309,5 +310,21 @@ describe('resolveElevation', () => {
     expect(resolveElevation({ location: { latitude: 1 }, elevation: 900 }, sensors, hass)).toBe(900);
     expect(resolveElevation({ location: {} }, sensors, hass)).toBe(700);
     expect(resolveElevation({}, [], hass)).toBe(410);
+    const away = { latitude: 39.7, longitude: -105 };
+    expect(resolveElevation({ location: away, elevation: 619 }, sensors, { config: { elevation: 619 } })).toBeUndefined();
+    expect(resolveElevation({ location: { ...away, elevation: 1609 }, elevation: 619 }, sensors, hass)).toBe(1609);
+  });
+});
+
+describe('location without elevation warning', () => {
+  const away = { latitude: 39.7, longitude: -105 };
+  it('warns when location has coordinates but no elevation', () => {
+    expect(validateConfig({ location: away }).join(' ')).toContain('location set without elevation');
+    expect(validateConfig({ location: { ...away, elevation: '' } }).join(' ')).toContain('location set without elevation');
+  });
+  it('stays quiet with an elevation or without coordinates', () => {
+    expect(validateConfig({ location: { ...away, elevation: 1609 } }).join(' ')).not.toContain('without elevation');
+    expect(validateConfig({ location: {} }).join(' ')).not.toContain('without elevation');
+    expect(validateConfig({}).join(' ')).not.toContain('without elevation');
   });
 });

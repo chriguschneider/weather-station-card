@@ -52,7 +52,7 @@ describe('resolveCardTimeZone', () => {
   it('surfaces as a config warning', () => {
     expect(validateConfig({ time_zone: 'location' }).join(' ')).toContain('location.time_zone');
     expect(validateConfig({ time_zone: 'Mars/Base' }).join(' ')).toContain('Mars/Base');
-    expect(validateConfig({ time_zone: 'location', location: { ...MONTANA, time_zone: DENVER } }))
+    expect(validateConfig({ time_zone: 'location', location: { ...MONTANA, time_zone: DENVER, elevation: 1609 } }))
       .toEqual([]);
   });
 });
