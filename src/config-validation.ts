@@ -239,6 +239,12 @@ export function validateConfig(rawConfig: unknown): string[] {
   validateLayoutOverridesToggles(rawConfig, problems);
   const zoneWarning = resolveCardTimeZone(rawConfig, undefined).warning;
   if (zoneWarning) problems.push(zoneWarning);
+  if (parseLocation(rawConfig.location)
+    && [undefined, null, ''].includes((rawConfig.location as { elevation?: unknown }).elevation as undefined)) {
+    problems.push(
+      'location set without elevation: snow line site comparison off; set location.elevation or click Determine',
+    );
+  }
 
   return problems;
 }

@@ -9,6 +9,7 @@
 //
 // The thresholds below are the card's own heuristics, decided in #333.
 
+import { parseLocation } from './location.js';
 import type { ZeroDegreePoint } from './zero-degree-popup.js';
 
 export type ZeroDegreeTrendClass =
@@ -208,7 +209,10 @@ function toMetres(value: unknown): number | undefined {
 /** Site elevation in metres: `location.elevation`, else the legacy
  *  top-level `elevation:` option, else an
  *  `elevation` attribute on the sensors (48 h first, then the current
- *  level — hass-meteoswiss-weather#227), else HA's configured elevation. */
+ *  level — hass-meteoswiss-weather#227), else HA's configured elevation.
+ *  A card with `location` coordinates is for another place: only
+ *  `location.elevation` counts there, the other sources describe home or
+ *  the sensor's station. */
 export function resolveElevation(
   config: { elevation?: unknown; location?: unknown } | null | undefined,
   sensorAttrs: ReadonlyArray<Record<string, unknown> | null | undefined>,
@@ -217,6 +221,7 @@ export function resolveElevation(
   const loc = config?.location;
   const fromLocation = typeof loc === 'object' && loc !== null
     ? toMetres((loc as { elevation?: unknown }).elevation) : undefined;
+  if (parseLocation(loc)) return fromLocation;
   const fromConfig = fromLocation ?? toMetres(config?.elevation);
   if (fromConfig !== undefined) return fromConfig;
   for (const attrs of sensorAttrs) {
