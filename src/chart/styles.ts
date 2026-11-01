@@ -562,6 +562,8 @@ function buildCardStyles({
     }
     .wind-speed {
       font-size: 11px;
+      text-align: end;
+      font-variant-numeric: tabular-nums;
     }
     .wind-unit {
       font-size: ${labelsSmallSize}px;

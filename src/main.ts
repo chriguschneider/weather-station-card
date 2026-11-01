@@ -4537,11 +4537,17 @@ renderWind({ config, forecastItems } = this) {
   );
   const unit = this.unitSpeed ? this.ll('units')[this.unitSpeed] : '';
 
+  // Every speed gets the width of the longest one, so all cells wrap
+  // (speed below the arrow) or none does, whatever the screen width.
+  const speeds = forecast.map((item) =>
+    this._convertWindSpeed(item.wind_gust_speed ?? item.wind_speed, item.wind_speed_unit));
+  const maxChars = Math.max(0, ...speeds.map((v) => (v === null || v === undefined ? 0 : String(v).length)));
+  const speedStyle = maxChars > 0 ? `min-width: ${maxChars}ch` : '';
+
   return html`
     <div class="wind-details">
-      ${forecast.map((item) => {
-        const raw = item.wind_gust_speed ?? item.wind_speed;
-        const dWindSpeed = this._convertWindSpeed(raw, item.wind_speed_unit);
+      ${forecast.map((item, i) => {
+        const dWindSpeed = speeds[i];
         const hasSpeed = dWindSpeed !== null && dWindSpeed !== undefined;
         const hasBearing = item.wind_bearing != null;
         // Some integrations (notably HA's Open-Meteo at forecast_type:
@@ -4556,7 +4562,7 @@ renderWind({ config, forecastItems } = this) {
             ${showArrow && hasBearing ? this._spriteIcon(`hass:${this.getWindDirIcon(item.wind_bearing)}`, 'wind-icon') : ''}
             ${showSpeed && hasSpeed ? html`
               <span class="wind-value">
-                <span class="wind-speed">${dWindSpeed}</span>
+                <span class="wind-speed" style=${speedStyle}>${dWindSpeed}</span>
                 <span class="wind-unit">${unit}</span>
               </span>
             ` : ''}
