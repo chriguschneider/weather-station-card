@@ -48,7 +48,7 @@ describe('resolveLocation', () => {
 
 describe('validateConfig — location', () => {
   it('accepts a valid location', () => {
-    expect(validateConfig({ location: SKI })).toEqual([]);
+    expect(validateConfig({ location: { ...SKI, elevation: 2000 } })).toEqual([]);
   });
 
   it('warns, without throwing, on a malformed location', () => {
