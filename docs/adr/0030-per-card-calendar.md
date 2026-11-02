@@ -40,7 +40,9 @@ per-card zone on top of a singleton. It has to be passed explicitly.
 - **One calendar per card.** `WeatherStationCard.calendar` starts in
   the browser's zone and is resolved from `hass.config.time_zone` at
   the top of `set hass`, before phase 1
-  ([ADR-0007](0007-set-hass-three-phase.md)). If the resolved zone
+  ([ADR-0007](0007-set-hass-three-phase.md)). The zone rule is the
+  one of the #357 amendment below (`time_zone` option, `location`
+  zone, server zone), not `hass.config.time_zone` alone. If the resolved zone
   changes, the card replaces the calendar and rebuilds the sources
   that captured the old one (recorder source, Open-Meteo source,
   per-mode station cache, pressure-delta cache).
@@ -60,8 +62,8 @@ per-card zone on top of a singleton. It has to be passed explicitly.
   [ADR-0020](0020-cross-card-request-dedup-and-persistent-caches.md)):
   the `wsc_series_*` keys (schema v2), the `wsc_lux_days_*` keys
   (schema v2; the v1 slot is removed on the next save), and the
-  recorder `stats:` / `history:` dedup keys. `wsc_sunshine_*` was
-  versioned in #353.
+  recorder `stats:` / `history:` dedup keys. `wsc_sunshine_*` carries the zone
+  too (#378 amendment below).
 - **Unchanged:** `condition-classifier.ts` still uses the
   solar-declination exception from ADR-0026. The resolution rule is
   still "server zone"; #357 extends it.
@@ -170,10 +172,39 @@ each other's hours until the entry expired.
 - Chosen over storing the raw response and cutting on read: the parsed
   cache and its consumers stay as they are.
 
+## Amendment 2026-10-30 (#370): end-of-day sunshine
+
+Past days show the sunshine sensor's value at the end of the day (in
+the card's calendar) instead of a value taken at another moment of that
+day; the day boundary is the card's, like every other daily column.
+
+## Amendment 2026-10-30 (#356): sun and moon from the card location
+
+Sunrise, sunset, moon rise/set, solar strength and the lux-based
+sunshine derivation read the card's `location` (`src/location.ts`),
+Home Assistant's home only when no valid `location` is set. A card
+for another place therefore shows that place's sun and moon in that
+place's zone.
+
+## Amendment 2026-11-01 (#381): elevation
+
+Elevation resolves as `location.elevation` → `elevation` option →
+sensor `elevation` attribute → Home Assistant's elevation. With a valid
+`location` the Home Assistant fallback is dropped: the home's
+elevation does not describe another place, so the zero-degree rows skip
+the site comparison and a config warning appears.
+
+## Amendment 2026-11-02 (#392): day/night icon
+
+The live condition derived from sensors is night when the sun is down
+at the card's location, not at Home Assistant's home.
+
 ## Related
 
 - Issue #354 — this change; #343 / #358 — one card per location (v3.0)
 - Issue #355 — the day-boundary amendment above
+- Issues #356, #357, #370, #372, #378, #381, #392 — the other
+  amendments and the editor panel of this milestone (#358)
 - [ADR-0026](0026-server-time-zone.md) — superseded by this ADR
 - [ADR-0020](0020-cross-card-request-dedup-and-persistent-caches.md) —
   amended: the zone is part of the cache and dedup keys
