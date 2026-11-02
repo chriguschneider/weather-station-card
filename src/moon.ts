@@ -124,6 +124,21 @@ export function sunTimes(date: Date, lat: number, lon: number): SunTimes {
   return sunrise && sunset ? { sunrise, sunset } : { sunrise: null, sunset: null };
 }
 
+/** True while the sun's centre is above the same −0.833° horizon
+ *  `sunTimes` uses. Unlike `sunTimes` it also answers at polar day (true)
+ *  and polar night (false), where both events are null. */
+export function isSunUp(date: Date, lat: number, lon: number): boolean {
+  const jd = date.valueOf() / DAY_MS + J1970 - 0.5;
+  const { dec, eot } = sunNoaa(jd);
+  // Apparent solar time = mean solar time at the site + equation of time.
+  const solarDay = (((jd + 0.5 + lon / 360 + eot) % 1) + 1) % 1;
+  const hourAngle = 2 * Math.PI * (solarDay - 0.5);
+  const phi = RAD * lat;
+  const sinAlt =
+    Math.sin(phi) * Math.sin(dec) + Math.cos(phi) * Math.cos(dec) * Math.cos(hourAngle);
+  return sinAlt > Math.sin(SUN_HORIZON);
+}
+
 function moonCoords(d: number): { ra: number; dec: number; dist: number } {
   const L = RAD * (218.316 + 13.176396 * d); // ecliptic longitude
   const M = RAD * (134.963 + 13.064993 * d); // mean anomaly

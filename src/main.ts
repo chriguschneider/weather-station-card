@@ -120,7 +120,7 @@ import { sanitizeForecastEntries } from './chart/sanitize.js';
 import { renderChartSkeleton } from './chart/skeleton.js';
 import { cardStyles } from './chart/styles.js';
 import { getDateTimeFormat, getNumberFormat } from './utils/intl-cache.js';
-import { moonIllumination, nextMoonEvent, litMoonPath, sunTimes } from './moon.js';
+import { moonIllumination, nextMoonEvent, litMoonPath, sunTimes, isSunUp } from './moon.js';
 import { classifyNextRain, findNextRainEntity, formatCheckedUntil, formatNextRain, nextRainIcon } from './next-rain.js';
 import { parseZeroDegreeCurve, ZeroDegreePopup, type ZeroDegreePoint } from './zero-degree-popup.js';
 import {
@@ -320,6 +320,10 @@ class WeatherStationCard extends LitElement {
   // --- Caching / live-condition memo ---
   _liveConditionKey: string | undefined;
   _liveCondition: string | undefined;
+  // True when the classifier picked the live condition and the sun is
+  // down at the card location; the main icon swaps partlycloudy for its
+  // night glyph.
+  _liveNight = false;
 
   // --- Entity-delta gate (ADR-0017) ---
   // eid → hass.states[eid] reference at the end of the last full
@@ -1293,6 +1297,7 @@ _pickLiveCondition(inputs: any): string | undefined {
   if (!sensors.temperature && wxState) {
     this._liveConditionKey = conditionKey;
     this._liveCondition = wxState;
+    this._liveNight = false;
     return wxState;
   }
 
@@ -1321,11 +1326,16 @@ _pickLiveCondition(inputs: any): string | undefined {
   // cover and bottoms out at 'cloudy'. The weather entity's own sky
   // state is a better guess than a permanent overcast (#253); rain,
   // fog and wind stay station-measured.
-  const result = condition === 'cloudy' && luxNow == null && SKY_STATES.has(wxState)
+  const fromEntity = condition === 'cloudy' && luxNow == null && SKY_STATES.has(wxState);
+  // classifyDay has no night state; derive it from the card's computed
+  // sun position. Condition text and icon both follow the state.
+  const night = !fromEntity && lat != null && lon != null && !isSunUp(new Date(), lat, lon);
+  const result = fromEntity
     ? wxState
-    : condition;
+    : night && condition === 'sunny' ? 'clear-night' : condition;
   this._liveConditionKey = conditionKey;
   this._liveCondition = result;
+  this._liveNight = night;
   return result;
 }
 
@@ -2402,6 +2412,12 @@ ll(str: string): any {
     const condKey = condition as keyof typeof weatherIcons;
     return weatherIcons[condKey];
   }
+
+_mainIcon(condition: string): string {
+  return this._liveNight && condition === 'partlycloudy'
+    ? 'mdi:weather-night-partly-cloudy'
+    : this.getWeatherIcon(condition);
+}
 
 getWindDirIcon(deg: number | string): string {
   if (typeof deg === 'number') {
@@ -3539,7 +3555,7 @@ renderMain({ config, weather, temperature } = this) {
   // sensor in station-only setups (same rule as the condition text).
   const iconHtml = this._entityLink(
     this.config?.weather_entity || this.config?.sensors?.temperature,
-    html`<ha-icon icon="${this.getWeatherIcon(weather.state)}"></ha-icon>`,
+    html`<ha-icon icon="${this._mainIcon(weather.state)}"></ha-icon>`,
   );
 
   // Clock lifecycle moved out of the render pass (perf pass 2026-08):
