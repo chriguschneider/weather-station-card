@@ -26,8 +26,8 @@ const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
 
-async function getJson(url: string): Promise<Record<string, unknown>> {
-  const res = await fetch(url);
+async function getJson(url: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  const res = await fetch(url, signal ? { signal } : undefined);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return (await res.json()) as Record<string, unknown>;
 }
@@ -37,10 +37,10 @@ export function placeLabel(hit: PlaceHit): string {
   return [hit.name, hit.admin1, hit.country].filter(Boolean).join(', ');
 }
 
-export async function searchPlaces(query: string, language: string): Promise<PlaceHit[]> {
+export async function searchPlaces(query: string, language: string, signal?: AbortSignal): Promise<PlaceHit[]> {
   const url = `${GEOCODING_URL}?name=${encodeURIComponent(query)}&count=10`
     + `&language=${encodeURIComponent(language)}&format=json`;
-  const body = await getJson(url);
+  const body = await getJson(url, signal);
   const results = Array.isArray(body.results) ? body.results : [];
   const hits: PlaceHit[] = [];
   for (const r of results as Record<string, unknown>[]) {
@@ -58,9 +58,14 @@ export async function searchPlaces(query: string, language: string): Promise<Pla
   return hits;
 }
 
-export async function lookupElevationZone(latitude: number, longitude: number): Promise<ElevationZone> {
+export async function lookupElevationZone(
+  latitude: number,
+  longitude: number,
+  signal?: AbortSignal,
+): Promise<ElevationZone> {
   const body = await getJson(
     `${FORECAST_URL}?latitude=${latitude}&longitude=${longitude}&timezone=auto`,
+    signal,
   );
   const out: ElevationZone = {};
   if (isNum(body.elevation)) out.elevation = body.elevation;

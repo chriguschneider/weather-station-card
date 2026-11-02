@@ -9,6 +9,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - Wind speeds in the forecast now wrap evenly: either all below their arrows or none, regardless of screen size.
+- Editor: "Determine elevation and time zone" and the place search no longer apply a late response to coordinates changed in the meantime; requests time out after 10 s. A search hit without elevation or time zone now clears both fields instead of keeping the previous place's values.
 - A card for another place no longer compares the snow line with the Home Assistant home's elevation; set `location.elevation` (or click Determine in the editor) for the site comparison.
 - A card for a place far east of the server showed its daily forecast one day early when the provider writes local midnight in UTC. Hourly forecast times without a time zone are now read in the card's time zone, too.
 - Two cards for the same place in different time zones no longer share cached Open-Meteo sunshine and rain data; changing a card's time zone no longer shows the previous zone's hours until the cache expires.

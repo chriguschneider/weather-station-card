@@ -25,6 +25,8 @@ import {
 } from './attributes-layout.js';
 import { DEFAULTS } from './defaults.js';
 
+const LOOKUP_TIMEOUT_MS = 10_000;
+
 type EditorMode = 'station' | 'forecast' | 'combination';
 
 interface ValueChangedTarget {
@@ -48,6 +50,8 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
   hass: HomeAssistant | null = null;
   _config: Record<string, unknown> | null = null;
   _locUi: LocationUiState = { query: '', results: [], status: null };
+  _lookupSeq = { search: 0, determine: 0 };
+  _lookupAbort: { search?: AbortController; determine?: AbortController } = {};
 
   static get properties() {
     return {
@@ -515,14 +519,33 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     this._locUi = { ...this._locUi, query: typeof value === 'string' ? value : '' };
   };
 
+  // An undefined value removes the key, so a patch can clear a field.
   _writeLocation(patch: Record<string, unknown>): void {
     if (!this._config) return;
     const location = {
       ...((this._config.location as Record<string, unknown> | undefined) || {}),
       ...patch,
     };
+    for (const key of Object.keys(patch)) {
+      if (patch[key] === undefined) delete location[key];
+    }
     this.configChanged({ ...this._config, location });
     this.requestUpdate();
+  }
+
+  // Starts a lookup of one kind: aborts the previous one and returns its
+  // identity. A response is applied only while `seq` is still current; the
+  // 10 s timeout aborts the request and flags `timedOut()`.
+  _lookupBegin(kind: 'search' | 'determine'): {
+    seq: number; signal: AbortSignal; timedOut: () => boolean; done: () => void;
+  } {
+    this._lookupAbort[kind]?.abort();
+    const ctrl = new AbortController();
+    this._lookupAbort[kind] = ctrl;
+    const seq = ++this._lookupSeq[kind];
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; ctrl.abort(); }, LOOKUP_TIMEOUT_MS);
+    return { seq, signal: ctrl.signal, timedOut: () => timedOut, done: () => clearTimeout(timer) };
   }
 
   // One geocoding request per click; never on typing or render.
@@ -530,40 +553,70 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     const query = this._locUi.query.trim();
     if (!query) return;
     const lang = this.hass?.locale?.language || this.hass?.language || 'en';
+    const req = this._lookupBegin('search');
+    this._locUi = { ...this._locUi, status: null };
     try {
-      const results = await searchPlaces(query, lang);
+      const results = await searchPlaces(query, lang, req.signal);
+      if (req.seq !== this._lookupSeq.search) return;
       this._locUi = {
         ...this._locUi,
         results,
         status: results.length ? null : { kind: 'error', text: tEditor(this.hass, 'location_search_none') },
       };
     } catch {
+      if (req.seq !== this._lookupSeq.search) return;
       this._locUi = {
         ...this._locUi,
         results: [],
-        status: { kind: 'error', text: tEditor(this.hass, 'location_search_error') },
+        status: {
+          kind: 'error',
+          text: tEditor(this.hass, req.timedOut() ? 'location_timed_out' : 'location_search_error'),
+        },
       };
+    } finally {
+      req.done();
     }
     this.requestUpdate();
   };
 
-  // A hit supplies all four fields; it does not trigger "determine".
+  // A hit supplies all four fields; it does not trigger "determine". A hit
+  // without elevation or zone clears the old place's values instead.
   _locationPick = (hit: PlaceHit): void => {
-    const patch: Record<string, unknown> = { latitude: hit.latitude, longitude: hit.longitude };
-    if (hit.elevation !== undefined) patch.elevation = hit.elevation;
-    if (validTimeZone(hit.timezone) !== undefined) patch.time_zone = hit.timezone;
-    this._locUi = { ...this._locUi, results: [], status: null };
-    this._writeLocation(patch);
+    const zone = validTimeZone(hit.timezone);
+    const complete = hit.elevation !== undefined && zone !== undefined;
+    this._lookupAbort.determine?.abort();
+    this._lookupSeq.determine++;
+    this._locUi = {
+      ...this._locUi,
+      results: [],
+      status: complete ? null : { kind: 'ok', text: tEditor(this.hass, 'location_determine_next') },
+    };
+    this._writeLocation({
+      latitude: hit.latitude,
+      longitude: hit.longitude,
+      elevation: hit.elevation,
+      time_zone: zone,
+    });
   };
 
   _locationDetermine = async (): Promise<void> => {
     const start = parseLocation(this._config?.location);
     if (!start) return;
     const where = `${start.latitude.toFixed(2)}, ${start.longitude.toFixed(2)}`;
+    const req = this._lookupBegin('determine');
+    this._locUi = { ...this._locUi, status: null };
     try {
-      const found = await lookupElevationZone(start.latitude, start.longitude);
-      // Only the two looked-up fields are written, so coordinates the
-      // user changed while the request was in flight stay as typed.
+      const found = await lookupElevationZone(start.latitude, start.longitude, req.signal);
+      if (req.seq !== this._lookupSeq.determine) return;
+      const now = parseLocation(this._config?.location);
+      if (now?.latitude !== start.latitude || now.longitude !== start.longitude) {
+        this._locUi = {
+          ...this._locUi,
+          status: { kind: 'error', text: tEditor(this.hass, 'location_coordinates_changed') },
+        };
+        this.requestUpdate();
+        return;
+      }
       const patch: Record<string, unknown> = {};
       if (found.elevation !== undefined) patch.elevation = found.elevation;
       if (validTimeZone(found.timezone) !== undefined) patch.time_zone = found.timezone;
@@ -576,11 +629,17 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
       };
       this._writeLocation(patch);
     } catch {
+      if (req.seq !== this._lookupSeq.determine) return;
       this._locUi = {
         ...this._locUi,
-        status: { kind: 'error', text: tEditor(this.hass, 'location_determine_error') },
+        status: {
+          kind: 'error',
+          text: tEditor(this.hass, req.timedOut() ? 'location_timed_out' : 'location_determine_error'),
+        },
       };
       this.requestUpdate();
+    } finally {
+      req.done();
     }
   };
 
