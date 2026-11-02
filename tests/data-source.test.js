@@ -703,18 +703,18 @@ describe('MeasuredDataSource._fetchLuxSunshine (#56 + #66)', () => {
 });
 
 describe('lux day cache with the browser east of the server zone (#352)', () => {
-  // Server in New York, browser in Tokyo: the day key of the oldest
-  // window day used to be parsed in Tokyo time, which lands before the
-  // server-midnight fetch start and was never written to the cache.
+  // Server in New York, browser east of it: the day key of the oldest
+  // window day used to be parsed in the browser's zone, which lands before
+  // the server-midnight fetch start and was never written to the cache.
+  // The source now takes every day boundary from its Calendar, so the
+  // process zone no longer matters here; npm run test:tz runs this file
+  // in three process zones to prove it.
   const sensors = { illuminance: 'sensor.lux' };
-  let savedTZ;
   let storage;
   let hass;
   let ny;
 
   beforeEach(() => {
-    savedTZ = process.env.TZ;
-    process.env.TZ = 'Asia/Tokyo';
     storage = new Map();
     globalThis.window = {
       localStorage: {
@@ -738,8 +738,6 @@ describe('lux day cache with the browser east of the server zone (#352)', () => 
   afterEach(() => {
     vi.useRealTimers();
     delete globalThis.window;
-    if (savedTZ === undefined) delete process.env.TZ;
-    else process.env.TZ = savedTZ;
   });
 
   // Same window the daily path builds: today's midnight + 1 day, back
@@ -1263,6 +1261,67 @@ describe('ForecastDataSource', () => {
     await Promise.resolve();
     await cleanup();
     expect(unsub).toHaveBeenCalled();
+  });
+
+  describe('resubscribe on config change', () => {
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    beforeEach(() => {
+      hass.states['weather.both'] = {
+        attributes: { supported_features: WeatherEntityFeature.FORECAST_DAILY | WeatherEntityFeature.FORECAST_HOURLY },
+      };
+      hass.states['weather.other'] = { attributes: { supported_features: WeatherEntityFeature.FORECAST_DAILY } };
+    });
+
+    it('resubscribes when the weather entity changes, disposing the old subscription', async () => {
+      const config = { weather_entity: 'weather.home' };
+      const ds = new ForecastDataSource(hass, config, cal);
+      ds.subscribe(() => {});
+      await settle();
+      config.weather_entity = 'weather.other';
+      ds.setHass(hass);
+      await settle();
+      expect(conn.subscribeMessage).toHaveBeenCalledTimes(2);
+      expect(conn.subscribeMessage.mock.calls[1][1].entity_id).toBe('weather.other');
+      expect(unsub).toHaveBeenCalledTimes(1);
+    });
+
+    it('resubscribes when the forecast type changes', async () => {
+      const config = { weather_entity: 'weather.both', forecast: { type: 'daily' } };
+      const ds = new ForecastDataSource(hass, config, cal);
+      ds.subscribe(() => {});
+      await settle();
+      config.forecast = { type: 'hourly' };
+      ds.setHass(hass);
+      await settle();
+      expect(conn.subscribeMessage).toHaveBeenCalledTimes(2);
+      expect(conn.subscribeMessage.mock.calls[1][1].forecast_type).toBe('hourly');
+      expect(unsub).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the subscription across a hass update that changes nothing', async () => {
+      const ds = new ForecastDataSource(hass, { weather_entity: 'weather.home' }, cal);
+      ds.subscribe(() => {});
+      await settle();
+      ds.setHass({ ...hass });
+      await settle();
+      expect(conn.subscribeMessage).toHaveBeenCalledTimes(1);
+      expect(unsub).not.toHaveBeenCalled();
+    });
+
+    it('does not resubscribe after dispose', async () => {
+      const config = { weather_entity: 'weather.home' };
+      const ds = new ForecastDataSource(hass, config, cal);
+      const cleanup = ds.subscribe(() => {});
+      await settle();
+      cleanup();
+      await settle();
+      expect(unsub).toHaveBeenCalledTimes(1);
+      config.weather_entity = 'weather.other';
+      ds.setHass(hass);
+      await settle();
+      expect(conn.subscribeMessage).toHaveBeenCalledTimes(1);
+    });
   });
 });
 

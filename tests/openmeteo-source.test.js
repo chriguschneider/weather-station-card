@@ -1054,3 +1054,90 @@ describe('unixtime responses', () => {
     expect(readCachedAvailability(46.9, 7.4, cal, storage)).toBeNull();
   });
 });
+
+describe('OpenMeteoSource with bad response bodies', () => {
+  const baseOpts = () => {
+    const store = new Map();
+    return {
+      calendar: cal,
+      latitude: 46.91,
+      longitude: 7.42,
+      storage: { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) },
+      now: () => 1_700_000_000_000,
+    };
+  };
+
+  // Known bug, reported in the PR of #383 rather than fixed there: the
+  // source treats the body as a success, notifies { ok: true } and stamps
+  // the fetch time, so an empty result is served for the whole TTL.
+  // `it.fails` turns red when the source is fixed; then make it a plain `it`.
+  it.fails('reports a failure for {error: true} at HTTP 200 and keeps no data', async () => {
+    // Open-Meteo documents errors as { error: true, reason: "..." }.
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ error: true, reason: 'Latitude must be in range of -90 to 90°.' }),
+    });
+    const listener = vi.fn();
+    const src = new OpenMeteoSource({ ...baseOpts(), fetchImpl });
+    src.setListener(listener);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await src.ensureFresh();
+    warn.mockRestore();
+    expect(listener).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+    expect(src.getDailyValues()).toEqual([]);
+    // Not cached as a success: the next call retries.
+    expect(src.isStale()).toBe(true);
+  });
+
+  it('reports a failure for a truncated JSON body and keeps the previous values', async () => {
+    const good = { daily: { time: ['2026-05-09'], sunshine_duration: [36000] } };
+    const json = vi.fn()
+      .mockResolvedValueOnce(good)
+      .mockRejectedValueOnce(new SyntaxError('Unexpected end of JSON input'));
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200, json });
+    let nowMs = 1_700_000_000_000;
+    const src = new OpenMeteoSource({ ...baseOpts(), fetchImpl, now: () => nowMs });
+    await src.ensureFresh();
+    expect(src.getDailyValues()).toHaveLength(1);
+
+    nowMs += 24 * 3600_000;
+    const listener = vi.fn();
+    src.setListener(listener);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await src.ensureFresh();
+    warn.mockRestore();
+    expect(listener).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+    expect(src.getDailyValues()).toHaveLength(1);
+  });
+
+  it('survives a partial body whose arrays are missing or shorter than `time`', async () => {
+    const partial = {
+      daily: { time: ['2026-05-08', '2026-05-09'], sunshine_duration: [36000] },
+      hourly: { time: [Date.parse('2026-05-09T10:00:00Z') / 1000] },
+    };
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => partial });
+    const src = new OpenMeteoSource({ ...baseOpts(), fetchImpl, includeHourly: true });
+    await expect(src.ensureFresh()).resolves.toBeUndefined();
+    expect(src.getDailyValues().map((e) => e.date)).toContain('2026-05-08');
+  });
+
+  it('builds no hourly forecast, probability or sunshine without includeHourly', async () => {
+    const body = {
+      daily: { time: ['2026-05-09'], sunshine_duration: [36000] },
+      hourly: {
+        time: [Date.parse('2026-05-09T10:00:00Z') / 1000],
+        sunshine_duration: [1800],
+        temperature_2m: [12],
+        precipitation_probability: [40],
+      },
+    };
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => body });
+    const src = new OpenMeteoSource({ ...baseOpts(), fetchImpl });
+    await src.ensureFresh();
+    expect(src.getDailyValues()).toHaveLength(1);
+    expect(src.getHourlyValues()).toEqual([]);
+    expect(src.getHourlyStationForecast()).toEqual([]);
+    expect(src.getHourlyProbability()).toEqual([]);
+  });
+});

@@ -40,6 +40,8 @@ export default {
         'src/chart/plugins/sunshine-label.ts',
         'src/chart/plugins/temp-labels.ts',
         'src/chart/skeleton.ts',
+        'src/editor/render-location.ts',
+        'src/editor/location-lookup.ts',
         'src/scroll-ux.ts',
         'src/action-handler.ts',
         'src/teardown-registry.ts',

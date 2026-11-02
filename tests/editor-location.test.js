@@ -110,6 +110,22 @@ describe('location panel: home and switch', () => {
     expect(m.summary).toBe('46.50, 7.90 · time_zone_server');
   });
 
+  it('summary names the location time without an elevation', () => {
+    const m = mount(makeEditor(), {
+      location: { latitude: 46.5, longitude: 7.9 },
+      time_zone: 'location',
+    });
+    expect(m.summary).toBe('46.50, 7.90 · time_zone_location');
+  });
+
+  it('summary shows a YAML-only IANA override verbatim', () => {
+    const m = mount(makeEditor(), {
+      location: { latitude: 46.5, longitude: 7.9, elevation: 1200 },
+      time_zone: 'Asia/Tokyo',
+    });
+    expect(m.summary).toBe('46.50, 7.90 · 1200 m · Asia/Tokyo');
+  });
+
   it('switch on presets home coordinates, server zone, no elevation, location time', async () => {
     const real = await realEditor({ show_station: true });
     const m = mount(makeEditor({ _locationSwitchChanged: real._locationSwitchChanged }));
