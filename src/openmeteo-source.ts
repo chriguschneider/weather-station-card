@@ -719,7 +719,13 @@ export class OpenMeteoSource {
           if (!res?.ok) {
             throw new Error(`Open-Meteo HTTP ${res ? res.status : '<no response>'}`);
           }
-          return await res.json() as OpenMeteoResponse;
+          const body = await res.json() as OpenMeteoResponse & { error?: unknown; reason?: unknown };
+          // Open-Meteo reports invalid parameters and limits as
+          // { error: true, reason } at HTTP 200.
+          if (body && typeof body === 'object' && body.error === true) {
+            throw new Error(`Open-Meteo error: ${String(body.reason ?? 'unknown reason')}`);
+          }
+          return body;
         };
         // Cross-card dedup (perf pass 2026-08): several cards at the
         // same location build the same URL — share one HTTP roundtrip

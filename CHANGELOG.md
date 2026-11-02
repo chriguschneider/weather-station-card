@@ -12,6 +12,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- An error answer from Open-Meteo no longer empties the sunshine and forecast data until the cache expires.
 - Wind speeds in the forecast now wrap evenly: either all below their arrows or none, regardless of screen size.
 - Editor: "Determine elevation and time zone" and the place search no longer apply a late response to coordinates changed in the meantime; requests time out after 10 s. A search hit without elevation or time zone now clears both fields instead of keeping the previous place's values.
 - A card for another place no longer compares the snow line with the Home Assistant home's elevation; set `location.elevation` (or click Determine in the editor) for the site comparison.
