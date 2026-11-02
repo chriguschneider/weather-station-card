@@ -1067,11 +1067,7 @@ describe('OpenMeteoSource with bad response bodies', () => {
     };
   };
 
-  // Known bug, reported in the PR of #383 rather than fixed there: the
-  // source treats the body as a success, notifies { ok: true } and stamps
-  // the fetch time, so an empty result is served for the whole TTL.
-  // `it.fails` turns red when the source is fixed; then make it a plain `it`.
-  it.fails('reports a failure for {error: true} at HTTP 200 and keeps no data', async () => {
+  it('reports a failure for {error: true} at HTTP 200 and keeps no data', async () => {
     // Open-Meteo documents errors as { error: true, reason: "..." }.
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
@@ -1088,6 +1084,21 @@ describe('OpenMeteoSource with bad response bodies', () => {
     expect(src.getDailyValues()).toEqual([]);
     // Not cached as a success: the next call retries.
     expect(src.isStale()).toBe(true);
+  });
+
+  it('fetches again on the next call after an error answer at HTTP 200', async () => {
+    const good = { daily: { time: ['2026-05-09'], sunshine_duration: [36000] } };
+    const json = vi.fn()
+      .mockResolvedValueOnce({ error: true, reason: 'Too many requests' })
+      .mockResolvedValueOnce(good);
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200, json });
+    const src = new OpenMeteoSource({ ...baseOpts(), fetchImpl });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await src.ensureFresh();
+    warn.mockRestore();
+    await src.ensureFresh();
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(src.getDailyValues()).toHaveLength(1);
   });
 
   it('reports a failure for a truncated JSON body and keeps the previous values', async () => {
