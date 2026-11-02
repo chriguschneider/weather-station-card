@@ -367,3 +367,71 @@ describe('normalizeHourlyDatetime', () => {
     warn.mockRestore();
   });
 });
+
+describe('daily values from recorder hour buckets across card midnights', () => {
+  beforeEach(() => clearDedupeCaches());
+  afterEach(() => vi.useRealTimers());
+
+  // The recorder mock answers with the hours of `valueAt` that fall in
+  // the requested window, as HA does for `period: 'hour'`.
+  async function daily(cardZone, nowIso, days, valueAt) {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(nowIso));
+    const hass = {
+      config: { time_zone: 'Europe/Zurich', latitude: 47.4, longitude: 8.5 },
+      states: {},
+      callWS: vi.fn(async (msg) => {
+        const from = Date.parse(msg.start_time);
+        const to = Date.parse(msg.end_time);
+        const rows = [];
+        for (let t = from; t < to; t += HOUR_MS) {
+          const v = valueAt(t);
+          rows.push({ start: new Date(t).toISOString(), min: v, max: v, mean: v });
+        }
+        return { 'sensor.t': rows };
+      }),
+    };
+    const ds = new MeasuredDataSource(hass, { sensors: { temperature: 'sensor.t' }, days }, new Calendar(cardZone));
+    return ds._fetchAggregates();
+  }
+
+  it('puts a Zurich evening into the next day on a Tokyo card', async () => {
+    // Zurich is on CET (UTC+1) since 2026-10-25, Tokyo is UTC+9. The dip
+    // at 14:00Z is 15:00 on the 26th in Zurich and 23:00 on the 26th in
+    // Tokyo; the spike at 16:00Z is 17:00 on the 26th in Zurich but
+    // 01:00 on the 27th in Tokyo.
+    const dip = Date.parse('2026-10-26T14:00:00Z');
+    const spike = Date.parse('2026-10-26T16:00:00Z');
+    const valueAt = (t) => (t === dip ? -5 : t === spike ? 30 : 10);
+    const now = '2026-10-27T10:00:00Z';
+
+    const tokyo = await daily('Asia/Tokyo', now, 2, valueAt);
+    expect(tokyo.map((d) => d.datetime)).toEqual(['2026-10-25T15:00:00.000Z', '2026-10-26T15:00:00.000Z']);
+    expect(tokyo.map((d) => [d.temperature, d.templow])).toEqual([[10, -5], [30, 10]]);
+
+    clearDedupeCaches();
+    const zurichCard = await daily('Europe/Zurich', now, 2, valueAt);
+    expect(zurichCard.map((d) => d.datetime)).toEqual(['2026-10-25T23:00:00.000Z', '2026-10-26T23:00:00.000Z']);
+    expect(zurichCard.map((d) => [d.temperature, d.templow])).toEqual([[30, -5], [10, 10]]);
+  });
+
+  it('cuts the 25-hour Zurich day of 2026-10-25 at its own midnights', async () => {
+    // Shape of HA's hourly statistics, generated: hour i carries value i.
+    // No real recorder export of the DST day is committed yet; replace
+    // this with a trimmed one when the maintainer supplies it.
+    const origin = Date.parse('2026-10-22T22:00:00Z'); // 2026-10-23 00:00 CEST
+    const valueAt = (t) => (t - origin) / HOUR_MS;
+    const out = await daily('Europe/Zurich', '2026-10-26T12:30:00Z', 3, valueAt);
+
+    expect(out.map((d) => d.datetime)).toEqual([
+      '2026-10-23T22:00:00.000Z', // 24 h, CEST
+      '2026-10-24T22:00:00.000Z', // 25 h, the clocks go back at 03:00 CEST
+      '2026-10-25T23:00:00.000Z', // CET
+    ]);
+    expect(out.map((d) => [d.templow, d.temperature])).toEqual([
+      [24, 47],
+      [48, 72], // 25 hourly buckets
+      [73, 86], // up to the 12:00Z bucket
+    ]);
+  });
+});
