@@ -89,6 +89,12 @@ src/
 │                              illuminance into a cloud-aware sun/moon
 │                              icon; WHO 5-tier UV bands. Pure.
 │
+├── location.ts                (v3.0)  The card's place: `location`
+│                              parse, coordinates and elevation
+│                              resolution (card location first, Home
+│                              Assistant's home otherwise) and
+│                              `resolveCardTimeZone` (ADR-0030). Pure.
+│
 ├── moon.ts                    (v2.3)  Moon astronomy for the live
 │                              panel's moon line (ADR-0022): illuminated
 │                              fraction + waxing/waning, moonrise/set,
@@ -255,6 +261,13 @@ src/
 │   │                          reset buttons delete. A CI drift guard
 │   │                          (tests/defaults.test.js) keeps this in
 │   │                          sync with the section schemas.
+│   ├── render-location.ts     (v3.0)  "Location" panel, first in
+│   │                          the editor: home shown, *Use another
+│   │                          location* switch, place search, map,
+│   │                          elevation / zone fields.
+│   ├── location-lookup.ts     (v3.0)  Open-Meteo geocoding and
+│   │                          elevation / zone lookups, run on a
+│   │                          button click in the editor only.
 │   ├── render-basics.ts       Basics (always visible, no panel): mode,
 │   │                          chart type, title, weather_entity.
 │   ├── render-sensors.ts      "Sensoren" panel. Past-data source
@@ -286,7 +299,7 @@ src/
                                _applyAttributeToggles,
                                _setAttributesLayout, _resetSection,
                                _renderSunshineAvailabilityHint, etc.);
-                               render() delegates to the six partials
+                               render() delegates to the seven partials
                                above. Lazy-loaded as its own chunk
                                (ADR-0013).
 ```
@@ -318,6 +331,9 @@ graph TD
     editor --> editorTypes[editor/types.ts]
     editor --> editorParts[editor/render-*.ts + section-*.ts]
     editorParts --> editorTypes
+    editor --> location[location.ts]
+    editor --> lookup[editor/location-lookup.ts]
+    main --> location
     cfgval --> defaults
     locale -. lazy import .-> locales[locales/*.ts]
     locale --> localeTypes[locale-types.ts]

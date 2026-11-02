@@ -90,8 +90,8 @@ those same sensors. This card does both:
   and (optionally) clock, weather attributes, sunrise/sunset and the
   moon — exact illumination percentage on a dynamically drawn disc plus
   the next moonrise/moonset, computed in-card with no Moon integration
-  needed (`location:` sets another place for Open-Meteo data and sunshine
-day length; sun and moon times keep using Home Assistant's location).
+  needed (`location:` sets another place for Open-Meteo data, sunshine day
+length, and the sun and moon times).
 All values derive from current sensor states, not from a
   forecast; every sensor-backed value is clickable and opens its
   more-info dialog. With the MeteoSwiss Radar integration it can also
@@ -412,9 +412,11 @@ switch on `show_zero_degree_level` / `show_zero_degree_level_48h`.
   sensor with a `forecast` attribute of `{datetime, level}` points
   works for the popup.
 
-Your site's elevation comes from, in this order: the card's `elevation:`
-option, the sensor's `elevation` attribute, Home Assistant's settings
-(Settings → System → General).
+Your site's elevation comes from, in this order: `location.elevation`,
+the card's `elevation:` option, the sensor's
+`elevation` attribute, and last Home Assistant's settings
+(Settings → System → General). With a `location`, Home Assistant's
+elevation is not used (it describes another place).
 
 <!-- Screenshot to add later: docs/images/zero-degree-popup.png -->
 

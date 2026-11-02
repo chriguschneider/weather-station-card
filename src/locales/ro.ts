@@ -72,8 +72,6 @@ const ro: LocaleEntry = {
     'zero_degree_level_48h': 'Zero-degree level, lowest in 48 h',
     'elevation': 'Elevation (m)',
     'location_heading': 'Location',
-    'location_latitude': 'Latitude',
-    'location_longitude': 'Longitude',
     'location_time_zone': 'Time zone of the location',
     'time_zone_label': 'Show times in',
     'time_zone_server': 'Server time (default)',

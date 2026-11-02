@@ -55,7 +55,7 @@ const REQUIRED_EDITOR_KEYS = [
   'wind_speed', 'gust_speed', 'wind_direction', 'uv_index', 'dew_point',
   'sunshine_duration', 'zero_degree_level', 'zero_degree_level_48h', 'elevation', 'next_rain',
   // location panel (#357)
-  'location_heading', 'location_latitude', 'location_longitude',
+  'location_heading',
   'location_time_zone', 'time_zone_label', 'time_zone_server',
   'time_zone_location', 'location_summary_home',
   'location_home_label', 'location_use_other', 'location_search_label',

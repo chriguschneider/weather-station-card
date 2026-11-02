@@ -42,7 +42,7 @@ forecast:
 ## Editor-section mapping
 
 The visual editor (redesigned in the v2.3 cycle, ADR-0023) shows the
-basics directly and collapses everything else into five panels. The
+basics directly and collapses everything else into seven panels. The
 reference below stays organised by config-key category (easier when
 you're searching for a specific YAML key); this table maps each editor
 block to where its keys live in the reference.
@@ -50,11 +50,14 @@ block to where its keys live in the reference.
 | Editor block | Where the keys are documented |
 | --- | --- |
 | Basics (always visible) | [General](#general) — `show_station` + `show_forecast` (the mode dropdown), `forecast.type`, `title`, `weather_entity` |
+| Location (first panel) | [Advanced](#advanced) — `location` (`latitude`, `longitude`, `elevation`, `time_zone`); [Layout & Display](#layout--display) — `time_zone`. First panel in the editor; see *Switch presets* below |
 | Your weather station's sensors | [Sensors](#sensors) — `sensors.*`; the "Past data" source dropdown drives `forecast.openmeteo_history` |
 | Chart | [General](#general) (`days`, `forecast_days`) and [Chart appearance](#chart-appearance) (`forecast.number_of_forecasts`, `forecast.chart_height`, the chart-row toggles, `forecast.style`) |
 | Live panel | [Layout & Display](#layout--display) — the main-panel elements, the clock dropdown (Off / On / On with seconds: `show_time`, `show_time_seconds`), the attribute pills, the *Arrangement* board (`attributes_layout`) and the *Time format* selector (`use_12hour_format`) |
 | Units | [Units](#units) |
 | Actions | [Actions](#actions) |
+
+**Switch presets.** The Location panel shows Home Assistant's home until *Use another location* is switched on. The switch then sets `location` to the home coordinates, `location.time_zone` to the server's zone, no `location.elevation` (empty until you enter one or let *Determine elevation and time zone* fill it) and `time_zone: location`. Switching it off removes `location` and `time_zone` again.
 
 Some keys (label/precip-bar sizes, individual colour overrides, font
 sizes, `locale`, `condition_mapping`, `debug`) are not surfaced in the
@@ -219,7 +222,7 @@ matching attribute on `weather_entity`)
 | `show_dew_point_humidity` | bool | `false` | Force the combined dew point + humidity line. Without it the two share a line whenever both `show_dew_point` and `show_humidity` are on. *(since v2.5)* |
 | `show_uv_illuminance` | bool | `false` | Force the combined UV + illuminance line. Without it the two share a line whenever both `show_uv_index` and `show_illuminance` are on. *(since v2.5)* |
 | `show_sun` | bool | `false` | Sunrise / sunset row (opt-in). |
-| `show_moon` | bool | `true` (renders with the sun cell) | Moon line inside the sun cell: dynamically drawn disc showing the exact illuminated fraction, the percentage, and the next moonrise/moonset. Computed in-card (ADR-0022) — no sensor or Moon integration required; rise/set times come from HA's configured location and are omitted when it has none. On the southern hemisphere the disc is mirrored to match the local view. Set `false` to keep the sun cell sun-only. *(since v2.3)* |
+| `show_moon` | bool | `true` (renders with the sun cell) | Moon line inside the sun cell: dynamically drawn disc showing the exact illuminated fraction, the percentage, and the next moonrise/moonset. Computed in-card (ADR-0022) — no sensor or Moon integration required; rise/set times come from the card's [`location`](#advanced) (Home Assistant's home when none is set) and are omitted when there are no coordinates. On the southern hemisphere the disc is mirrored to match the local view. Set `false` to keep the sun cell sun-only. *(since v2.3)* |
 
 **Attribute layout** (`attributes_layout`, *since v2.5*, ADR-0025)
 
@@ -302,9 +305,9 @@ before.
 | `forecast.show_date` | bool | `true` | `dd/mm` date row in the X-axis. When off, only the weekday is rendered. |
 | `forecast.show_mode_toggle` | bool | `true` | Show the small in-card button that cycles the view daily → today → hourly. On by default; set to `false` to hide it and lock the card to its configured `forecast.type` (the change is not persisted otherwise — a refresh resets it). |
 | `forecast.show_sunshine` | bool | `false` | Sunshine-duration column inside the chart — half-bar in yellow on the right of every column (precipitation keeps the left half), with the day's hours rendered as a small "Xh" label at the top of the column. Off by default; turning it on without configuring at least one of the sunshine sensors below renders empty bars and labels (no warning, no banner). See [SENSORS.md → Sunshine duration](SENSORS.md#sunshine-duration) for setup. |
-| `forecast.show_precip_probability` | bool | `false` | Chance of rain next to the amount in each forecast column's precipitation label: `4.2 / 85` over `mm %`. The value comes from the weather entity's forecast when it provides `precipitation_probability` (MeteoSwiss, AccuWeather, OpenWeatherMap, Pirate Weather, Tomorrow.io do); otherwise from Open-Meteo, on the same request the sunshine bar makes — which sends your Home Assistant location to Open-Meteo. Past (measured) columns never show a chance. A dry forecast day shows the chance alone from 30 % up. In `today` mode each 3-hour block shows the maximum of its hours. Off by default. *(since v2.8, [ADR-0027](adr/0027-precip-probability-entity-first.md))* |
+| `forecast.show_precip_probability` | bool | `false` | Chance of rain next to the amount in each forecast column's precipitation label: `4.2 / 85` over `mm %`. The value comes from the weather entity's forecast when it provides `precipitation_probability` (MeteoSwiss, AccuWeather, OpenWeatherMap, Pirate Weather, Tomorrow.io do); otherwise from Open-Meteo, on the same request the sunshine bar makes — which sends your Home Assistant location, or the card's `location` when set, to Open-Meteo. Past (measured) columns never show a chance. A dry forecast day shows the chance alone from 30 % up. In `today` mode each 3-hour block shows the maximum of its hours. Off by default. *(since v2.8, [ADR-0027](adr/0027-precip-probability-entity-first.md))* |
 | `forecast.openmeteo` | bool | `true` | Master switch for Open-Meteo. Set `false` to switch **every** Open-Meteo request of the card off (sunshine bar, `openmeteo_history` past block, chance-of-rain fallback): the card then uses only the weather entity and its own sensors, and columns nothing fills simply have no sunshine bar / chance. YAML only, no editor toggle. |
-| `forecast.openmeteo_history` | bool | `false` | Fills the **past** (left) half of the chart from Open-Meteo's historical model data — temperature, precipitation, wind and condition icons — for cards that have a `weather_entity` but no station `sensors.*`. Works in daily, today and hourly modes. Off by default. Has no effect once any station sensor is configured (the recorder is always preferred) or when there is no weather entity. Sends your Home Assistant location to Open-Meteo — see [SENSORS.md → Open-Meteo past block](SENSORS.md#open-meteo-past-block-no-station-sensors). |
+| `forecast.openmeteo_history` | bool | `false` | Fills the **past** (left) half of the chart from Open-Meteo's historical model data — temperature, precipitation, wind and condition icons — for cards that have a `weather_entity` but no station `sensors.*`. Works in daily, today and hourly modes. Off by default. Has no effect once any station sensor is configured (the recorder is always preferred) or when there is no weather entity. Sends your Home Assistant location, or the card's `location` when set, to Open-Meteo — see [SENSORS.md → Open-Meteo past block](SENSORS.md#open-meteo-past-block-no-station-sensors). |
 
 ### Zero-degree rows
 
@@ -478,8 +481,9 @@ disable the viewport and show everything.
 
 ### Day boundaries
 
-The card cuts days in its own calendar (today the Home Assistant
-server's time zone). Daily station columns come from the recorder's
+The card cuts days in its own calendar: the zone from the
+[`time_zone`](#layout--display) option (the Home Assistant server's zone unless
+set otherwise). Daily station columns come from the recorder's
 **hourly** statistics, reduced per day by the card: low = lowest hour
 minimum, high = highest hour maximum, rainfall = sum of the hours,
 averages (humidity, pressure, wind, dew point) = mean of the hourly
