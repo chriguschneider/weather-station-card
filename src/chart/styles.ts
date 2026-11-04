@@ -629,13 +629,12 @@ function buildCardStyles({
       .main span:not(.wsc-entity-link) {
         font-size: 15px;
       }
-      /* Clock is position:absolute inside .main, which sits within the
-       * 16px card padding — at this width keep it pinned but tighten
-       * the inset and shrink it so it clears the condition text. The
-       * full stacking happens in the <=280px tier. */
+      /* Clock is position:absolute inside .main, whose right edge sits
+       * 8px inside the card at this width (halved padding), so the base
+       * right:0 already lines up with the content edge — only shrink it
+       * so it clears the condition text. The full stacking happens in
+       * the <=280px tier. */
       .current-time {
-        right: -8px;
-        inset-inline-end: -8px;
         font-size: ${Math.round(timeSize * 0.8)}px;
       }
       .date-text {
