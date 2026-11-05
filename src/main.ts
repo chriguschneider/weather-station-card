@@ -1329,9 +1329,13 @@ _pickLiveCondition(inputs: any): string | undefined {
   const fromEntity = condition === 'cloudy' && luxNow == null && SKY_STATES.has(wxState);
   // classifyDay has no night state; derive it from the card's computed
   // sun position. Condition text and icon both follow the state.
-  const night = !fromEntity && lat != null && lon != null && !isSunUp(new Date(), lat, lon);
+  // The entity path follows the same sun position: HA has no
+  // partly-cloudy-night state, so only 'sunny' and 'partlycloudy' change.
+  const belowHorizon = lat != null && lon != null && !isSunUp(new Date(), lat, lon);
+  const entityDay = fromEntity && (wxState === 'sunny' || wxState === 'partlycloudy');
+  const night = belowHorizon && (!fromEntity || entityDay);
   const result = fromEntity
-    ? wxState
+    ? (night && wxState === 'sunny' ? 'clear-night' : wxState)
     : night && condition === 'sunny' ? 'clear-night' : condition;
   this._liveConditionKey = conditionKey;
   this._liveCondition = result;
