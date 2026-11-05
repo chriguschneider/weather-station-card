@@ -12,7 +12,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- The main condition icon and text now show a clear night (moon) or the night partly-cloudy icon after sunset at the card's location, instead of a sun, when the condition is derived from your sensors. Forecast rows and a weather entity's own `clear-night` are unchanged.
+- The main condition icon and text now show a clear night (moon) or the night partly-cloudy icon after sunset at the card's location, instead of a sun, whether the condition is derived from your sensors or comes from the weather entity. Forecast rows and a weather entity's own `clear-night` are unchanged.
 
 ### Fixed
 
