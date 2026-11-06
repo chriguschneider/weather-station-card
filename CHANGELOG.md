@@ -10,6 +10,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - README and the configuration reference now describe the Location panel, its switch presets and where sun, moon and elevation come from; the editor hints for sunshine, chance of rain and past data mention the card's location.
 
+### Deprecated
+
+- The top-level `elevation:` option is deprecated and will be removed in 4.0. It keeps working for now. Move it to `location.elevation`; the editor's Location panel shows it in the elevation field and moves it there when you edit the location. See the migration guide.
+
 ### Changed
 
 - The zero-degree popup shows where the snow line reaches your site: a dashed line in the precipitation colour at your elevation + 300 m, labelled with the location name and elevation (e.g. "Köniz 581 m"). Where the curve dips below it, snow can reach you. The highest point of the curve is now marked too when it is at least 200 m above the current level. Without a known elevation no line is drawn.

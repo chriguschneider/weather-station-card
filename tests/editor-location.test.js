@@ -476,6 +476,54 @@ describe('resolveElevation', () => {
   });
 });
 
+describe('deprecated top-level elevation (#414)', () => {
+  const away = { latitude: 39.7, longitude: -105 };
+  const hass = { config: { elevation: 410 } };
+
+  it('the card reads both forms with the same result', () => {
+    expect(resolveElevation({ elevation: 900 }, [], hass)).toBe(900);
+    expect(resolveElevation({ location: { elevation: 900 } }, [], hass)).toBe(900);
+    expect(resolveElevation({ location: { ...away, elevation: 900 } }, [], hass)).toBe(900);
+  });
+
+  it('the panel shows the legacy value in the elevation field', () => {
+    const m = mount(makeEditor(), { location: away, elevation: 900 });
+    expect(m.fieldsForm.data.elevation).toBe(900);
+    const both = mount(makeEditor(), { location: { ...away, elevation: 1200 }, elevation: 900 });
+    expect(both.fieldsForm.data.elevation).toBe(1200);
+  });
+
+  it('editing moves the value into location.elevation without a duplicate key', async () => {
+    const real = await realEditor({ location: away, elevation: 900 });
+    real._writeLocation({ time_zone: 'America/Denver' });
+    expect(lastConfig(real)).toEqual({
+      location: { ...away, elevation: 900, time_zone: 'America/Denver' },
+    });
+    expect('elevation' in lastConfig(real)).toBe(false);
+  });
+
+  it('editing the field itself keeps the new value only under location', async () => {
+    const real = await realEditor({ location: away, elevation: 900 });
+    real._locationChanged({
+      target: document.createElement('ha-form'),
+      detail: { value: { elevation: 1000 } },
+    });
+    expect(lastConfig(real)).toEqual({ location: { ...away, elevation: 1000 } });
+  });
+
+  it('location.elevation wins when both are set, the top-level key is dropped', async () => {
+    const real = await realEditor({ location: { ...away, elevation: 1200 }, elevation: 900 });
+    real._writeLocation({ time_zone: 'America/Denver' });
+    expect(lastConfig(real)).toEqual({ location: { ...away, elevation: 1200, time_zone: 'America/Denver' } });
+  });
+
+  it('a card without location keeps its top-level value', async () => {
+    const { migrateLegacyElevation } = await import('../src/editor/legacy-elevation.js');
+    const cfg = { elevation: 900, show_station: true };
+    expect(migrateLegacyElevation(cfg)).toBe(cfg);
+  });
+});
+
 describe('location without elevation warning', () => {
   const away = { latitude: 39.7, longitude: -105 };
   it('warns when location has coordinates but no elevation', () => {

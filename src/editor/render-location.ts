@@ -5,6 +5,7 @@
 // it back as an option while it is set, so the form never drops it.
 
 import { html, type TemplateResult } from 'lit';
+import { panelElevation } from './legacy-elevation.js';
 import { placeLabel } from './location-lookup.js';
 import { renderEditorPanel } from './expansion-panel.js';
 import type { EditorContext, EditorLike } from './types.js';
@@ -29,7 +30,7 @@ export function renderLocationSection(editor: EditorLike, ctx: EditorContext): T
     ? cfg.location : {}) as Record<string, unknown>;
   const locZone = typeof loc.time_zone === 'string' ? loc.time_zone : '';
   const hasCoords = typeof loc.latitude === 'number' && typeof loc.longitude === 'number';
-  const elevation = typeof loc.elevation === 'number' ? loc.elevation : undefined;
+  const elevation = panelElevation(cfg);
   const home = editor.hass?.config;
   const ui = editor._locUi;
 
