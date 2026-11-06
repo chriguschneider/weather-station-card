@@ -34,6 +34,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Two cards for the same place in different time zones no longer share cached Open-Meteo sunshine and rain data; changing a card's time zone no longer shows the previous zone's hours until the cache expires.
 - Today's sunshine on a card in another time zone no longer includes hours from the server's previous day.
 
+### Under the hood
+
+- One shared calendar per time zone, one resolver for the card's zone in card and editor, one hour-key helper.
+
 ## [3.0.0-beta.2] — 2026-10-30
 
 **Beta**, second round: beta.1 plus the sunshine fix below. Same rules as beta.1: only shown by HACS if you enabled beta versions for this card; 3.0.0 follows after about a week without problems. Report in [#358](https://github.com/chriguschneider/weather-station-card/issues/358).

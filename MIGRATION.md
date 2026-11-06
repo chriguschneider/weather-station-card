@@ -23,18 +23,20 @@ you. To change it by hand:
 # Before
 elevation: 1200
 location:
-  latitude: 46.87
-  longitude: -113.99
+  time_zone: Europe/Zurich
 
 # After
 location:
-  latitude: 46.87
-  longitude: -113.99
+  time_zone: Europe/Zurich
   elevation: 1200
 ```
 
 A card without `location` has nowhere to put it and keeps the top-level
 `elevation:` for now.
+
+A card whose `location` has coordinates already ignores the top-level
+`elevation:` (it may describe another place), and the editor leaves it
+alone. Set `location.elevation` if you want the value to apply there.
 
 ## v1.9
 

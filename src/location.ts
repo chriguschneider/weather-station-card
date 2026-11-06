@@ -3,7 +3,7 @@
 // location. Sun and moon times, solar strength and the lux derivation
 // read it too (#356), so a card for another place shows that place's sun.
 
-import { validTimeZone } from './utils/time-zone.js';
+import { calendarFor, validTimeZone, type Calendar } from './utils/time-zone.js';
 
 export interface LatLon {
   latitude: number;
@@ -79,4 +79,14 @@ export function resolveCardTimeZone(
     warning: `\`time_zone\` "${String(raw)}" is not a known IANA time zone;`
       + ' the server time zone is used instead',
   };
+}
+
+/** The card's calendar (ADR-0030): the zone `resolveCardTimeZone`
+ *  picks, with the browser zone as the last resort. The card and the
+ *  editor both resolve it here. */
+export function cardCalendar(
+  config: { time_zone?: unknown; location?: unknown } | null | undefined,
+  serverZone: unknown,
+): Calendar {
+  return calendarFor(resolveCardTimeZone(config, serverZone).zone);
 }

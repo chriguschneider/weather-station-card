@@ -34,7 +34,7 @@ import {
   toMillimeters,
 } from './utils/unit-converters.js';
 import { dedupeRequest } from './utils/shared-requests.js';
-import { Calendar } from './utils/time-zone.js';
+import { serverCalendar, type Calendar } from './utils/time-zone.js';
 
 // Dedup TTL for identical recorder requests across sibling cards on
 // the same dashboard. Long enough to absorb staggered card mounts and
@@ -540,8 +540,6 @@ export class MeasuredDataSource {
   // dashboard are pure waste); `notifyVisible` runs the deferred poll
   // as soon as the card is on screen again.
   private _pollDeferredWhileHidden = false;
-  private _serverCal: Calendar | null = null;
-  private _serverZoneInput: string | undefined;
 
   constructor(hass: HassLike | null, config: DataSourceConfig, readonly calendar: Calendar) {
     this.hass = hass;
@@ -671,7 +669,9 @@ export class MeasuredDataSource {
     // lux/clearsky_lux ratio. Skipped silently if either input is
     // missing — Open-Meteo overlay or F3 then fills the row.
     const luxByDate = await this._fetchLuxSunshine(sensors, dayStart, this.calendar.addDays(todayStart, 1));
-    const serverCal = this._serverCalendar();
+    // Counters that reset at midnight (a sunshine utility meter) reset
+    // at the server's.
+    const serverCal = serverCalendar(this.hass);
     const sunshineSeries = sensors.sunshine_duration ? stats?.[sensors.sunshine_duration] : null;
     const sunshineByDate = sensors.sunshine_duration
       ? sunshineDailyTotals(sunshineSeries, this.calendar, serverCal)
@@ -685,18 +685,6 @@ export class MeasuredDataSource {
       : null;
 
     return this._buildForecast(daily, sensors, dayStart, days, luxByDate, sunshineByDate, sunshineServerLast);
-  }
-
-  /** The HA server's calendar. Counters that reset at midnight (a
-   *  sunshine utility meter) reset at the server's, whatever the card's
-   *  calendar is. */
-  private _serverCalendar(): Calendar {
-    const zone = this.hass?.config?.time_zone;
-    if (!this._serverCal || this._serverZoneInput !== zone) {
-      this._serverZoneInput = zone;
-      this._serverCal = new Calendar(zone);
-    }
-    return this._serverCal;
   }
 
   /** Recorder statistics call routed through the module-level request
@@ -1318,7 +1306,7 @@ export class ForecastDataSource {
           const raw = (event.forecast as ForecastEntry[]) || [];
           // Resolve the server calendar at event time: `hass` may have
           // been swapped since the subscription.
-          const serverCal = new Calendar(this.hass?.config?.time_zone);
+          const serverCal = serverCalendar(this.hass);
           this._emit({
             forecast: raw.map((e) => this._normalizeEntry(e, isHourly, serverCal, wxWindUnit)),
           });

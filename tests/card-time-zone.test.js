@@ -6,16 +6,26 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from 'lit';
 import '../src/main.js';
-import { resolveCardTimeZone } from '../src/location.js';
+import { cardCalendar, resolveCardTimeZone } from '../src/location.js';
 import { validateConfig } from '../src/config-validation.js';
 import { nextMoonEvent, sunTimes } from '../src/moon.js';
-import { Calendar } from '../src/utils/time-zone.js';
+import { Calendar, calendarFor } from '../src/utils/time-zone.js';
 
 const SERVER = 'America/Los_Angeles';
 const DENVER = 'America/Denver';
 // 00:30 on 2 July in Denver, 23:30 on 1 July in Los Angeles.
 const NOW = new Date('2026-07-02T06:30:00Z');
 const MONTANA = { latitude: 46.87, longitude: -113.99 };
+
+describe('cardCalendar', () => {
+  it('is the shared calendar of the resolved zone', () => {
+    const cal = cardCalendar({ time_zone: 'location', location: { ...MONTANA, time_zone: DENVER } }, SERVER);
+    expect(cal.timeZone).toBe(DENVER);
+    expect(cal).toBe(calendarFor(DENVER));
+    expect(cardCalendar({}, SERVER).timeZone).toBe(SERVER);
+    expect(cardCalendar({ time_zone: 'Not/AZone' }, SERVER).timeZone).toBe(SERVER);
+  });
+});
 
 describe('resolveCardTimeZone', () => {
   const zoneOf = (config) => resolveCardTimeZone(config, SERVER);

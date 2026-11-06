@@ -1,10 +1,10 @@
 import { LitElement, html, type TemplateResult } from 'lit';
 import type { HomeAssistant, LocationUiState } from './editor/types.js';
-import { parseLocation, resolveCardTimeZone, resolveLocation } from './location.js';
+import { cardCalendar, parseLocation, resolveLocation } from './location.js';
 import { lookupElevationZone, searchPlaces, type PlaceHit } from './editor/location-lookup.js';
 import locale, { ensureLocaleLoaded, resolveLocaleKey } from './locale.js';
 import { readCachedAvailability } from './openmeteo-source.js';
-import { Calendar, validTimeZone } from './utils/time-zone.js';
+import { validTimeZone } from './utils/time-zone.js';
 import { renderBasicsSection } from './editor/render-basics.js';
 import { renderSensorsSection } from './editor/render-sensors.js';
 import { renderChartSection } from './editor/render-chart.js';
@@ -732,7 +732,7 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     const loc = resolveLocation(cfg, hass);
     if (!loc) return '';
 
-    const av = readCachedAvailability(loc.latitude, loc.longitude, new Calendar(resolveCardTimeZone(cfg, hass?.config?.time_zone).zone));
+    const av = readCachedAvailability(loc.latitude, loc.longitude, cardCalendar(cfg, hass?.config?.time_zone));
     if (!av) {
       return html`<div class="hint" style="margin-top:4px;">
         ${t('sunshine_availability_pending')}

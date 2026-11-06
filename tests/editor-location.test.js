@@ -486,35 +486,50 @@ describe('deprecated top-level elevation (#414)', () => {
     expect(resolveElevation({ location: { ...away, elevation: 900 } }, [], hass)).toBe(900);
   });
 
-  it('the panel shows the legacy value in the elevation field', () => {
-    const m = mount(makeEditor(), { location: away, elevation: 900 });
-    expect(m.fieldsForm.data.elevation).toBe(900);
-    const both = mount(makeEditor(), { location: { ...away, elevation: 1200 }, elevation: 900 });
-    expect(both.fieldsForm.data.elevation).toBe(1200);
+  const partial = { latitude: 39.7 };
+
+  it('the panel shows the legacy value only while location has no coordinates', async () => {
+    const { panelElevation } = await import('../src/editor/legacy-elevation.js');
+    expect(panelElevation({ location: partial, elevation: 900 })).toBe(900);
+    expect(panelElevation({ location: { ...partial, elevation: 1200 }, elevation: 900 })).toBe(1200);
+    expect(panelElevation({ location: away, elevation: 900 })).toBeUndefined();
+    expect(panelElevation({ location: { ...away, elevation: 1200 }, elevation: 900 })).toBe(1200);
   });
 
-  it('editing moves the value into location.elevation without a duplicate key', async () => {
+  it('keeps ignoring the top-level value when location has coordinates', async () => {
+    expect(resolveElevation({ location: away, elevation: 900 }, [], hass)).toBeUndefined();
+    const m = mount(makeEditor(), { location: away, elevation: 900 });
+    expect(m.fieldsForm.data.elevation).toBeUndefined();
     const real = await realEditor({ location: away, elevation: 900 });
     real._writeLocation({ time_zone: 'America/Denver' });
     expect(lastConfig(real)).toEqual({
-      location: { ...away, elevation: 900, time_zone: 'America/Denver' },
+      location: { ...away, time_zone: 'America/Denver' },
+      elevation: 900,
+    });
+  });
+
+  it('editing moves the value into location.elevation without a duplicate key', async () => {
+    const real = await realEditor({ location: partial, elevation: 900 });
+    real._writeLocation({ time_zone: 'America/Denver' });
+    expect(lastConfig(real)).toEqual({
+      location: { ...partial, elevation: 900, time_zone: 'America/Denver' },
     });
     expect('elevation' in lastConfig(real)).toBe(false);
   });
 
   it('editing the field itself keeps the new value only under location', async () => {
-    const real = await realEditor({ location: away, elevation: 900 });
+    const real = await realEditor({ location: partial, elevation: 900 });
     real._locationChanged({
       target: document.createElement('ha-form'),
       detail: { value: { elevation: 1000 } },
     });
-    expect(lastConfig(real)).toEqual({ location: { ...away, elevation: 1000 } });
+    expect(lastConfig(real)).toEqual({ location: { ...partial, elevation: 1000 } });
   });
 
   it('location.elevation wins when both are set, the top-level key is dropped', async () => {
-    const real = await realEditor({ location: { ...away, elevation: 1200 }, elevation: 900 });
+    const real = await realEditor({ location: { ...partial, elevation: 1200 }, elevation: 900 });
     real._writeLocation({ time_zone: 'America/Denver' });
-    expect(lastConfig(real)).toEqual({ location: { ...away, elevation: 1200, time_zone: 'America/Denver' } });
+    expect(lastConfig(real)).toEqual({ location: { ...partial, elevation: 1200, time_zone: 'America/Denver' } });
   });
 
   it('a card without location keeps its top-level value', async () => {

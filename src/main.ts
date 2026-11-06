@@ -76,7 +76,7 @@ import {
   sunshineFractions,
 } from './sunshine-source.js';
 import { OpenMeteoSource } from './openmeteo-source.js';
-import { resolveCardTimeZone, resolveLocation } from './location.js';
+import { cardCalendar, resolveLocation } from './location.js';
 import { forecastHasProbability, overlayPrecipProbability } from './precip-probability.js';
 import { PROBABILITY_EXTRA_BOTTOM_PAD } from './chart/plugins/precip-label.js';
 import { safeQuery } from './utils/safe-query.js';
@@ -137,7 +137,7 @@ import {
   resolveAttributesLayout,
   type AttributeToken,
 } from './attributes-layout.js';
-import { Calendar } from './utils/time-zone.js';
+import { calendarFor, type Calendar } from './utils/time-zone.js';
 // Chart library: uPlot. Imported transitively via ./chart/draw.js —
 // there is no global registration step (uPlot has no plugin registry;
 // per-instance hooks/plugins are passed directly to the constructor).
@@ -231,8 +231,11 @@ class WeatherStationCard extends LitElement {
   language: string = 'en';
   // Every day boundary and displayed time goes through this (ADR-0030).
   // The browser's zone until the first `set hass` brings the server's.
-  calendar: Calendar = new Calendar();
-  _calendarZoneInput: unknown = undefined;
+  calendar: Calendar = calendarFor();
+  // The `sun.sun` state, kept only as a render tick: a new object every
+  // attribute update (~1/min) schedules a Lit update that refreshes the
+  // computed sun and moon lines. Nothing reads its attributes;
+  // sun and moon come from the card location (ADR-0022).
   // deno-lint-ignore no-explicit-any
   sun: any = null;
   // deno-lint-ignore no-explicit-any
@@ -818,13 +821,15 @@ set hass(hass: HassMain) {
   this._watchedStatesSnapshot = this._captureWatchedStates(hass);
 }
 
-// All entity ids this card reads live values from: every configured
-// sensor, the weather entity, and sun.sun (its attribute tick keeps
-// the computed sun and moon lines fresh).
-// Anything NOT in this list never feeds the live panel — its state
-// changes are irrelevant to this card and safe to ignore.
-// No card-level timer: sun.sun's ~1/min attribute tick re-renders the
-// card, which refreshes the moon % and next-event time.
+// All entity ids whose changes re-render this card: every configured
+// sensor and the weather entity, which feed the live panel, plus
+// sun.sun. The sun and moon lines are computed from the card location
+// (ADR-0022), not read from sun.sun; it stays watched only as the
+// card's render tick — its ~1/min attribute update re-renders the card,
+// refreshing the sun events, moon % and next moon event without a
+// card-level timer.
+// Anything NOT in this list is irrelevant to this card and safe to
+// ignore.
 _watchedEntityIds(): string[] {
   const ids: string[] = [];
   const sensors = this.config?.sensors || {};
@@ -2668,10 +2673,7 @@ _invalidateStaleSources(oldConfig: any) {
 // the `time_zone` option (#357, ADR-0030). A zone change rebuilds the
 // sources that hold the old calendar or cached its days.
 _syncCalendar(serverZone: unknown): void {
-  const zone = resolveCardTimeZone(this.config, serverZone).zone;
-  if (zone === this._calendarZoneInput) return;
-  this._calendarZoneInput = zone;
-  const next = new Calendar(zone);
+  const next = cardCalendar(this.config, serverZone);
   if (next.timeZone === this.calendar.timeZone) return;
   this.calendar = next;
   this._stationCache = {};
