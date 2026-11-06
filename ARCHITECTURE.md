@@ -215,8 +215,11 @@ src/
 │                              one IANA zone (ADR-0030). Each card owns
 │                              one (server zone) and passes it to every
 │                              module that cuts days or formats times;
-│                              no module state. Replaces Date's local
-│                              getters.
+│                              no page-wide zone. `calendarFor` /
+│                              `serverCalendar` memoize one immutable
+│                              instance per zone; `cardCalendar`
+│                              (location.ts) resolves a card's zone.
+│                              Replaces Date's local getters.
 │
 ├── chart/
 │   ├── orchestrator.ts        drawChartUnsafe(card, args) — assembles

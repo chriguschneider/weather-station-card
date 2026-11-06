@@ -3,7 +3,7 @@
 // instants, so the suite means the same thing on any machine zone — a
 // viewer in Zurich, the UTC CI runner, or a laptop in New York.
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { Calendar } from '../src/utils/time-zone.js';
+import { Calendar, calendarFor, serverCalendar } from '../src/utils/time-zone.js';
 import { getDateTimeFormat } from '../src/utils/intl-cache.js';
 import { aggregateThreeHourCalendar, trimToWholeDayStart } from '../src/forecast-utils.js';
 import '../src/main.js';
@@ -17,6 +17,29 @@ describe('Calendar', () => {
     expect(new Calendar('Not/AZone').timeZone).toBe(browser);
     expect(new Calendar(42).timeZone).toBe(browser);
     expect(new Calendar().timeZone).toBe(browser);
+  });
+
+  it('hourKey is the zone-local hour, minutes dropped', () => {
+    const ny = new Calendar('America/New_York');
+    // 04:59:30 UTC on 6 July = 00:59 EDT.
+    expect(ny.hourKey(Date.UTC(2026, 6, 6, 4, 59, 30))).toBe('2026-07-06T00:00');
+    expect(new Calendar('Asia/Kolkata').hourKey(Date.UTC(2026, 0, 1, 18, 0))).toBe('2026-01-01T23:00');
+  });
+});
+
+describe('shared calendars', () => {
+  it('calendarFor returns one instance per resolved zone', () => {
+    const browser = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    expect(calendarFor('Europe/Zurich')).toBe(calendarFor('Europe/Zurich'));
+    expect(calendarFor('Europe/Zurich').timeZone).toBe('Europe/Zurich');
+    expect(calendarFor('Not/AZone')).toBe(calendarFor());
+    expect(calendarFor(undefined).timeZone).toBe(browser);
+  });
+
+  it('serverCalendar reads hass.config.time_zone', () => {
+    expect(serverCalendar({ config: { time_zone: 'Asia/Tokyo' } }).timeZone).toBe('Asia/Tokyo');
+    expect(serverCalendar(null)).toBe(calendarFor());
+    expect(serverCalendar({ config: null })).toBe(calendarFor());
   });
 });
 

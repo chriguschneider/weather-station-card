@@ -141,7 +141,7 @@ export function localDateString(date: DateLike, calendar: Calendar): string | nu
 export function localHourString(date: DateLike, calendar: Calendar): string | null {
   const d = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(d.getTime())) return null;
-  return `${calendar.dayKey(d)}T${String(calendar.hourOf(d)).padStart(2, '0')}:00`;
+  return calendar.hourKey(d);
 }
 
 /** Find an entry by hourly key in an array of {datetime, value} items.
