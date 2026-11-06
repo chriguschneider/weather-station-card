@@ -3,7 +3,8 @@ import serve from 'rollup-plugin-serve';
 import terser from '@rollup/plugin-terser';
 import typescript from '@rollup/plugin-typescript';
 import { visualizer } from 'rollup-plugin-visualizer';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf8'));
 const dev = process.env.ROLLUP_WATCH;
@@ -26,6 +27,24 @@ const injectCardVersion = {
     if (!id.endsWith('main.ts')) return null;
     const replaced = code.replaceAll("'__CARD_VERSION__'", JSON.stringify(pkg.version));
     return replaced === code ? null : { code: replaced, map: null };
+  },
+};
+
+// Inline plugin: deletes the previous build's dist/ bundles before rollup
+// writes the new ones. Chunk names carry a content hash, so a build whose
+// hashes changed (any dependency bump) would otherwise leave the old chunk
+// beside the new one, and CI's bundle budget would count both (#408).
+// Only top-level JS, gzip and sourcemap files are touched; subfolders and
+// other files stay. Skipped in watch mode, where the dev server serves dist/.
+const cleanStaleDistOutputs = {
+  name: 'clean-stale-dist-outputs',
+  buildStart() {
+    if (dev || !existsSync('dist')) return;
+    for (const entry of readdirSync('dist', { withFileTypes: true })) {
+      if (entry.isFile() && /\.(js(\.gz)?|map)$/.test(entry.name)) {
+        rmSync(join('dist', entry.name));
+      }
+    }
   },
 };
 
@@ -73,6 +92,9 @@ export default {
   // and the hacstag mismatch never happens.
   preserveEntrySignatures: 'strict',
   plugins: [
+    // Runs first so the stale-output sweep happens before any bundle is
+    // written; see cleanStaleDistOutputs above.
+    cleanStaleDistOutputs,
     // Version-string substitution runs before TS so the placeholder
     // disappears before any downstream pass sees it. Idempotent — only
     // touches main.ts, only matches the exact placeholder literal.
