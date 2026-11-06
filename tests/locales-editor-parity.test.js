@@ -62,6 +62,8 @@ const REQUIRED_EDITOR_KEYS = [
   'location_search_button', 'location_search_none', 'location_search_error',
   'location_map_label', 'location_determine_button', 'location_determined',
   'location_determine_error', 'location_attribution',
+  'location_timed_out', 'location_coordinates_changed',
+  'location_coordinates_stale', 'location_determine_next',
   // basics
   'required_marker', 'title', 'days', 'forecast_days', 'weather_entity',
   'mode_label', 'mode_station', 'mode_forecast', 'mode_combination',
@@ -113,6 +115,49 @@ const PLACEHOLDERS = {
   summary_connected: ['{n}'],
   location_determined: ['{place}'],
 };
+
+// 3.0 keys (Location panel, zero-degree popup site texts). Machine
+// translated in every language, so none may stay identical to English.
+const TRANSLATED_TOP_LEVEL = [
+  'zero_degree_trend_rising_fast', 'zero_degree_trend_rising',
+  'zero_degree_trend_stable', 'zero_degree_trend_falling',
+  'zero_degree_trend_falling_fast', 'zero_degree_trend_to',
+  'zero_degree_then_up', 'zero_degree_then_down',
+  'zero_degree_stays_between', 'zero_degree_site_far',
+  'zero_degree_site_near', 'zero_degree_site_at',
+  'zero_degree_snow_line', 'zero_degree_snow_to_site',
+];
+const TRANSLATED_EDITOR = [
+  'zero_degree_level_48h', 'show_zero_degree_level_48h', 'elevation',
+  'location_heading', 'location_time_zone', 'time_zone_label',
+  'time_zone_location', 'location_home_label', 'location_use_other',
+  'location_search_label', 'location_search_button', 'location_search_none',
+  'location_search_error', 'location_map_label', 'location_determine_button',
+  'location_determined', 'location_determine_error', 'location_attribution',
+  'location_timed_out', 'location_coordinates_changed',
+  'location_coordinates_stale', 'location_determine_next',
+];
+const TOKEN_RE = /\{\w+\}/g;
+
+describe('3.0 keys are translated in every language', () => {
+  for (const [lang, table] of Object.entries(LOCALES)) {
+    if (lang === 'de') continue;
+    it(`${lang}: no 3.0 key is missing or still English, placeholders kept`, () => {
+      const pairs = [
+        ...TRANSLATED_TOP_LEVEL.map((k) => [k, en[k], table[k]]),
+        ...TRANSLATED_EDITOR.map((k) => [`editor.${k}`, en.editor[k], table.editor?.[k]]),
+      ];
+      for (const [key, enValue, value] of pairs) {
+        expect(typeof value, `${lang}.${key} missing`).toBe('string');
+        expect(value, `${lang}.${key} is still English`).not.toBe(enValue);
+        expect(
+          [...value.matchAll(TOKEN_RE)].map((m) => m[0]).sort(),
+          `${lang}.${key} changed its placeholders`,
+        ).toEqual([...enValue.matchAll(TOKEN_RE)].map((m) => m[0]).sort());
+      }
+    });
+  }
+});
 
 describe('locale editor blocks (parity with en)', () => {
   const enKeys = new Set(Object.keys(en.editor));

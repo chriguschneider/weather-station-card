@@ -459,7 +459,9 @@ For doc-writing conventions (length targets, voice, cross-linking), see
 fully translated — UI and editor — in 25 languages (one file per
 language under `src/locales/`). Corrections from native speakers and
 entirely new languages are equally welcome; a parity test guides you to
-every key a language must provide. See CONTRIBUTING.md.
+every key a language must provide. The Location panel and snow line texts
+added in 3.0 are machine translations in all languages except English and
+German; native-speaker corrections are especially welcome. See CONTRIBUTING.md.
 
 ## AI-assisted development
 
