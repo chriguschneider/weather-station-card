@@ -75,6 +75,10 @@ export interface LocationUiState {
   query: string;
   results: PlaceHit[];
   status: { kind: 'ok' | 'error'; text: string } | null;
+  /** Switch is on but HA has no home coordinates to preset. */
+  pending?: boolean;
+  /** Coordinates elevation and zone were last determined for. */
+  anchor?: { latitude: number; longitude: number } | null;
 }
 
 export interface EditorLike {

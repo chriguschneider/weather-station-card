@@ -125,6 +125,88 @@ describe('moonTimes / nextMoonEvent', () => {
   });
 });
 
+describe('moonTimes — DST days and card zones', () => {
+  const ZONES = [
+    // [zone, lat, lon, spring-forward day, fall-back day] (Y, M, D)
+    ['Europe/Zurich', 46.91, 7.42, [2026, 3, 29], [2026, 10, 25]],
+    ['America/Denver', 39.74, -104.99, [2026, 3, 8], [2026, 11, 1]],
+  ];
+
+  for (const [zone, lat, lon, spring, fall] of ZONES) {
+    const zc = new Calendar(zone);
+
+    it(`${zone}: days around both changes keep their events inside their own day`, () => {
+      for (const [y, m, d] of [spring, fall]) {
+        for (let k = -3; k <= 3; k++) {
+          const s = zc.addDays(zc.zonedDate(y, m, d), k);
+          const e = zc.addDays(s, 1);
+          const t = moonTimes(s, lat, lon, zc);
+          for (const ev of [t.rise, t.set]) {
+            if (!ev) continue;
+            expect(ev.valueOf()).toBeGreaterThanOrEqual(s.valueOf());
+            expect(ev.valueOf()).toBeLessThan(e.valueOf());
+          }
+        }
+      }
+    });
+
+    it(`${zone}: the change days do not repeat a neighbour's event`, () => {
+      for (const [y, m, d] of [spring, fall]) {
+        const s = zc.zonedDate(y, m, d);
+        const t = moonTimes(s, lat, lon, zc);
+        const prev = moonTimes(zc.addDays(s, -1), lat, lon, zc);
+        const next = moonTimes(zc.addDays(s, 1), lat, lon, zc);
+        for (const key of ['rise', 'set']) {
+          if (!t[key]) continue;
+          expect(prev[key]?.valueOf()).not.toBe(t[key].valueOf());
+          expect(next[key]?.valueOf()).not.toBe(t[key].valueOf());
+        }
+      }
+    });
+
+    it(`${zone}: nextMoonEvent works across a change`, () => {
+      const now = new Date(zc.zonedDate(...spring).valueOf() - 3_600_000);
+      const ev = nextMoonEvent(now, lat, lon, zc);
+      expect(ev).toBeDefined();
+      expect(ev.time.valueOf()).toBeGreaterThan(now.valueOf());
+    });
+  }
+
+  it('a day without moonrise stays without one (no neighbour borrowed)', () => {
+    const zc = new Calendar('Europe/Zurich');
+    const first = zc.zonedDate(2026, 3, 1);
+    let found = 0;
+    for (let k = 0; k < 40; k++) {
+      const s = zc.addDays(first, k);
+      if (moonTimes(s, LAT, LON, zc).rise) continue;
+      found++;
+      const e = zc.addDays(s, 1);
+      const prev = moonTimes(zc.addDays(s, -1), LAT, LON, zc).rise;
+      const next = moonTimes(e, LAT, LON, zc).rise;
+      if (prev) expect(prev.valueOf()).toBeLessThan(s.valueOf());
+      if (next) expect(next.valueOf()).toBeGreaterThanOrEqual(e.valueOf());
+    }
+    expect(found).toBeGreaterThan(0);
+  });
+
+  it('uses the card zone, not the server zone', () => {
+    const instant = new Date(Date.UTC(2026, 5, 10, 20, 0));
+    for (const [zone, lat, lon] of [
+      ['Asia/Tokyo', 35.68, 139.69],
+      ['America/Denver', 39.74, -104.99],
+    ]) {
+      const zc = new Calendar(zone);
+      const s = zc.startOfDay(instant);
+      const t = moonTimes(instant, lat, lon, zc);
+      for (const ev of [t.rise, t.set]) {
+        if (!ev) continue;
+        expect(ev.valueOf()).toBeGreaterThanOrEqual(s.valueOf());
+        expect(ev.valueOf()).toBeLessThan(zc.addDays(s, 1).valueOf());
+      }
+    }
+  });
+});
+
 describe('litMoonPath — terminator geometry', () => {
   it('crescent bulges toward the lit limb, gibbous away from it', () => {
     // Sweep flags: limb flag mirrors the lit side; the terminator flag

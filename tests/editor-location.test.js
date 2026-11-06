@@ -136,6 +136,59 @@ describe('location panel: home and switch', () => {
     expect(cfg.time_zone).toBe('location');
   });
 
+  it('switch on without home coordinates writes no coordinates and stays open', async () => {
+    const hass = { language: 'en', config: { time_zone: 'Europe/Zurich' } };
+    const real = await realEditor({ show_station: true }, hass);
+    const m = mount(makeEditor({ hass, _locationSwitchChanged: real._locationSwitchChanged }));
+    change(m.switchForm, { use_location: true });
+    const cfg = lastConfig(real);
+    expect('location' in cfg).toBe(false);
+    expect(cfg.time_zone).toBe('location');
+    expect(real._locUi.pending).toBe(true);
+    const open = mount(makeEditor({ hass, _locUi: real._locUi }));
+    expect(open.switchForm.data).toEqual({ use_location: true });
+    expect(open.mapForm.data).toEqual({ location: undefined });
+  });
+
+  it('switch on keeps an explicit IANA time_zone', async () => {
+    const real = await realEditor({ show_station: true, time_zone: 'America/Denver' });
+    const m = mount(makeEditor({ _locationSwitchChanged: real._locationSwitchChanged }));
+    change(m.switchForm, { use_location: true });
+    expect(lastConfig(real).time_zone).toBe('America/Denver');
+    const shown = mount(makeEditor(), { location: { latitude: 1, longitude: 2 }, time_zone: 'America/Denver' });
+    expect(values(shown.modeForm.schema[0])).toContain('America/Denver');
+  });
+
+  it('switch on presets location over an explicit server value', async () => {
+    const real = await realEditor({ time_zone: 'server' });
+    const m = mount(makeEditor({ _locationSwitchChanged: real._locationSwitchChanged }));
+    change(m.switchForm, { use_location: true });
+    expect(lastConfig(real).time_zone).toBe('location');
+  });
+
+  it('shows a hint while the coordinates differ from the last determined ones', async () => {
+    const start = { latitude: 46.5, longitude: 7.9, elevation: 1200, time_zone: 'Europe/Zurich' };
+    const real = await realEditor({ location: start, time_zone: 'location' });
+    const moved = (lat, lon) =>
+      real._locationMapChanged({
+        target: document.createElement('ha-form'),
+        detail: { value: { location: { latitude: lat, longitude: lon } } },
+      });
+    const hint = (cfg) => mount(makeEditor({ _locUi: real._locUi }), cfg).container.querySelector('.loc-stale');
+    expect(hint({ location: start })).toBeNull();
+    moved(10, 20);
+    expect(hint({ location: { ...start, latitude: 10, longitude: 20 } })).not.toBeNull();
+    // marker back where it was: hint gone
+    real._config = { location: { ...start, latitude: 10, longitude: 20 } };
+    moved(46.5, 7.9);
+    expect(hint({ location: start })).toBeNull();
+    // moved again, then a search hit clears it
+    real._config = { location: start };
+    moved(10, 20);
+    real._locationPick({ latitude: 10, longitude: 20, elevation: 5, timezone: 'Europe/Zurich' });
+    expect(hint({ location: { ...start, latitude: 10, longitude: 20 } })).toBeNull();
+  });
+
   it('switch off removes location and time_zone', async () => {
     const real = await realEditor({
       show_station: true,
