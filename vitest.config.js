@@ -70,6 +70,10 @@ export default {
         branches: 80,
         functions: 80,
         lines: 80,
+        // Per-file floors set just under what is reached (#412), so the
+        // two data sources cannot slide back to the global 80.
+        'src/data-source.ts': { statements: 96, branches: 88, functions: 98, lines: 97 },
+        'src/openmeteo-source.ts': { statements: 98, branches: 96, functions: 100, lines: 99 },
       },
     },
   },
