@@ -3731,11 +3731,19 @@ _openZeroDegreePopup(returnFocus: HTMLElement | null): void {
   const str = (k: string) =>
     (this.ll(k) || (locale.en as Record<string, unknown>)[k] || '') as string;
   const historyEid = this._attrEntity('zero_degree_level_48h', false);
+  const elevation = this._zeroDegreeElevation();
   const popup = this._zeroDegreePopup ??= new ZeroDegreePopup();
   popup.open({
     root,
     themeHost: this,
     curve,
+    site: elevation === undefined
+      ? undefined
+      : {
+          elevation,
+          label: this._zeroDegreePlace(elevation),
+          precipitationColor: this.config?.forecast?.precipitation_color,
+        },
     unit: this.zero_degree_48h_unit,
     language: this.language,
     hour12: this.config?.use_12hour_format,
