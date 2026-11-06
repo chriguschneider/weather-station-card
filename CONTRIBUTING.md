@@ -35,6 +35,13 @@ To add or complete a language:
    your locale change.
 6. Open a PR. Mention which language you added or extended.
 
+**Machine translations.** The 3.0 texts (Location panel, time zone and the
+snow line lines of the zero-degree popup) are machine translated in every
+language except English and German. Native speakers are very welcome to
+correct them: edit the values in `src/locales/<lang>.ts`, keep `{placeholders}`
+exactly, and mention the language in your PR. Tests fail if one of these
+keys is missing or still English.
+
 The fallback chain at runtime is: requested language → English → key name.
 A missing translation never crashes the card; it just falls through.
 
