@@ -12,6 +12,8 @@ import {
   findWindowMinimum,
   formatCurveRange,
   buildZeroDegreeChart,
+  markedExtremes,
+  resolvePopupColor,
   ZeroDegreePopup,
 } from '../src/zero-degree-popup.js';
 import { Calendar } from '../src/utils/time-zone.js';
@@ -381,6 +383,103 @@ describe('buildZeroDegreeChart (uPlot)', () => {
     expect(calls.some(([k, text]) => k === 'fillText' && text === '1,585 m')).toBe(true);
     chart.destroy();
     expect(target.querySelector('.uplot')).toBeNull();
+  });
+
+  const COLORS = { line: '#f00', text: '#000', muted: '#888' };
+  const baseOpts = { language: 'en-GB', calendar: cal, unit: 'm', width: 480, height: 220, colors: COLORS };
+  const settle = async () => {
+    await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 0));
+  };
+
+  it('draws a dashed site line with its label and both extremes', async () => {
+    const calls = stubCanvas();
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const curve = parseZeroDegreeCurve(RISING);
+    const chart = buildZeroDegreeChart(target, curve, {
+      ...baseOpts,
+      siteLine: { level: 881, label: 'Köniz 581 m', color: '#0af' },
+    });
+    await settle();
+    const texts = calls.filter(([k]) => k === 'fillText').map(([, t]) => t);
+    expect(texts).toContain('Köniz 581 m');
+    expect(texts).toContain('1,000 m');
+    expect(texts).toContain('2,000 m');
+    expect(calls.some(([k, d]) => k === 'setLineDash' && d.length && d[0] > 0)).toBe(true);
+    chart.destroy();
+  });
+
+  it('draws neither site line nor highest marker when not applicable', async () => {
+    const calls = stubCanvas();
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const chart = buildZeroDegreeChart(target, parseZeroDegreeCurve(ROWS), baseOpts);
+    await settle();
+    const texts = calls.filter(([k]) => k === 'fillText').map(([, t]) => t);
+    expect(texts.filter((t) => / m$/.test(t))).toEqual(['1,585 m']);
+    chart.destroy();
+  });
+});
+
+const RISING = [
+  { datetime: '2026-10-21T07:00:00+02:00', level: 1500 },
+  { datetime: '2026-10-21T20:00:00+02:00', level: 1000 },
+  { datetime: '2026-10-22T20:00:00+02:00', level: 2000 },
+];
+
+describe('markedExtremes', () => {
+  it('marks the highest only when ≥ 200 m above the current level', () => {
+    expect(markedExtremes(parseZeroDegreeCurve(RISING), 'm').max?.level).toBe(2000);
+    const flat = parseZeroDegreeCurve([
+      { datetime: '2026-10-21T07:00:00+02:00', level: 1500 },
+      { datetime: '2026-10-21T08:00:00+02:00', level: 1650 },
+      { datetime: '2026-10-21T09:00:00+02:00', level: 1200 },
+    ]);
+    const r = markedExtremes(flat, 'm');
+    expect(r.max).toBeNull();
+    expect(r.min?.level).toBe(1200);
+  });
+
+  it('applies the threshold in metres for feet curves', () => {
+    const ft = parseZeroDegreeCurve([
+      { datetime: '2026-10-21T07:00:00+02:00', level: 5000 },
+      { datetime: '2026-10-21T08:00:00+02:00', level: 5500 },
+    ]);
+    expect(markedExtremes(ft, 'ft').max).toBeNull(); // 500 ft ≈ 152 m
+    expect(markedExtremes(ft, 'm').max?.level).toBe(5500);
+  });
+});
+
+describe('resolvePopupColor', () => {
+  const style = { getPropertyValue: (n) => (n === '--info-color' ? ' #123456 ' : '') };
+  it('passes plain colours through and resolves var() against the host', () => {
+    expect(resolvePopupColor('rgba(1, 2, 3, 1)', style, 'x')).toBe('rgba(1, 2, 3, 1)');
+    expect(resolvePopupColor('var(--info-color)', style, 'x')).toBe('#123456');
+    expect(resolvePopupColor('var(--missing, rgb(9, 9, 9))', style, 'x')).toBe('rgb(9, 9, 9)');
+    expect(resolvePopupColor('var(--missing)', style, 'x')).toBe('x');
+    expect(resolvePopupColor(undefined, style, 'x')).toBe('x');
+  });
+});
+
+describe('ZeroDegreePopup site line', () => {
+  const site = { elevation: 581, label: 'Köniz 581 m', precipitationColor: 'var(--info-color)' };
+
+  it('passes a line at elevation + 300 m with the label', () => {
+    const { charts } = openPopup({ site });
+    const opts = charts[0].opts;
+    expect(opts.siteLine.level).toBe(881);
+    expect(opts.siteLine.label).toBe('Köniz 581 m');
+  });
+
+  it('converts to feet and omits the line without a site', () => {
+    expect(openPopup({ site, unit: 'ft' }).charts[0].opts.siteLine.level).toBeCloseTo(881 / 0.3048, 6);
+    expect(openPopup().charts[0].opts.siteLine).toBeUndefined();
+  });
+
+  it('falls back to the default colour when var() cannot be resolved', () => {
+    const { charts } = openPopup({ site });
+    expect(charts[0].opts.siteLine.color).toBe('rgba(132, 209, 253, 1.0)');
   });
 });
 

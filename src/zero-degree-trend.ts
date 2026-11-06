@@ -10,7 +10,12 @@
 // The thresholds below are the card's own heuristics, decided in #333.
 
 import { parseLocation } from './location.js';
-import type { ZeroDegreePoint } from './zero-degree-popup.js';
+
+export interface ZeroDegreePoint {
+  /** Epoch ms. */
+  t: number;
+  level: number;
+}
 
 export type ZeroDegreeTrendClass =
   | 'rising_fast'
@@ -88,6 +93,18 @@ interface Candidate {
 
 function isSignificant(amountMetres: number): boolean {
   return amountMetres >= SIGNIFICANT_CHANGE_M;
+}
+
+/** True when `level` is at least the significance threshold away from
+ *  `nowLevel`; both in the curve's unit. */
+export function isSignificantChange(level: number, nowLevel: number, unitMetres = 1): boolean {
+  return isSignificant(Math.abs(level - nowLevel) * unitMetres);
+}
+
+/** Curve level (in the curve's unit) at which the estimated snow line
+ *  reaches a site at `elevation` metres. */
+export function siteLineLevel(elevation: number, unitMetres = 1): number {
+  return (elevation + SNOW_LINE_OFFSET_M) / unitMetres;
 }
 
 function findExtremes(window: readonly ZeroDegreePoint[]): { min: ZeroDegreePoint; max: ZeroDegreePoint } {
