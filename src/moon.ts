@@ -249,19 +249,24 @@ function windowEvents(
  *  rise or no set (and polar latitudes get neither for weeks). */
 export function moonTimes(date: Date, lat: number, lon: number, calendar: Calendar): MoonTimes {
   const t = calendar.startOfDay(date);
+  // The civil day is 23 or 25 h long on a DST change.
+  const lengthH = (calendar.addDays(t, 1).valueOf() - t.valueOf()) / 3_600_000;
 
   const hc = 0.133 * RAD; // upper-limb correction (moon's apparent radius)
   let h0 = moonAltitude(t, lat, lon) - hc;
   let rise: number | undefined;
   let set: number | undefined;
 
-  for (let i = 1; i <= 24; i += 2) {
+  for (let i = 1; i - 1 < lengthH; i += 2) {
     const h1 = moonAltitude(hoursLater(t, i), lat, lon) - hc;
     const h2 = moonAltitude(hoursLater(t, i + 1), lat, lon) - hc;
     const w = windowEvents(h0, h1, h2);
 
-    if (rise === undefined && w.rise !== undefined) rise = i + w.rise;
-    if (set === undefined && w.set !== undefined) set = i + w.set;
+    // A window can reach past the day's end; those crossings belong to the next day.
+    const inDay = (x: number | undefined): x is number =>
+      x !== undefined && i + x >= 0 && i + x < lengthH;
+    if (rise === undefined && inDay(w.rise)) rise = i + w.rise;
+    if (set === undefined && inDay(w.set)) set = i + w.set;
     if (rise !== undefined && set !== undefined) break;
     h0 = h2;
   }
@@ -288,8 +293,9 @@ export function nextMoonEvent(
   lon: number,
   calendar: Calendar,
 ): MoonEvent | undefined {
+  const today = calendar.startOfDay(now);
   for (let day = 0; day < 3; day++) {
-    const times = moonTimes(new Date(now.valueOf() + day * DAY_MS), lat, lon, calendar);
+    const times = moonTimes(calendar.addDays(today, day), lat, lon, calendar);
     const candidates: MoonEvent[] = [];
     if (times.rise && times.rise > now) candidates.push({ kind: 'rise', time: times.rise });
     if (times.set && times.set > now) candidates.push({ kind: 'set', time: times.set });
