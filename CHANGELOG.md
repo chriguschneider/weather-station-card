@@ -16,6 +16,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Moonrise and moonset are now correct on the day the clocks change (23- or 25-hour days): the moon row no longer shows the previous or next day's time near midnight.
 - The clock no longer covers the amber configuration hint or the red error band at the top of the card.
 - An error answer from Open-Meteo no longer empties the sunshine and forecast data until the cache expires.
 - Wind speeds in the forecast now wrap evenly: either all below their arrows or none, regardless of screen size.
