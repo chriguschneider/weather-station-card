@@ -9,6 +9,7 @@ import { renderBasicsSection } from './editor/render-basics.js';
 import { renderSensorsSection } from './editor/render-sensors.js';
 import { renderChartSection } from './editor/render-chart.js';
 import { renderLivePanelSection } from './editor/render-live-panel.js';
+import { migrateLegacyElevation } from './editor/legacy-elevation.js';
 import { renderLocationSection } from './editor/render-location.js';
 import { renderUnitsSection } from './editor/render-units.js';
 import { renderTapSection } from './editor/render-tap.js';
@@ -451,7 +452,7 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     } else {
       delete newConfig.location;
     }
-    this.configChanged(newConfig);
+    this.configChanged(migrateLegacyElevation(newConfig));
     this.requestUpdate();
   };
 
@@ -539,7 +540,7 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     for (const key of Object.keys(patch)) {
       if (patch[key] === undefined) delete location[key];
     }
-    this.configChanged({ ...this._config, location });
+    this.configChanged(migrateLegacyElevation({ ...this._config, location }));
     this.requestUpdate();
   }
 

@@ -9,6 +9,35 @@ Yet-unknown keys are silently ignored by Home Assistant, so an
 out-of-date YAML keeps loading after an upgrade — but the keys do
 nothing. Removing them keeps your config self-documenting.
 
+## v3.0
+
+### Deprecated: top-level `elevation`
+
+The site elevation now lives in `location.elevation`. The top-level
+`elevation:` option keeps working in 3.x exactly as before, but it is
+deprecated and will be removed in 4.0. Nothing breaks today; when you
+edit the card's location in the visual editor, the value is moved for
+you. To change it by hand:
+
+```yaml
+# Before
+elevation: 1200
+location:
+  time_zone: Europe/Zurich
+
+# After
+location:
+  time_zone: Europe/Zurich
+  elevation: 1200
+```
+
+A card without `location` has nowhere to put it and keeps the top-level
+`elevation:` for now.
+
+A card whose `location` has coordinates already ignores the top-level
+`elevation:` (it may describe another place), and the editor leaves it
+alone. Set `location.elevation` if you want the value to apply there.
+
 ## v1.9
 
 ### Removed config keys

@@ -413,7 +413,8 @@ switch on `show_zero_degree_level` / `show_zero_degree_level_48h`.
   works for the popup.
 
 Your site's elevation comes from, in this order: `location.elevation`,
-the card's `elevation:` option, the sensor's
+the card's top-level `elevation:` option (deprecated, move it to
+`location.elevation`; removal is planned for 4.0), the sensor's
 `elevation` attribute, and last Home Assistant's settings
 (Settings → System → General). With a `location`, Home Assistant's
 elevation is not used (it describes another place).
