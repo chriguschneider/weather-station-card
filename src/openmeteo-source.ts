@@ -25,7 +25,7 @@ import type { DailyProbabilityEntry, HourlyProbabilityEntry } from './precip-pro
 import type { ForecastEntry } from './forecast-utils.js';
 import { wmoToCondition } from './weather-code-map.js';
 import { dedupeRequest } from './utils/shared-requests.js';
-import { validTimeZone, zonedPartsIn, type Calendar } from './utils/time-zone.js';
+import { calendarFor, validTimeZone, type Calendar } from './utils/time-zone.js';
 
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 
@@ -290,9 +290,7 @@ function responseDayKey(
   if (typeof t !== 'number' || !Number.isFinite(t)) return null;
   const noon = (t + 12 * 3600) * 1000;
   const tz = validTimeZone(response?.timezone);
-  if (!tz) return calendar.dayKey(noon);
-  const p = zonedPartsIn(noon, tz);
-  return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
+  return (tz ? calendarFor(tz) : calendar).dayKey(noon);
 }
 
 /** Midnight (card zone) of the response's calendar day — the daily
@@ -322,13 +320,11 @@ function hourIso(t: number | string | undefined): string | null {
   return new Date(Math.floor(t / 3600) * 3600 * 1000).toISOString();
 }
 
-/** "YYYY-MM-DDTHH:00" of an hourly epoch-seconds `time` in the card's
- *  zone, the key shape `localHourString` produces for chart columns. */
+/** `Calendar.hourKey` of an hourly epoch-seconds `time`, floored to the
+ *  full UTC hour like `hourIso`. */
 function cardHourString(t: number | string | undefined, calendar: Calendar): string | null {
   const iso = hourIso(t);
-  if (!iso) return null;
-  const ms = Date.parse(iso);
-  return `${calendar.dayKey(ms)}T${String(calendar.hourOf(ms)).padStart(2, '0')}:00`;
+  return iso ? calendar.hourKey(Date.parse(iso)) : null;
 }
 
 /** Coerce a possibly-null Open-Meteo array cell to `number | null`. */

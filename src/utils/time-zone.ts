@@ -73,7 +73,9 @@ export interface ZonedParts {
   second: number;
 }
 
-const toMs = (d: Date | number): number => (typeof d === 'number' ? d : d.getTime());
+const pad2 = (n: number): string => String(n).padStart(2, '0');
+
+const toMs =(d: Date | number): number => (typeof d === 'number' ? d : d.getTime());
 
 /** Calendar parts of an instant in an explicit IANA zone. Callers pass
  *  a zone already checked with `validTimeZone`. */
@@ -176,7 +178,14 @@ export class Calendar {
   /** `YYYY-MM-DD` of the calendar day in this zone. */
   dayKey(d: Date | number): string {
     const p = this.zonedParts(d);
-    return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
+    return `${p.year}-${pad2(p.month)}-${pad2(p.day)}`;
+  }
+
+  /** `YYYY-MM-DDTHH:00` of the hour in this zone — the key hourly chart
+   *  columns and Open-Meteo's hourly arrays are matched by. */
+  hourKey(d: Date | number): string {
+    const p = this.zonedParts(d);
+    return `${p.year}-${pad2(p.month)}-${pad2(p.day)}T${pad2(p.hour)}:00`;
   }
 
   isSameDay(a: Date | number, b: Date | number): boolean {
@@ -188,4 +197,29 @@ export class Calendar {
     const p = this.zonedParts(d);
     return Math.round((Date.UTC(p.year, p.month - 1, p.day) - Date.UTC(p.year, 0, 0)) / DAY_MS);
   }
+}
+
+// A Calendar is immutable and defined by its zone alone, so one instance
+// per zone can serve every card, source and fetch callback on the page.
+const calendars = new Map<string, Calendar>();
+
+/** The shared `Calendar` of a zone. Missing or unknown zones get the
+ *  browser zone's, exactly like `new Calendar(tz)`. */
+export function calendarFor(tz?: unknown): Calendar {
+  const key = validTimeZone(tz) ?? '';
+  let cal = calendars.get(key);
+  if (!cal) {
+    cal = new Calendar(key === '' ? undefined : key);
+    calendars.set(key, cal);
+  }
+  return cal;
+}
+
+/** The HA server's calendar (`hass.config.time_zone`). HA buckets daily
+ *  statistics and resets midnight counters by it, whatever zone the
+ *  card itself displays. Resolve it per use: `hass` can be swapped. */
+export function serverCalendar(
+  hass: { config?: { time_zone?: unknown } | null } | null | undefined,
+): Calendar {
+  return calendarFor(hass?.config?.time_zone);
 }
