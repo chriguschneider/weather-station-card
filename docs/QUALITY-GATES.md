@@ -56,6 +56,11 @@ CI fails if statements / branches / functions / lines drop below
 **80 %** for the modules in `vitest.config.js`. Editor + `main.ts`
 are out of scope (covered by Playwright instead).
 
+`src/data-source.ts` and `src/openmeteo-source.ts` carry stricter
+per-file floors (set just under what their tests reach, #412) so their
+coverage cannot slide back to the global 80 %. Adding a test-only change
+that lowers one of them is a gate change, not a tidy-up.
+
 > **History note.** Pre-v1.4.2 the `include` array in
 > `vitest.config.js` listed `.js` paths after the v1.2 TypeScript
 > migration. The v8 coverage provider matched zero files and the
