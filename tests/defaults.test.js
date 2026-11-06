@@ -177,6 +177,7 @@ function makeEditorMock() {
   return {
     hass: null,
     _config: null,
+    _locUi: { query: '', results: [], status: null },
     _mode: 'combination',
     _pastSource: 'station',
     _clockMode: 'off',
