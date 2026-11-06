@@ -122,6 +122,7 @@ const de: LocaleEntry = {
     'location_determine_error': 'Abfrage fehlgeschlagen. Werte von Hand eintragen.',
     'location_timed_out': 'Abfrage abgelaufen. Erneut versuchen oder Werte von Hand eintragen.',
     'location_coordinates_changed': 'Koordinaten geändert. Erneut klicken.',
+    'location_coordinates_stale': 'Koordinaten geändert: «Höhe und Zeitzone ermitteln» klicken, um Höhe und Zeitzone zu aktualisieren.',
     'location_determine_next': 'Nächster Schritt: Höhe und Zeitzone ermitteln.',
     'location_attribution': 'Ortssuche und Höhe: Open-Meteo (GeoNames-Daten, CC BY 4.0).',
     'next_rain': 'Nächster Regen',
