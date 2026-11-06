@@ -49,7 +49,7 @@ function tEditor(hass: HomeAssistant | null, key: string): string {
 class WeatherStationCardEditor extends LitElement implements EditorLike {
   hass: HomeAssistant | null = null;
   _config: Record<string, unknown> | null = null;
-  _locUi: LocationUiState = { query: '', results: [], status: null };
+  _locUi: LocationUiState = { query: '', results: [], status: null, pending: false, anchor: null };
   _lookupSeq = { search: 0, determine: 0 };
   _lookupAbort: { search?: AbortController; determine?: AbortController } = {};
 
@@ -484,17 +484,21 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     if (on) {
       const home = this.hass?.config;
       const zone = validTimeZone(home?.time_zone);
-      const location: Record<string, unknown> = {
-        latitude: typeof home?.latitude === 'number' ? home.latitude : 0,
-        longitude: typeof home?.longitude === 'number' ? home.longitude : 0,
-      };
-      if (zone) location.time_zone = zone;
-      newConfig.location = location;
-      newConfig.time_zone = 'location';
+      // Without home coordinates nothing is written; `pending` keeps the
+      // panel open on the "set a place" state.
+      if (typeof home?.latitude === 'number' && typeof home?.longitude === 'number') {
+        const location: Record<string, unknown> = { latitude: home.latitude, longitude: home.longitude };
+        if (zone) location.time_zone = zone;
+        newConfig.location = location;
+      }
+      // An explicit IANA name set in YAML survives; only unset / server is preset.
+      const current = newConfig.time_zone;
+      if (current === undefined || current === '' || current === 'server') newConfig.time_zone = 'location';
+      this._locUi = { ...this._locUi, pending: true, anchor: null };
     } else {
       delete newConfig.location;
       delete newConfig.time_zone;
-      this._locUi = { ...this._locUi, results: [], status: null };
+      this._locUi = { ...this._locUi, results: [], status: null, pending: false, anchor: null };
     }
     this.configChanged(newConfig);
     this.requestUpdate();
@@ -509,6 +513,12 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     const picked = (event as CustomEvent<{ value: { location?: { latitude?: unknown; longitude?: unknown } } }>)
       .detail.value?.location;
     if (typeof picked?.latitude !== 'number' || typeof picked?.longitude !== 'number') return;
+    // Remember where elevation and zone were last determined, so the panel
+    // can say they are stale (and stop saying so when the marker returns).
+    if (!this._locUi.anchor) {
+      const before = parseLocation(this._config.location);
+      if (before) this._locUi = { ...this._locUi, anchor: before };
+    }
     this._writeLocation({ latitude: picked.latitude, longitude: picked.longitude });
   };
 
@@ -588,6 +598,7 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     this._lookupSeq.determine++;
     this._locUi = {
       ...this._locUi,
+      anchor: null,
       results: [],
       status: complete ? null : { kind: 'ok', text: tEditor(this.hass, 'location_determine_next') },
     };
@@ -622,6 +633,7 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
       if (validTimeZone(found.timezone) !== undefined) patch.time_zone = found.timezone;
       this._locUi = {
         ...this._locUi,
+        anchor: null,
         status: {
           kind: 'ok',
           text: tEditor(this.hass, 'location_determined').replace('{place}', where),

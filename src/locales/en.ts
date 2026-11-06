@@ -126,6 +126,7 @@ const en: LocaleEntry = {
     'location_determine_error': 'Lookup failed. Enter the values by hand.',
     'location_timed_out': 'Lookup timed out. Try again or enter the values by hand.',
     'location_coordinates_changed': 'Coordinates changed. Click again.',
+    'location_coordinates_stale': 'Coordinates changed: click Determine to update elevation and time zone.',
     'location_determine_next': 'Next step: determine elevation and time zone.',
     'location_attribution': 'Place search and elevation: Open-Meteo (GeoNames data, CC BY 4.0).',
     'next_rain': 'Next rain',

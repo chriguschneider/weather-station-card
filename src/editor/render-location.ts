@@ -83,7 +83,11 @@ export function renderLocationSection(editor: EditorLike, ctx: EditorContext): T
     ].filter(Boolean).join(' · ')
     : [t('location_summary_home'), home?.location_name].filter(Boolean).join(' · ');
 
-  const otherFields = hasCoords ? html`
+  const stale = hasCoords && !!ui.anchor
+    && (ui.anchor.latitude !== loc.latitude || ui.anchor.longitude !== loc.longitude);
+  const useOther = hasCoords || ui.pending === true;
+
+  const otherFields = useOther ? html`
     <div class="loc-search">
       <ha-form
         .data=${{ query: ui.query }}
@@ -106,12 +110,13 @@ export function renderLocationSection(editor: EditorLike, ctx: EditorContext): T
       </div>
     ` : ''}
     <ha-form
-      .data=${{ location: { latitude: loc.latitude, longitude: loc.longitude } }}
+      .data=${{ location: hasCoords ? { latitude: loc.latitude, longitude: loc.longitude } : undefined }}
       .schema=${[{ name: 'location', selector: { location: {} } }]}
       .hass=${editor.hass}
       .computeLabel=${() => t('location_map_label')}
       @value-changed=${editor._locationMapChanged}
     ></ha-form>
+    ${stale ? html`<div class="hint loc-stale">${t('location_coordinates_stale')}</div>` : ''}
     <div class="loc-determine">
       <ha-button @click=${() => { void editor._locationDetermine(); }}>
         ${t('location_determine_button')}
@@ -141,7 +146,7 @@ export function renderLocationSection(editor: EditorLike, ctx: EditorContext): T
         ${t('location_home_label')}: ${homeParts.join(' · ')}
       </div>
       <ha-form
-        .data=${{ use_location: hasCoords }}
+        .data=${{ use_location: useOther }}
         .schema=${[{ name: 'use_location', selector: { boolean: {} } }]}
         .hass=${editor.hass}
         .computeLabel=${() => t('location_use_other')}
