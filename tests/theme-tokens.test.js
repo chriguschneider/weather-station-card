@@ -73,4 +73,35 @@ describe('getThemeTokens', () => {
     invalidateThemeTokens(document.body);
     expect(getThemeTokens(document.body).textColor).toBe('rgb(255, 255, 255)');
   });
+
+  it('a host with its own view theme yields its tokens, not the body ones', () => {
+    setVars(document.body, {
+      '--primary-text-color': 'rgb(20, 20, 20)',
+      '--card-background-color': 'rgb(255, 255, 255)',
+    });
+    const host = document.createElement('div');
+    setVars(host, {
+      '--primary-text-color': 'rgb(240, 240, 240)',
+      '--card-background-color': 'rgb(28, 33, 40)',
+    });
+    document.body.appendChild(host);
+    const t = getThemeTokens(host);
+    expect(t.textColor).toBe('rgb(240, 240, 240)');
+    expect(t.backgroundColor).toBe('rgb(28, 33, 40)');
+    expect(getThemeTokens(document.body).textColor).toBe('rgb(20, 20, 20)');
+    host.remove();
+  });
+
+  it('a class change on <html> invalidates the cache of a non-body host', async () => {
+    const host = document.createElement('div');
+    setVars(host, { '--primary-text-color': 'rgb(1, 1, 1)' });
+    document.body.appendChild(host);
+    expect(getThemeTokens(host).textColor).toBe('rgb(1, 1, 1)');
+    setVars(host, { '--primary-text-color': 'rgb(2, 2, 2)' });
+    expect(getThemeTokens(host).textColor).toBe('rgb(1, 1, 1)');
+    document.documentElement.classList.add('dark');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(getThemeTokens(host).textColor).toBe('rgb(2, 2, 2)');
+    host.remove();
+  });
 });

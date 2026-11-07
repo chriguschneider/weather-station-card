@@ -9,7 +9,7 @@
 // resolved colour strings and does not resolve `var()` natively in
 // series stroke / fill colours.
 
-export function resolveCssVar(value: string | undefined | null, defaultFallback: string = ''): string {
+export function resolveCssVar(value: string | undefined | null, defaultFallback: string = '', host?: Element | null): string {
   if (!value) return defaultFallback;
   const trimmed = value.trim();
   // Cheap structural check — avoids a regex with backtracking risk on the
@@ -22,7 +22,7 @@ export function resolveCssVar(value: string | undefined | null, defaultFallback:
   const fallback = commaIdx === -1 ? '' : inner.slice(commaIdx + 1).trim();
   let computed = '';
   try {
-    computed = getComputedStyle(document.body).getPropertyValue(name).trim();
+    computed = getComputedStyle(host ?? document.body).getPropertyValue(name).trim();
   } catch {
     // SSR / non-browser environments — fall through to the inline fallback.
   }
