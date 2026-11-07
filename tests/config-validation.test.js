@@ -102,6 +102,26 @@ describe('validateConfig — unknown keys', () => {
     expect(problems[0]).toContain('not_a_real_key');
   });
 
+  it('accepts the YAML-only forecast chart colour overrides (#428)', () => {
+    const problems = validateConfig({
+      ...validBaseConfig(),
+      forecast: {
+        chart_text_color: 'var(--primary-text-color)',
+        chart_datetime_color: '#ffffff',
+      },
+    });
+    expect(problems).toEqual([]);
+  });
+
+  it('still flags a typo of a forecast chart colour key (#428)', () => {
+    const problems = validateConfig({
+      ...validBaseConfig(),
+      forecast: { chart_datetime_colour: '#ffffff' },
+    });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('forecast.chart_datetime_colour');
+  });
+
   it('flags an unknown nested forecast key', () => {
     const problems = validateConfig({
       ...validBaseConfig(),

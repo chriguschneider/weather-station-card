@@ -71,12 +71,23 @@ const OPAQUE_OBJECT_KEYS = new Set([
 // static DEFAULTS_UNITS entry either).
 const EXTRA_UNITS_KEYS = ['speed', 'precipitation'] as const;
 
+// Forecast colour overrides read by the chart but deliberately absent
+// from DEFAULTS_FORECAST: unset means "follow the theme", so a default
+// value would override it.
+const EXTRA_FORECAST_KEYS = [
+  'chart_text_color',
+  'chart_datetime_color',
+] as const;
+
 const TOP_LEVEL_KEYS = new Set<string>([
   ...Object.keys(DEFAULTS),
   ...EXTRA_TOP_LEVEL_KEYS,
   ...RETIRED_TOP_LEVEL_KEYS,
 ]);
-const FORECAST_KEYS = new Set<string>(Object.keys(DEFAULTS_FORECAST));
+const FORECAST_KEYS = new Set<string>([
+  ...Object.keys(DEFAULTS_FORECAST),
+  ...EXTRA_FORECAST_KEYS,
+]);
 const UNITS_KEYS = new Set<string>([
   ...Object.keys(DEFAULTS_UNITS),
   ...EXTRA_UNITS_KEYS,
