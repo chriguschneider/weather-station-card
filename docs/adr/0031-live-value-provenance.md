@@ -49,6 +49,16 @@ Alternatives considered:
   the live-panel editor section; `source_labels` (object, YAML only) as
   an extra top-level key in `config-validation.ts` and a delete-only
   path in the section reset.
+- **Chart legend** (`src/chart-legend.ts`, `_renderChartLegend`):
+  with `show_sources` on, a row under the chart (outside the scrolling
+  area) names the high/low colours, the solid station line, the dashed
+  forecast line (`FORECAST_DASH`), and the precipitation and sunshine
+  bars with their sources. The past source is Open-Meteo when
+  `_openMeteoStationFallbackActive()` holds (ADR-0015); the sunshine
+  source is Open-Meteo when `_sunshineNeedsOpenMeteo()` held on the last
+  refresh (ADR-0028), recorded in `_sunshineFromOpenMeteo`. The legend
+  is HTML, not uPlot's legend, which stays disabled: it labels encodings
+  and sources rather than series values.
 - Zero-degree and next-rain rows get no tag: their sensors carry
   forecast or radar data, so "Station" would mislead and the existing
   next-rain tooltip already names its source.
@@ -71,9 +81,12 @@ Alternatives considered:
 
 **Tradeoffs**
 
-- Chart series (solid station vs dashed forecast lines) are not
-  labelled by this change; the chart already encodes the split by line
-  style. A chart legend would be a separate decision.
+- The sunshine legend entry names one source per chart. When Open-Meteo
+  fills only some days, the entry says Open-Meteo and its tooltip
+  explains that it fills in where the weather entity has no value;
+  per-column attribution would need a mark on every bar.
+- uPlot's built-in legend was not reused: it lists series with live
+  values, not encodings and sources, and would need restyling.
 
 ## Related
 

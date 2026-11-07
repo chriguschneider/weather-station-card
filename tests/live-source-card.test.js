@@ -117,3 +117,31 @@ describe('source tags', () => {
     expect(renderedTags(card, card.renderAttributes()).map((t) => t.text)).toContain('met.no');
   });
 });
+
+describe('chart legend', () => {
+  const legendTexts = (card) => {
+    const host = document.createElement('div');
+    render(card._renderChartLegend(card.config), host);
+    return [...host.querySelectorAll('.wsc-legend-item')].map((el) => el.textContent.trim());
+  };
+
+  it('renders nothing while show_sources is off', () => {
+    const card = makeCard({ show_forecast: true, show_station: true });
+    card.hass = makeHass(states);
+    expect(legendTexts(card)).toEqual([]);
+  });
+
+  it('names the station and forecast sources using source_labels', () => {
+    const card = makeCard({
+      show_station: true,
+      show_forecast: true,
+      show_sources: true,
+      source_labels: { station: 'Netatmo', weather: 'met.no' },
+    });
+    card.hass = makeHass(states);
+    const texts = legendTexts(card);
+    expect(texts).toContain('Measured: Netatmo');
+    expect(texts).toContain('Forecast: met.no');
+  });
+});
+

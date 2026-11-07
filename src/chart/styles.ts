@@ -177,6 +177,42 @@ function buildCardStyles({
     .wsc-source-stale {
       border-style: dashed;
     }
+    /* show_sources chart legend: one wrapping row under the chart. Line
+     * swatches mirror the chart strokes (solid = station history,
+     * dashed = forecast, same 6/4 rhythm as FORECAST_DASH). */
+    .wsc-chart-legend {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 2px 12px;
+      margin: 4px 8px 0 8px;
+      font-size: 11px;
+      color: var(--secondary-text-color, #727272);
+    }
+    .wsc-legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+    }
+    .wsc-legend-lines {
+      display: inline-flex;
+      gap: 2px;
+    }
+    .wsc-legend-line {
+      display: inline-block;
+      width: 14px;
+      border-top: 2px solid currentColor;
+    }
+    .wsc-legend-line.dashed {
+      border-top-style: dashed;
+    }
+    .wsc-legend-bar {
+      display: inline-block;
+      width: 8px;
+      height: 10px;
+      border-radius: 1px;
+    }
     /* Out-rank the live panel's large unit/condition span sizes
      * (.main span:not(.wsc-entity-link)) so the tag keeps its pill size
      * next to the temperature, in the normal and the compact layout. */

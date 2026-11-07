@@ -77,6 +77,7 @@ import {
 } from './sunshine-source.js';
 import { OpenMeteoSource } from './openmeteo-source.js';
 import { groupSources, resolveLiveSource, sourceLabel, type LiveSource } from './live-source.js';
+import { buildChartLegend, type LegendItem } from './chart-legend.js';
 import { cardCalendar, resolveLocation } from './location.js';
 import { forecastHasProbability, overlayPrecipProbability } from './precip-probability.js';
 import { PROBABILITY_EXTRA_BOTTOM_PAD } from './chart/plugins/precip-label.js';
@@ -342,6 +343,9 @@ class WeatherStationCard extends LitElement {
   // Origin of each live value, keyed by sensor key; read only when
   // `show_sources` is on (see src/live-source.ts).
   _liveSources: Record<string, LiveSource | undefined> = {};
+  // Whether Open-Meteo backs the sunshine bars; set by
+  // _ensureOpenMeteoSource, read by the show_sources chart legend.
+  _sunshineFromOpenMeteo = false;
 
   // --- Caching / live-condition memo ---
   _liveConditionKey: string | undefined;
@@ -2215,7 +2219,8 @@ async _refreshPressureDelta(): Promise<void> {
   // deno-lint-ignore no-explicit-any
   _ensureOpenMeteoSource(effectiveCfg: any) {
     const feedsStation = this._openMeteoStationFallbackActive(this.config);
-    const enabled = this._sunshineNeedsOpenMeteo(effectiveCfg)
+    this._sunshineFromOpenMeteo = this._sunshineNeedsOpenMeteo(effectiveCfg);
+    const enabled = this._sunshineFromOpenMeteo
       || feedsStation
       || this._precipProbabilityNeedsOpenMeteo(effectiveCfg);
     if (!enabled) {
@@ -3347,6 +3352,7 @@ _scheduleForecastRowsReveal(): void {
             ${scrolling && (fcType === 'hourly' || fcType === 'today')
               ? this.renderScrollTimeline()
               : ''}
+            ${this._renderChartLegend(config)}
           </div>
           `;
           })() : (() => {
@@ -3769,6 +3775,59 @@ _convertDisplayPressure(pressure: any): any {
 // action-handler.ts), so a row click never also fires the card's
 // tap_action. Values without a backing entity (sensor not configured
 // AND no weather-entity fallback) render unwrapped — no dead cursor.
+// Legend row under the chart (show_sources): names the line and bar
+// encodings and their sources. Outside .forecast-scroll so it stays in
+// view while a scrolling chart is panned.
+// deno-lint-ignore no-explicit-any
+_renderChartLegend(config: any): unknown {
+  if (config?.show_sources !== true) return nothing;
+  const fc = config.forecast || {};
+  const ll = (k: string, fb: string): string =>
+    (this.ll(k) || (locale.en as Record<string, unknown>)[k] || fb) as string;
+  const labels = config.source_labels || {};
+  const items = buildChartLegend({
+    showStation: config.show_station !== false,
+    showForecast: config.show_forecast === true && !!config.weather_entity,
+    pastFromOpenMeteo: this._openMeteoStationFallbackActive(config),
+    showSunshine: fc.show_sunshine === true,
+    sunshineFromOpenMeteo: this._sunshineFromOpenMeteo,
+    showTempLow: (fc.type || 'daily') === 'daily',
+    colors: {
+      high: fc.temperature1_color || DEFAULTS_FORECAST.temperature1_color,
+      low: fc.temperature2_color || DEFAULTS_FORECAST.temperature2_color,
+      precip: fc.precipitation_color || DEFAULTS_FORECAST.precipitation_color,
+      sunshine: fc.sunshine_color || DEFAULTS_FORECAST.sunshine_color,
+    },
+    text: {
+      high: ll('tempHi', 'High'),
+      low: ll('tempLo', 'Low'),
+      precip: ll('precip', 'Precipitation'),
+      sunshine: ll('sunshine', 'Sunshine'),
+      measured: ll('legend_measured', 'Measured'),
+      forecast: ll('legend_forecast', 'Forecast'),
+      stationSource: (labels.station || ll('source_station', 'Station')).trim(),
+      forecastSource: (labels.weather || ll('source_weather', 'Forecast')).trim(),
+      openMeteo: 'Open-Meteo',
+      sunshineTitleOpenMeteo: ll('legend_sunshine_openmeteo', 'Open-Meteo fills in where the weather entity has no sunshine duration'),
+    },
+  });
+  return html`<div class="wsc-chart-legend">${items.map((it) => this._legendItem(it))}</div>`;
+}
+
+_legendItem(it: LegendItem): unknown {
+  return html`<span class="wsc-legend-item" title=${it.title ?? nothing}>${this._legendSwatch(it)}${it.text}</span>`;
+}
+
+_legendSwatch(it: LegendItem): unknown {
+  if (it.swatch === 'bar') {
+    return html`<span class="wsc-legend-bar" style="background:${it.colors[0]}"></span>`;
+  }
+  const lineClass = it.swatch === 'dash' ? 'wsc-legend-line dashed' : 'wsc-legend-line';
+  const colors = it.colors.length > 0 ? it.colors : ['currentColor'];
+  return html`<span class="wsc-legend-lines">${colors.map((c) =>
+    html`<span class=${lineClass} style="border-top-color:${c}"></span>`)}</span>`;
+}
+
 // Source tags for one live row (show_sources). Values of a combined
 // row that share an origin get one tag; the tooltip names the entity.
 _sourceTags(keys: ReadonlyArray<string>): unknown {
