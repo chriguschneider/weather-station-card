@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `forecast.chart_text_color` and `forecast.chart_datetime_color` no longer show an "Unknown option" warning on the card.
+
 ### Documentation
 
 - README and the configuration reference now describe the Location panel, its switch presets and where sun, moon and elevation come from; the editor hints for sunshine, chance of rain and past data mention the card's location.
