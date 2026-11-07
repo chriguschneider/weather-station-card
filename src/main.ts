@@ -3799,9 +3799,9 @@ _renderChartLegend(config: any): unknown {
       sunshine: fc.sunshine_color || DEFAULTS_FORECAST.sunshine_color,
     },
     text: {
-      high: ll('tempHi', 'High'),
-      low: ll('tempLo', 'Low'),
-      precip: ll('precip', 'Precipitation'),
+      high: ll('legend_high', 'High'),
+      low: ll('legend_low', 'Low'),
+      precip: ll('legend_precip', 'Precipitation'),
       sunshine: ll('sunshine', 'Sunshine'),
       measured: ll('legend_measured', 'Measured'),
       forecast: ll('legend_forecast', 'Forecast'),
