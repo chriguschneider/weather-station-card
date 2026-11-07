@@ -177,6 +177,16 @@ function buildCardStyles({
     .wsc-source-stale {
       border-style: dashed;
     }
+    /* Out-rank the live panel's large unit/condition span sizes
+     * (.main span:not(.wsc-entity-link)) so the tag keeps its pill size
+     * next to the temperature, in the normal and the compact layout. */
+    .main span.wsc-source-tag:not(.wsc-entity-link) {
+      font-size: 9px;
+      color: var(--secondary-text-color, #727272);
+    }
+    .main span.wsc-source-weather:not(.wsc-entity-link) {
+      color: var(--primary-color, #03a9f4);
+    }
     .wsc-entity-link {
       cursor: pointer;
     }
