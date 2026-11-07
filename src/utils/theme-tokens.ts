@@ -1,7 +1,9 @@
 // Caches the four CSS custom properties the chart code re-reads on
 // every redraw: `--card-background-color`, `--primary-text-color`,
 // `--divider-color`, `--secondary-text-color`. HA-Frontend writes
-// these on `document.body` (per the Material You theming convention);
+// these on `document.body` (global theme); a view-level `theme:` lands
+// on `hui-view-container` instead, so callers pass the card element,
+// which inherits both;
 // the values are stable within a theme session, so `getComputedStyle`
 // only has to run once per session per host.
 //
@@ -27,7 +29,11 @@ export interface ThemeTokens {
   secondaryTextColor: string;
 }
 
-const cache = new WeakMap<HTMLElement, ThemeTokens>();
+// Entries carry the generation they were read in; the <html> observer
+// bumps `generation` so every host (body or a view-themed card) goes
+// stale at once. A WeakMap can be neither cleared nor enumerated.
+const cache = new WeakMap<HTMLElement, { tokens: ThemeTokens; gen: number }>();
+let generation = 0;
 let observer: MutationObserver | null = null;
 let observedElement: HTMLElement | null = null;
 
@@ -40,11 +46,7 @@ function ensureInvalidationObserver(): void {
   if (!root || root === observedElement) return;
   if (observer) observer.disconnect();
   observer = new MutationObserver(() => {
-    // WeakMap has no clear(); the only realistic host is document.body,
-    // so deleting that single entry is enough.
-    if (typeof document !== 'undefined' && document.body) {
-      cache.delete(document.body);
-    }
+    generation += 1;
   });
   observer.observe(root, { attributes: true, attributeFilter: ['class', 'style'] });
   observedElement = root;
@@ -74,9 +76,9 @@ export function getThemeTokens(host?: HTMLElement | null): ThemeTokens {
     return { backgroundColor: '', textColor: '', dividerColor: '', secondaryTextColor: '' };
   }
   const hit = cache.get(el);
-  if (hit) return hit;
+  if (hit?.gen === generation) return hit.tokens;
   const tokens = readTokens(el);
-  cache.set(el, tokens);
+  cache.set(el, { tokens, gen: generation });
   ensureInvalidationObserver();
   return tokens;
 }

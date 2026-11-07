@@ -474,7 +474,12 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
   // from the cache; any other CSS var falls back to a live read
   // (no plugin currently needs that path, but it keeps the
   // `CssStyleLike` contract honest).
-  const tokens = getThemeTokens(document.body);
+  // The card element inherits the global AND the view-level theme; a
+  // detached element or a test double falls back to the body.
+  const themeHost: HTMLElement = (typeof HTMLElement !== 'undefined' && card instanceof HTMLElement && card.isConnected)
+    ? card
+    : document.body;
+  const tokens = getThemeTokens(themeHost);
   const backgroundColor = tokens.backgroundColor;
   const textColor = tokens.textColor;
   const dividerColor = tokens.dividerColor;
@@ -487,7 +492,7 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
         case '--divider-color': return tokens.dividerColor;
         case '--secondary-text-color': return tokens.secondaryTextColor;
         default: {
-          if (!liveStyleCached) liveStyleCached = getComputedStyle(document.body);
+          if (!liveStyleCached) liveStyleCached = getComputedStyle(themeHost);
           return liveStyleCached.getPropertyValue(name);
         }
       }
@@ -510,7 +515,7 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
 
   // Resolve any CSS-var-wrapped colour defaults against the live theme
   // tokens; pass-through for plain rgb/hex/hsl strings users set in YAML.
-  const temp1Color = resolveCssVar(config.forecast.temperature1_color, 'rgba(255, 152, 0, 1.0)');
+  const temp1Color = resolveCssVar(config.forecast.temperature1_color, 'rgba(255, 152, 0, 1.0)', themeHost);
   // Low-temp line: the single steel-blue default read washed-out on
   // white and fell to ~2.5:1 contrast on dark backgrounds (community
   // post 15, "blue"). Only the DEFAULT is theme-aware — a user-set
@@ -525,8 +530,8 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
   const temp2Configured = config.forecast.temperature2_color;
   const temp2Color = (!temp2Configured || temp2Configured === TEMP2_LEGACY_DEFAULT)
     ? temp2ThemedDefault
-    : resolveCssVar(temp2Configured, temp2ThemedDefault);
-  const precipColor = resolveCssVar(config.forecast.precipitation_color, 'rgba(132, 209, 253, 1.0)');
+    : resolveCssVar(temp2Configured, temp2ThemedDefault, themeHost);
+  const precipColor = resolveCssVar(config.forecast.precipitation_color, 'rgba(132, 209, 253, 1.0)', themeHost);
   const precipColorLight = lightenColor(precipColor) as string;
   const precipPerBarColor: string[] = (data.precip || []).map(
     (_v, i) => pickPerBarColor(i, hasBothBlocks, stationCountForGap, precipColor, precipColorLight),
@@ -547,7 +552,7 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
   const showSunshineLabels = showSunshine && config.forecast.type !== 'hourly';
   const SUNSHINE_LEGACY_DEFAULT = 'rgba(255, 215, 0, 1.0)';
   const sunshineConfigured = config.forecast.sunshine_color;
-  const sunshineColor = resolveCssVar(sunshineConfigured, SUNSHINE_LEGACY_DEFAULT);
+  const sunshineColor = resolveCssVar(sunshineConfigured, SUNSHINE_LEGACY_DEFAULT, themeHost);
   // Forecast-side sunshine in DARK themes: the default gold at
   // lightenColor's 0.45 alpha blends with the near-black card into a
   // murky olive. Variant decision "W58": warmer honey gold

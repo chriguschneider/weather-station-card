@@ -25,6 +25,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The forecast chart now follows a view-level theme instead of the global theme: weekday and date labels, the low-temperature line, precipitation pills and the temperature label halo no longer use the wrong colours when a view sets its own `theme:` (also seen when casting to a Nest Hub).
 - Location panel: after moving the marker or changing the coordinates, a hint now tells you to click Determine so elevation and time zone follow the new place.
 - Location panel: switching on "Use another location" without home coordinates in Home Assistant no longer writes latitude 0 / longitude 0; the fields stay empty until you pick a place.
 - Location panel: a card with an explicit time zone such as `America/Denver` keeps it when "Use another location" is switched on, and the "Show times in" choice shows it.
