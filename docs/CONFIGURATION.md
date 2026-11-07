@@ -223,6 +223,8 @@ matching attribute on `weather_entity`)
 | `show_uv_illuminance` | bool | `false` | Force the combined UV + illuminance line. Without it the two share a line whenever both `show_uv_index` and `show_illuminance` are on. *(since v2.5)* |
 | `show_sun` | bool | `false` | Sunrise / sunset row (opt-in). |
 | `show_moon` | bool | `true` (renders with the sun cell) | Moon line inside the sun cell: dynamically drawn disc showing the exact illuminated fraction, the percentage, and the next moonrise/moonset. Computed in-card (ADR-0022) — no sensor or Moon integration required; rise/set times come from the card's [`location`](#advanced) (Home Assistant's home when none is set) and are omitted when there are no coordinates. On the southern hemisphere the disc is mirrored to match the local view. Set `false` to keep the sun cell sun-only. *(since v2.3)* |
+| `show_sources` | bool | `false` | Label each live value by where it comes from: a small tag after the temperature and each attribute row reads **Station** (your sensor), **Forecast** (the value fell back to the `weather_entity` because no sensor is wired or the sensor has no value) or **Calculated** (sun and moon, computed in-card). A station sensor that is unavailable and still shows its last good value gets a dashed tag. Hover a tag for the exact entity. Zero-degree and next-rain rows carry no tag. *(since v3.0)* |
+| `source_labels` | object | — | Replace the tag text, e.g. `{station: Netatmo, weather: met.no, computed: calc}`. Each key is optional; missing keys keep the localized default. YAML only. *(since v3.0)* |
 
 **Attribute layout** (`attributes_layout`, *since v2.5*, ADR-0025)
 

@@ -76,6 +76,7 @@ import {
   sunshineFractions,
 } from './sunshine-source.js';
 import { OpenMeteoSource } from './openmeteo-source.js';
+import { groupSources, resolveLiveSource, sourceLabel, type LiveSource } from './live-source.js';
 import { cardCalendar, resolveLocation } from './location.js';
 import { forecastHasProbability, overlayPrecipProbability } from './precip-probability.js';
 import { PROBABILITY_EXTRA_BOTTOM_PAD } from './chart/plugins/precip-label.js';
@@ -218,6 +219,25 @@ const ICON_SPRITE_TEMPLATE = html`<svg class="wsc-sprite" aria-hidden="true">${
 // need. Reactive Lit properties are declared as plain fields here
 // and referenced in `static get properties()` below; Lit's runtime
 // decoration syncs the two without further gymnastics.
+// Attribute-row token → live-source keys it displays (show_sources).
+// Tokens absent here (zero-degree level, next rain) carry forecast data
+// from a sensor, so neither "station" nor "weather entity" fits them.
+const SOURCE_KEYS_BY_TOKEN: Readonly<Partial<Record<AttributeToken, ReadonlyArray<string>>>> = {
+  pressure: ['pressure'],
+  dew_point_humidity: ['dew_point', 'humidity'],
+  dew_point: ['dew_point'],
+  humidity: ['humidity'],
+  precipitation: ['precipitation'],
+  uv_illuminance: ['uv_index', 'illuminance'],
+  uv_index: ['uv_index'],
+  illuminance: ['illuminance'],
+  sun: ['sun'],
+  moon: ['moon'],
+  wind_direction: ['wind_direction'],
+  wind_speed: ['wind_speed'],
+  wind_gust_speed: ['gust_speed'],
+};
+
 class WeatherStationCard extends LitElement {
   // --- Reactive properties (referenced in static get properties()) ---
   // Hass is stored as `_hass` per HA's pattern; the public `hass` is
@@ -319,6 +339,9 @@ class WeatherStationCard extends LitElement {
   // The derived-rate path and the wall-clock tick read it to label and
   // convert the rate without re-reading the sensor attribute.
   _sourcePrecipUnit: string = 'mm';
+  // Origin of each live value, keyed by sensor key; read only when
+  // `show_sources` is on (see src/live-source.ts).
+  _liveSources: Record<string, LiveSource | undefined> = {};
 
   // --- Caching / live-condition memo ---
   _liveConditionKey: string | undefined;
@@ -1044,6 +1067,48 @@ _extractSensorReadings(hass: HassMain): void {
   } else {
     this.windDirection = undefined;
   }
+
+  this._recordLiveSources(sensors, stateOf, valueOf, wxAttrs);
+}
+
+// Records where each live value came from, using the same fallback
+// rule as fromWxIfMissing above: a sensor value (live or last good)
+// wins, else the weather entity's attribute. Sensor-only rows record
+// `station`; rows with no weather counterpart never record `weather`.
+// deno-lint-ignore no-explicit-any
+_recordLiveSources(sensors: any, stateOf: (eid: string | undefined) => HassEntityState | null, valueOf: (eid: string | undefined) => string | undefined, wxAttrs: Record<string, unknown>): void {
+  const weatherEntity = this.config.weather_entity || undefined;
+  const pairs: ReadonlyArray<[string, string | null]> = [
+    ['temperature', 'temperature'],
+    ['humidity', 'humidity'],
+    ['pressure', 'pressure'],
+    ['uv_index', 'uv_index'],
+    ['wind_speed', 'wind_speed'],
+    ['dew_point', 'dew_point'],
+    ['gust_speed', 'wind_gust_speed'],
+    ['wind_direction', 'wind_bearing'],
+    ['illuminance', null],
+    ['precipitation', null],
+  ];
+  // Wind direction reads the raw sensor state (no last-good fallback);
+  // a sensor that exists but holds no number must not claim the value.
+  const numericState = (st: HassEntityState | null): string | undefined =>
+    st && Number.isFinite(parseFloat(st.state)) ? st.state : undefined;
+  const next: Record<string, LiveSource | undefined> = {};
+  for (const [key, wxKey] of pairs) {
+    const raw: unknown = sensors[key];
+    const sensorId = typeof raw === 'string' && raw ? raw : undefined;
+    next[key] = resolveLiveSource({
+      sensorId,
+      sensorState: stateOf(sensorId)?.state,
+      sensorValue: key === 'wind_direction' ? numericState(stateOf(sensorId)) : valueOf(sensorId),
+      weatherEntity,
+      weatherHasValue: wxKey !== null && wxAttrs[wxKey] !== undefined && wxAttrs[wxKey] !== null,
+    });
+  }
+  next.sun = { kind: 'computed' };
+  next.moon = { kind: 'computed' };
+  this._liveSources = next;
 }
 
 // A dedicated `sensors.precipitation_rate` entity (#253) short-circuits
@@ -3579,8 +3644,8 @@ renderMain({ config, weather, temperature } = this) {
       ${iconHtml}
       <div>
         <div>
-          ${showTemperature ? this._entityLink(this._attrEntity('temperature'),
-            html`${Number.isFinite(roundedTemperature) ? roundedTemperature : '—'}<span>${this.getUnit('temperature')}</span>`) : ''}
+          ${showTemperature ? html`${this._entityLink(this._attrEntity('temperature'),
+            html`${Number.isFinite(roundedTemperature) ? roundedTemperature : '—'}<span>${this.getUnit('temperature')}</span>`)}${this._sourceTags(['temperature'])}` : ''}
           ${showCurrentCondition ? html`
             <div class="current-condition">
               ${this._entityLink(
@@ -3698,6 +3763,26 @@ _convertDisplayPressure(pressure: any): any {
 // action-handler.ts), so a row click never also fires the card's
 // tap_action. Values without a backing entity (sensor not configured
 // AND no weather-entity fallback) render unwrapped — no dead cursor.
+// Source tags for one live row (show_sources). Values of a combined
+// row that share an origin get one tag; the tooltip names the entity.
+_sourceTags(keys: ReadonlyArray<string>): unknown {
+  if (this.config?.show_sources !== true) return nothing;
+  const groups = groupSources(keys.map((k) => this._liveSources[k]));
+  if (groups.length === 0) return nothing;
+  const ll = (k: string, fb: string): string =>
+    (this.ll(k) || (locale.en as Record<string, unknown>)[k] || fb) as string;
+  const defaults = {
+    station: ll('source_station', 'Station'),
+    weather: ll('source_weather', 'Forecast'),
+    computed: ll('source_computed', 'Calculated'),
+  };
+  return groups.map((g) => {
+    const label = sourceLabel(g.kind, this.config?.source_labels, defaults);
+    const tip = ll(`source_tooltip_${g.kind}`, '{entity}').replace('{entity}', g.entityIds.join(', '));
+    return html` <span class="wsc-source-tag wsc-source-${g.kind}" title=${tip} aria-label=${tip}>${label}</span>`;
+  });
+}
+
 // deno-lint-ignore no-explicit-any
 _entityLink(entityId: string | undefined, content: any): any {
   if (!entityId || !this._hass?.states?.[entityId]) return content;
@@ -4370,6 +4455,14 @@ _renderAttributeColumn(column: ReadonlyArray<AttributeToken>, ctx: any) {
 // `show` argument is true by construction (the token is in the layout).
 // deno-lint-ignore no-explicit-any
 _renderAttributeLine(token: AttributeToken, ctx: any) {
+  const tpl = this._renderAttributeLineValue(token, ctx);
+  const keys = SOURCE_KEYS_BY_TOKEN[token];
+  if (tpl === null || !keys) return tpl;
+  return html`${tpl}${this._sourceTags(keys)}`;
+}
+
+// deno-lint-ignore no-explicit-any
+_renderAttributeLineValue(token: AttributeToken, ctx: any) {
   switch (token) {
     case 'pressure':
       return this._climateRow_pressure(true, ctx.dPressure, ctx.pressureDelta3h);

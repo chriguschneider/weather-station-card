@@ -153,6 +153,30 @@ function buildCardStyles({
       opacity: 0.65;
       transition: opacity 0.3s ease;
     }
+    /* show_sources provenance tags: small muted pills after a value.
+     * Forecast-sourced values get the accent outline so a mixed panel
+     * reads at a glance; stale station values are dashed. */
+    .wsc-source-tag {
+      display: inline-block;
+      margin-left: 3px;
+      padding: 0 4px;
+      border: 1px solid var(--divider-color, rgba(127, 127, 127, 0.4));
+      border-radius: 6px;
+      font-size: 9px;
+      line-height: 13px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      vertical-align: middle;
+      white-space: nowrap;
+      color: var(--secondary-text-color, #727272);
+    }
+    .wsc-source-weather {
+      border-color: var(--primary-color, #03a9f4);
+      color: var(--primary-color, #03a9f4);
+    }
+    .wsc-source-stale {
+      border-style: dashed;
+    }
     .wsc-entity-link {
       cursor: pointer;
     }

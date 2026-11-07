@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- New option "Label values by source" (`show_sources`) in the live panel: each value gets a small tag saying whether it comes from your own station, from the weather entity (the forecast provider fills in when a sensor is missing or offline), or is calculated by the card (sun, moon). Useful when you combine a local station with a forecast service and want to know which number is measured. Off by default; rename the tags with `source_labels` in YAML.
+
 ### Fixed
 
 - `forecast.chart_text_color` and `forecast.chart_datetime_color` no longer show an "Unknown option" warning on the card.

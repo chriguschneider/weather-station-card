@@ -130,6 +130,12 @@ export const DEFAULTS = {
   // ignored. Tokens = the show_* keys without the prefix; see
   // src/attributes-layout.ts.
   attributes_layout: [] as ReadonlyArray<ReadonlyArray<string>>,
+  // Opt-in provenance tags in the live panel: each value gets a small
+  // "Station" / "Forecast" / "Calculated" label, so a mixed setup
+  // (own station + forecast provider) shows where a number comes
+  // from. `source_labels: { station, weather, computed }` overrides
+  // the text (YAML only).
+  show_sources: false,
   use_12hour_format: false,
   // Zone of the whole card: 'server' (HA's zone), 'location'
   // (`location.time_zone`) or an IANA name (#357, ADR-0030).
