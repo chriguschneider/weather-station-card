@@ -3683,6 +3683,8 @@ _convertDisplayWindSpeed(windSpeed: any): any {
 
 // deno-lint-ignore no-explicit-any
 _convertDisplayPressure(pressure: any): any {
+  // Math.round(null) would turn a null attribute into a bogus 0.
+  if (pressure == null) return undefined;
   return convertPressure(
     pressure,
     this.weather.attributes.pressure_unit,
@@ -3808,7 +3810,8 @@ _attrEntity(sensorKey: string, weatherFallback: boolean = true): string | undefi
 
 // deno-lint-ignore no-explicit-any
 _climateRow_pressure(show: boolean, dPressure: any, deltaHpa: number | null) {
-  if (!show || dPressure === undefined) return null;
+  // A missing / non-numeric pressure reaches here as NaN (or undefined); hide the row.
+  if (!show || dPressure == null || !Number.isFinite(parseFloat(String(dPressure)))) return null;
   const unitLabel = this.unitPressure ? this.ll('units')[this.unitPressure] : '';
   const trend = getPressureTrend(deltaHpa);
   const trendIcon = getPressureTrendIcon(trend);
@@ -3842,8 +3845,9 @@ _climateRow_pressure(show: boolean, dPressure: any, deltaHpa: number | null) {
 // icon and entity link. Humidity alone still renders when the dew
 // point is hidden or unwired.
 _climateRow_dewpoint(show: boolean, dew_point: unknown, showHumidity: boolean, humidity: unknown) {
-  const dewVisible = show && dew_point !== undefined;
-  const humVisible = showHumidity && humidity !== undefined;
+  const isNumeric = (v: unknown) => v != null && Number.isFinite(parseFloat(String(v)));
+  const dewVisible = show && isNumeric(dew_point);
+  const humVisible = showHumidity && isNumeric(humidity);
   if (!dewVisible && !humVisible) return null;
   const humSegment = humVisible
     ? this._entityLink(this._attrEntity('humidity'),

@@ -8,6 +8,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The live panel no longer shows "NaN hPa" when the weather entity has no pressure; the pressure row (and its trend), and a dew point or humidity without a numeric value, are hidden instead.
 - `forecast.chart_text_color` and `forecast.chart_datetime_color` no longer show an "Unknown option" warning on the card.
 
 ### Documentation
