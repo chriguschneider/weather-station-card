@@ -167,9 +167,9 @@ function buildCardStyles({
       outline-offset: 2px;
       border-radius: 4px;
     }
-    /* Info button (show_sources, ADR-0031): muted while every live value
-     * comes from a station sensor, accent colour when one fell back to
-     * the weather entity or is stale. The .main selectors outrank the
+    /* Info button (show_sources, ADR-0031): muted while all is well,
+     * warning colour (and a different icon) when a configured sensor is
+     * down. The .main selectors outrank the
      * 50 px condition-glyph rule above. */
     .wsc-sources-info {
       display: inline-flex;
@@ -185,10 +185,11 @@ function buildCardStyles({
     }
     .main .wsc-sources-info.wsc-sources-alert ha-icon,
     .wsc-sources-info.wsc-sources-alert ha-icon {
-      color: var(--primary-color, #03a9f4);
+      color: var(--warning-color, #ff9800);
     }
-    .wsc-sources-info .wsc-entity-link:hover ha-icon {
-      color: var(--primary-color, #03a9f4);
+    .wsc-sources-info .wsc-entity-link:hover ha-icon,
+    .wsc-sources-info .wsc-entity-link:focus-visible ha-icon {
+      color: var(--primary-text-color, #212121);
     }
     .wsc-sources-info .wsc-sr-only {
       position: absolute;

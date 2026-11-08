@@ -131,8 +131,8 @@ export const DEFAULTS = {
   // src/attributes-layout.ts.
   attributes_layout: [] as ReadonlyArray<ReadonlyArray<string>>,
   // Opt-in info button (ADR-0031): opens a popup naming the source of
-  // each live value and the chart encodings. Turns accent-coloured when
-  // a value fell back to the weather entity or a sensor is stale.
+  // each live value and the chart encodings. Shows a warning icon when
+  // a configured sensor is unavailable.
   // `source_labels: { station, weather, computed }` overrides the
   // source names (YAML only).
   show_sources: true,

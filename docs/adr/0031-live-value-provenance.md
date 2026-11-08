@@ -83,11 +83,18 @@ a popup, for two reasons:
 - **The overview stays clean.** Tags on every row add width (narrow
   cards wrapped) and repeat "Station" a dozen times for the common case
   where everything is measured. The details are one tap away.
-- **The exception is still visible without a click.** The button is
-  muted (`--secondary-text-color`) while every shown value comes from a
-  station sensor and switches to `--primary-color` when one fell back to
-  the weather entity or a sensor is stale (#213). The popup marks the
-  same lines in the accent colour.
+- **A sensor problem is visible without a click.** Two states, no
+  accent blue. OK: `mdi:information-outline` in `--secondary-text-color`.
+  Problem: `mdi:alert-circle-outline` in `--warning-color` (fallback
+  `#ff9800`), when a *configured* station sensor is unavailable and the
+  card shows its last good value (#213) or the weather entity instead.
+  The icon shape differs so the state is readable without colour; the
+  accessible name becomes "Data sources: sensor problem". A value from
+  the weather entity because no sensor is configured is by design and
+  stays OK. The popup colours only the affected lines with
+  `--warning-color`; a fallback line names the sensor ("sensor.x
+  unavailable since 09:12"). Hover and focus do not change the OK icon's
+  colour permanently.
 
 The popup reuses the zero-degree popup's overlay pattern (plain DOM in
 the shadow root outside `ha-card`, Escape / backdrop / × close, focus

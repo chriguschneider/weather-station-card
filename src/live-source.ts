@@ -14,6 +14,16 @@ export type LiveSourceKind = 'station' | 'stale' | 'weather' | 'computed';
 export interface LiveSource {
   kind: LiveSourceKind;
   entityId?: string;
+  /** Weather fallback caused by a configured sensor that has no usable
+   *  value. Absent when no sensor is configured (fallback by design). */
+  sensorId?: string;
+}
+
+/** A configured station sensor is down: its last good value is shown
+ *  (stale) or the weather entity stands in for it. A weather value with
+ *  no sensor configured is normal and not a problem. */
+export function isSensorProblem(src: LiveSource | undefined): boolean {
+  return src?.kind === 'stale' || (src?.kind === 'weather' && !!src.sensorId);
 }
 
 export interface SourceLabels {
@@ -39,7 +49,9 @@ export function resolveLiveSource(opts: {
     const live = sensorState !== undefined && sensorState !== 'unavailable' && sensorState !== 'unknown';
     return { kind: live ? 'station' : 'stale', entityId: sensorId };
   }
-  if (weatherEntity && weatherHasValue) return { kind: 'weather', entityId: weatherEntity };
+  if (weatherEntity && weatherHasValue) {
+    return { kind: 'weather', entityId: weatherEntity, ...(sensorId ? { sensorId } : {}) };
+  }
   return undefined;
 }
 

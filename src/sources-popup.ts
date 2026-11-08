@@ -23,18 +23,14 @@ export interface SourceLine {
   entityId?: string;
   /** Stale station value: "last value, unavailable since 09:12". */
   note?: string;
+  /** Configured sensor is down (stale value or weather fallback). */
+  problem?: boolean;
 }
 
 /** `Temperature 0.2 °C · Station · sensor.x · last value, …`. */
 export function formatSourceLine(line: SourceLine): string {
   const head = line.value ? `${line.label} ${line.value}` : line.label;
   return [head, line.sourceText, line.entityId, line.note].filter(Boolean).join(' · ');
-}
-
-/** True when a line deserves the accent colour: the value fell back to
- *  the weather entity or the station sensor is stale. */
-export function isExceptionKind(kind: SourceLineKind | undefined): boolean {
-  return kind === 'weather' || kind === 'stale';
 }
 
 const STYLES = `
@@ -102,7 +98,7 @@ const STYLES = `
   .wsc-src-line[role="button"]:hover .wsc-src-label { color: var(--primary-color, #03a9f4); }
   .wsc-src-label { font-weight: 500; }
   .wsc-src-meta { color: var(--secondary-text-color, #727272); }
-  .wsc-src-exception .wsc-src-meta { color: var(--primary-color, #03a9f4); }
+  .wsc-src-problem .wsc-src-meta { color: var(--warning-color, #ff9800); }
   .wsc-src-close:focus-visible, .wsc-src-line:focus-visible {
     outline: 2px solid var(--primary-color, #03a9f4);
     outline-offset: 2px;
@@ -240,7 +236,7 @@ export class SourcesPopup {
   }
 
   private _lineItem(line: SourceLine, opts: SourcesPopupOpts, focusables: HTMLElement[]): HTMLElement {
-    const li = el('li', isExceptionKind(line.kind) ? 'wsc-src-line wsc-src-exception' : 'wsc-src-line');
+    const li = el('li', line.problem ? 'wsc-src-line wsc-src-problem' : 'wsc-src-line');
     li.dataset.kind = line.kind;
     li.append(el('span', 'wsc-src-label', line.label));
     if (line.value) li.append(document.createTextNode(` ${line.value}`));

@@ -3,14 +3,15 @@
 // focus return.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { SourcesPopup, formatSourceLine, isExceptionKind } from '../src/sources-popup.js';
+import { SourcesPopup, formatSourceLine } from '../src/sources-popup.js';
+import { isSensorProblem } from '../src/live-source.js';
 
 const STRINGS = { title: 'Data sources', close: 'Close', liveTitle: 'Live values', chartTitle: 'Chart' };
 
 const LINES = [
   { label: 'Temperature', value: '0.2°C', kind: 'station', sourceText: 'Station', entityId: 'sensor.russisprung_temperature' },
   { label: 'Wind speed', value: '17 km/h', kind: 'weather', sourceText: 'Weather service', entityId: 'weather.kleine_scheidegg' },
-  { label: 'Humidity', value: '40.5 %', kind: 'stale', sourceText: 'Station', entityId: 'sensor.hum', note: 'last value, unavailable since 09:12' },
+  { label: 'Humidity', value: '40.5 %', kind: 'stale', sourceText: 'Station', entityId: 'sensor.hum', problem: true, note: 'last value, unavailable since 09:12' },
   { label: 'Sun', value: '07:18 17:02', kind: 'computed', sourceText: 'Calculated from the location' },
 ];
 
@@ -40,9 +41,15 @@ describe('formatSourceLine', () => {
     expect(formatSourceLine(LINES[3])).toBe('Sun 07:18 17:02 · Calculated from the location');
   });
 
-  it('flags weather and stale as exceptions only', () => {
-    expect(['station', 'stale', 'weather', 'computed', 'info'].map(isExceptionKind))
-      .toEqual([false, true, true, false, false]);
+  it('flags only sensor problems, not by-design weather values', () => {
+    const cases = [
+      { kind: 'station', entityId: 'sensor.a' },
+      { kind: 'stale', entityId: 'sensor.a' },
+      { kind: 'weather', entityId: 'weather.home' },
+      { kind: 'weather', entityId: 'weather.home', sensorId: 'sensor.a' },
+      { kind: 'computed' },
+    ];
+    expect(cases.map(isSensorProblem)).toEqual([false, true, false, true, false]);
   });
 });
 
@@ -53,9 +60,9 @@ describe('SourcesPopup', () => {
     expect(sections).toEqual(['Live values', 'Chart']);
     const lines = [...root.querySelectorAll('.wsc-src-line:not(.wsc-src-legend)')];
     expect(lines.map((l) => l.dataset.kind)).toEqual(['station', 'weather', 'stale', 'computed']);
-    expect(lines[1].classList.contains('wsc-src-exception')).toBe(true);
-    expect(lines[2].classList.contains('wsc-src-exception')).toBe(true);
-    expect(lines[0].classList.contains('wsc-src-exception')).toBe(false);
+    expect(lines[1].classList.contains('wsc-src-problem')).toBe(false);
+    expect(lines[2].classList.contains('wsc-src-problem')).toBe(true);
+    expect(lines[0].classList.contains('wsc-src-problem')).toBe(false);
     expect(lines[0].textContent.replace(/\s+/g, ' ')).toBe('Temperature 0.2°C · Station · sensor.russisprung_temperature');
     // Computed values have no entity, so no button role.
     expect(lines[3].getAttribute('role')).toBeNull();

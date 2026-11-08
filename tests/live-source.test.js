@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveLiveSource, sourceLabel, groupSources } from '../src/live-source.js';
+import { resolveLiveSource, sourceLabel, groupSources, isSensorProblem } from '../src/live-source.js';
 
 const base = {
   sensorId: 'sensor.outdoor_temperature',
@@ -26,15 +26,24 @@ describe('resolveLiveSource', () => {
   });
 
   it('falls back to the weather entity when the sensor yields no value', () => {
-    expect(resolveLiveSource({ ...base, sensorState: 'unavailable', sensorValue: undefined }))
-      .toEqual({ kind: 'weather', entityId: 'weather.home' });
-    expect(resolveLiveSource({ ...base, sensorValue: '' }))
-      .toEqual({ kind: 'weather', entityId: 'weather.home' });
+    // A configured sensor is down, so the fallback is a sensor problem.
+    const down = { kind: 'weather', entityId: 'weather.home', sensorId: 'sensor.outdoor_temperature' };
+    expect(resolveLiveSource({ ...base, sensorState: 'unavailable', sensorValue: undefined })).toEqual(down);
+    expect(resolveLiveSource({ ...base, sensorValue: '' })).toEqual(down);
+    expect(isSensorProblem(down)).toBe(true);
   });
 
   it('uses the weather entity when no sensor is configured', () => {
     expect(resolveLiveSource({ ...base, sensorId: undefined, sensorState: undefined, sensorValue: undefined }))
       .toEqual({ kind: 'weather', entityId: 'weather.home' });
+    // By design, not a problem.
+    expect(isSensorProblem({ kind: 'weather', entityId: 'weather.home' })).toBe(false);
+  });
+
+  it('only stale values and fallbacks for configured sensors are problems', () => {
+    expect(isSensorProblem(resolveLiveSource(base))).toBe(false);
+    expect(isSensorProblem(resolveLiveSource({ ...base, sensorState: 'unavailable' }))).toBe(true);
+    expect(isSensorProblem(undefined)).toBe(false);
   });
 
   it('returns undefined when neither source has a value', () => {

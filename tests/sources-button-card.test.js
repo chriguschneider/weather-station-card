@@ -106,13 +106,35 @@ describe('show_sources: info button', () => {
     expect(link.querySelector('ha-icon').getAttribute('icon')).toBe('mdi:information-outline');
   });
 
-  it('turns accent when a shown value falls back to the weather entity', async () => {
+  it('stays grey when a value comes from the weather entity by design', async () => {
     const card = await mountCard(baseStates());
     expect(card._liveSources.pressure).toEqual({ kind: 'weather', entityId: 'weather.home' });
-    expect(button(card).classList.contains('wsc-sources-alert')).toBe(true);
+    expect(button(card).classList.contains('wsc-sources-alert')).toBe(false);
+    expect(buttonLink(card).querySelector('ha-icon').getAttribute('icon')).toBe('mdi:information-outline');
+    buttonLink(card).click();
+    const p = popupLines(card).find((l) => l.textContent.includes('Pressure'));
+    expect(p.classList.contains('wsc-src-problem')).toBe(false);
   });
 
-  it('turns accent when a station sensor is stale', async () => {
+  it('warns when a configured sensor is unavailable and the weather entity stands in', async () => {
+    // Weather entity carries humidity, sensor has no last good value yet.
+    const states = baseStates();
+    states['sensor.hum'] = sensor('unavailable', '%', { last_changed: '2026-11-08T08:12:00Z' });
+    const card = await mountCard(states, { show_pressure: false });
+    expect(card._liveSources.humidity.kind).toBe('weather');
+    expect(card._liveSources.humidity.sensorId).toBe('sensor.hum');
+    expect(button(card).classList.contains('wsc-sources-alert')).toBe(true);
+    const link = buttonLink(card);
+    expect(link.querySelector('ha-icon').getAttribute('icon')).toBe('mdi:alert-circle-outline');
+    expect(link.textContent.trim()).toBe('Data sources: sensor problem');
+    link.click();
+    const hum = popupLines(card).find((l) => l.textContent.includes('Humidity'));
+    expect(hum.classList.contains('wsc-src-problem')).toBe(true);
+    expect(hum.textContent).toContain('Weather service');
+    expect(hum.textContent).toContain('sensor.hum unavailable since 09:12');
+  });
+
+  it('warns when a station sensor is stale', async () => {
     const card = await mountCard(baseStates(), { show_pressure: false });
     const states = baseStates();
     states['sensor.hum'] = sensor('unavailable', '%', { last_changed: '2026-11-08T08:12:00Z' });

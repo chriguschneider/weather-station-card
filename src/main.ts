@@ -78,9 +78,9 @@ import {
   sunshineFractions,
 } from './sunshine-source.js';
 import { OpenMeteoSource } from './openmeteo-source.js';
-import { resolveLiveSource, sourceLabel, type LiveSource } from './live-source.js';
+import { resolveLiveSource, sourceLabel, isSensorProblem, type LiveSource } from './live-source.js';
 import { buildChartLegend, type LegendItem, type SunshineParts } from './chart-legend.js';
-import { SourcesPopup, isExceptionKind, type SourceLine } from './sources-popup.js';
+import { SourcesPopup, type SourceLine } from './sources-popup.js';
 import { cardCalendar, resolveLocation } from './location.js';
 import { forecastHasProbability, overlayPrecipProbability } from './precip-probability.js';
 import { PROBABILITY_EXTRA_BOTTOM_PAD } from './chart/plugins/precip-label.js';
@@ -3843,12 +3843,12 @@ _renderSourcesButton(place: 'main' | 'chart' = 'main'): unknown {
     const toggleShown = cfg.forecast?.show_mode_toggle !== false;
     placeClass = toggleShown ? ' wsc-sources-chart' : ' wsc-sources-chart wsc-sources-chart-alone';
   }
-  const alert = this._sourceLiveKeys().some((k) => isExceptionKind(this._liveSources[k]?.kind));
-  const label = this._srcStr('sources_button');
+  const alert = this._sourceLiveKeys().some((k) => isSensorProblem(this._liveSources[k]));
+  const label = this._srcStr(alert ? 'sources_button_problem' : 'sources_button');
   const button = this._activatable(
     (el) => this._openSourcesPopup(el),
     // The hidden text gives the role=button span its accessible name.
-    html`<ha-icon icon="mdi:information-outline" aria-hidden="true"></ha-icon><span class="wsc-sr-only">${label}</span>`,
+    html`<ha-icon icon=${alert ? 'mdi:alert-circle-outline' : 'mdi:information-outline'} aria-hidden="true"></ha-icon><span class="wsc-sr-only">${label}</span>`,
     'dialog',
   );
   return html`<span class="wsc-sources-info${placeClass}${alert ? ' wsc-sources-alert' : ''}" title=${label}>${button}</span>`;
@@ -3950,14 +3950,26 @@ _sourceLines(): SourceLine[] {
       sourceText: sourceLabel(src.kind, cfg.source_labels, defaults),
       ...(src.entityId ? { entityId: src.entityId } : {}),
     };
-    if (src.kind === 'stale' && src.entityId) {
-      const since = (this._hass?.states?.[src.entityId] as { last_changed?: string } | undefined)?.last_changed;
+    if (isSensorProblem(src)) line.problem = true;
+    const downId = src.kind === 'stale' ? src.entityId : src.kind === 'weather' ? src.sensorId : undefined;
+    if (downId) {
+      const since = (this._hass?.states?.[downId] as { last_changed?: string } | undefined)?.last_changed;
       const t = since ? Date.parse(String(since)) : NaN;
-      line.note = Number.isFinite(t)
-        ? this._srcStr('sources_stale_since').replace('{time}', getDateTimeFormat(this.language, {
+      const time = Number.isFinite(t)
+        ? getDateTimeFormat(this.language, {
             hour: 'numeric', minute: 'numeric', hour12: cfg.use_12hour_format, timeZone: this.calendar.timeZone,
-          }).format(new Date(t)))
-        : this._srcStr('sources_stale');
+          }).format(new Date(t))
+        : '';
+      if (src.kind === 'stale') {
+        line.note = time
+          ? this._srcStr('sources_stale_since').replace('{time}', time)
+          : this._srcStr('sources_stale');
+      } else {
+        // The weather entity is already named as the entity id; say which
+        // configured sensor it is standing in for.
+        line.note = (time ? this._srcStr('sources_sensor_down_since').replace('{time}', time) : this._srcStr('sources_sensor_down'))
+          .replace('{entity}', downId);
+      }
     }
     lines.push(line);
   }
