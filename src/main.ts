@@ -1037,8 +1037,14 @@ _extractSensorReadings(hass: HassMain): void {
     }
   }
 
-  if (sensors.wind_direction && hass.states?.[sensors.wind_direction]) {
-    this.windDirection = parseFloat(hass.states[sensors.wind_direction]!.state);
+  // An unavailable direction sensor parses to NaN; fall back to the
+  // entity's bearing like every other live reading instead of showing
+  // an empty row.
+  const sensorBearing = sensors.wind_direction
+    ? parseFloat(String(hass.states?.[sensors.wind_direction]?.state))
+    : NaN;
+  if (Number.isFinite(sensorBearing)) {
+    this.windDirection = sensorBearing;
   } else if (wxAttrs.wind_bearing != null) {
     this.windDirection = parseFloat(String(wxAttrs.wind_bearing));
   } else {
