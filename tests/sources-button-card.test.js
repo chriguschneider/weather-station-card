@@ -134,6 +134,19 @@ describe('show_sources: info button', () => {
     expect(hum.textContent).toContain('sensor.hum unavailable since 09:12');
   });
 
+  it('treats an unavailable wind-direction sensor as a weather-service fallback (#437)', async () => {
+    const states = baseStates();
+    states['sensor.dir'] = sensor('unavailable', '°', { last_changed: '2026-11-08T08:12:00Z' });
+    const card = await mountCard(states, {
+      show_wind_direction: true,
+      sensors: { temperature: 'sensor.temp', humidity: 'sensor.hum', wind_speed: 'sensor.wind', wind_direction: 'sensor.dir' },
+    });
+    expect(card.windDirection).toBe(26);
+    expect(card._liveSources.wind_direction.kind).toBe('weather');
+    expect(card._liveSources.wind_direction.sensorId).toBe('sensor.dir');
+    expect(button(card).classList.contains('wsc-sources-alert')).toBe(true);
+  });
+
   it('warns when a station sensor is stale', async () => {
     const card = await mountCard(baseStates(), { show_pressure: false });
     const states = baseStates();

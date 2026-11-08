@@ -1116,9 +1116,13 @@ _recordLiveSources(sensors: any, stateOf: (eid: string | undefined) => HassEntit
     next[key] = resolveLiveSource({
       sensorId,
       sensorState: st?.state,
-      // Wind direction reads the raw sensor state whenever the entity
-      // exists (no last-good fallback, no weather fallback) — mirror that.
-      sensorValue: key === 'wind_direction' ? st?.state : valueOf(sensorId),
+      // Wind direction uses the sensor only while its state is numeric and
+      // otherwise falls back to the entity's bearing, without a last-good
+      // value (#437) — mirror that, so an unavailable sensor reads as a
+      // weather-service fallback, not as a stale station value.
+      sensorValue: key === 'wind_direction'
+        ? (Number.isFinite(parseFloat(String(st?.state))) ? st?.state : undefined)
+        : valueOf(sensorId),
       weatherEntity,
       weatherHasValue: wxKey !== null && wxAttrs[wxKey] !== undefined && wxAttrs[wxKey] !== null,
     });
