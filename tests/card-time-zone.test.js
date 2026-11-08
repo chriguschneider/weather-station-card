@@ -166,3 +166,58 @@ describe('a card for another place', () => {
     expect(card._configWarnings.join(' ')).toContain('location.time_zone');
   });
 });
+
+// Legacy `time_zone: <IANA>` YAML (#346) drives the clock and the sun row.
+const LEGACY_NOW = new Date('2026-07-01T16:30:00Z'); // 12:30 New York, 18:30 Zurich
+const LEGACY_HOME = { latitude: 46.95, longitude: 7.45 };
+const { sunrise: legacy_RISE, sunset: legacy_SET } = sunTimes(
+  new Date('2026-07-01T12:00:00Z'), LEGACY_HOME.latitude, LEGACY_HOME.longitude);
+const legacy_hhmm = (d, timeZone) =>
+  new Intl.DateTimeFormat('en', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone })
+    .format(d);
+
+function makeLegacyCard(config) {
+  const card = document.createElement('weather-station-card');
+  card.setConfig({ show_main: true, show_time: true, ...config });
+  card.language = 'en';
+  card._hass = { config: LEGACY_HOME };
+  const main = document.createElement('div');
+  main.className = 'main';
+  main.innerHTML = '<span id="digital-clock"></span>';
+  (card.shadowRoot ?? card.attachShadow({ mode: 'open' })).appendChild(main);
+  card._syncCalendar('Europe/Zurich');
+  return card;
+}
+
+const legacy_clockText = (card) => card.shadowRoot.querySelector('#digital-clock').textContent;
+const legacy_sunText = (card) =>
+  card.renderSun('en').values.filter((v) => typeof v === 'string').map((v) => v.trim());
+const zurichTimes = [legacy_hhmm(legacy_RISE, 'Europe/Zurich'), legacy_hhmm(legacy_SET, 'Europe/Zurich')];
+
+describe('legacy time_zone option (#346)', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('shows New York time in the clock and the sun row', () => {
+    vi.useFakeTimers({ now: LEGACY_NOW });
+    const card = makeLegacyCard({ time_zone: 'America/New_York', use_12hour_format: false });
+    card._updateClock();
+    expect(legacy_clockText(card)).toBe('12:30');
+    expect(legacy_sunText(card)).toEqual([legacy_hhmm(legacy_RISE, 'America/New_York'), legacy_hhmm(legacy_SET, 'America/New_York')]);
+  });
+
+  it('keeps the server zone without the option', () => {
+    vi.useFakeTimers({ now: LEGACY_NOW });
+    const card = makeLegacyCard({ use_12hour_format: false });
+    card._updateClock();
+    expect(legacy_clockText(card)).toBe('18:30');
+    expect(legacy_sunText(card)).toEqual(zurichTimes);
+  });
+
+  it('falls back to the server zone on an invalid zone', () => {
+    vi.useFakeTimers({ now: LEGACY_NOW });
+    const card = makeLegacyCard({ time_zone: 'Mars/Base', use_12hour_format: false });
+    expect(() => card._updateClock()).not.toThrow();
+    expect(legacy_clockText(card)).toBe('18:30');
+    expect(legacy_sunText(card)).toEqual(zurichTimes);
+  });
+});
