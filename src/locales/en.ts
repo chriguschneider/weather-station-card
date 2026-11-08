@@ -69,6 +69,7 @@ const en: LocaleEntry = {
   'sources_chart_title': 'Chart',
   'sources_stale_since': 'last value, unavailable since {time}',
   'sources_stale': 'last value, sensor unavailable',
+  'sources_waiting': 'waiting for sensor data',
   'sources_label_sun': 'Sun',
   'sources_label_moon': 'Moon',
   'source_station': 'Station',

@@ -69,6 +69,7 @@ const de: LocaleEntry = {
   'sources_chart_title': 'Diagramm',
   'sources_stale_since': 'letzter Wert, nicht verfügbar seit {time}',
   'sources_stale': 'letzter Wert, Sensor nicht verfügbar',
+  'sources_waiting': 'warte auf Sensordaten',
   'sources_label_sun': 'Sonne',
   'sources_label_moon': 'Mond',
   'source_station': 'Station',

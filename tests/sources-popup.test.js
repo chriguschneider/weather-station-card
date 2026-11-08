@@ -49,7 +49,10 @@ describe('formatSourceLine', () => {
       { kind: 'weather', entityId: 'weather.home', sensorId: 'sensor.a' },
       { kind: 'computed' },
     ];
-    expect(cases.map(isSensorProblem)).toEqual([false, true, false, true, false]);
+    const overdue = new Set(['sensor.a']);
+    expect(cases.map((c) => isSensorProblem(c, overdue))).toEqual([false, true, false, true, false]);
+    // In grace (sensor not overdue yet) nothing is a problem.
+    expect(cases.map((c) => isSensorProblem(c, new Set()))).toEqual([false, false, false, false, false]);
   });
 });
 

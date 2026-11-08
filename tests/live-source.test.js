@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { resolveLiveSource, sourceLabel, groupSources, isSensorProblem } from '../src/live-source.js';
+import { resolveLiveSource, sourceLabel, isSensorProblem } from '../src/live-source.js';
+
+const OVERDUE = new Set(['sensor.outdoor_temperature']);
 
 const base = {
   sensorId: 'sensor.outdoor_temperature',
@@ -30,20 +32,23 @@ describe('resolveLiveSource', () => {
     const down = { kind: 'weather', entityId: 'weather.home', sensorId: 'sensor.outdoor_temperature' };
     expect(resolveLiveSource({ ...base, sensorState: 'unavailable', sensorValue: undefined })).toEqual(down);
     expect(resolveLiveSource({ ...base, sensorValue: '' })).toEqual(down);
-    expect(isSensorProblem(down)).toBe(true);
+    expect(isSensorProblem(down, OVERDUE)).toBe(true);
+    // Still inside the grace window: neutral.
+    expect(isSensorProblem(down, new Set())).toBe(false);
   });
 
   it('uses the weather entity when no sensor is configured', () => {
     expect(resolveLiveSource({ ...base, sensorId: undefined, sensorState: undefined, sensorValue: undefined }))
       .toEqual({ kind: 'weather', entityId: 'weather.home' });
     // By design, not a problem.
-    expect(isSensorProblem({ kind: 'weather', entityId: 'weather.home' })).toBe(false);
+    expect(isSensorProblem({ kind: 'weather', entityId: 'weather.home' }, OVERDUE)).toBe(false);
   });
 
-  it('only stale values and fallbacks for configured sensors are problems', () => {
-    expect(isSensorProblem(resolveLiveSource(base))).toBe(false);
-    expect(isSensorProblem(resolveLiveSource({ ...base, sensorState: 'unavailable' }))).toBe(true);
-    expect(isSensorProblem(undefined)).toBe(false);
+  it('only overdue stale values and fallbacks for configured sensors are problems', () => {
+    expect(isSensorProblem(resolveLiveSource(base), OVERDUE)).toBe(false);
+    expect(isSensorProblem(resolveLiveSource({ ...base, sensorState: 'unavailable' }), OVERDUE)).toBe(true);
+    expect(isSensorProblem(resolveLiveSource({ ...base, sensorState: 'unavailable' }), new Set())).toBe(false);
+    expect(isSensorProblem(undefined, OVERDUE)).toBe(false);
   });
 
   it('returns undefined when neither source has a value', () => {
@@ -85,31 +90,3 @@ describe('sourceLabel', () => {
   });
 });
 
-describe('groupSources', () => {
-  const st = { kind: 'station', entityId: 'sensor.a' };
-  const wx = { kind: 'weather', entityId: 'weather.home' };
-
-  it('collapses identical sources of a combined row into one group', () => {
-    expect(groupSources([st, { ...st }])).toEqual([{ kind: 'station', entityIds: ['sensor.a'] }]);
-  });
-
-  it('merges two station sensors into one group listing both entities', () => {
-    expect(groupSources([st, { kind: 'station', entityId: 'sensor.b' }]))
-      .toEqual([{ kind: 'station', entityIds: ['sensor.a', 'sensor.b'] }]);
-  });
-
-  it('keeps different kinds in display order and skips missing ones', () => {
-    expect(groupSources([wx, undefined, st])).toEqual([
-      { kind: 'weather', entityIds: ['weather.home'] },
-      { kind: 'station', entityIds: ['sensor.a'] },
-    ]);
-  });
-
-  it('keeps entity-less computed sources', () => {
-    expect(groupSources([{ kind: 'computed' }])).toEqual([{ kind: 'computed', entityIds: [] }]);
-  });
-
-  it('returns an empty list when nothing is known', () => {
-    expect(groupSources([undefined, undefined])).toEqual([]);
-  });
-});

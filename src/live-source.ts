@@ -19,11 +19,21 @@ export interface LiveSource {
   sensorId?: string;
 }
 
-/** A configured station sensor is down: its last good value is shown
- *  (stale) or the weather entity stands in for it. A weather value with
- *  no sensor configured is normal and not a problem. */
-export function isSensorProblem(src: LiveSource | undefined): boolean {
-  return src?.kind === 'stale' || (src?.kind === 'weather' && !!src.sensorId);
+/** The configured sensor a value is missing from: the stale sensor, or
+ *  the sensor the weather entity stands in for. */
+export function sensorDownId(src: LiveSource | undefined): string | undefined {
+  if (src?.kind === 'stale') return src.entityId;
+  if (src?.kind === 'weather') return src.sensorId;
+  return undefined;
+}
+
+/** A configured station sensor has been down past the card's grace
+ *  period (`overdueIds`, from the availability scan). Inside the grace
+ *  window or while HA starts it is not yet a problem. A weather value
+ *  with no sensor configured is normal. */
+export function isSensorProblem(src: LiveSource | undefined, overdueIds: ReadonlySet<string>): boolean {
+  const id = sensorDownId(src);
+  return !!id && overdueIds.has(id);
 }
 
 export interface SourceLabels {
@@ -74,24 +84,3 @@ export function labelText(value: unknown, fallback: string): string {
   return text || fallback.trim();
 }
 
-// Sources of a combined row (dew point + humidity, …) grouped by
-// kind in display order: two station sensors get one "Station" tag
-// whose tooltip names both entities.
-export interface SourceGroup {
-  kind: LiveSourceKind;
-  entityIds: string[];
-}
-
-export function groupSources(sources: ReadonlyArray<LiveSource | undefined>): SourceGroup[] {
-  const out: SourceGroup[] = [];
-  for (const s of sources) {
-    if (!s) continue;
-    let group = out.find((g) => g.kind === s.kind);
-    if (!group) {
-      group = { kind: s.kind, entityIds: [] };
-      out.push(group);
-    }
-    if (s.entityId && !group.entityIds.includes(s.entityId)) group.entityIds.push(s.entityId);
-  }
-  return out;
-}

@@ -80,7 +80,7 @@ import {
   sunshineFractions,
 } from './sunshine-source.js';
 import { OpenMeteoSource } from './openmeteo-source.js';
-import { resolveLiveSource, sourceLabel, labelText, isSensorProblem, type LiveSource } from './live-source.js';
+import { resolveLiveSource, sourceLabel, labelText, isSensorProblem, sensorDownId, type LiveSource } from './live-source.js';
 import { buildChartLegend, type LegendItem, type SunshineParts } from './chart-legend.js';
 import { SourcesPopup, type SourceLine } from './sources-popup.js';
 import { cardCalendar, resolveLocation } from './location.js';
@@ -3860,7 +3860,10 @@ _renderSourcesButton(place: 'main' | 'chart' = 'main'): unknown {
     const toggleShown = cfg.forecast?.show_mode_toggle !== false;
     placeClass = toggleShown ? ' wsc-sources-chart' : ' wsc-sources-chart wsc-sources-chart-alone';
   }
-  const alert = this._sourceLiveKeys().some((k) => isSensorProblem(this._liveSources[k]));
+  // Derived at render time from the availability scan's overdue list
+  // (reactive `_missingSensors`), so grace expiry re-renders the button.
+  const overdueIds = this._overdueSensorIds();
+  const alert = this._sourceLiveKeys().some((k) => isSensorProblem(this._liveSources[k], overdueIds));
   const label = this._srcStr(alert ? 'sources_button_problem' : 'sources_button');
   const button = this._activatable(
     (el) => this._openSourcesPopup(el),
@@ -3869,6 +3872,17 @@ _renderSourcesButton(place: 'main' | 'chart' = 'main'): unknown {
     'dialog',
   );
   return html`<span class="wsc-sources-info${placeClass}${alert ? ' wsc-sources-alert' : ''}" title=${label}>${button}</span>`;
+}
+
+// Entity ids of sensors that stayed unavailable past the grace period
+// while HA runs; `_missingSensors` entries read `key (entity_id)`.
+_overdueSensorIds(): Set<string> {
+  const ids = new Set<string>();
+  for (const entry of this._missingSensors ?? []) {
+    const m = /\(([^()]+)\)$/.exec(entry);
+    if (m) ids.add(m[1]);
+  }
+  return ids;
 }
 
 _srcStr(k: string): string {
@@ -3955,6 +3969,7 @@ _sourceLines(): SourceLine[] {
     computed: this._srcStr('source_computed'),
   };
   const lines: SourceLine[] = [];
+  const overdueIds = this._overdueSensorIds();
   for (const key of this._sourceLiveKeys()) {
     const src = this._liveSources[key];
     if (!src) continue;
@@ -3967,9 +3982,12 @@ _sourceLines(): SourceLine[] {
       sourceText: sourceLabel(src.kind, cfg.source_labels, defaults),
       ...(src.entityId ? { entityId: src.entityId, entityName: this._entityName(src.entityId) } : {}),
     };
-    if (isSensorProblem(src)) line.problem = true;
-    const downId = src.kind === 'stale' ? src.entityId : src.kind === 'weather' ? src.sensorId : undefined;
-    if (downId) {
+    if (isSensorProblem(src, overdueIds)) line.problem = true;
+    const downId = sensorDownId(src);
+    if (downId && !overdueIds.has(downId)) {
+      // Grace period or HA starting: neutral, same as the availability note.
+      line.note = this._srcStr('sources_waiting');
+    } else if (downId) {
       const since = (this._hass?.states?.[downId] as { last_changed?: string } | undefined)?.last_changed;
       const t = since ? Date.parse(String(since)) : NaN;
       const time = Number.isFinite(t)
@@ -4007,11 +4025,24 @@ _sourceLines(): SourceLine[] {
   return lines;
 }
 
-// Display name of an entity for the popup: friendly_name, then the id.
-// HA's own `hass.formatEntityName` is not used yet: its signature has
-// not been checked against home-assistant/frontend src/types.ts (#431).
+// Display name of an entity for the popup, as HA shows it:
+// `hass.formatEntityName(stateObj)` (newer HA, default device + entity
+// composition), then friendly_name, then the id.
 _entityName(entityId: string): string {
-  const name = this._hass?.states?.[entityId]?.attributes?.friendly_name;
+  const hass = this._hass as unknown as {
+    states?: Record<string, { attributes?: { friendly_name?: unknown } } | undefined>;
+    formatEntityName?: (stateObj: unknown) => string;
+  } | undefined;
+  const stateObj = hass?.states?.[entityId];
+  if (stateObj && typeof hass?.formatEntityName === 'function') {
+    try {
+      const formatted = hass.formatEntityName(stateObj);
+      if (typeof formatted === 'string' && formatted.trim()) return formatted.trim();
+    } catch {
+      // fall through to friendly_name
+    }
+  }
+  const name = stateObj?.attributes?.friendly_name;
   return typeof name === 'string' && name.trim() ? name.trim() : entityId;
 }
 
