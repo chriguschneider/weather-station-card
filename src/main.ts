@@ -1068,8 +1068,14 @@ _extractSensorReadings(hass: HassMain): void {
     }
   }
 
-  if (sensors.wind_direction && hass.states?.[sensors.wind_direction]) {
-    this.windDirection = parseFloat(hass.states[sensors.wind_direction]!.state);
+  // An unavailable direction sensor parses to NaN; fall back to the
+  // entity's bearing like every other live reading instead of showing
+  // an empty row.
+  const sensorBearing = sensors.wind_direction
+    ? parseFloat(String(hass.states?.[sensors.wind_direction]?.state))
+    : NaN;
+  if (Number.isFinite(sensorBearing)) {
+    this.windDirection = sensorBearing;
   } else if (wxAttrs.wind_bearing != null) {
     this.windDirection = parseFloat(String(wxAttrs.wind_bearing));
   } else {
@@ -3792,6 +3798,8 @@ _convertDisplayWindSpeed(windSpeed: any): any {
 
 // deno-lint-ignore no-explicit-any
 _convertDisplayPressure(pressure: any): any {
+  // Math.round(null) would turn a null attribute into a bogus 0.
+  if (pressure == null) return undefined;
   return convertPressure(
     pressure,
     this.weather.attributes.pressure_unit,
@@ -4135,7 +4143,8 @@ _attrEntity(sensorKey: string, weatherFallback: boolean = true): string | undefi
 
 // deno-lint-ignore no-explicit-any
 _climateRow_pressure(show: boolean, dPressure: any, deltaHpa: number | null) {
-  if (!show || dPressure === undefined) return null;
+  // A missing / non-numeric pressure reaches here as NaN (or undefined); hide the row.
+  if (!show || dPressure == null || !Number.isFinite(parseFloat(String(dPressure)))) return null;
   const unitLabel = this.unitPressure ? this.ll('units')[this.unitPressure] : '';
   const trend = getPressureTrend(deltaHpa);
   const trendIcon = getPressureTrendIcon(trend);
@@ -4169,8 +4178,9 @@ _climateRow_pressure(show: boolean, dPressure: any, deltaHpa: number | null) {
 // icon and entity link. Humidity alone still renders when the dew
 // point is hidden or unwired.
 _climateRow_dewpoint(show: boolean, dew_point: unknown, showHumidity: boolean, humidity: unknown) {
-  const dewVisible = show && dew_point !== undefined;
-  const humVisible = showHumidity && humidity !== undefined;
+  const isNumeric = (v: unknown) => v != null && Number.isFinite(parseFloat(String(v)));
+  const dewVisible = show && isNumeric(dew_point);
+  const humVisible = showHumidity && isNumeric(humidity);
   if (!dewVisible && !humVisible) return null;
   const humSegment = humVisible
     ? this._entityLink(this._attrEntity('humidity'),
