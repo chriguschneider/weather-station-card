@@ -25,6 +25,8 @@ import type { DailyProbabilityEntry, HourlyProbabilityEntry } from './precip-pro
 import type { ForecastEntry } from './forecast-utils.js';
 import { wmoToCondition } from './weather-code-map.js';
 import { dedupeRequest } from './utils/shared-requests.js';
+import { safeLocalStorage } from './utils/safe-storage.js';
+import { abandonOnAbort, withTimeout } from './utils/fetch-signal.js';
 import { calendarFor, validTimeZone, type Calendar } from './utils/time-zone.js';
 
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
@@ -145,6 +147,10 @@ interface CachedPayload {
   /** Set by every save since the chance-of-rain fields joined the
    *  request; its absence marks a pre-ADR-0027 cache. */
   probabilityFetched?: boolean;
+  /** Window the cached response was fetched for. Absent in older caches,
+   *  which `isStale` then treats as covering nothing. */
+  pastDays?: number;
+  forecastDays?: number;
   lastFetchMs?: number;
 }
 
@@ -313,18 +319,20 @@ function civilMidnight(civilDate: string | undefined, calendar: Calendar): Date 
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** On-the-hour ISO of an hourly epoch-seconds `time` (an instant, so no
- *  zone is involved), matching `MeasuredDataSource`'s hourly convention. */
-function hourIso(t: number | string | undefined): string | null {
+/** Start of the card-zone hour holding an hourly epoch-seconds `time`,
+ *  as ISO — `MeasuredDataSource`'s hourly convention. Floored with the
+ *  card calendar, not to the UTC hour: in a half-hour zone (Asia/Kolkata,
+ *  Australia/Adelaide, America/St_Johns) Open-Meteo's local hours sit on
+ *  :30 UTC, and a UTC floor would key them to the previous local hour. */
+function hourIso(t: number | string | undefined, calendar: Calendar): string | null {
   if (typeof t !== 'number' || !Number.isFinite(t)) return null;
-  return new Date(Math.floor(t / 3600) * 3600 * 1000).toISOString();
+  return calendar.startOfHour(t * 1000).toISOString();
 }
 
-/** `Calendar.hourKey` of an hourly epoch-seconds `time`, floored to the
- *  full UTC hour like `hourIso`. */
+/** `Calendar.hourKey` of an hourly epoch-seconds `time`. */
 function cardHourString(t: number | string | undefined, calendar: Calendar): string | null {
-  const iso = hourIso(t);
-  return iso ? calendar.hourKey(Date.parse(iso)) : null;
+  if (typeof t !== 'number' || !Number.isFinite(t)) return null;
+  return calendar.hourKey(t * 1000);
 }
 
 /** Coerce a possibly-null Open-Meteo array cell to `number | null`. */
@@ -402,6 +410,7 @@ export function buildDailyForecast(
  *  slices the past window it needs. */
 export function buildHourlyForecast(
   response: OpenMeteoResponse | null | undefined,
+  calendar: Calendar,
 ): ForecastEntry[] {
   const hourly = response?.hourly;
   if (!hourly) return [];
@@ -415,7 +424,7 @@ export function buildHourlyForecast(
 
   const out: ForecastEntry[] = [];
   for (let i = 0; i < t.length; i++) {
-    const iso = hourIso(t[i]);
+    const iso = hourIso(t[i], calendar);
     if (!iso) continue;
     out.push({
       datetime: iso,
@@ -456,6 +465,43 @@ function sweepLegacyEntries(storage: StorageLike | null): void {
   }
 }
 
+const isObj = (v: unknown): v is Record<string, unknown> =>
+  v != null && typeof v === 'object' && !Array.isArray(v);
+const finiteOrNull = (v: unknown): boolean => v === null || (typeof v === 'number' && Number.isFinite(v));
+
+/** Entries carrying their string key field and a numeric (or null)
+ *  `value`; anything else in the array is dropped. */
+function keyedValues<T>(v: unknown, key: 'date' | 'datetime'): T[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v.filter((e) => isObj(e) && typeof e[key] === 'string' && finiteOrNull(e.value)) as T[];
+}
+
+function forecastEntries(v: unknown): ForecastEntry[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v.filter((e) => isObj(e) && typeof e.datetime === 'string') as ForecastEntry[];
+}
+
+const nonNegative = (v: unknown): number | undefined =>
+  typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined;
+
+/** Shape-check a parsed cache entry (it may be corrupt, hand-edited or
+ *  written by another version). Invalid fields are dropped, not trusted. */
+function validPayload(parsed: unknown): CachedPayload | null {
+  if (!isObj(parsed)) return null;
+  return {
+    daily: keyedValues<DailySunshineEntry>(parsed.daily, 'date'),
+    hourly: keyedValues<HourlySunshineEntry>(parsed.hourly, 'datetime'),
+    dailyForecast: forecastEntries(parsed.dailyForecast),
+    hourlyForecast: forecastEntries(parsed.hourlyForecast),
+    dailyProbability: keyedValues<DailyProbabilityEntry>(parsed.dailyProbability, 'date'),
+    hourlyProbability: keyedValues<HourlyProbabilityEntry>(parsed.hourlyProbability, 'datetime'),
+    probabilityFetched: parsed.probabilityFetched === true,
+    pastDays: nonNegative(parsed.pastDays),
+    forecastDays: nonNegative(parsed.forecastDays),
+    lastFetchMs: nonNegative(parsed.lastFetchMs),
+  };
+}
+
 /** Best-effort persistence so a page reload doesn't always re-fetch.
  *  Returns null on any error (private mode, quota, JSON corruption, …). */
 function loadFromStorage(storage: StorageLike | null, lat: number, lon: number, timeZone: string): CachedPayload | null {
@@ -463,9 +509,7 @@ function loadFromStorage(storage: StorageLike | null, lat: number, lon: number, 
   try {
     const raw = storage.getItem(storageKey(lat, lon, timeZone));
     if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return null;
-    return parsed as CachedPayload;
+    return validPayload(JSON.parse(raw));
   } catch (err) {
     // Storage access blocked or JSON corrupted — fall through to a
     // fresh fetch instead of letting the read failure propagate.
@@ -499,8 +543,7 @@ export function readCachedAvailability(
   storage?: StorageLike | null,
   now: number = Date.now(),
 ): CachedAvailability | null {
-  const fallbackStore = typeof window !== 'undefined' && window.localStorage ? window.localStorage : null;
-  const store = storage !== undefined ? storage : fallbackStore;
+  const store = storage !== undefined ? storage : safeLocalStorage();
   if (!store) return null;
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
   const cached = loadFromStorage(store, latitude, longitude, calendar.timeZone);
@@ -571,6 +614,10 @@ export class OpenMeteoSource {
    *  does not trigger a refetch on every tick. */
   private _probabilityFetched = false;
   private _lastFetchMs = 0;
+  /** Window the held data was fetched for; 0 until a fetch (or a cache
+   *  that recorded it) lands, so an unknown window counts as too short. */
+  private _fetchedPastDays = 0;
+  private _fetchedForecastDays = 0;
   private _inFlight: Promise<void> | null = null;
   private _abort: AbortController | null = null;
   private _listener: SunshineListener | null = null;
@@ -597,25 +644,28 @@ export class OpenMeteoSource {
     // contract (`null` = no network, `undefined` = global fetch).
     this._fetch = resolveFetchImpl(fetchImpl);
     this._fetchIsCustom = fetchImpl != null;
-    const fallbackStorage = typeof window !== 'undefined' && window.localStorage ? window.localStorage : null;
-    this._storage = storage !== undefined ? storage : fallbackStorage;
+    this._storage = storage !== undefined ? storage : safeLocalStorage();
     this._now = now ?? (() => Date.now());
     this._calendar = calendar;
 
     sweepLegacyEntries(this._storage);
     if (Number.isFinite(this.latitude) && Number.isFinite(this.longitude)) {
       const cached = loadFromStorage(this._storage, this.latitude as number, this.longitude as number, calendar.timeZone);
-      if (cached) {
-        if (Array.isArray(cached.daily)) this._daily = cached.daily;
-        if (Array.isArray(cached.hourly)) this._hourly = cached.hourly;
-        if (Array.isArray(cached.dailyForecast)) this._dailyForecast = cached.dailyForecast;
-        if (Array.isArray(cached.hourlyForecast)) this._hourlyForecast = cached.hourlyForecast;
-        if (Array.isArray(cached.dailyProbability)) this._dailyProbability = cached.dailyProbability;
-        if (Array.isArray(cached.hourlyProbability)) this._hourlyProbability = cached.hourlyProbability;
-        this._probabilityFetched = cached.probabilityFetched === true;
-        this._lastFetchMs = Number(cached.lastFetchMs) || 0;
-      }
+      if (cached) this._restore(cached);
     }
+  }
+
+  private _restore(cached: CachedPayload): void {
+    this._daily = cached.daily ?? [];
+    this._hourly = cached.hourly ?? [];
+    this._dailyForecast = cached.dailyForecast ?? [];
+    this._hourlyForecast = cached.hourlyForecast ?? [];
+    this._dailyProbability = cached.dailyProbability ?? [];
+    this._hourlyProbability = cached.hourlyProbability ?? [];
+    this._probabilityFetched = cached.probabilityFetched === true;
+    this._lastFetchMs = cached.lastFetchMs ?? 0;
+    this._fetchedPastDays = cached.pastDays ?? 0;
+    this._fetchedForecastDays = cached.forecastDays ?? 0;
   }
 
   /** Synchronous accessors — return whatever's in cache (may be empty
@@ -663,6 +713,9 @@ export class OpenMeteoSource {
     if (!this._probabilityFetched) return true;
     if (this.includeHourly && !this._hourly.length) return true;
     if (this.includeHourly && !this._hourlyForecast.length) return true;
+    // The cache is shared by every card at this place, whatever its
+    // window: one written for `days: 7` cannot serve `days: 30`.
+    if (this._fetchedPastDays < this.pastDays || this._fetchedForecastDays < this.forecastDays) return true;
     return now - this._lastFetchMs >= REFRESH_TTL_MS;
   }
 
@@ -710,8 +763,8 @@ export class OpenMeteoSource {
 
     this._inFlight = (async () => {
       try {
-        const doFetch = async (): Promise<OpenMeteoResponse> => {
-          const res = await (this._fetch as FetchLike)(url, signal ? { signal } : undefined);
+        const doFetch = async (fetchSignal: AbortSignal | undefined): Promise<OpenMeteoResponse> => {
+          const res = await (this._fetch as FetchLike)(url, fetchSignal ? { signal: fetchSignal } : undefined);
           if (!res?.ok) {
             throw new Error(`Open-Meteo HTTP ${res ? res.status : '<no response>'}`);
           }
@@ -727,17 +780,25 @@ export class OpenMeteoSource {
         // same location build the same URL — share one HTTP roundtrip
         // per minute instead of hitting Open-Meteo once per card.
         // Bypassed for injected fetch impls (test isolation).
+        // The shared request carries only its timeout, never this card's
+        // signal: a card torn down mid-fetch abandons its own await and
+        // must not abort the request the other cards are waiting on.
         const json = this._fetchIsCustom
-          ? await doFetch()
-          : await dedupeRequest(`openmeteo:${url}`, 60 * 1000, doFetch);
+          ? await doFetch(withTimeout(signal))
+          : await abandonOnAbort(
+            dedupeRequest(`openmeteo:${url}`, 60 * 1000, () => doFetch(withTimeout(undefined))),
+            signal,
+          );
         this._daily = parseDailySunshine(json, this._calendar);
         this._hourly = this.includeHourly ? parseHourlySunshine(json, this._calendar) : [];
         this._dailyForecast = buildDailyForecast(json, this._calendar);
-        this._hourlyForecast = this.includeHourly ? buildHourlyForecast(json) : [];
+        this._hourlyForecast = this.includeHourly ? buildHourlyForecast(json, this._calendar) : [];
         this._dailyProbability = parseDailyProbability(json, this._calendar);
         this._hourlyProbability = this.includeHourly ? parseHourlyProbability(json, this._calendar) : [];
         this._probabilityFetched = true;
         this._lastFetchMs = this._now();
+        this._fetchedPastDays = this.pastDays;
+        this._fetchedForecastDays = this.forecastDays;
         saveToStorage(this._storage, this.latitude as number, this.longitude as number, this._calendar.timeZone, {
           daily: this._daily,
           hourly: this._hourly,
@@ -746,6 +807,8 @@ export class OpenMeteoSource {
           dailyProbability: this._dailyProbability,
           hourlyProbability: this._hourlyProbability,
           probabilityFetched: true,
+          pastDays: this.pastDays,
+          forecastDays: this.forecastDays,
           lastFetchMs: this._lastFetchMs,
         });
         if (this._listener) this._listener({ ok: true });

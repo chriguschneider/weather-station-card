@@ -34,6 +34,7 @@ import {
   toMillimeters,
 } from './utils/unit-converters.js';
 import { dedupeRequest } from './utils/shared-requests.js';
+import { safeLocalStorage } from './utils/safe-storage.js';
 import { serverCalendar, type Calendar } from './utils/time-zone.js';
 
 // Dedup TTL for identical recorder requests across sibling cards on
@@ -464,13 +465,22 @@ interface LuxDayCacheShape {
   days: Record<string, number>;
 }
 
-function luxStorage(): Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | null {
-  try {
-    return typeof window !== 'undefined' && window.localStorage ? window.localStorage : null;
-  } catch {
-    return null;
+const luxStorage: () => Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | null = safeLocalStorage;
+
+/** Cached day map with only finite hour counts, or null when the stored
+ *  value is not a plain object (hand-edited or foreign data). */
+function validLuxDays(days: unknown): Record<string, number> | null {
+  if (!days || typeof days !== 'object' || Array.isArray(days)) return null;
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(days as Record<string, unknown>)) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(k) && typeof v === 'number' && Number.isFinite(v)) out[k] = v;
   }
+  return out;
 }
+
+/** A missing or non-numeric cached coordinate is a miss, not a match. */
+const nearCoord = (cached: unknown, want: number): boolean =>
+  typeof cached === 'number' && Math.abs(cached - want) <= 0.01;
 
 function luxCacheKey(entityId: string, timeZone: string): string {
   return `${LUX_CACHE_PREFIX}${timeZone}_${entityId}`;
@@ -494,8 +504,8 @@ function loadLuxDayCache(
     // Any derivation-parameter change makes the cached hours wrong.
     if (parsed.threshold !== threshold) return null;
     if ((parsed.scale ?? 1) !== scale) return null;
-    if (Math.abs(parsed.lat - lat) > 0.01 || Math.abs(parsed.lon - lon) > 0.01) return null;
-    return (parsed.days && typeof parsed.days === 'object') ? parsed.days : null;
+    if (!nearCoord(parsed.lat, lat) || !nearCoord(parsed.lon, lon)) return null;
+    return validLuxDays(parsed.days);
   } catch {
     return null;
   }
