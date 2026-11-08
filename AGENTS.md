@@ -111,7 +111,8 @@ notes.
 - A committed build output (bundle, generated table, PDF) has a CI check
   that it matches its sources, and is regenerated in the same commit as
   the source change. On a rebase conflict, regenerate; never hand-merge it.
-  Here: `dist/` (ADR-0001), see *Resolving `dist/` conflicts* below.
+  Here: none since ADR-0032; `dist/` is gitignored and built only in the
+  release job.
 - Test fixtures are trimmed real files (keep the real header, encoding and
   a handful of rows), never hand-written.
 - Domain data (lookup tables, codes, thresholds, unit conversions,
@@ -181,7 +182,7 @@ src/
 └── *-source.ts, data-source.ts   # recorder / forecast / Open-Meteo sources
 tests/                            # vitest unit + jsdom tests
 tests-e2e/                        # Playwright E2E + visual baselines (GHA-pinned)
-dist/                             # committed build output, HACS serves it (ADR-0001)
+dist/                             # build output, gitignored; built in the release job (ADR-0032)
 docs/adr/                         # decisions
 ```
 
@@ -193,7 +194,9 @@ data flow.
 The agent workflows tell the agent to stop rather than break one of these.
 Re-read `docs/adr/` for the full set; new ADRs land regularly.
 
-- **`dist/` is committed and in sync** with `src/` (ADR-0001); the entry
+- **`dist/` is not committed** (ADR-0032, supersedes ADR-0001): the
+  release job builds it from the tagged commit and attaches every
+  `dist/*.js` to the GitHub Release, which HACS installs. The entry
   filename `weather-station-card.js` never changes, chunks are
   content-hashed (ADR-0013).
 - **E2E visual baselines and `perf-baseline.json` come only from the GHA
@@ -224,13 +227,14 @@ see [`CONTRIBUTING.md`](CONTRIBUTING.md#release-flow) for the full list.
    --no-git-tag-version` also updates `package-lock.json`).
 2. **Changelog**: rename `## [Unreleased]` to `## [X.Y.Z] — YYYY-MM-DD`
    and add a fresh empty `## [Unreleased]`. Write for dashboard owners.
-3. **`npm run build`** and commit `dist/` with the rest as the release
-   commit; open a PR, wait for green, merge.
+3. **`npm run build`** locally as a check (nothing to commit from it), then
+   open the release PR, wait for green, merge.
 4. **Tag and push** — only with the maintainer's explicit go, a tag push
    ships to every HACS user: `git tag vX.Y.Z master`,
    `git push origin refs/tags/vX.Y.Z`. The workflow checks the tag against
    `package.json`, extracts the `## [X.Y.Z]` section as release notes and
-   attaches every `dist/*.js` (lazy chunks included) to the release.
+   builds and attaches every `dist/*.js` (lazy chunks included) to the
+   release. It refuses a tag whose commit is not on master.
 
 ### Testing
 
@@ -240,29 +244,19 @@ see [`CONTRIBUTING.md`](CONTRIBUTING.md#release-flow) for the full list.
   floor in `vitest.config.js`).
 - `npm run test:e2e` — Playwright E2E + visual regression; needs
   `npx playwright install chromium` and the bundle on disk. CI always runs
-  it, plus the bundle budget, the perf gate and the dist-in-sync check.
+  it, plus the bundle budget, the perf gate and the whole suite in four
+  time zones.
 - [`TESTING.md`](TESTING.md) covers the layers and what is out of scope.
 
 CI runs the full pipeline (audit + lint + depcheck + typecheck + tests +
 coverage + bundle + E2E + visual regression + perf) on every push, about
 6 minutes per run, so open iterating PRs as drafts.
 
-### Resolving `dist/` conflicts on rebase
+### Bringing a branch up to date
 
-When master advances during your branch's life, you may hit a merge
-conflict in `dist/`. **Don't hand-merge the minified bundle.** Take either
-side, then:
-
-```bash
-npm run build
-git add dist/
-git rebase --continue
-```
-
-The `Verify committed bundle matches source` step in CI would catch a
-hand-merged bundle anyway, so re-running the bundler is the only path that
-holds. This is a documented consequence of [ADR-0001 (dist committed for
-HACS)](docs/adr/0001-dist-committed-for-hacs.md).
+`dist/` is gitignored (ADR-0032), so a branch no longer conflicts on the
+bundle. Bring it up to date with `git merge origin/master` (agents) or a
+rebase (humans); resolve CHANGELOG conflicts by keeping both entries.
 
 ### Testing UI changes
 

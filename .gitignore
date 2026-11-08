@@ -4,14 +4,11 @@ node_modules/
 # shared conventions live in AGENTS.md; the tracked CLAUDE.md only
 # imports them.
 CLAUDE.local.md
-# The build reuses the dist/ tree across runs but never
-# regenerates .gz on its own — those are leftovers from local pushes
-# to a Home Assistant instance and should never be committed.
-dist/*.gz
-# Sourcemaps emitted only by `npm run bundle:analyze` for one-off
-# bundle attribution. Never ship them — terser-mangled prod bundle
-# stays opaque on the wire.
-dist/*.map
+# Build output. Since ADR-0032 the bundle is built only in the release
+# job and attached to the GitHub Release (HACS installs release assets);
+# it is no longer committed. `npm run build` still writes it locally for
+# the Pi pre-test and E2E.
+dist/
 # Local-only research / calibration scratchpad. Issue-comment drafts,
 # data dumps, calibration scripts. Each release iteration leaves a few
 # files here that aren't part of the shipped card.

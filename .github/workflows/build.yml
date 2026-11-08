@@ -199,20 +199,6 @@ jobs:
         # makes a regression fail the build.
         run: node scripts/perf-gate.cjs
 
-      - name: Verify committed bundle matches source
-        # After ADR-0013 (ESM code-split) `dist/` holds a hashed-chunk
-        # set alongside the entry — verify the whole directory, not
-        # just the entry file. Chunk filenames are content-hashed so
-        # any source change that touches the bundle output produces a
-        # diff here; a clean directory means committed = built.
-        run: |
-          if ! git diff --quiet -- dist/; then
-            echo "::error::dist/ is out of sync with source. Run 'npm run build' and commit the result."
-            git --no-pager diff --stat -- dist/
-            git --no-pager status --short -- dist/
-            exit 1
-          fi
-
       - name: Verify package.json version matches tag
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -257,8 +243,10 @@ jobs:
           cat .release-notes.md
 
       - name: Upload bundle to release
-        # ADR-0013: the dist now contains the registered entry plus
-        # content-hashed lazy chunks. HACS downloads every release
+        # ADR-0013: the dist contains the registered entry plus
+        # content-hashed lazy chunks. ADR-0032: dist/ is not committed;
+        # this upload, built from the tagged commit above, is the only
+        # copy users get. HACS downloads every release
         # asset for plugin repos (verified against HACS source —
         # gather_files_to_download), so attach all dist/*.js files.
         # Without this, lazy chunks would 404 in HACS-installed
