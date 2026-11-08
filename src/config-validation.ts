@@ -34,6 +34,7 @@ const EXTRA_TOP_LEVEL_KEYS = [
   'condition_mapping', // classifier threshold overrides — free-form object
   'location', // {latitude, longitude, elevation, time_zone} of the card's place, checked by parseLocation / resolveCardTimeZone
   'elevation', // site metres for the zero-degree rows; unset falls back to the sensor / HA (#333)
+  'source_labels', // {station, weather, computed} text overrides for the show_sources popup; unset uses the localized defaults
   // Standard Home Assistant card-level keys, written by HA itself (the
   // grid/layout editor, conditional visibility) and never read by this
   // card. Flagging them is a false positive — every card in a
@@ -60,6 +61,7 @@ const RETIRED_TOP_LEVEL_KEYS = [
 const OPAQUE_OBJECT_KEYS = new Set([
   'sensors',
   'condition_mapping',
+  'source_labels',
   'tap_action',
   'hold_action',
   'double_tap_action',

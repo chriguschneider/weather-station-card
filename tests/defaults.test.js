@@ -119,6 +119,7 @@ const DELETE_ONLY_PATHS = new Set([
   'title',  // free-text user label, runtime fallback in render-chart.ts
   'elevation',  // optional site elevation, falls back to sensor / HA (#333)
   'location',  // optional {latitude, longitude, time_zone}; unset = HA's location (#357)
+  'source_labels',  // optional {station, weather, computed} source names; unset = localized defaults
 ]);
 
 // Schema field names a render-*.ts treats as UI-only (not config-backed)
