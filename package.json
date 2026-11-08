@@ -17,6 +17,9 @@
   ],
   "main": "dist/weather-station-card.js",
   "module": "src/main.ts",
+  "engines": {
+    "node": ">=22"
+  },
   "homepage": "https://github.com/chriguschneider/weather-station-card",
   "bugs": {
     "url": "https://github.com/chriguschneider/weather-station-card/issues"
@@ -58,7 +61,7 @@
     "vitest": "^5.0.5"
   },
   "scripts": {
-    "start": "rollup -c rollup.config.dev.js --watch",
+    "start": "rollup -c --watch",
     "build": "npm run lint && npm run typecheck && npm run test && npm run test:tz && npm run rollup",
     "lint": "eslint src tests-e2e",
     "depcheck": "depcruise src",
