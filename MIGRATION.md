@@ -11,6 +11,15 @@ nothing. Removing them keeps your config self-documenting.
 
 ## v3.0
 
+### What changes on screen when you upgrade from 2.14
+
+Existing configurations keep working. You will notice:
+
+- Daily columns follow the card's own calendar (its time zone), cut from hourly statistics.
+- The sunrise/sunset row is computed in the card from its location and is no longer a link to the `sun.sun` entity.
+- `time_zone` defaults to `server`: times follow the Home Assistant server's time zone unless you set `location` and `time_zone: location` (or an IANA name).
+- Refresh the browser cache after updating (hard reload, or clear the app cache in the Home Assistant companion app), otherwise the old card keeps running.
+
 ### Deprecated: top-level `elevation`
 
 The site elevation now lives in `location.elevation`. The top-level

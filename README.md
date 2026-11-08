@@ -280,8 +280,8 @@ diagnostics panel that shows what the card detected.
 - **Chart** — days / visible columns / chart height, the chart rows as
   one row of toggle pills, style
 - **Live panel** — main-panel elements and attribute cells as toggle
-  pills, a single clock dropdown (off / 24h / 12h, with-seconds
-  variants), and an *Arrangement* board to drag the attribute rows
+  pills, a clock dropdown (Off / On / On with seconds) plus a separate
+  "Time format" selector (24-hour / 12-hour), and an *Arrangement* board to drag the attribute rows
   into the columns you want (saved as `attributes_layout`)
 - **Location** — latitude, longitude and time zone of the card's place,
   and whether times are shown in server or location time

@@ -62,8 +62,8 @@ export default tseslint.config(
       'lit/attribute-value-entities': 'error',
 
       // Pragmatic relaxations for this codebase.
-      // main.ts has @ts-nocheck (HA integration boundary); type-checked
-      // rules generate noise on `any`-flavoured HASS objects.
+      // main.ts is the HA integration boundary; type-checked rules
+      // generate noise on `any`-flavoured HASS objects.
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unsafe-assignment': 'off',
       '@typescript-eslint/no-unsafe-member-access': 'off',
@@ -77,8 +77,8 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       // unbound-method false-positives on Lit method.bind() patterns.
       '@typescript-eslint/unbound-method': 'off',
-      // main.ts uses @ts-nocheck per architecture decision (HA boundary,
-      // ~1500 LOC LitElement glue) — see file header. Allow with desc.
+      // ADR-0004: no new @ts-nocheck. The rule stays permissive for
+      // ts-nocheck only to avoid churn; ts-expect-error / ts-ignore need a description.
       '@typescript-eslint/ban-ts-comment': ['error', {
         'ts-nocheck': false,
         'ts-expect-error': 'allow-with-description',

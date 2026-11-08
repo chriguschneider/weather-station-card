@@ -18,8 +18,8 @@ takes the sky state (`sunny` / `clear-night` / `partlycloudy` /
 Rain, fog and wind still come from your station. The daily columns are
 unaffected.
 
-Day/night-aware icons are still automatic: when `sun.sun` is below the
-horizon, `sunny` and `partlycloudy` swap to their night variants
+Day/night-aware icons are still automatic: when the sun is below the
+horizon at the card's location (computed in the card), `sunny` and `partlycloudy` swap to their night variants
 (`clear-night`, `partlycloudy-night`).
 
 ### Precipitation in the live condition needs a *rate* unit

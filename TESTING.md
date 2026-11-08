@@ -4,8 +4,8 @@ Two test layers run on every commit:
 
 | Layer | Tool | Scope |
 |---|---|---|
-| **Unit** (`tests/`) | Vitest | Pure modules — classifier, data sources, chart plugins, format/forecast utils, sunshine helpers, editor partial smoketests. 15 spec files, 469 tests. |
-| **E2E + visual regression** (`tests-e2e/`) | Playwright | The bundled card boots in a static-served harness with a fake-hass mock. Covers render modes (visual baselines), pointer interactions, mode toggle, jump-to-now, editor mutators, editor visual regression. 6 specs across `tests-e2e/snapshots/` directories. |
+| **Unit** (`tests/`) | Vitest | Pure modules — classifier, data sources, chart plugins, format/forecast utils, sunshine helpers, time zone and calendar, editor and card render tests (jsdom). 73 spec files, 1579 tests. |
+| **E2E + visual regression** (`tests-e2e/`) | Playwright | The bundled card boots in a static-served harness with a fake-hass mock. Covers render modes (visual baselines), pointer interactions, mode toggle, jump-to-now, editor mutators, editor visual regression. 13 specs, with visual baselines under `tests-e2e/snapshots/`. |
 
 Both layers run in CI before bundle verification. A failure in either
 blocks the release pipeline.
@@ -52,21 +52,9 @@ modules; the global aggregate sits comfortably above the 80 % gate.
 
 ```
 tests/
-  action-handler.test.js
-  condition-classifier.test.js
-  data-source.test.js
-  defaults.test.js
-  editor.test.js
-  editor-render-chart.test.js          ← v1.9.x partial smoketest
-  editor-render-live-panel.test.js     ← v1.9.x partial smoketest
-  forecast-utils.test.js
-  format-utils.test.js
-  openmeteo-source.test.js
-  plugins.test.js
-  scroll-ux.test.js
-  sunshine-source.test.js
-  teardown-registry.test.js
-  utils.test.js
+  *.test.js      one spec per module or behaviour (ls tests/ for the list)
+  setup.js       shared vitest setup
+  fixtures/      trimmed payloads
 ```
 
 Tests are `.test.js` (vitest's `include` pattern) but import from `.ts`
@@ -206,8 +194,8 @@ alone whether the diff is intended.
 
 ## What is intentionally not tested
 
-- **Chart.js internal layout.** The visual baselines cover the
-  outcome; mocking Chart.js's internal APIs adds setup without
+- **uPlot internal layout.** The visual baselines cover the
+  outcome; mocking uPlot's internal APIs adds setup without
   payoff.
 - **Real Home Assistant frontend.** Specs run against the mock; HA
   integration is verified manually against a real HA instance — see
