@@ -167,6 +167,49 @@ function buildCardStyles({
       outline-offset: 2px;
       border-radius: 4px;
     }
+    /* Info button (show_sources, ADR-0031): muted while every live value
+     * comes from a station sensor, accent colour when one fell back to
+     * the weather entity or is stale. The .main selectors outrank the
+     * 50 px condition-glyph rule above. */
+    .wsc-sources-info {
+      display: inline-flex;
+      vertical-align: middle;
+      margin-inline-start: 6px;
+      line-height: 1;
+    }
+    .main .wsc-sources-info ha-icon,
+    .wsc-sources-info ha-icon {
+      --mdc-icon-size: 20px;
+      margin: 0;
+      color: var(--secondary-text-color, #727272);
+    }
+    .main .wsc-sources-info.wsc-sources-alert ha-icon,
+    .wsc-sources-info.wsc-sources-alert ha-icon {
+      color: var(--primary-color, #03a9f4);
+    }
+    .wsc-sources-info .wsc-entity-link:hover ha-icon {
+      color: var(--primary-color, #03a9f4);
+    }
+    .wsc-sources-info .wsc-sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+    /* Live block hidden: sit right of the mode toggle on its baseline,
+     * or in its place when the toggle is off. */
+    .wsc-sources-chart {
+      position: absolute;
+      top: ${chartHeight - 30 - extraBottomPad}px;
+      left: 20px;
+      height: 30px;
+      align-items: center;
+      margin: 0;
+      z-index: 3;
+    }
+    .wsc-sources-chart-alone { left: -10px; }
     /* Scroll block — .forecast-scroll-block is the relative parent that
      * positions the side indicators; .forecast-scroll inside it is the
      * actual overflow:auto viewport. Native scrollbars are hidden across

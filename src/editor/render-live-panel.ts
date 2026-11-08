@@ -267,6 +267,15 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
           ${nowcastHint}
         </div>
       ` : ''}
+      <div class="divider"></div>
+      <ha-form
+        .data=${{ show_sources: cfg.show_sources === true }}
+        .schema=${gateSchema('show_sources')}
+        .hass=${editor.hass}
+        .computeLabel=${labelFor}
+        @value-changed=${editor._livePanelChanged}
+      ></ha-form>
+      <div class="hint">${t('show_sources_hint')}</div>
     </div>
   `;
 

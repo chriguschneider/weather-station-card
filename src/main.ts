@@ -76,6 +76,9 @@ import {
   sunshineFractions,
 } from './sunshine-source.js';
 import { OpenMeteoSource } from './openmeteo-source.js';
+import { resolveLiveSource, sourceLabel, type LiveSource } from './live-source.js';
+import { buildChartLegend, type LegendItem } from './chart-legend.js';
+import { SourcesPopup, isExceptionKind, type SourceLine } from './sources-popup.js';
 import { cardCalendar, resolveLocation } from './location.js';
 import { forecastHasProbability, overlayPrecipProbability } from './precip-probability.js';
 import { PROBABILITY_EXTRA_BOTTOM_PAD } from './chart/plugins/precip-label.js';
@@ -212,6 +215,25 @@ const ICON_SPRITE_TEMPLATE = html`<svg class="wsc-sprite" aria-hidden="true">${
     svg`<symbol id="wsc-i-${name}" viewBox="0 0 24 24"><path d="${path}"></path></symbol>`)
 }</svg>`;
 
+// Attribute-row token → live-source keys it displays (show_sources).
+// Zero-degree and next-rain rows carry forecast / radar data from a
+// sensor, so neither "station" nor "weather service" fits them.
+const SOURCE_KEYS_BY_TOKEN: Readonly<Partial<Record<AttributeToken, ReadonlyArray<string>>>> = {
+  pressure: ['pressure'],
+  dew_point_humidity: ['dew_point', 'humidity'],
+  dew_point: ['dew_point'],
+  humidity: ['humidity'],
+  precipitation: ['precipitation'],
+  uv_illuminance: ['uv_index', 'illuminance'],
+  uv_index: ['uv_index'],
+  illuminance: ['illuminance'],
+  sun: ['sun'],
+  moon: ['moon'],
+  wind_direction: ['wind_direction'],
+  wind_speed: ['wind_speed'],
+  wind_gust_speed: ['gust_speed'],
+};
+
 // Field-declaration block for the WeatherStationCard class. HA-shaped
 // fields are typed as `any` (or HassMain where threaded) — the full
 // HomeAssistant type pulls in HA frontend deps we don't otherwise
@@ -285,6 +307,13 @@ class WeatherStationCard extends LitElement {
   zero_degree_curve: ZeroDegreePoint[] | null | undefined;
   _zeroDegreeCurveRaw: unknown;
   _zeroDegreePopup: ZeroDegreePopup | null = null;
+  _sourcesPopup: SourcesPopup | null = null;
+  // Origin of each live value, keyed by sensor key (ADR-0031); read
+  // only when `show_sources` is on.
+  _liveSources: Record<string, LiveSource | undefined> = {};
+  // Whether Open-Meteo backs the sunshine bars; set by
+  // _ensureOpenMeteoSource, read by the sources popup's chart section.
+  _sunshineFromOpenMeteo = false;
   zero_degree_48h_at: string | undefined;
   // Display-ready strings, not the raw state object: a fresh object per
   // hass tick would defeat Lit's value comparison (ADR-0017).
@@ -1044,6 +1073,51 @@ _extractSensorReadings(hass: HassMain): void {
   } else {
     this.windDirection = undefined;
   }
+
+  this._recordLiveSources(sensors, stateOf, valueOf, wxAttrs);
+}
+
+// Records where each live value came from, using the same fallback
+// rule as fromWxIfMissing above: a sensor value (live or last good)
+// wins, else the weather entity's attribute. Sensor-only rows record
+// `station`; rows with no weather counterpart never record `weather`.
+// deno-lint-ignore no-explicit-any
+_recordLiveSources(sensors: any, stateOf: (eid: string | undefined) => HassEntityState | null, valueOf: (eid: string | undefined) => string | undefined, wxAttrs: Record<string, unknown>): void {
+  const weatherEntity = this.config.weather_entity || undefined;
+  const pairs: ReadonlyArray<[string, string | null]> = [
+    ['temperature', 'temperature'],
+    ['humidity', 'humidity'],
+    ['pressure', 'pressure'],
+    ['uv_index', 'uv_index'],
+    ['wind_speed', 'wind_speed'],
+    ['dew_point', 'dew_point'],
+    ['gust_speed', 'wind_gust_speed'],
+    ['wind_direction', 'wind_bearing'],
+    ['illuminance', null],
+    ['precipitation', null],
+  ];
+  const next: Record<string, LiveSource | undefined> = {};
+  for (const [key, wxKey] of pairs) {
+    // The precipitation row shows the dedicated rate sensor when one is
+    // wired (#253), so that is the source to name.
+    const raw: unknown = key === 'precipitation'
+      ? (sensors.precipitation_rate || sensors.precipitation)
+      : sensors[key];
+    const sensorId = typeof raw === 'string' && raw ? raw : undefined;
+    const st = stateOf(sensorId);
+    next[key] = resolveLiveSource({
+      sensorId,
+      sensorState: st?.state,
+      // Wind direction reads the raw sensor state whenever the entity
+      // exists (no last-good fallback, no weather fallback) — mirror that.
+      sensorValue: key === 'wind_direction' ? st?.state : valueOf(sensorId),
+      weatherEntity,
+      weatherHasValue: wxKey !== null && wxAttrs[wxKey] !== undefined && wxAttrs[wxKey] !== null,
+    });
+  }
+  next.sun = { kind: 'computed' };
+  next.moon = { kind: 'computed' };
+  this._liveSources = next;
 }
 
 // A dedicated `sensors.precipitation_rate` entity (#253) short-circuits
@@ -1700,6 +1774,7 @@ async _refreshPressureDelta(): Promise<void> {
     });
     r.add(() => this._stopNextRainTick());
     r.add(() => this._zeroDegreePopup?.close(false));
+    r.add(() => this._sourcesPopup?.close(false));
     r.add(() => {
       if (this._clockTimer) {
         clearInterval(this._clockTimer);
@@ -2144,7 +2219,8 @@ async _refreshPressureDelta(): Promise<void> {
   // deno-lint-ignore no-explicit-any
   _ensureOpenMeteoSource(effectiveCfg: any) {
     const feedsStation = this._openMeteoStationFallbackActive(this.config);
-    const enabled = this._sunshineNeedsOpenMeteo(effectiveCfg)
+    this._sunshineFromOpenMeteo = this._sunshineNeedsOpenMeteo(effectiveCfg);
+    const enabled = this._sunshineFromOpenMeteo
       || feedsStation
       || this._precipProbabilityNeedsOpenMeteo(effectiveCfg);
     if (!enabled) {
@@ -3262,6 +3338,7 @@ _scheduleForecastRowsReveal(): void {
               </div>
             </div>
             ${this.renderModeToggle()}
+            ${config.show_main === false ? this._renderSourcesButton('chart') : ''}
             ${scrolling ? html`
               <button type="button" class="scroll-indicator scroll-indicator-left" aria-label="Scroll left" hidden>
                 <ha-icon icon="mdi:chevron-left" aria-hidden="true"></ha-icon>
@@ -3580,7 +3657,7 @@ renderMain({ config, weather, temperature } = this) {
       <div>
         <div>
           ${showTemperature ? this._entityLink(this._attrEntity('temperature'),
-            html`${Number.isFinite(roundedTemperature) ? roundedTemperature : '—'}<span>${this.getUnit('temperature')}</span>`) : ''}
+            html`${Number.isFinite(roundedTemperature) ? roundedTemperature : '—'}<span>${this.getUnit('temperature')}</span>`) : ''}${this._renderSourcesButton()}
           ${showCurrentCondition ? html`
             <div class="current-condition">
               ${this._entityLink(
@@ -3716,6 +3793,210 @@ _activatable(activate: (el: HTMLElement) => void, content: any, hasPopup?: 'dial
     @keydown=${(ev: KeyboardEvent) => {
       if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(ev); }
     }}>${content}</span>`;
+}
+
+// Info button (show_sources, ADR-0031): one muted icon after the main
+// temperature, or next to the chart's mode toggle when the live block
+// is hidden. Accent-coloured when a shown value fell back to the
+// weather entity or a station sensor is stale, so the exception is
+// visible without opening the popup.
+_renderSourcesButton(place: 'main' | 'chart' = 'main'): unknown {
+  const cfg = this.config;
+  if (cfg?.show_sources !== true) return nothing;
+  let placeClass = '';
+  if (place === 'chart') {
+    const toggleShown = cfg.forecast?.show_mode_toggle !== false
+      && (cfg.show_station !== false || (cfg.show_forecast === true && !!cfg.weather_entity));
+    placeClass = toggleShown ? ' wsc-sources-chart' : ' wsc-sources-chart wsc-sources-chart-alone';
+  }
+  const alert = this._sourceLiveKeys().some((k) => isExceptionKind(this._liveSources[k]?.kind));
+  const label = this._srcStr('sources_button');
+  const button = this._activatable(
+    (el) => this._openSourcesPopup(el),
+    // The hidden text gives the role=button span its accessible name.
+    html`<ha-icon icon="mdi:information-outline" aria-hidden="true"></ha-icon><span class="wsc-sr-only">${label}</span>`,
+    'dialog',
+  );
+  return html`<span class="wsc-sources-info${placeClass}${alert ? ' wsc-sources-alert' : ''}" title=${label}>${button}</span>`;
+}
+
+_srcStr(k: string): string {
+  return (this.ll(k) || (locale.en as Record<string, unknown>)[k] || '') as string;
+}
+
+// Popup line label: the editor's sensor-field names double as the
+// live-panel vocabulary and are translated in every locale; sun and
+// moon have no sensor field and carry their own key.
+_sourceLabelFor(key: string): string {
+  if (key === 'sun' || key === 'moon') return this._srcStr(`sources_label_${key}`);
+  const ed = (this.ll('editor') || {}) as Record<string, string | undefined>;
+  const enEd = ((locale.en as Record<string, unknown>).editor || {}) as Record<string, string | undefined>;
+  return ed[key] || enEd[key] || key;
+}
+
+// Live keys the card shows, in the card's order: main temperature,
+// then the attribute layout column by column.
+_sourceLiveKeys(): string[] {
+  const cfg = this.config || {};
+  const keys: string[] = [];
+  if (cfg.show_main !== false && cfg.show_temperature !== false) keys.push('temperature');
+  if (cfg.show_attributes !== false) {
+    for (const token of resolveAttributesLayout(cfg).flat()) {
+      keys.push(...(SOURCE_KEYS_BY_TOKEN[token] ?? []));
+    }
+  }
+  return keys;
+}
+
+// Display text of one live value, matching its row. '' = the row is
+// not on screen.
+_sourceValueText(key: string): string {
+  const num = (v: unknown): number => parseFloat(String(v));
+  const oneDecimal = (v: unknown): string => {
+    const n = num(v);
+    if (!Number.isFinite(n)) return v === undefined || v === null ? '' : String(v);
+    return String(n % 1 !== 0 ? Math.round(n * 10) / 10 : n);
+  };
+  const withUnit = (v: string, unit: unknown): string => (v && unit ? `${v} ${unit}` : v);
+  const units = (this.ll('units') || {}) as Record<string, string | undefined>;
+  const unitLabel = (u: string | undefined): string => (u ? units[u] ?? u : '');
+  switch (key) {
+    case 'temperature':
+      return this.temperature === undefined ? '' : `${oneDecimal(this.temperature)}${this.getUnit('temperature')}`;
+    case 'humidity':
+      return this.humidity === undefined ? '' : `${this.humidity} %`;
+    case 'dew_point':
+      return this.dew_point === undefined ? '' : withUnit(oneDecimal(this.dew_point), this.weather?.attributes?.temperature_unit);
+    case 'pressure': {
+      const p = this._convertDisplayPressure(this.pressure);
+      return p === undefined ? '' : withUnit(String(p), unitLabel(this.unitPressure));
+    }
+    case 'precipitation':
+      return this.precipitation === undefined || this.precipitation === '' ? '' : withUnit(String(this.precipitation), this.precipitation_unit);
+    case 'uv_index':
+      return Number.isFinite(num(this.uv_index)) ? `UV ${Math.round(num(this.uv_index) * 10) / 10}` : '';
+    case 'illuminance':
+      return Number.isFinite(num(this.illuminance)) ? formatLux(num(this.illuminance)) : '';
+    case 'wind_speed': {
+      const w = this._convertDisplayWindSpeed(this.windSpeed);
+      return w === undefined ? '' : withUnit(String(w), unitLabel(this.unitSpeed));
+    }
+    case 'gust_speed':
+      return this.wind_gust_speed === undefined ? '' : withUnit(String(this._convertWindSpeed(num(this.wind_gust_speed))), unitLabel(this.unitSpeed));
+    case 'wind_direction':
+      return this.windDirection === undefined ? '' : this.getWindDir(this.windDirection);
+    case 'sun':
+    case 'moon': {
+      const line = this.shadowRoot?.querySelector(`.attributes [data-wsc-token="${key}"]`);
+      return (line?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    }
+    default:
+      return '';
+  }
+}
+
+// One popup line per value the card shows, in the card's order.
+_sourceLines(): SourceLine[] {
+  const cfg = this.config || {};
+  const defaults = {
+    station: this._srcStr('source_station'),
+    weather: this._srcStr('source_weather'),
+    computed: this._srcStr('source_computed'),
+  };
+  const lines: SourceLine[] = [];
+  for (const key of this._sourceLiveKeys()) {
+    const src = this._liveSources[key];
+    if (!src) continue;
+    const value = this._sourceValueText(key);
+    if (!value) continue;
+    const line: SourceLine = {
+      label: this._sourceLabelFor(key),
+      value,
+      kind: src.kind,
+      sourceText: sourceLabel(src.kind, cfg.source_labels, defaults),
+      ...(src.entityId ? { entityId: src.entityId } : {}),
+    };
+    if (src.kind === 'stale' && src.entityId) {
+      const since = (this._hass?.states?.[src.entityId] as { last_changed?: string } | undefined)?.last_changed;
+      const t = since ? Date.parse(String(since)) : NaN;
+      line.note = Number.isFinite(t)
+        ? this._srcStr('sources_stale_since').replace('{time}', getDateTimeFormat(this.language, {
+            hour: 'numeric', minute: 'numeric', hour12: cfg.use_12hour_format, timeZone: this.calendar.timeZone,
+          }).format(new Date(t)))
+        : this._srcStr('sources_stale');
+    }
+    lines.push(line);
+  }
+  // Next rain names its own source (radar / forecast / station) in the
+  // row tooltip; reuse that. Zero-degree rows have no source text.
+  const showsNextRain = cfg.show_attributes !== false
+    && resolveAttributesLayout(cfg).some((col) => col.includes('next_rain'));
+  if (showsNextRain && this.next_rain_text && this.next_rain_title) {
+    const eid = this._attrEntity('next_rain', false);
+    lines.push({
+      label: this._sourceLabelFor('next_rain'),
+      value: this.next_rain_text,
+      kind: 'info',
+      sourceText: this.next_rain_title,
+      ...(eid ? { entityId: eid } : {}),
+    });
+  }
+  return lines;
+}
+
+// Chart section of the popup: the encodings and their sources.
+// deno-lint-ignore no-explicit-any
+_sourceLegend(config: any): LegendItem[] {
+  const showStation = config.show_station !== false;
+  const showForecast = config.show_forecast === true && !!config.weather_entity;
+  if (!showStation && !showForecast) return [];
+  const fc = config.forecast || {};
+  const labels = config.source_labels || {};
+  return buildChartLegend({
+    showStation,
+    showForecast,
+    pastFromOpenMeteo: this._openMeteoStationFallbackActive(config),
+    showSunshine: fc.show_sunshine === true,
+    sunshineFromOpenMeteo: this._sunshineFromOpenMeteo,
+    showTempLow: (fc.type || 'daily') === 'daily',
+    colors: {
+      high: fc.temperature1_color || DEFAULTS_FORECAST.temperature1_color,
+      low: fc.temperature2_color || DEFAULTS_FORECAST.temperature2_color,
+      precip: fc.precipitation_color || DEFAULTS_FORECAST.precipitation_color,
+      sunshine: fc.sunshine_color || DEFAULTS_FORECAST.sunshine_color,
+    },
+    text: {
+      high: this._srcStr('legend_high'),
+      low: this._srcStr('legend_low'),
+      precip: this._srcStr('legend_precip'),
+      sunshine: this._srcStr('sunshine'),
+      measured: this._srcStr('legend_measured'),
+      forecast: this._srcStr('legend_forecast'),
+      stationSource: (labels.station || this._srcStr('source_station')).trim(),
+      forecastSource: (labels.weather || this._srcStr('source_weather')).trim(),
+      openMeteo: 'Open-Meteo',
+      sunshineTitleOpenMeteo: this._srcStr('legend_sunshine_openmeteo'),
+    },
+  });
+}
+
+_openSourcesPopup(returnFocus: HTMLElement | null): void {
+  const root = this.shadowRoot;
+  if (!root) return;
+  const popup = this._sourcesPopup ??= new SourcesPopup();
+  popup.open({
+    root,
+    lines: this._sourceLines(),
+    legend: this._sourceLegend(this.config || {}),
+    strings: {
+      title: this._srcStr('sources_title'),
+      close: this._srcStr('close'),
+      liveTitle: this._srcStr('sources_live_title'),
+      chartTitle: this._srcStr('sources_chart_title'),
+    },
+    returnFocus,
+    onMoreInfo: (entityId) => this._fire('hass-more-info', { entityId }),
+  });
 }
 
 // Both zero-degree rows open the forecast-curve popup when the 48 h
@@ -4357,10 +4638,13 @@ renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, la
 // (the zero-degree level under the gusts) shared its line.
 // deno-lint-ignore no-explicit-any
 _renderAttributeColumn(column: ReadonlyArray<AttributeToken>, ctx: any) {
+  // The sources popup reads the sun / moon text from these lines rather
+  // than re-deriving the times; the marker only exists with show_sources.
+  const marked = this.config?.show_sources === true;
   const lines = column
-    .map((token) => this._renderAttributeLine(token, ctx))
-    .filter((tpl) => tpl !== null)
-    .map((tpl) => html`<div>${tpl}</div>`);
+    .map((token) => ({ token, tpl: this._renderAttributeLine(token, ctx) }))
+    .filter(({ tpl }) => tpl !== null)
+    .map(({ token, tpl }) => (marked ? html`<div data-wsc-token=${token}>${tpl}</div>` : html`<div>${tpl}</div>`));
   if (lines.length === 0) return null;
   return html`<div>${lines}</div>`;
 }
