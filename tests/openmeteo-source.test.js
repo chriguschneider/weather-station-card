@@ -774,10 +774,11 @@ describe('readCachedAvailability', () => {
   const lat = 46.91;
   const lon = 7.42;
   // Pin a Today so the past/forecast split is deterministic.
-  const today = new Date(2026, 4, 5, 12, 0, 0); // 2026-05-05 noon
-  const todayMidnightMs = (() => {
-    const d = new Date(today); d.setHours(0, 0, 0, 0); return d.getTime();
-  })();
+  // UTC, matching the UTC card calendar `cal`: host-local dates broke
+  // this block under TZ=Pacific/Kiritimati (UTC+14), where local noon on
+  // 05-05 is still 05-04 in UTC.
+  const today = new Date(Date.UTC(2026, 4, 5, 12, 0, 0)); // 2026-05-05 noon UTC
+  const todayMidnightMs = Date.UTC(2026, 4, 5, 0, 0, 0);
 
   it('returns null when nothing is cached for that location', () => {
     expect(readCachedAvailability(lat, lon, cal, makeStorage())).toBe(null);
