@@ -20,6 +20,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Location panel and snow line texts translated into all languages (machine translation, corrections welcome). Pressure, dew point, UV, next-rain and editor heading texts that were still English in some languages are translated as well.
 - The zero-degree popup shows where the snow line reaches your site: a dashed line in the precipitation colour at your elevation + 300 m, labelled with the location name and elevation (e.g. "Köniz 581 m"). Where the curve dips below it, snow can reach you. The highest point of the curve is now marked too when it is at least 200 m above the current level. Without a known elevation no line is drawn.
 - The main condition icon and text now show a clear night (moon) or the night partly-cloudy icon after sunset at the card's location, instead of a sun, whether the condition is derived from your sensors or comes from the weather entity. Forecast rows and a weather entity's own `clear-night` are unchanged.
 
