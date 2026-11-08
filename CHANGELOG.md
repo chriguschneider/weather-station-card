@@ -8,6 +8,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Wind direction now falls back to the weather entity while your wind-direction sensor is unavailable (for example an anemometer with a flat battery), like the other live values. Before, the row stayed empty.
 - `forecast.chart_text_color` and `forecast.chart_datetime_color` no longer show an "Unknown option" warning on the card.
 
 ### Documentation
