@@ -334,11 +334,42 @@ describe('runAction', () => {
     expect(card._firedEvents).toEqual([{ type: 'll-custom', detail: cfg }]);
   });
 
-  it('url opens a new window when url_path is set', () => {
+  it('url opens a new window with noopener when url_path is set', () => {
     const card = mockCard({ haCard: mockHaCard() });
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
     runAction(card, { action: 'url', url_path: 'https://example.com' });
-    expect(openSpy).toHaveBeenCalledWith('https://example.com');
+    expect(openSpy).toHaveBeenCalledWith('https://example.com', '_blank', 'noopener,noreferrer');
+    openSpy.mockRestore();
+  });
+
+  it('url opens http and relative links', () => {
+    const card = mockCard({ haCard: mockHaCard() });
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    runAction(card, { action: 'url', url_path: 'http://example.com/a' });
+    runAction(card, { action: 'url', url_path: '/lovelace/energy' });
+    runAction(card, { action: 'url', url_path: 'lovelace/0' });
+    expect(openSpy.mock.calls.map((c) => c[0])).toEqual([
+      'http://example.com/a',
+      '/lovelace/energy',
+      'lovelace/0',
+    ]);
+    openSpy.mockRestore();
+  });
+
+  it.each([
+    'javascript:alert(document.cookie)',
+    'JavaScript:alert(1)',
+    '  javascript:alert(1)',
+    'java\tscript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+    'vbscript:msgbox(1)',
+    'ftp://example.com/file',
+    'https://',
+  ])('url refuses unsafe or unparseable url_path %j', (url_path) => {
+    const card = mockCard({ haCard: mockHaCard() });
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    runAction(card, { action: 'url', url_path });
+    expect(openSpy).not.toHaveBeenCalled();
     openSpy.mockRestore();
   });
 });

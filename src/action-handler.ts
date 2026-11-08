@@ -196,9 +196,22 @@ function _runNavigate(cfg: ActionConfig): void {
   window.dispatchEvent(ev);
 }
 
+// Only web links may open: a javascript: or data: URL would run in the
+// dashboard's origin. Relative paths resolve against Home Assistant's own origin.
+function _isSafeUrl(raw: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw, window.location.href);
+  } catch {
+    return false;
+  }
+  return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+}
+
 function _runUrl(cfg: ActionConfig): void {
-  if (!cfg.url_path) return;
-  window.open(cfg.url_path);
+  if (!cfg.url_path || !_isSafeUrl(cfg.url_path)) return;
+  // noopener stops the opened page from reaching back into this window.
+  window.open(cfg.url_path, '_blank', 'noopener,noreferrer');
 }
 
 function _runToggle(card: ActionHandlerCard, cfg: ActionConfig, fallback: string): void {
