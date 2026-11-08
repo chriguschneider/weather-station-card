@@ -330,7 +330,7 @@ describe('buildHourlyForecast', () => {
   };
 
   it('maps hourly arrays into station-shaped ForecastEntry objects', () => {
-    const out = buildHourlyForecast(sample);
+    const out = buildHourlyForecast(sample, cal);
     expect(out).toHaveLength(3);
     const e = out[1];
     expect(e.temperature).toBe(15.8); // single hourly mean — no high/low
@@ -343,22 +343,22 @@ describe('buildHourlyForecast', () => {
   });
 
   it('derives condition from the WMO weather_code', () => {
-    const out = buildHourlyForecast(sample);
+    const out = buildHourlyForecast(sample, cal);
     expect(out[0].condition).toBe('sunny'); // code 1
     expect(out[2].condition).toBe('rainy'); // code 61
   });
 
   it('emits on-the-hour ISO datetimes (MeasuredDataSource convention)', () => {
-    const out = buildHourlyForecast(sample);
+    const out = buildHourlyForecast(sample, cal);
     // The sample's epoch-seconds `time` is an instant: 12:00Z in every zone.
     expect(out[2].datetime).toBe('2026-05-20T12:00:00.000Z');
   });
 
   it('returns [] for malformed / missing hourly section', () => {
-    expect(buildHourlyForecast(null)).toEqual([]);
-    expect(buildHourlyForecast({})).toEqual([]);
-    expect(buildHourlyForecast({ hourly: null })).toEqual([]);
-    expect(buildHourlyForecast({ daily: { time: [] } })).toEqual([]);
+    expect(buildHourlyForecast(null, cal)).toEqual([]);
+    expect(buildHourlyForecast({}, cal)).toEqual([]);
+    expect(buildHourlyForecast({ hourly: null }, cal)).toEqual([]);
+    expect(buildHourlyForecast({ daily: { time: [] } }, cal)).toEqual([]);
   });
 });
 
@@ -774,10 +774,11 @@ describe('readCachedAvailability', () => {
   const lat = 46.91;
   const lon = 7.42;
   // Pin a Today so the past/forecast split is deterministic.
-  const today = new Date(2026, 4, 5, 12, 0, 0); // 2026-05-05 noon
-  const todayMidnightMs = (() => {
-    const d = new Date(today); d.setHours(0, 0, 0, 0); return d.getTime();
-  })();
+  // UTC, matching the UTC card calendar `cal`: host-local dates broke
+  // this block under TZ=Pacific/Kiritimati (UTC+14), where local noon on
+  // 05-05 is still 05-04 in UTC.
+  const today = new Date(Date.UTC(2026, 4, 5, 12, 0, 0)); // 2026-05-05 noon UTC
+  const todayMidnightMs = Date.UTC(2026, 4, 5, 0, 0, 0);
 
   it('returns null when nothing is cached for that location', () => {
     expect(readCachedAvailability(lat, lon, cal, makeStorage())).toBe(null);
@@ -986,7 +987,7 @@ describe('unixtime responses', () => {
       '2026-10-26T13:00',
       '2026-10-26T14:00',
     ]);
-    expect(buildHourlyForecast(response).map((e) => e.datetime)).toEqual([
+    expect(buildHourlyForecast(response, cal).map((e) => e.datetime)).toEqual([
       '2026-10-26T05:00:00.000Z',
       '2026-10-26T06:00:00.000Z',
       '2026-10-26T07:00:00.000Z',
@@ -1017,7 +1018,7 @@ describe('unixtime responses', () => {
       '2026-10-25T03:00',
       '2026-10-25T04:00',
     ]);
-    expect(buildHourlyForecast(response).map((e) => e.datetime).slice(5, 8)).toEqual([
+    expect(buildHourlyForecast(response, cal).map((e) => e.datetime).slice(5, 8)).toEqual([
       '2026-10-24T23:00:00.000Z',
       '2026-10-25T00:00:00.000Z',
       '2026-10-25T01:00:00.000Z',

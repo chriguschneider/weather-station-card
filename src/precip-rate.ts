@@ -19,6 +19,8 @@
 // All functions here are pure data → number. No I/O, no timers, no
 // localStorage — that wiring lives in `main.ts`.
 
+import { safeLocalStorage } from './utils/safe-storage.js';
+
 /** A single cumulative-counter reading at a wall-clock instant.
  *  `v` is the raw cumulative value in the sensor's native unit (mm).
  *  `t` is `Date.now()` at the moment the reading was captured. */
@@ -249,8 +251,7 @@ export function loadBuffer(
   now: number = Date.now(),
   maxAgeMs: number = DEFAULT_MAX_AGE_MS,
 ): Sample[] {
-  const fallbackStore = typeof window !== 'undefined' && window.localStorage ? window.localStorage : null;
-  const store = storage !== undefined ? storage : fallbackStore;
+  const store = storage !== undefined ? storage : safeLocalStorage();
   if (!store || !entityId) return [];
 
   const cutoff = now - maxAgeMs;
@@ -273,8 +274,7 @@ export function saveBuffer(
   buffer: Sample[],
   storage?: StorageLike | null,
 ): void {
-  const fallbackStore = typeof window !== 'undefined' && window.localStorage ? window.localStorage : null;
-  const store = storage !== undefined ? storage : fallbackStore;
+  const store = storage !== undefined ? storage : safeLocalStorage();
   if (!store) return;
   if (!entityId) return;
   try {
