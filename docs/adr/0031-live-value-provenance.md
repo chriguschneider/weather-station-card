@@ -41,34 +41,63 @@ Alternatives considered:
   `valueOf` / `stateOf` closures as the extraction, so the recorded
   source matches the shown value. Wind direction mirrors its own
   raw-state rule.
-- **Rendering** appends tags in `_renderAttributeLine` via the
-  `SOURCE_KEYS_BY_TOKEN` map and after the main temperature.
-  `_sourceTags()` returns `nothing` unless `show_sources` is true, so
-  the default render is unchanged.
+- **Rendering**: one info button (`_renderSourcesButton`) after the
+  main temperature opens `src/sources-popup.ts`; see *Presentation*
+  below. The `SOURCE_KEYS_BY_TOKEN` map turns the attribute layout into
+  the ordered list of shown live keys. With `show_sources` off the
+  button and the line markers are not rendered, so the default render
+  is unchanged.
 - **Config surface**: `show_sources` (bool, `false`) in `DEFAULTS` and
   the live-panel editor section; `source_labels` (object, YAML only) as
   an extra top-level key in `config-validation.ts` and a delete-only
   path in the section reset.
-- **Chart legend** (`src/chart-legend.ts`, `_renderChartLegend`):
-  with `show_sources` on, a row under the chart (outside the scrolling
-  area) names the high/low colours, the solid station line, the dashed
-  forecast line (`FORECAST_DASH`), and the precipitation and sunshine
-  bars with their sources. The past source is Open-Meteo when
-  `_openMeteoStationFallbackActive()` holds (ADR-0015); the sunshine
-  source is Open-Meteo when `_sunshineNeedsOpenMeteo()` held on the last
-  refresh (ADR-0028), recorded in `_sunshineFromOpenMeteo`. The legend
-  is HTML, not uPlot's legend, which stays disabled: it labels encodings
-  and sources rather than series values.
-- Zero-degree and next-rain rows get no tag: their sensors carry
-  forecast or radar data, so "Station" would mislead and the existing
-  next-rain tooltip already names its source.
+- **Chart section** (`src/chart-legend.ts`, `_sourceLegend`): the
+  popup's second section names the high/low colours, the solid station
+  line, the dashed forecast line (`FORECAST_DASH`), and the
+  precipitation and sunshine bars with their sources. The past source
+  is Open-Meteo when `_openMeteoStationFallbackActive()` holds
+  (ADR-0015); the sunshine source is Open-Meteo when
+  `_sunshineNeedsOpenMeteo()` held on the last refresh (ADR-0028),
+  recorded in `_sunshineFromOpenMeteo`. It is HTML, not uPlot's legend,
+  which stays disabled: it labels encodings and sources rather than
+  series values.
+- Zero-degree rows are not listed: their sensors carry forecast data,
+  so "Station" would mislead. Next rain is listed with the source its
+  own tooltip already names (radar / forecast / station).
+- Wording: the weather-entity source is "Weather service": live values
+  from the provider are current values, not a forecast. Only the dashed
+  chart line is called "Forecast".
+
+## Presentation: info button instead of tags
+
+The first draft (#424) put a tag after every live value and a legend
+row under the chart. #431 replaces both with one info button that opens
+a popup, for two reasons:
+
+- **The overview stays clean.** Tags on every row add width (narrow
+  cards wrapped) and repeat "Station" a dozen times for the common case
+  where everything is measured. The details are one tap away.
+- **The exception is still visible without a click.** The button is
+  muted (`--secondary-text-color`) while every shown value comes from a
+  station sensor and switches to `--primary-color` when one fell back to
+  the weather entity or a sensor is stale (#213). The popup marks the
+  same lines in the accent colour.
+
+The popup reuses the zero-degree popup's overlay pattern (plain DOM in
+the shadow root outside `ha-card`, Escape / backdrop / × close, focus
+trap, focus back to the opener, closed on teardown) in its own module,
+so the zero-degree popup is untouched. The button reuses `_activatable`
+(role button, Enter / Space); its accessible name comes from visually
+hidden text. With `show_main: false` it sits next to the chart's
+mode-toggle button; with neither a live block nor a chart there is no
+button.
 
 ## Consequences
 
 **Pros**
 
-- Mixed setups become readable; a silent fallback (offline sensor) is
-  visible as a "Forecast" tag in place of a station value.
+- Mixed setups become readable; a silent fallback (offline sensor)
+  colours the info button and is named in the popup.
 - Opt-in and render-neutral when off: no change for existing cards.
 - Provenance is computed once per hass update next to the values, not
   re-derived per row.
@@ -77,7 +106,11 @@ Alternatives considered:
 
 - One more record per hass update (ten small objects); negligible next
   to the extraction itself.
-- The tags add width to attribute rows; narrow cards may wrap.
+- The source of a single value takes one tap instead of a glance; only
+  the "something fell back" signal is on the card itself.
+- Popup values are formatted by `_sourceValueText`, a second place
+  next to the row helpers; sun and moon read the rendered line text
+  instead of re-deriving the times.
 
 **Tradeoffs**
 
@@ -91,4 +124,5 @@ Alternatives considered:
 ## Related
 
 - ADR-0008 (single source of defaults), ADR-0022 (computed sun/moon),
-  ADR-0025 (attribute layout tokens), issue #213 (last-good fallback).
+  ADR-0025 (attribute layout tokens), issue #213 (last-good fallback),
+  #424 (tag presentation), #431 (info button), #330 (popup pattern).

@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- New option "Info button: data sources" (`show_sources`) in the live panel: a small info button after the temperature opens a popup that lists every live value with where it comes from (your station, the weather service, or calculated from the location) and explains the chart's colours, solid (measured) versus dashed (forecast) lines and the bars. The button turns to the accent colour when a value fell back to the weather service or a station sensor is offline, so you see it without opening the popup. Tap a line to open that entity. Off by default; rename the sources with `source_labels` in YAML.
+
 ### Fixed
 
 - `forecast.chart_text_color` and `forecast.chart_datetime_color` no longer show an "Unknown option" warning on the card.

@@ -3805,8 +3805,9 @@ _renderSourcesButton(place: 'main' | 'chart' = 'main'): unknown {
   if (cfg?.show_sources !== true) return nothing;
   let placeClass = '';
   if (place === 'chart') {
-    const toggleShown = cfg.forecast?.show_mode_toggle !== false
-      && (cfg.show_station !== false || (cfg.show_forecast === true && !!cfg.weather_entity));
+    const chartShown = cfg.show_station !== false || (cfg.show_forecast === true && !!cfg.weather_entity);
+    if (!chartShown) return nothing;
+    const toggleShown = cfg.forecast?.show_mode_toggle !== false;
     placeClass = toggleShown ? ' wsc-sources-chart' : ' wsc-sources-chart wsc-sources-chart-alone';
   }
   const alert = this._sourceLiveKeys().some((k) => isExceptionKind(this._liveSources[k]?.kind));
