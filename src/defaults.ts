@@ -135,7 +135,7 @@ export const DEFAULTS = {
   // a value fell back to the weather entity or a sensor is stale.
   // `source_labels: { station, weather, computed }` overrides the
   // source names (YAML only).
-  show_sources: false,
+  show_sources: true,
   use_12hour_format: false,
   // Zone of the whole card: 'server' (HA's zone), 'location'
   // (`location.time_zone`) or an IANA name (#357, ADR-0030).

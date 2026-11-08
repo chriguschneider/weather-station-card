@@ -41,13 +41,16 @@ Alternatives considered:
   `valueOf` / `stateOf` closures as the extraction, so the recorded
   source matches the shown value. Wind direction mirrors its own
   raw-state rule.
-- **Rendering**: one info button (`_renderSourcesButton`) after the
-  main temperature opens `src/sources-popup.ts`; see *Presentation*
+- **Rendering**: one info button (`_renderSourcesButton`) in the
+  top-right corner of the live panel (class `wsc-sources-corner`, inside
+  the clock's containing block; the clock shifts left by one icon width)
+  opens `src/sources-popup.ts`; see *Presentation*
   below. The `SOURCE_KEYS_BY_TOKEN` map turns the attribute layout into
   the ordered list of shown live keys. With `show_sources` off the
   button and the line markers are not rendered, so the default render
   is unchanged.
-- **Config surface**: `show_sources` (bool, `false`) in `DEFAULTS` and
+- **Config surface**: `show_sources` (bool, `true`; on by default, set
+  `false` to hide) in `DEFAULTS` and
   the live-panel editor section; `source_labels` (object, YAML only) as
   an extra top-level key in `config-validation.ts` and a delete-only
   path in the section reset.
@@ -56,9 +59,12 @@ Alternatives considered:
   line, the dashed forecast line (`FORECAST_DASH`), and the
   precipitation and sunshine bars with their sources. The past source
   is Open-Meteo when `_openMeteoStationFallbackActive()` holds
-  (ADR-0015); the sunshine source is Open-Meteo when
-  `_sunshineNeedsOpenMeteo()` held on the last refresh (ADR-0028),
-  recorded in `_sunshineFromOpenMeteo`. It is HTML, not uPlot's legend,
+  (ADR-0015); the sunshine bar names its source per part via
+  `_sunshineSourceParts()`, mirroring `_sunshineNeedsOpenMeteo()`
+  (ADR-0028): today's measured column comes from the sunshine /
+  illuminance sensor (daily) or Open-Meteo, the forecast columns from the
+  weather entity, Open-Meteo, or both when the entity covers only some.
+  It is HTML, not uPlot's legend,
   which stays disabled: it labels encodings and sources rather than
   series values.
 - Zero-degree rows are not listed: their sensors carry forecast data,
@@ -98,7 +104,7 @@ button.
 
 - Mixed setups become readable; a silent fallback (offline sensor)
   colours the info button and is named in the popup.
-- Opt-in and render-neutral when off: no change for existing cards.
+- On by default: every card gets the ⓘ (and the row markers); `show_sources: false` restores the previous render.
 - Provenance is computed once per hass update next to the values, not
   re-derived per row.
 
@@ -114,10 +120,10 @@ button.
 
 **Tradeoffs**
 
-- The sunshine legend entry names one source per chart. When Open-Meteo
-  fills only some days, the entry says Open-Meteo and its tooltip
-  explains that it fills in where the weather entity has no value;
-  per-column attribution would need a mark on every bar.
+- The sunshine legend entry names one source per part (measured /
+  forecast), not per bar. When Open-Meteo fills only some forecast days
+  the entry says "weather entity + Open-Meteo"; per-column attribution
+  would need a mark on every bar.
 - uPlot's built-in legend was not reused: it lists series with live
   values, not encodings and sources, and would need restyling.
 

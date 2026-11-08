@@ -71,13 +71,15 @@ import {
 } from './forecast-utils.js';
 import {
   attachEntitySunshine,
+  entitySunshineHours,
+  type EntitySunshineEntry,
   forecastCoversSunshine,
   overlayFromOpenMeteo,
   sunshineFractions,
 } from './sunshine-source.js';
 import { OpenMeteoSource } from './openmeteo-source.js';
 import { resolveLiveSource, sourceLabel, type LiveSource } from './live-source.js';
-import { buildChartLegend, type LegendItem } from './chart-legend.js';
+import { buildChartLegend, type LegendItem, type SunshineParts } from './chart-legend.js';
 import { SourcesPopup, isExceptionKind, type SourceLine } from './sources-popup.js';
 import { cardCalendar, resolveLocation } from './location.js';
 import { forecastHasProbability, overlayPrecipProbability } from './precip-probability.js';
@@ -2207,6 +2209,35 @@ async _refreshPressureDelta(): Promise<void> {
     return trimToWholeDayStart(past.slice(-count), this.calendar);
   }
 
+  // Per-part sunshine source for the popup, mirroring the decisions of
+  // _sunshineNeedsOpenMeteo: station column from the sensor (daily with a
+  // sunshine / illuminance sensor) else Open-Meteo; forecast columns from
+  // the entity when it carries sunshine_duration, else Open-Meteo.
+  // deno-lint-ignore no-explicit-any
+  _sunshineSourceParts(effectiveCfg: any): SunshineParts {
+    const om = effectiveCfg?.forecast?.openmeteo !== false;
+    const fcType = effectiveCfg?.forecast?.type || 'daily';
+    const sensors = this.config?.sensors || {};
+    let station: SunshineParts['station'] = null;
+    if (effectiveCfg?.show_station !== false
+      && Object.values(sensors).some((v) => typeof v === 'string' && v.trim() !== '')) {
+      station = fcType === 'daily' && (sensors.sunshine_duration || sensors.illuminance)
+        ? 'sensor' : (om ? 'openmeteo' : null);
+    }
+    let forecast: SunshineParts['forecast'] = null;
+    if (effectiveCfg?.show_forecast === true && effectiveCfg?.weather_entity) {
+      const raw = this._forecastData;
+      const slice = Array.isArray(raw) && raw.length
+        ? this._sliceForecast(effectiveCfg, fcType, fcType === 'today', startOfTodayMs(this.calendar))
+        : [];
+      const covered = slice.filter((e: EntitySunshineEntry) => entitySunshineHours(e) != null).length;
+      if (covered === slice.length) forecast = 'entity';
+      else if (!om) forecast = covered ? 'entity' : null;
+      else forecast = covered ? 'mixed' : 'openmeteo';
+    }
+    return { station, forecast };
+  }
+
   // Lazy-init the Open-Meteo source and trigger a fetch when the cache
   // is stale (no-op if a fetch is already in flight). The source backs
   // three features off one call: the in-chart sunshine overlay
@@ -3657,7 +3688,7 @@ renderMain({ config, weather, temperature } = this) {
       <div>
         <div>
           ${showTemperature ? this._entityLink(this._attrEntity('temperature'),
-            html`${Number.isFinite(roundedTemperature) ? roundedTemperature : '—'}<span>${this.getUnit('temperature')}</span>`) : ''}${this._renderSourcesButton()}
+            html`${Number.isFinite(roundedTemperature) ? roundedTemperature : '—'}<span>${this.getUnit('temperature')}</span>`) : ''}
           ${showCurrentCondition ? html`
             <div class="current-condition">
               ${this._entityLink(
@@ -3667,6 +3698,7 @@ renderMain({ config, weather, temperature } = this) {
             </div>
           ` : ''}
         </div>
+        ${this._renderSourcesButton()}
         ${showTime ? html`
           <div class="current-time">
             <div id="digital-clock"></div>
@@ -3795,16 +3827,17 @@ _activatable(activate: (el: HTMLElement) => void, content: any, hasPopup?: 'dial
     }}>${content}</span>`;
 }
 
-// Info button (show_sources, ADR-0031): one muted icon after the main
-// temperature, or next to the chart's mode toggle when the live block
+// Info button (show_sources, ADR-0031): one muted icon in the top-right
+// corner of the live panel (the clock shifts left to make room), or next to the chart's mode toggle when the live block
 // is hidden. Accent-coloured when a shown value fell back to the
 // weather entity or a station sensor is stale, so the exception is
 // visible without opening the popup.
 _renderSourcesButton(place: 'main' | 'chart' = 'main'): unknown {
   const cfg = this.config;
-  if (cfg?.show_sources !== true) return nothing;
-  let placeClass = '';
+  if (cfg?.show_sources === false) return nothing;
+  let placeClass = ' wsc-sources-corner';
   if (place === 'chart') {
+    placeClass = '';
     const chartShown = cfg.show_station !== false || (cfg.show_forecast === true && !!cfg.weather_entity);
     if (!chartShown) return nothing;
     const toggleShown = cfg.forecast?.show_mode_toggle !== false;
@@ -3958,7 +3991,7 @@ _sourceLegend(config: any): LegendItem[] {
     showForecast,
     pastFromOpenMeteo: this._openMeteoStationFallbackActive(config),
     showSunshine: fc.show_sunshine === true,
-    sunshineFromOpenMeteo: this._sunshineFromOpenMeteo,
+    sunshineParts: this._sunshineSourceParts(config),
     showTempLow: (fc.type || 'daily') === 'daily',
     colors: {
       high: fc.temperature1_color || DEFAULTS_FORECAST.temperature1_color,
@@ -4641,7 +4674,7 @@ renderAttributes({ config, humidity, pressure, windSpeed, windDirection, sun, la
 _renderAttributeColumn(column: ReadonlyArray<AttributeToken>, ctx: any) {
   // The sources popup reads the sun / moon text from these lines rather
   // than re-deriving the times; the marker only exists with show_sources.
-  const marked = this.config?.show_sources === true;
+  const marked = this.config?.show_sources !== false;
   const lines = column
     .map((token) => ({ token, tpl: this._renderAttributeLine(token, ctx) }))
     .filter(({ tpl }) => tpl !== null)

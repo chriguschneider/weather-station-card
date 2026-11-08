@@ -198,6 +198,19 @@ function buildCardStyles({
       clip: rect(0 0 0 0);
       white-space: nowrap;
     }
+    /* Live panel: top-right corner of .main's inner block, the clock's
+     * containing block; the clock moves left by one icon width. */
+    .wsc-sources-corner {
+      position: absolute;
+      top: 4px;
+      inset-inline-end: 0;
+      margin: 0;
+      z-index: 2;
+    }
+    .wsc-sources-corner ~ .current-time {
+      inset-inline-end: 28px;
+      right: 28px;
+    }
     /* Live block hidden: sit right of the mode toggle on its baseline,
      * or in its place when the toggle is off. */
     .wsc-sources-chart {

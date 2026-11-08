@@ -76,12 +76,28 @@ describe('show_sources: info button', () => {
     expect(card.shadowRoot.querySelector('[data-wsc-token]')).toBeNull();
   });
 
-  it('sits after the main temperature, muted while every value is from the station', async () => {
+  it('is on by default', async () => {
+    const card = await mountCard(baseStates());
+    const cfg = { ...card.config };
+    delete cfg.show_sources;
+    card.setConfig(cfg);
+    await card.updateComplete;
+    expect(card.config.show_sources).toBe(true);
+    expect(button(card)).not.toBeNull();
+  });
+
+  it('sits in the top-right corner before the clock, muted while every value is from the station', async () => {
     // Pressure has no sensor and would fall back: hide it for this case.
     const card = await mountCard(baseStates(), { show_pressure: false });
     const btn = button(card);
     expect(btn).not.toBeNull();
     expect(btn.closest('.main')).not.toBeNull();
+    expect(btn.classList.contains('wsc-sources-corner')).toBe(true);
+    const clock = card.shadowRoot.querySelector('.current-time');
+    if (clock) {
+      expect(btn.parentElement).toBe(clock.parentElement);
+      expect(btn.compareDocumentPosition(clock) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
     expect(btn.classList.contains('wsc-sources-alert')).toBe(false);
     const link = buttonLink(card);
     expect(link.getAttribute('aria-haspopup')).toBe('dialog');
@@ -117,6 +133,7 @@ describe('show_sources: info button', () => {
     render(card._renderSourcesButton('chart'), host);
     const btn = host.querySelector('.wsc-sources-info');
     expect(btn.classList.contains('wsc-sources-chart')).toBe(true);
+    expect(btn.classList.contains('wsc-sources-corner')).toBe(false);
     expect(btn.classList.contains('wsc-sources-chart-alone')).toBe(false);
     card.config = { ...card.config, forecast: { ...card.config.forecast, show_mode_toggle: false } };
     render(card._renderSourcesButton('chart'), host);

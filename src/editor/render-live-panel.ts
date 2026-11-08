@@ -269,7 +269,7 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
       ` : ''}
       <div class="divider"></div>
       <ha-form
-        .data=${{ show_sources: cfg.show_sources === true }}
+        .data=${{ show_sources: cfg.show_sources !== false }}
         .schema=${gateSchema('show_sources')}
         .hass=${editor.hass}
         .computeLabel=${labelFor}

@@ -6,7 +6,7 @@ const base = {
   showForecast: true,
   pastFromOpenMeteo: false,
   showSunshine: true,
-  sunshineFromOpenMeteo: true,
+  sunshineParts: { station: 'sensor', forecast: 'openmeteo' },
   showTempLow: true,
   colors: { high: 'orange', low: 'blue', precip: 'skyblue', sunshine: 'gold' },
   text: {
@@ -24,7 +24,7 @@ describe('buildChartLegend', () => {
       { swatch: 'line', colors: [], text: 'Measured: Netatmo' },
       { swatch: 'dash', colors: [], text: 'Forecast: met.no' },
       { swatch: 'bar', colors: ['skyblue'], text: 'Precipitation' },
-      { swatch: 'bar', colors: ['gold'], text: 'Sunshine: Open-Meteo', title: 'OM fills in' },
+      { swatch: 'bar', colors: ['gold'], text: 'Sunshine: Measured: Netatmo · Forecast: Open-Meteo', title: 'OM fills in' },
     ]);
   });
 
@@ -42,9 +42,17 @@ describe('buildChartLegend', () => {
     expect(items.find((i) => i.text.startsWith('Measured'))?.text).toBe('Measured: Open-Meteo');
   });
 
-  it('credits the forecast source for sunshine when Open-Meteo is not needed', () => {
-    const sun = buildChartLegend({ ...base, sunshineFromOpenMeteo: false }).find((i) => i.text.startsWith('Sunshine'));
-    expect(sun).toEqual({ swatch: 'bar', colors: ['gold'], text: 'Sunshine: met.no' });
+  it('names the weather entity for forecast sunshine it covers', () => {
+    const sun = buildChartLegend({ ...base, sunshineParts: { station: 'sensor', forecast: 'entity' } })
+      .find((i) => i.text.startsWith('Sunshine'));
+    expect(sun).toEqual({ swatch: 'bar', colors: ['gold'], text: 'Sunshine: Measured: Netatmo · Forecast: met.no' });
+  });
+
+  it('names both sources when the entity covers only some forecast columns', () => {
+    const sun = buildChartLegend({ ...base, sunshineParts: { station: null, forecast: 'mixed' } })
+      .find((i) => i.text.startsWith('Sunshine'));
+    expect(sun?.text).toBe('Sunshine: Forecast: met.no + Open-Meteo');
+    expect(sun?.title).toBe('OM fills in');
   });
 
   it('omits sunshine when hidden and the low line in hourly mode', () => {

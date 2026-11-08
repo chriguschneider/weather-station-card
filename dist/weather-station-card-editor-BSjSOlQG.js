@@ -1,4 +1,4 @@
-import{b as e,f as t,A as o,n as a,r as i,a as n,t as s,h as r,p as l,i as c,c as d,d as h,e as u,s as _,v as p,g as m,j as f,k as g,l as v,D as b,m as y,o as w}from"./main-ybApKP7K.js";const $=e=>"number"==typeof e&&Number.isFinite(e),x=e=>"string"==typeof e&&""!==e?e:void 0;async function k(e,t){const o=await fetch(e,t?{signal:t}:void 0);if(!o.ok)throw new Error(`HTTP ${o.status}`);return await o.json()}const C=[{name:"weather_entity",required:!0,selector:{entity:{domain:"weather"}}}];function z(t){const{editor:o,sectionKey:a,icon:i,title:n,summary:s,resetLabel:r,body:l}=t;return e`
+import{b as e,f as t,A as o,n as a,r as i,a as n,t as s,h as r,p as l,i as c,c as d,d as h,e as u,s as _,v as p,g as m,j as f,k as g,l as v,D as b,m as y,o as w}from"./main-D52g4jOh.js";const $=e=>"number"==typeof e&&Number.isFinite(e),x=e=>"string"==typeof e&&""!==e?e:void 0;async function k(e,t){const o=await fetch(e,t?{signal:t}:void 0);if(!o.ok)throw new Error(`HTTP ${o.status}`);return await o.json()}const C=[{name:"weather_entity",required:!0,selector:{entity:{domain:"weather"}}}];function z(t){const{editor:o,sectionKey:a,icon:i,title:n,summary:s,resetLabel:r,body:l}=t;return e`
     <ha-expansion-panel
       outlined
       class="editor-panel"
@@ -496,7 +496,7 @@ import{b as e,f as t,A as o,n as a,r as i,a as n,t as s,h as r,p as l,i as c,c a
       `:""}
       <div class="divider"></div>
       <ha-form
-        .data=${{show_sources:!0===l.show_sources}}
+        .data=${{show_sources:!1!==l.show_sources}}
         .schema=${_("show_sources")}
         .hass=${t.hass}
         .computeLabel=${g}

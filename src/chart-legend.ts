@@ -16,14 +16,23 @@ export interface LegendItem {
   title?: string;
 }
 
+export interface SunshineParts {
+  // Today's measured column: the station's sensor or Open-Meteo.
+  station: 'sensor' | 'openmeteo' | null;
+  // Forecast columns: the weather entity, Open-Meteo, or both when the
+  // entity covers only some of them.
+  forecast: 'entity' | 'openmeteo' | 'mixed' | null;
+}
+
 export interface ChartLegendInput {
   showStation: boolean;
   showForecast: boolean;
   // Past block fed by Open-Meteo instead of the recorder (ADR-0015).
   pastFromOpenMeteo: boolean;
   showSunshine: boolean;
-  // Open-Meteo fills sunshine the weather entity / station lacks (ADR-0028).
-  sunshineFromOpenMeteo: boolean;
+  // Where each part of the sunshine bar comes from, decided like the
+  // card fills the bars (ADR-0028); null = that part is not drawn.
+  sunshineParts: SunshineParts;
   showTempLow: boolean;
   colors: { high: string; low: string; precip: string; sunshine: string };
   text: {
@@ -65,11 +74,23 @@ export function buildChartLegend(input: ChartLegendInput): LegendItem[] {
   items.push({ swatch: 'bar', colors: [colors.precip], text: text.precip });
 
   if (input.showSunshine) {
+    const { station, forecast } = input.sunshineParts;
+    const parts: string[] = [];
+    if (station) {
+      parts.push(`${text.measured}: ${station === 'sensor' ? text.stationSource : text.openMeteo}`);
+    }
+    if (forecast) {
+      const src = forecast === 'entity' ? text.forecastSource
+        : forecast === 'openmeteo' ? text.openMeteo
+          : `${text.forecastSource} + ${text.openMeteo}`;
+      parts.push(`${text.forecast}: ${src}`);
+    }
+    const usesOpenMeteo = station === 'openmeteo' || forecast === 'openmeteo' || forecast === 'mixed';
     items.push({
       swatch: 'bar',
       colors: [colors.sunshine],
-      text: `${text.sunshine}: ${input.sunshineFromOpenMeteo ? text.openMeteo : text.forecastSource}`,
-      ...(input.sunshineFromOpenMeteo ? { title: text.sunshineTitleOpenMeteo } : {}),
+      text: parts.length ? `${text.sunshine}: ${parts.join(' · ')}` : text.sunshine,
+      ...(usesOpenMeteo ? { title: text.sunshineTitleOpenMeteo } : {}),
     });
   }
 
