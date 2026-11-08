@@ -77,6 +77,12 @@ describe('sourceLabel', () => {
   it('falls back to the default for an empty user label', () => {
     expect(sourceLabel('weather', { weather: '' }, defaults)).toBe('Forecast');
   });
+
+  it('ignores non-string YAML values instead of throwing', () => {
+    expect(sourceLabel('station', { station: 123 }, defaults)).toBe('Station');
+    expect(sourceLabel('weather', { weather: { a: 1 } }, defaults)).toBe('Forecast');
+    expect(sourceLabel('computed', { computed: true }, defaults)).toBe('Calculated');
+  });
 });
 
 describe('groupSources', () => {

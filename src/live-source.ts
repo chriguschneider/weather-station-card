@@ -63,9 +63,15 @@ export function sourceLabel(
   labels: SourceLabels | undefined,
   defaults: { station: string; weather: string; computed: string },
 ): string {
-  if (kind === 'weather') return (labels?.weather || defaults.weather).trim();
-  if (kind === 'computed') return (labels?.computed || defaults.computed).trim();
-  return (labels?.station || defaults.station).trim();
+  if (kind === 'weather') return labelText(labels?.weather, defaults.weather);
+  if (kind === 'computed') return labelText(labels?.computed, defaults.computed);
+  return labelText(labels?.station, defaults.station);
+}
+
+// YAML can hand us a number or object; only non-blank strings override.
+export function labelText(value: unknown, fallback: string): string {
+  const text = typeof value === 'string' ? value.trim() : '';
+  return text || fallback.trim();
 }
 
 // Sources of a combined row (dew point + humidity, …) grouped by

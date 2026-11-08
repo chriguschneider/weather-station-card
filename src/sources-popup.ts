@@ -21,6 +21,8 @@ export interface SourceLine {
   /** "Station", "Weather service", "Calculated from the location", … */
   sourceText: string;
   entityId?: string;
+  /** Display name shown instead of the id; the id goes in the tooltip. */
+  entityName?: string;
   /** Stale station value: "last value, unavailable since 09:12". */
   note?: string;
   /** Configured sensor is down (stale value or weather fallback). */
@@ -30,7 +32,7 @@ export interface SourceLine {
 /** `Temperature 0.2 °C · Station · sensor.x · last value, …`. */
 export function formatSourceLine(line: SourceLine): string {
   const head = line.value ? `${line.label} ${line.value}` : line.label;
-  return [head, line.sourceText, line.entityId, line.note].filter(Boolean).join(' · ');
+  return [head, line.sourceText, line.entityName || line.entityId, line.note].filter(Boolean).join(' · ');
 }
 
 const STYLES = `
@@ -240,9 +242,10 @@ export class SourcesPopup {
     li.dataset.kind = line.kind;
     li.append(el('span', 'wsc-src-label', line.label));
     if (line.value) li.append(document.createTextNode(` ${line.value}`));
-    const meta = [line.sourceText, line.entityId, line.note].filter(Boolean).join(' · ');
+    const meta = [line.sourceText, line.entityName || line.entityId, line.note].filter(Boolean).join(' · ');
     if (meta) li.append(el('span', 'wsc-src-meta', ` · ${meta}`));
     const eid = line.entityId;
+    if (eid) li.title = eid;
     const onMoreInfo = opts.onMoreInfo;
     if (eid && onMoreInfo) {
       li.setAttribute('role', 'button');

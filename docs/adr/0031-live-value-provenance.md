@@ -1,6 +1,6 @@
 # 0031: Record and show the provenance of live values
 
-**Status:** Proposed
+**Status:** Accepted
 
 **Date:** 2026-11-07
 

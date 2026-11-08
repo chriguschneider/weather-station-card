@@ -80,7 +80,7 @@ import {
   sunshineFractions,
 } from './sunshine-source.js';
 import { OpenMeteoSource } from './openmeteo-source.js';
-import { resolveLiveSource, sourceLabel, isSensorProblem, type LiveSource } from './live-source.js';
+import { resolveLiveSource, sourceLabel, labelText, isSensorProblem, type LiveSource } from './live-source.js';
 import { buildChartLegend, type LegendItem, type SunshineParts } from './chart-legend.js';
 import { SourcesPopup, type SourceLine } from './sources-popup.js';
 import { cardCalendar, resolveLocation } from './location.js';
@@ -315,9 +315,6 @@ class WeatherStationCard extends LitElement {
   // Origin of each live value, keyed by sensor key (ADR-0031); read
   // only when `show_sources` is on.
   _liveSources: Record<string, LiveSource | undefined> = {};
-  // Whether Open-Meteo backs the sunshine bars; set by
-  // _ensureOpenMeteoSource, read by the sources popup's chart section.
-  _sunshineFromOpenMeteo = false;
   zero_degree_48h_at: string | undefined;
   // Display-ready strings, not the raw state object: a fresh object per
   // hass tick would defeat Lit's value comparison (ADR-0017).
@@ -1057,16 +1054,20 @@ _extractSensorReadings(hass: HassMain): void {
   //   - Cumulative counter (everything else): derive a rate from the
   //     sliding-anchor buffer; the derivation handles display
   //     conversion internally.
-  if (this.config.show_precipitation !== false && !this._applyLivePrecipRateSensor(hass)) {
-    if (isPrecipRateUnit(rawPrecipUnit)) {
-      const num = parseNumericSafe(this.precipitation);
-      if (num != null) {
-        const { value, unit } = formatPrecipDisplay(num, rawPrecipUnit, this.unitPrecip);
-        this.precipitation = value;
-        this.precipitation_unit = unit;
+  let precipFromRateSensor = false;
+  if (this.config.show_precipitation !== false) {
+    precipFromRateSensor = this._applyLivePrecipRateSensor(hass);
+    if (!precipFromRateSensor) {
+      if (isPrecipRateUnit(rawPrecipUnit)) {
+        const num = parseNumericSafe(this.precipitation);
+        if (num != null) {
+          const { value, unit } = formatPrecipDisplay(num, rawPrecipUnit, this.unitPrecip);
+          this.precipitation = value;
+          this.precipitation_unit = unit;
+        }
+      } else {
+        this._maybeDerivePrecipRate(hass);
       }
-    } else {
-      this._maybeDerivePrecipRate(hass);
     }
   }
 
@@ -1084,7 +1085,7 @@ _extractSensorReadings(hass: HassMain): void {
     this.windDirection = undefined;
   }
 
-  this._recordLiveSources(sensors, stateOf, valueOf, wxAttrs);
+  this._recordLiveSources(sensors, stateOf, valueOf, wxAttrs, precipFromRateSensor);
 }
 
 // Records where each live value came from, using the same fallback
@@ -1092,7 +1093,7 @@ _extractSensorReadings(hass: HassMain): void {
 // wins, else the weather entity's attribute. Sensor-only rows record
 // `station`; rows with no weather counterpart never record `weather`.
 // deno-lint-ignore no-explicit-any
-_recordLiveSources(sensors: any, stateOf: (eid: string | undefined) => HassEntityState | null, valueOf: (eid: string | undefined) => string | undefined, wxAttrs: Record<string, unknown>): void {
+_recordLiveSources(sensors: any, stateOf: (eid: string | undefined) => HassEntityState | null, valueOf: (eid: string | undefined) => string | undefined, wxAttrs: Record<string, unknown>, precipFromRateSensor = false): void {
   const weatherEntity = this.config.weather_entity || undefined;
   const pairs: ReadonlyArray<[string, string | null]> = [
     ['temperature', 'temperature'],
@@ -1108,10 +1109,10 @@ _recordLiveSources(sensors: any, stateOf: (eid: string | undefined) => HassEntit
   ];
   const next: Record<string, LiveSource | undefined> = {};
   for (const [key, wxKey] of pairs) {
-    // The precipitation row shows the dedicated rate sensor when one is
-    // wired (#253), so that is the source to name.
+    // The precipitation row shows the rate sensor only while it has a
+    // numeric state (#253); otherwise the counter produced the value.
     const raw: unknown = key === 'precipitation'
-      ? (sensors.precipitation_rate || sensors.precipitation)
+      ? (precipFromRateSensor ? sensors.precipitation_rate : sensors.precipitation)
       : sensors[key];
     const sensorId = typeof raw === 'string' && raw ? raw : undefined;
     const st = stateOf(sensorId);
@@ -2242,10 +2243,13 @@ async _refreshPressureDelta(): Promise<void> {
       const slice = Array.isArray(raw) && raw.length
         ? this._sliceForecast(effectiveCfg, fcType, fcType === 'today', startOfTodayMs(this.calendar))
         : [];
-      const covered = slice.filter((e: EntitySunshineEntry) => entitySunshineHours(e) != null).length;
-      if (covered === slice.length) forecast = 'entity';
-      else if (!om) forecast = covered ? 'entity' : null;
-      else forecast = covered ? 'mixed' : 'openmeteo';
+      // No columns yet (forecast not loaded): nothing to attribute.
+      if (slice.length > 0) {
+        const covered = slice.filter((e: EntitySunshineEntry) => entitySunshineHours(e) != null).length;
+        if (covered === slice.length) forecast = 'entity';
+        else if (!om) forecast = covered ? 'entity' : null;
+        else forecast = covered ? 'mixed' : 'openmeteo';
+      }
     }
     return { station, forecast };
   }
@@ -2262,8 +2266,7 @@ async _refreshPressureDelta(): Promise<void> {
   // deno-lint-ignore no-explicit-any
   _ensureOpenMeteoSource(effectiveCfg: any) {
     const feedsStation = this._openMeteoStationFallbackActive(this.config);
-    this._sunshineFromOpenMeteo = this._sunshineNeedsOpenMeteo(effectiveCfg);
-    const enabled = this._sunshineFromOpenMeteo
+    const enabled = this._sunshineNeedsOpenMeteo(effectiveCfg)
       || feedsStation
       || this._precipProbabilityNeedsOpenMeteo(effectiveCfg);
     if (!enabled) {
@@ -3962,7 +3965,7 @@ _sourceLines(): SourceLine[] {
       value,
       kind: src.kind,
       sourceText: sourceLabel(src.kind, cfg.source_labels, defaults),
-      ...(src.entityId ? { entityId: src.entityId } : {}),
+      ...(src.entityId ? { entityId: src.entityId, entityName: this._entityName(src.entityId) } : {}),
     };
     if (isSensorProblem(src)) line.problem = true;
     const downId = src.kind === 'stale' ? src.entityId : src.kind === 'weather' ? src.sensorId : undefined;
@@ -3979,10 +3982,10 @@ _sourceLines(): SourceLine[] {
           ? this._srcStr('sources_stale_since').replace('{time}', time)
           : this._srcStr('sources_stale');
       } else {
-        // The weather entity is already named as the entity id; say which
-        // configured sensor it is standing in for.
+        // The weather entity is already named; say which configured
+        // sensor it is standing in for.
         line.note = (time ? this._srcStr('sources_sensor_down_since').replace('{time}', time) : this._srcStr('sources_sensor_down'))
-          .replace('{entity}', downId);
+          .replace('{entity}', this._entityName(downId));
       }
     }
     lines.push(line);
@@ -3998,10 +4001,18 @@ _sourceLines(): SourceLine[] {
       value: this.next_rain_text,
       kind: 'info',
       sourceText: this.next_rain_title,
-      ...(eid ? { entityId: eid } : {}),
+      ...(eid ? { entityId: eid, entityName: this._entityName(eid) } : {}),
     });
   }
   return lines;
+}
+
+// Display name of an entity for the popup: friendly_name, then the id.
+// HA's own `hass.formatEntityName` is not used yet: its signature has
+// not been checked against home-assistant/frontend src/types.ts (#431).
+_entityName(entityId: string): string {
+  const name = this._hass?.states?.[entityId]?.attributes?.friendly_name;
+  return typeof name === 'string' && name.trim() ? name.trim() : entityId;
 }
 
 // Chart section of the popup: the encodings and their sources.
@@ -4037,8 +4048,8 @@ _sourceLegend(config: any): LegendItem[] {
       forecast: this._srcStr('legend_forecast'),
       measuredNote: this._srcStr('legend_measured_note'),
       forecastNote: this._srcStr('legend_forecast_note'),
-      stationSource: (labels.station || this._srcStr('source_station')).trim(),
-      forecastSource: (labels.weather || this._srcStr('source_weather')).trim(),
+      stationSource: labelText(labels.station, this._srcStr('source_station')),
+      forecastSource: labelText(labels.weather, this._srcStr('source_weather')),
       openMeteo: 'Open-Meteo',
       sunshineTitleOpenMeteo: this._srcStr('legend_sunshine_openmeteo'),
     },

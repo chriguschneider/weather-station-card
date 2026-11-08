@@ -361,6 +361,15 @@ function validateTopLevelEntry(
       problems.push(
         `Wrong type for \`${key}\`: expected an object, got ${typeName(value)}`,
       );
+    } else if (key === 'source_labels' && isPlainObject(value)) {
+      // The three label slots are shown as text, so they must be strings.
+      for (const [slot, text] of Object.entries(value as Record<string, unknown>)) {
+        if (text !== undefined && text !== null && typeof text !== 'string') {
+          problems.push(
+            `Wrong type for \`source_labels.${slot}\`: expected a string, got ${typeName(text)}`,
+          );
+        }
+      }
     }
     return;
   }

@@ -417,3 +417,16 @@ describe('validateConfig — elevation (#333)', () => {
     expect(problems[0]).toContain('location.elevation');
   });
 });
+
+describe('validateConfig — source_labels', () => {
+  it('accepts string labels', () => {
+    expect(validateConfig({ ...validBaseConfig(), source_labels: { station: 'Netatmo', weather: 'met.no' } })).toEqual([]);
+  });
+
+  it('flags a non-string label slot', () => {
+    const problems = validateConfig({ ...validBaseConfig(), source_labels: { station: 123 } });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('source_labels.station');
+    expect(problems[0]).toContain('string');
+  });
+});

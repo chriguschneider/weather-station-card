@@ -210,7 +210,6 @@ function buildCardStyles({
     }
     .wsc-sources-corner ~ .current-time {
       inset-inline-end: 28px;
-      right: 28px;
     }
     /* Live block hidden: sit right of the mode toggle on its baseline,
      * or in its place when the toggle is off. */
@@ -629,7 +628,6 @@ function buildCardStyles({
     .current-time {
       position: absolute;
       top: 4px;
-      right: 0;
       inset-inline-start: initial;
       inset-inline-end: 0;
       font-size: ${timeSize}px;

@@ -238,6 +238,57 @@ describe('show_sources: popup', () => {
     expect(card._sourcesPopup.isOpen).toBe(false);
   });
 
+  it('shows entity names, with the id in the tooltip', async () => {
+    const states = baseStates();
+    states['sensor.temp'] = sensor('-2.1', '°C');
+    states['sensor.temp'].attributes.friendly_name = 'Garden Temperature';
+    const card = await mountCard(states);
+    buttonLink(card).click();
+    const temp = popupLines(card)[0];
+    expect(temp.textContent.replace(/\s+/g, ' ').trim()).toBe('Temperature -2.1°C · Station · Garden Temperature');
+    expect(temp.title).toBe('sensor.temp');
+  });
+
+  it('falls back to the entity id when there is no friendly name', async () => {
+    const card = await mountCard(baseStates());
+    expect(card._entityName('sensor.temp')).toBe('sensor.temp');
+  });
+
+  it('names both entities in a sensor-down fallback line', async () => {
+    const states = baseStates();
+    states['weather.home'] = { ...metNo, attributes: { ...metNo.attributes, friendly_name: 'MeteoSwiss Kleine Scheidegg' } };
+    states['sensor.hum'] = sensor('unavailable', '%', { last_changed: '2026-11-08T15:48:00Z' });
+    states['sensor.hum'].attributes.friendly_name = 'Humidity sensor';
+    const card = await mountCard(states, { show_pressure: false });
+    buttonLink(card).click();
+    const hum = popupLines(card).find((l) => l.textContent.includes('Humidity'));
+    const text = hum.textContent.replace(/\s+/g, ' ');
+    expect(text).toContain('Weather service · MeteoSwiss Kleine Scheidegg · Humidity sensor unavailable since 16:48');
+    expect(text).not.toContain('weather.home');
+    expect(hum.title).toBe('weather.home');
+  });
+
+  it('survives a non-string source_labels value in the click path', async () => {
+    const card = await mountCard(baseStates(), { source_labels: { station: 123 } });
+    buttonLink(card).click();
+    expect(popupLines(card)[0].textContent).toContain('Station');
+  });
+
+  it('records the rate sensor as precipitation source only while it is numeric', async () => {
+    const states = baseStates();
+    states['sensor.rain_total'] = sensor('4.2', 'mm');
+    states['sensor.rain_rate'] = sensor('0.6', 'mm/h');
+    const extra = {
+      show_precipitation: true,
+      sensors: { precipitation: 'sensor.rain_total', precipitation_rate: 'sensor.rain_rate' },
+    };
+    const card = await mountCard(states, extra);
+    expect(card._liveSources.precipitation.entityId).toBe('sensor.rain_rate');
+    card.hass = makeHass({ ...states, 'sensor.rain_rate': sensor('unavailable', 'mm/h') });
+    await card.updateComplete;
+    expect(card._liveSources.precipitation.entityId).toBe('sensor.rain_total');
+  });
+
   it('opens with Enter, closes with Escape and returns focus to the button', async () => {
     const card = await mountCard(baseStates());
     const link = buttonLink(card);

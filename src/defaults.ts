@@ -130,7 +130,7 @@ export const DEFAULTS = {
   // ignored. Tokens = the show_* keys without the prefix; see
   // src/attributes-layout.ts.
   attributes_layout: [] as ReadonlyArray<ReadonlyArray<string>>,
-  // Opt-in info button (ADR-0031): opens a popup naming the source of
+  // Info button, on by default (ADR-0031): opens a popup naming the source of
   // each live value and the chart encodings. Shows a warning icon when
   // a configured sensor is unavailable.
   // `source_labels: { station, weather, computed }` overrides the
