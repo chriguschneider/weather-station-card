@@ -51,7 +51,9 @@ import {
 } from './dew-point-comfort.js';
 import { classifySunStrength, formatLux } from './sun-strength.js';
 import { classifyDay, clearSkyLuxAt } from './condition-classifier.js';
-import { computeInitialScrollLeft } from './format-utils.js';
+import { computeInitialScrollLeft, resolveTemp2Color } from './format-utils.js';
+import { resolveCssVar } from './utils/resolve-css-var.js';
+import { getThemeTokens } from './utils/theme-tokens.js';
 import {
   hourlyTempSeries,
   normalizeForecastMode,
@@ -4010,6 +4012,9 @@ _sourceLegend(config: any): LegendItem[] {
   if (!showStation && !showForecast) return [];
   const fc = config.forecast || {};
   const labels = config.source_labels || {};
+  // Same resolved colours as chart/orchestrator.ts draws with.
+  const host: HTMLElement = this.isConnected ? this : document.body;
+  const bg = getThemeTokens(host).backgroundColor;
   return buildChartLegend({
     showStation,
     showForecast,
@@ -4018,10 +4023,10 @@ _sourceLegend(config: any): LegendItem[] {
     sunshineParts: this._sunshineSourceParts(config),
     showTempLow: (fc.type || 'daily') === 'daily',
     colors: {
-      high: fc.temperature1_color || DEFAULTS_FORECAST.temperature1_color,
-      low: fc.temperature2_color || DEFAULTS_FORECAST.temperature2_color,
-      precip: fc.precipitation_color || DEFAULTS_FORECAST.precipitation_color,
-      sunshine: fc.sunshine_color || DEFAULTS_FORECAST.sunshine_color,
+      high: resolveCssVar(fc.temperature1_color, 'rgba(255, 152, 0, 1.0)', host),
+      low: resolveTemp2Color(fc.temperature2_color, bg, host),
+      precip: resolveCssVar(fc.precipitation_color, 'rgba(132, 209, 253, 1.0)', host),
+      sunshine: resolveCssVar(fc.sunshine_color, 'rgba(255, 215, 0, 1.0)', host),
     },
     text: {
       high: this._srcStr('legend_high'),
@@ -4030,6 +4035,8 @@ _sourceLegend(config: any): LegendItem[] {
       sunshine: this._srcStr('sunshine'),
       measured: this._srcStr('legend_measured'),
       forecast: this._srcStr('legend_forecast'),
+      measuredNote: this._srcStr('legend_measured_note'),
+      forecastNote: this._srcStr('legend_forecast_note'),
       stationSource: (labels.station || this._srcStr('source_station')).trim(),
       forecastSource: (labels.weather || this._srcStr('source_weather')).trim(),
       openMeteo: 'Open-Meteo',

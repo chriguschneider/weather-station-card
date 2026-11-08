@@ -76,6 +76,8 @@ const en: LocaleEntry = {
   'source_computed': 'Calculated from the location',
   'legend_measured': 'Measured',
   'legend_forecast': 'Forecast',
+  'legend_measured_note': 'measured',
+  'legend_forecast_note': 'forecast',
   'legend_sunshine_openmeteo': 'Open-Meteo fills in where the weather entity has no sunshine duration',
   'legend_high': 'High',
   'legend_low': 'Low',

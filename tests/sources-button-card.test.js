@@ -273,6 +273,21 @@ describe('show_sources: popup', () => {
     expect(legend.some((t) => /Forecast: Forecast/.test(t))).toBe(false);
   });
 
+  it('legend swatches use the theme-aware colours the chart draws with', async () => {
+    const card = await mountCard(baseStates());
+    const legendFor = (fc) => card._sourceLegend({
+      ...card.config, show_station: true, show_forecast: false,
+      forecast: { ...card.config.forecast, ...fc },
+    })[0].colors;
+    // Default low colour: the themed variant, not the raw legacy literal.
+    const [, low] = legendFor({ type: 'daily', temperature2_color: 'rgba(68, 115, 158, 1.0)' });
+    expect(low).not.toBe('rgba(68, 115, 158, 1.0)');
+    expect(['rgba(130, 175, 220, 1.0)', 'rgba(38, 90, 140, 1.0)']).toContain(low);
+    // A user-set colour passes through unchanged.
+    expect(legendFor({ type: 'daily', temperature1_color: '#112233', temperature2_color: '#445566' }))
+      .toEqual(['#112233', '#445566']);
+  });
+
   it('has no chart section without a chart', async () => {
     const card = await mountCard(baseStates());
     expect(card._sourceLegend(card.config)).toEqual([]);
