@@ -67,6 +67,13 @@ export default {
         'src/live-source.ts',
         'src/chart-legend.ts',
         'src/sources-popup.ts',
+        'src/precip-probability.ts',
+        'src/weather-code-map.ts',
+        'src/editor/toggle-pills.ts',
+        'src/editor/render-live-panel.ts',
+        'src/editor/render-sensors.ts',
+        'src/editor/section-keys.ts',
+        'src/weather-station-card-editor.ts',
       ],
       thresholds: {
         statements: 80,
@@ -81,6 +88,19 @@ export default {
         'src/live-source.ts': { statements: 98, branches: 98, functions: 98, lines: 98 },
         'src/chart-legend.ts': { statements: 98, branches: 98, functions: 98, lines: 98 },
         'src/sources-popup.ts': { statements: 95, branches: 75, functions: 98, lines: 98 },
+        // Modules at (or near) 100 % that were not gated before (#456).
+        'src/precip-probability.ts': { statements: 100, branches: 95, functions: 100, lines: 100 },
+        'src/weather-code-map.ts': { statements: 100, branches: 100, functions: 100, lines: 100 },
+        'src/editor/toggle-pills.ts': { statements: 100, branches: 100, functions: 100, lines: 100 },
+        'src/editor/section-keys.ts': { statements: 100, branches: 100, functions: 100, lines: 100 },
+        'src/utils/resolve-css-var.ts': { statements: 100, branches: 100, functions: 100, lines: 100 },
+        // Low floors just under what is reached; they stop a slide, they
+        // do not claim these files are well covered. main.ts has none: at
+        // ~67 % it would pull the global 80 below the gate, and changing
+        // that needs an ADR amendment (ADR-0029).
+        'src/weather-station-card-editor.ts': { statements: 88, branches: 74, functions: 90, lines: 93 },
+        'src/editor/render-live-panel.ts': { statements: 79, branches: 71, functions: 70, lines: 80 },
+        'src/editor/render-sensors.ts': { statements: 76, branches: 79, functions: 66, lines: 79 },
       },
     },
   },

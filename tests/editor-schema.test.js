@@ -136,10 +136,6 @@ describe('renderBasicsSection (schema-driven)', () => {
     editor = makeEditor();
   });
 
-  it('renders without throwing on default config', () => {
-    expect(() => renderInto(renderBasicsSection, editor, makeCtx())).not.toThrow();
-  });
-
   it('exposes mode, chart type, and title fields', () => {
     const names = allFieldNames(renderInto(renderBasicsSection, editor, makeCtx()));
     expect(names).toContain('mode');
@@ -308,10 +304,6 @@ describe('renderChartSection (schema-driven)', () => {
     editor = makeEditor();
   });
 
-  it('renders without throwing on default config', () => {
-    expect(() => renderInto(renderChartSection, editor, makeCtx())).not.toThrow();
-  });
-
   it('titles its panel with the chart heading', () => {
     const container = renderInto(renderChartSection, editor, makeCtx());
     expect(container.querySelector('.panel-title')?.textContent?.trim()).toBe('chart_section_heading');
@@ -408,10 +400,6 @@ describe('renderLivePanelSection (schema-driven)', () => {
   let editor;
   beforeEach(() => {
     editor = makeEditor();
-  });
-
-  it('renders without throwing on default config', () => {
-    expect(() => renderInto(renderLivePanelSection, editor, makeCtx())).not.toThrow();
   });
 
   // Radar installed for the map, nowcast left at its opt-in default:

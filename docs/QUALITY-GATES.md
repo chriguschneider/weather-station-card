@@ -14,7 +14,7 @@ activates on `master`:
 
 - **`build`** (`.github/workflows/build.yml`) — chains lint, audit,
   typecheck, vitest unit tests + coverage, dependency-cruiser,
-  rollup, e2e + visual regression, and the dist-in-sync verification.
+  rollup, e2e + visual regression, and the whole suite in four time zones.
 - **`Analyze (javascript-typescript)`** (CodeQL) — security analysis
   on `security-extended` queries.
 
@@ -162,17 +162,13 @@ While `perf-baseline.json` carries `"placeholder": true` the gate is
 first `master` run can be used to pin real numbers. The full rationale
 is in [ADR-0014](adr/0014-perf-regression-gate.md).
 
-## dist/ in sync
+## Release bundle (no committed dist/)
 
-The `verify dist matches HEAD` step in `build` re-runs the bundler in
-CI and compares the output against the committed
-`dist/weather-station-card.js`. If `src/**/*.ts` is staged without a
-matching `dist/` rebuild, this step fails with a clear error.
-
-The architectural reason for committing the bundle lives in
-[ADR-0001 (dist committed for HACS)](adr/0001-dist-committed-for-hacs.md).
-Resolving rebase conflicts in the minified bundle is documented in
-[`AGENTS.md`](../AGENTS.md#resolving-dist-conflicts-on-rebase).
+`dist/` is gitignored since [ADR-0032](adr/0032-dist-built-in-release-job.md),
+which supersedes ADR-0001. CI builds the bundle on every run (budget, E2E and
+perf gates use it) and the release job builds it from the tagged commit and
+attaches every `dist/*.js` to the GitHub Release. The release job refuses a tag
+whose commit is not on master.
 
 ## E2E baseline regeneration
 

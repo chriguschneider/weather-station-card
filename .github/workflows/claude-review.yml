@@ -58,8 +58,8 @@ jobs:
       # Paths whose change always needs a human: CI and agent config, the
       # conventions and decisions the reviewer judges against, dependencies,
       # the GHA-pinned E2E/perf baselines (ADR-0003, ADR-0014) and the
-      # configs that define the quality gates. Not dist/: CI proves it
-      # matches src/.
+      # configs that define the quality gates. dist/ is not committed
+      # (ADR-0032).
       SENSITIVE: '^(\.github/|\.claude/|scripts/|docs/adr/|AGENTS\.md$|CLAUDE\.md$|package(-lock)?\.json$|hacs\.json$|tests-e2e/snapshots/|perf-baseline\.json$|vitest\.config\.js$|eslint\.config\.mjs$|\.dependency-cruiser\.cjs$|playwright\.config\.ts$|rollup\.config\.mjs$|tsconfig\.json$)'
     steps:
       # Outbound traffic: `audit` logs every connection, `block` allows only
@@ -169,8 +169,8 @@ jobs:
             Run `gh pr checkout ${{ env.PR }}`, then read AGENTS.md,
             ARCHITECTURE.md, docs/adr/ and the linked issue. CI (the `build`
             job: lint, audit, typecheck, vitest, coverage, depcheck, bundle
-            budget, Playwright E2E + visual regression, perf gate, dist in
-            sync; plus CodeQL) for the PR head right now:
+            budget, Playwright E2E + visual regression, perf gate, the
+            four-zone test matrix; plus CodeQL) for the PR head right now:
             ${{ steps.ci.outputs.result }}
 
             Do NOT run the repo's tests, scripts or build tools: the PR may
@@ -186,8 +186,8 @@ jobs:
                `perf-baseline.json` are regenerated only on the GHA runner
                (`update-baselines.yml`, ADR-0003/0014): never edit them, and
                treat an agent PR that changes them as a finding.
-            2. Do NOT edit `src/` yourself: `dist/` must be rebuilt in the same
-               commit and you cannot run the build. For a substantive problem,
+            2. Do NOT edit `src/` yourself: you cannot run the build and the
+               tests here. For a substantive problem,
                comment the exact fix and HOLD (`needs-verification`); a maintainer
                or `@claude` makes it. Docs, tests and comments you may fix (commit +
                push). Never push to the default branch.

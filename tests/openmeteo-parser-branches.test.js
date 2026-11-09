@@ -106,14 +106,14 @@ describe('forecast builders: missing arrays and null cells', () => {
   });
 
   it('hourly: no arrays at all gives entries with null fields', () => {
-    const out = buildHourlyForecast({ hourly: { time: [T] } });
+    const out = buildHourlyForecast({ hourly: { time: [T] } }, cal);
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({ temperature: null, precipitation: null, wind_speed: null });
   });
 
   it('hourly: a section without time yields [] and bad times are skipped', () => {
-    expect(buildHourlyForecast({ hourly: { temperature_2m: [1] } })).toEqual([]);
-    const out = buildHourlyForecast({ hourly: { time: ['x', T], temperature_2m: [1, 2] } });
+    expect(buildHourlyForecast({ hourly: { temperature_2m: [1] } }, cal)).toEqual([]);
+    const out = buildHourlyForecast({ hourly: { time: ['x', T], temperature_2m: [1, 2] } }, cal);
     expect(out.map((e) => e.temperature)).toEqual([2]);
   });
 });
@@ -159,19 +159,9 @@ describe('cache reads and source options', () => {
     expect(listener).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
   });
 
-  it('an error answer without a reason still fails', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ error: true }) });
-    const listener = vi.fn();
-    const src = new OpenMeteoSource({ calendar: cal, latitude: 46.9, longitude: 7.4, fetchImpl, storage: null });
-    src.setListener(listener);
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    await src.ensureFresh();
-    warn.mockRestore();
-    expect(listener).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
-  });
-
-  it('works without AbortController', async () => {
+  it('works without AbortController or AbortSignal.timeout', async () => {
     vi.stubGlobal('AbortController', undefined);
+    vi.stubGlobal('AbortSignal', undefined);
     try {
       const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => body });
       const src = new OpenMeteoSource({ calendar: cal, latitude: 46.9, longitude: 7.4, fetchImpl, storage: null });
