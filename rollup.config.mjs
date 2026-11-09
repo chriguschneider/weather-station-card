@@ -1,4 +1,4 @@
-import resolve from 'rollup-plugin-node-resolve';
+import resolve from '@rollup/plugin-node-resolve';
 import serve from 'rollup-plugin-serve';
 import terser from '@rollup/plugin-terser';
 import typescript from '@rollup/plugin-typescript';
