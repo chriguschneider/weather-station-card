@@ -6,6 +6,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.0.0-beta.3] — 2026-11-09
+
+**Beta**, third round: beta.2 plus the additions and fixes below. Same rules as before: only shown by HACS if you enabled beta versions for this card; 3.0.0 follows after about a week without problems. Report in [#358](https://github.com/chriguschneider/weather-station-card/issues/358).
+
+What you will see: a small ⓘ in the top-right corner of every card (hide it with `show_sources: false` or the editor toggle), and the Location panel, snow line and info button texts in your language. Refresh the browser cache after updating (hard reload, or clear the app cache in the Home Assistant companion app).
+
 ### Added
 
 - New option "Info button: data sources" (`show_sources`) in the live panel: a small ⓘ now appears in the top-right corner of every card (the clock moves slightly to the left) and opens a popup that lists every live value with where it comes from (your station, the weather service, or calculated from the location) and explains the chart's colours, solid (measured) versus dashed (forecast) lines and the bars. The ⓘ turns into an orange warning icon when a station sensor you configured has been unavailable for more than 5 minutes (after a Home Assistant restart or a short dropout it stays grey and the popup says "waiting for sensor data"; the card then shows its last value or the weather service instead), so you see it without opening the popup. Values that come from the weather service because you have no sensor for them stay grey. Tap a line to open that entity. To hide it, switch off "Info button: data sources" in the editor or set `show_sources: false` in YAML. Rename the sources with `source_labels` in YAML.
