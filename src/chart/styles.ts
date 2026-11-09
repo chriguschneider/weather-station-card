@@ -167,6 +167,62 @@ function buildCardStyles({
       outline-offset: 2px;
       border-radius: 4px;
     }
+    /* Info button (show_sources, ADR-0031): muted while all is well,
+     * warning colour (and a different icon) when a configured sensor is
+     * down. The .main selectors outrank the
+     * 50 px condition-glyph rule above. */
+    .wsc-sources-info {
+      display: inline-flex;
+      vertical-align: middle;
+      margin-inline-start: 6px;
+      line-height: 1;
+    }
+    .main .wsc-sources-info ha-icon,
+    .wsc-sources-info ha-icon {
+      --mdc-icon-size: 20px;
+      margin: 0;
+      color: var(--secondary-text-color, #727272);
+    }
+    .main .wsc-sources-info.wsc-sources-alert ha-icon,
+    .wsc-sources-info.wsc-sources-alert ha-icon {
+      color: var(--warning-color, #ff9800);
+    }
+    .wsc-sources-info .wsc-entity-link:hover ha-icon,
+    .wsc-sources-info .wsc-entity-link:focus-visible ha-icon {
+      color: var(--primary-text-color, #212121);
+    }
+    .wsc-sources-info .wsc-sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+    /* Live panel: top-right corner of .main's inner block, the clock's
+     * containing block; the clock moves left by one icon width. */
+    .wsc-sources-corner {
+      position: absolute;
+      top: 4px;
+      inset-inline-end: 0;
+      margin: 0;
+      z-index: 2;
+    }
+    .wsc-sources-corner ~ .current-time {
+      inset-inline-end: 28px;
+    }
+    /* Live block hidden: sit right of the mode toggle on its baseline,
+     * or in its place when the toggle is off. */
+    .wsc-sources-chart {
+      position: absolute;
+      top: ${chartHeight - 30 - extraBottomPad}px;
+      left: 20px;
+      height: 30px;
+      align-items: center;
+      margin: 0;
+      z-index: 3;
+    }
+    .wsc-sources-chart-alone { left: -10px; }
     /* Scroll block — .forecast-scroll-block is the relative parent that
      * positions the side indicators; .forecast-scroll inside it is the
      * actual overflow:auto viewport. Native scrollbars are hidden across
@@ -572,7 +628,6 @@ function buildCardStyles({
     .current-time {
       position: absolute;
       top: 4px;
-      right: 0;
       inset-inline-start: initial;
       inset-inline-end: 0;
       font-size: ${timeSize}px;

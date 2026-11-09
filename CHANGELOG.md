@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- New option "Info button: data sources" (`show_sources`) in the live panel: a small ⓘ now appears in the top-right corner of every card (the clock moves slightly to the left) and opens a popup that lists every live value with where it comes from (your station, the weather service, or calculated from the location) and explains the chart's colours, solid (measured) versus dashed (forecast) lines and the bars. The ⓘ turns into an orange warning icon when a station sensor you configured has been unavailable for more than 5 minutes (after a Home Assistant restart or a short dropout it stays grey and the popup says "waiting for sensor data"; the card then shows its last value or the weather service instead), so you see it without opening the popup. Values that come from the weather service because you have no sensor for them stay grey. Tap a line to open that entity. To hide it, switch off "Info button: data sources" in the editor or set `show_sources: false` in YAML. Rename the sources with `source_labels` in YAML.
+
 ### Changed
 
 - The zero-degree popup shows where the snow line reaches your site: a dashed line in the precipitation colour at your elevation + 300 m, labelled with the location name and elevation (e.g. "Köniz 581 m"). Where the curve dips below it, snow can reach you. The highest point of the curve is now marked too when it is at least 200 m above the current level. Without a known elevation no line is drawn.

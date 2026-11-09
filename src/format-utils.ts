@@ -1,6 +1,8 @@
 // Pure formatting / layout helpers used by the chart. Kept in their own
 // module so they can be unit-tested without pulling in Lit, Chart.js, or HA.
 
+import { resolveCssVar } from './utils/resolve-css-var.js';
+
 /** Tick-index pair returned by `computeBlockSeparatorPositions`. The
  *  caller draws a vertical line at the midpoint between those two
  *  ticks (e.g. `(getPixelForTick(left) + getPixelForTick(right)) / 2`). */
@@ -61,6 +63,20 @@ export function isDarkColor(color: unknown): boolean {
   // Rec. 601 luma — perceptual weighting is enough for a binary
   // light/dark split; no need for linearised sRGB here.
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255 < 0.5;
+}
+
+const TEMP2_LEGACY_DEFAULT = 'rgba(68, 115, 158, 1.0)';
+
+/** Low-temperature line colour. Only the DEFAULT is theme-aware (light or
+ *  dark variant by background luma); a user-set colour passes through
+ *  `resolveCssVar`. Shared by the chart and the sources popup legend so
+ *  both draw the same swatch. */
+export function resolveTemp2Color(configured: string | undefined | null, backgroundColor: unknown, host?: Element | null): string {
+  const themed = isDarkColor(backgroundColor)
+    ? 'rgba(130, 175, 220, 1.0)'
+    : 'rgba(38, 90, 140, 1.0)';
+  if (!configured || configured === TEMP2_LEGACY_DEFAULT) return themed;
+  return resolveCssVar(configured, themed, host);
 }
 
 /** Decide where to scroll the hourly viewport on first render so the user

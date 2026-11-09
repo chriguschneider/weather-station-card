@@ -64,6 +64,9 @@ export default {
         'src/next-rain.ts',
         'src/zero-degree-popup.ts',
         'src/zero-degree-trend.ts',
+        'src/live-source.ts',
+        'src/chart-legend.ts',
+        'src/sources-popup.ts',
         'src/precip-probability.ts',
         'src/weather-code-map.ts',
         'src/editor/toggle-pills.ts',
@@ -81,6 +84,10 @@ export default {
         // two data sources cannot slide back to the global 80.
         'src/data-source.ts': { statements: 96, branches: 88, functions: 98, lines: 97 },
         'src/openmeteo-source.ts': { statements: 98, branches: 96, functions: 100, lines: 99 },
+        // show_sources modules (ADR-0031)
+        'src/live-source.ts': { statements: 98, branches: 98, functions: 98, lines: 98 },
+        'src/chart-legend.ts': { statements: 98, branches: 98, functions: 98, lines: 98 },
+        'src/sources-popup.ts': { statements: 95, branches: 75, functions: 98, lines: 98 },
         // Modules at (or near) 100 % that were not gated before (#456).
         'src/precip-probability.ts': { statements: 100, branches: 95, functions: 100, lines: 100 },
         'src/weather-code-map.ts': { statements: 100, branches: 100, functions: 100, lines: 100 },

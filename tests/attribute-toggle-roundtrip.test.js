@@ -51,7 +51,9 @@ const SENSORS = { temperature: 'sensor.t', humidity: 'sensor.hum', pressure: 'se
 
 function renderCard(config) {
   const card = document.createElement('weather-station-card');
-  card.setConfig(config);
+  // The column parsing below reads the bare row markup; the source
+  // markers (on by default) are covered in sources-button-card.test.js.
+  card.setConfig({ show_sources: false, ...config });
   card.hass = hass;
   return flat(card.renderAttributes());
 }

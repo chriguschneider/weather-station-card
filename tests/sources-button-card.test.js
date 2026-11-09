@@ -1,0 +1,423 @@
+// @vitest-environment jsdom
+// show_sources on the card (#431): live-source recording, the info
+// button (absent / muted / accent, placement) and the popup it opens.
+
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import '../src/main.js';
+
+globalThis.ResizeObserver ??= class { observe() {} disconnect() {} unobserve() {} };
+
+const metNo = {
+  state: 'partlycloudy',
+  attributes: {
+    temperature: -2.3,
+    temperature_unit: '°C',
+    humidity: 91,
+    pressure: 1029,
+    pressure_unit: 'hPa',
+    wind_speed: 3.6,
+    wind_bearing: 26,
+    wind_speed_unit: 'km/h',
+  },
+};
+
+const sensor = (state, unit, extra = {}) => ({ state, attributes: { unit_of_measurement: unit }, ...extra });
+
+const baseStates = () => ({
+  'weather.home': metNo,
+  'sensor.temp': sensor('-2.1', '°C'),
+  'sensor.hum': sensor('90', '%'),
+  'sensor.wind': sensor('5.4', 'km/h'),
+});
+
+const makeHass = (states) => ({
+  states,
+  config: { latitude: 46.9, longitude: 7.4, time_zone: 'Europe/Zurich', unit_system: { temperature: '°C' } },
+  language: 'en',
+});
+
+async function mountCard(states, extra = {}) {
+  const card = document.createElement('weather-station-card');
+  card.setConfig({
+    show_station: false,
+    show_forecast: false,
+    show_main: true,
+    show_attributes: true,
+    show_humidity: true,
+    show_pressure: true,
+    show_wind_speed: true,
+    show_wind_direction: false,
+    show_dew_point: false,
+    show_sources: true,
+    weather_entity: 'weather.home',
+    sensors: { temperature: 'sensor.temp', humidity: 'sensor.hum', wind_speed: 'sensor.wind' },
+    ...extra,
+  });
+  card.hass = makeHass(states);
+  document.body.appendChild(card);
+  await card.updateComplete;
+  return card;
+}
+
+// Push a hass tick `minutes` after the card first saw the sensors
+// unavailable (the availability grace is 5 minutes, issue #213).
+let clockBase = null;
+async function tickAfter(card, states, minutes, hassExtra = {}) {
+  if (clockBase === null) {
+    clockBase = Date.now();
+    vi.spyOn(Date, 'now');
+  }
+  Date.now.mockReturnValue(clockBase + minutes * 60_000);
+  const hass = makeHass(states);
+  hass.config = { ...hass.config, ...hassExtra };
+  card.hass = hass;
+  // The entity-delta gate skips unchanged ticks; the card's grace timer
+  // re-scans directly, so do the same here.
+  card._scanSensorAvailability(hass);
+  await card.updateComplete;
+}
+const overdue = async (card, states) => {
+  await tickAfter(card, states, 0);
+  await tickAfter(card, states, 6);
+};
+
+const button = (card) => card.shadowRoot.querySelector('.wsc-sources-info');
+const buttonLink = (card) => button(card)?.querySelector('[role="button"]');
+const popupLines = (card) =>
+  [...card.shadowRoot.querySelectorAll('.wsc-src-line:not(.wsc-src-legend)')];
+
+afterEach(() => {
+  clockBase = null;
+  document.body.innerHTML = '';
+  vi.restoreAllMocks();
+});
+
+describe('show_sources: info button', () => {
+  it('is absent when the option is off', async () => {
+    const card = await mountCard(baseStates(), { show_sources: false });
+    expect(button(card)).toBeNull();
+    expect(card.shadowRoot.querySelector('[data-wsc-token]')).toBeNull();
+  });
+
+  it('is on by default', async () => {
+    const card = await mountCard(baseStates());
+    const cfg = { ...card.config };
+    delete cfg.show_sources;
+    card.setConfig(cfg);
+    await card.updateComplete;
+    expect(card.config.show_sources).toBe(true);
+    expect(button(card)).not.toBeNull();
+  });
+
+  it('sits in the top-right corner before the clock, muted while every value is from the station', async () => {
+    // Pressure has no sensor and would fall back: hide it for this case.
+    const card = await mountCard(baseStates(), { show_pressure: false });
+    const btn = button(card);
+    expect(btn).not.toBeNull();
+    expect(btn.closest('.main')).not.toBeNull();
+    expect(btn.classList.contains('wsc-sources-corner')).toBe(true);
+    const clock = card.shadowRoot.querySelector('.current-time');
+    if (clock) {
+      expect(btn.parentElement).toBe(clock.parentElement);
+      expect(btn.compareDocumentPosition(clock) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(btn.classList.contains('wsc-sources-alert')).toBe(false);
+    const link = buttonLink(card);
+    expect(link.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(link.getAttribute('tabindex')).toBe('0');
+    expect(link.textContent.trim()).toBe('Data sources');
+    expect(link.querySelector('ha-icon').getAttribute('icon')).toBe('mdi:information-outline');
+  });
+
+  it('stays grey when a value comes from the weather entity by design', async () => {
+    const card = await mountCard(baseStates());
+    expect(card._liveSources.pressure).toEqual({ kind: 'weather', entityId: 'weather.home' });
+    expect(button(card).classList.contains('wsc-sources-alert')).toBe(false);
+    expect(buttonLink(card).querySelector('ha-icon').getAttribute('icon')).toBe('mdi:information-outline');
+    buttonLink(card).click();
+    const p = popupLines(card).find((l) => l.textContent.includes('Pressure'));
+    expect(p.classList.contains('wsc-src-problem')).toBe(false);
+  });
+
+  it('warns when a configured sensor is unavailable and the weather entity stands in', async () => {
+    // Weather entity carries humidity, sensor has no last good value yet.
+    const states = baseStates();
+    states['sensor.hum'] = sensor('unavailable', '%', { last_changed: '2026-11-08T08:12:00Z' });
+    const card = await mountCard(states, { show_pressure: false });
+    expect(card._liveSources.humidity.kind).toBe('weather');
+    expect(card._liveSources.humidity.sensorId).toBe('sensor.hum');
+    await overdue(card, states);
+    expect(button(card).classList.contains('wsc-sources-alert')).toBe(true);
+    const link = buttonLink(card);
+    expect(link.querySelector('ha-icon').getAttribute('icon')).toBe('mdi:alert-circle-outline');
+    expect(link.textContent.trim()).toBe('Data sources: sensor problem');
+    link.click();
+    const hum = popupLines(card).find((l) => l.textContent.includes('Humidity'));
+    expect(hum.classList.contains('wsc-src-problem')).toBe(true);
+    expect(hum.textContent).toContain('Weather service');
+    expect(hum.textContent).toContain('sensor.hum unavailable since 09:12');
+  });
+
+  it('treats an unavailable wind-direction sensor as a weather-service fallback (#437)', async () => {
+    const states = baseStates();
+    states['sensor.dir'] = sensor('unavailable', '°', { last_changed: '2026-11-08T08:12:00Z' });
+    const card = await mountCard(states, {
+      show_wind_direction: true,
+      sensors: { temperature: 'sensor.temp', humidity: 'sensor.hum', wind_speed: 'sensor.wind', wind_direction: 'sensor.dir' },
+    });
+    expect(card.windDirection).toBe(26);
+    expect(card._liveSources.wind_direction.kind).toBe('weather');
+    expect(card._liveSources.wind_direction.sensorId).toBe('sensor.dir');
+    await overdue(card, states);
+    expect(button(card).classList.contains('wsc-sources-alert')).toBe(true);
+  });
+
+  it('warns when a station sensor is stale for longer than the grace period', async () => {
+    const card = await mountCard(baseStates(), { show_pressure: false });
+    const states = baseStates();
+    states['sensor.hum'] = sensor('unavailable', '%', { last_changed: '2026-11-08T08:12:00Z' });
+    await tickAfter(card, states, 0);
+    expect(card._liveSources.humidity).toEqual({ kind: 'stale', entityId: 'sensor.hum' });
+    // Inside the grace window: neutral.
+    expect(button(card).classList.contains('wsc-sources-alert')).toBe(false);
+    await tickAfter(card, states, 4);
+    expect(button(card).classList.contains('wsc-sources-alert')).toBe(false);
+    await tickAfter(card, states, 6);
+    expect(button(card).classList.contains('wsc-sources-alert')).toBe(true);
+    // Recovery.
+    await tickAfter(card, baseStates(), 7);
+    expect(button(card).classList.contains('wsc-sources-alert')).toBe(false);
+    expect(buttonLink(card).querySelector('ha-icon').getAttribute('icon')).toBe('mdi:information-outline');
+  });
+
+  it('stays grey while HA is still starting, even past the grace period', async () => {
+    const card = await mountCard(baseStates(), { show_pressure: false });
+    const states = baseStates();
+    states['sensor.hum'] = sensor('unavailable', '%', { last_changed: '2026-11-08T08:12:00Z' });
+    await tickAfter(card, states, 0, { state: 'NOT_RUNNING' });
+    await tickAfter(card, states, 30, { state: 'NOT_RUNNING' });
+    expect(card._missingSensors).toEqual([]);
+    expect(button(card).classList.contains('wsc-sources-alert')).toBe(false);
+    buttonLink(card).click();
+    const hum = popupLines(card).find((l) => l.textContent.includes('Humidity'));
+    expect(hum.classList.contains('wsc-src-problem')).toBe(false);
+    expect(hum.textContent).toContain('waiting for sensor data');
+  });
+
+  it('keeps a sensor-down fallback line neutral inside the grace period', async () => {
+    const states = baseStates();
+    states['sensor.hum'] = sensor('unavailable', '%', { last_changed: '2026-11-08T08:12:00Z' });
+    const card = await mountCard(states, { show_pressure: false });
+    expect(button(card).classList.contains('wsc-sources-alert')).toBe(false);
+    buttonLink(card).click();
+    const hum = popupLines(card).find((l) => l.textContent.includes('Humidity'));
+    expect(hum.classList.contains('wsc-src-problem')).toBe(false);
+    expect(hum.textContent).toContain('waiting for sensor data');
+  });
+
+  it('moves next to the chart mode toggle when the live block is hidden', async () => {
+    const card = await mountCard(baseStates(), { show_main: false });
+    expect(card.shadowRoot.querySelector('.main')).toBeNull();
+    // The chart block is on screen here although no series is enabled,
+    // so render the chart placement directly.
+    card.config = { ...card.config, show_station: true };
+    const host = document.createElement('div');
+    const { render } = await import('lit');
+    render(card._renderSourcesButton('chart'), host);
+    const btn = host.querySelector('.wsc-sources-info');
+    expect(btn.classList.contains('wsc-sources-chart')).toBe(true);
+    expect(btn.classList.contains('wsc-sources-corner')).toBe(false);
+    expect(btn.classList.contains('wsc-sources-chart-alone')).toBe(false);
+    card.config = { ...card.config, forecast: { ...card.config.forecast, show_mode_toggle: false } };
+    render(card._renderSourcesButton('chart'), host);
+    expect(host.querySelector('.wsc-sources-info').classList.contains('wsc-sources-chart-alone')).toBe(true);
+  });
+
+  it('has no button when both the live block and the chart are hidden', async () => {
+    const card = await mountCard(baseStates(), { show_main: false });
+    expect(button(card)).toBeNull();
+  });
+});
+
+describe('show_sources: popup', () => {
+  it('lists every shown value with its source, in the card order', async () => {
+    const card = await mountCard(baseStates());
+    buttonLink(card).click();
+    expect(card.shadowRoot.querySelector('.wsc-src-panel[role="dialog"]')).not.toBeNull();
+    const lines = popupLines(card).map((l) => ({ kind: l.dataset.kind, text: l.textContent.replace(/\s+/g, ' ').trim() }));
+    expect(lines[0]).toEqual({ kind: 'station', text: 'Temperature -2.1°C · Station · sensor.temp' });
+    const byKind = Object.fromEntries(lines.map((l) => [l.text.split(' ')[0], l]));
+    expect(byKind.Pressure).toEqual({ kind: 'weather', text: 'Pressure 1029 hPa · Weather service · weather.home' });
+    expect(byKind.Humidity.text).toBe('Humidity 90 % · Station · sensor.hum');
+    expect(lines.some((l) => l.text.startsWith('Wind speed') && l.kind === 'station')).toBe(true);
+  });
+
+  it('names a stale sensor with the time it went unavailable', async () => {
+    const card = await mountCard(baseStates());
+    const states = baseStates();
+    states['sensor.hum'] = sensor('unavailable', '%', { last_changed: '2026-11-08T08:12:00Z' });
+    await overdue(card, states);
+    buttonLink(card).click();
+    const hum = popupLines(card).find((l) => l.textContent.includes('Humidity'));
+    expect(hum.dataset.kind).toBe('stale');
+    // 08:12 UTC is 09:12 in the card's zone (Europe/Zurich, CET).
+    expect(hum.textContent).toContain('last value, unavailable since 09:12');
+    expect(hum.textContent).toContain('90 %');
+  });
+
+  it('labels sun and moon as calculated from the location', async () => {
+    const card = await mountCard(baseStates(), { show_sun: true, show_moon: true });
+    buttonLink(card).click();
+    const computed = popupLines(card).filter((l) => l.dataset.kind === 'computed');
+    expect(computed.length).toBeGreaterThan(0);
+    for (const l of computed) {
+      expect(l.textContent).toContain('Calculated from the location');
+      expect(l.getAttribute('role')).toBeNull();
+    }
+  });
+
+  it('honours source_labels', async () => {
+    const card = await mountCard(baseStates(), { source_labels: { station: 'Netatmo', weather: 'met.no' } });
+    buttonLink(card).click();
+    const texts = popupLines(card).map((l) => l.textContent);
+    expect(texts[0]).toContain('Netatmo');
+    expect(texts.some((t) => t.includes('met.no'))).toBe(true);
+  });
+
+  it('a popup line opens the entity more-info and closes the popup', async () => {
+    const card = await mountCard(baseStates());
+    const more = vi.fn();
+    card.addEventListener('hass-more-info', more);
+    buttonLink(card).click();
+    popupLines(card).find((l) => l.dataset.kind === 'weather').click();
+    expect(more).toHaveBeenCalledTimes(1);
+    expect(more.mock.calls[0][0].detail).toEqual({ entityId: 'weather.home' });
+    expect(card._sourcesPopup.isOpen).toBe(false);
+  });
+
+  it('shows entity names, with the id in the tooltip', async () => {
+    const states = baseStates();
+    states['sensor.temp'] = sensor('-2.1', '°C');
+    states['sensor.temp'].attributes.friendly_name = 'Garden Temperature';
+    const card = await mountCard(states);
+    buttonLink(card).click();
+    const temp = popupLines(card)[0];
+    expect(temp.textContent.replace(/\s+/g, ' ').trim()).toBe('Temperature -2.1°C · Station · Garden Temperature');
+    expect(temp.title).toBe('sensor.temp');
+  });
+
+  it('falls back to the entity id when there is no friendly name', async () => {
+    const card = await mountCard(baseStates());
+    expect(card._entityName('sensor.temp')).toBe('sensor.temp');
+  });
+
+  it('uses hass.formatEntityName when present, with fallbacks', async () => {
+    const states = baseStates();
+    states['sensor.temp'].attributes.friendly_name = 'Friendly';
+    const card = await mountCard(states);
+    const fmt = vi.fn(() => 'Device Entity');
+    card._hass.formatEntityName = fmt;
+    expect(card._entityName('sensor.temp')).toBe('Device Entity');
+    expect(fmt).toHaveBeenCalledWith(states['sensor.temp']);
+    // Throwing or empty helper: friendly_name, then id.
+    card._hass.formatEntityName = () => { throw new Error('boom'); };
+    expect(card._entityName('sensor.temp')).toBe('Friendly');
+    card._hass.formatEntityName = () => '  ';
+    expect(card._entityName('sensor.temp')).toBe('Friendly');
+    expect(card._entityName('sensor.unknown')).toBe('sensor.unknown');
+    // Older HA without the helper.
+    delete card._hass.formatEntityName;
+    expect(card._entityName('sensor.temp')).toBe('Friendly');
+  });
+
+  it('names both entities in a sensor-down fallback line', async () => {
+    const states = baseStates();
+    states['weather.home'] = { ...metNo, attributes: { ...metNo.attributes, friendly_name: 'MeteoSwiss Kleine Scheidegg' } };
+    states['sensor.hum'] = sensor('unavailable', '%', { last_changed: '2026-11-08T15:48:00Z' });
+    states['sensor.hum'].attributes.friendly_name = 'Humidity sensor';
+    const card = await mountCard(states, { show_pressure: false });
+    await overdue(card, states);
+    buttonLink(card).click();
+    const hum = popupLines(card).find((l) => l.textContent.includes('Humidity'));
+    const text = hum.textContent.replace(/\s+/g, ' ');
+    expect(text).toContain('Weather service · MeteoSwiss Kleine Scheidegg · Humidity sensor unavailable since 16:48');
+    expect(text).not.toContain('weather.home');
+    expect(hum.title).toBe('weather.home');
+  });
+
+  it('survives a non-string source_labels value in the click path', async () => {
+    const card = await mountCard(baseStates(), { source_labels: { station: 123 } });
+    buttonLink(card).click();
+    expect(popupLines(card)[0].textContent).toContain('Station');
+  });
+
+  it('records the rate sensor as precipitation source only while it is numeric', async () => {
+    const states = baseStates();
+    states['sensor.rain_total'] = sensor('4.2', 'mm');
+    states['sensor.rain_rate'] = sensor('0.6', 'mm/h');
+    const extra = {
+      show_precipitation: true,
+      sensors: { precipitation: 'sensor.rain_total', precipitation_rate: 'sensor.rain_rate' },
+    };
+    const card = await mountCard(states, extra);
+    expect(card._liveSources.precipitation.entityId).toBe('sensor.rain_rate');
+    card.hass = makeHass({ ...states, 'sensor.rain_rate': sensor('unavailable', 'mm/h') });
+    await card.updateComplete;
+    expect(card._liveSources.precipitation.entityId).toBe('sensor.rain_total');
+  });
+
+  it('opens with Enter, closes with Escape and returns focus to the button', async () => {
+    const card = await mountCard(baseStates());
+    const link = buttonLink(card);
+    link.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(card._sourcesPopup.isOpen).toBe(true);
+    card.shadowRoot.querySelector('.wsc-src-panel')
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(card._sourcesPopup.isOpen).toBe(false);
+    expect(card.shadowRoot.activeElement).toBe(link);
+  });
+
+  it('opens with Space too', async () => {
+    const card = await mountCard(baseStates());
+    buttonLink(card).dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    expect(card._sourcesPopup.isOpen).toBe(true);
+  });
+
+  it('disconnecting the card closes the popup', async () => {
+    const card = await mountCard(baseStates());
+    buttonLink(card).click();
+    const root = card.shadowRoot;
+    card.remove();
+    expect(root.querySelector('.wsc-src-backdrop')).toBeNull();
+    expect(card._sourcesPopup.isOpen).toBe(false);
+  });
+
+  it('shows the chart section with the encodings when a chart is on', async () => {
+    const card = await mountCard(baseStates());
+    card.config = { ...card.config, show_station: true, show_forecast: true };
+    const legend = card._sourceLegend(card.config).map((i) => i.text);
+    expect(legend).toContain('Forecast: Weather service');
+    expect(legend.some((t) => t.startsWith('Measured: '))).toBe(true);
+    expect(legend.some((t) => /Forecast: Forecast/.test(t))).toBe(false);
+  });
+
+  it('legend swatches use the theme-aware colours the chart draws with', async () => {
+    const card = await mountCard(baseStates());
+    const legendFor = (fc) => card._sourceLegend({
+      ...card.config, show_station: true, show_forecast: false,
+      forecast: { ...card.config.forecast, ...fc },
+    })[0].colors;
+    // Default low colour: the themed variant, not the raw legacy literal.
+    const [, low] = legendFor({ type: 'daily', temperature2_color: 'rgba(68, 115, 158, 1.0)' });
+    expect(low).not.toBe('rgba(68, 115, 158, 1.0)');
+    expect(['rgba(130, 175, 220, 1.0)', 'rgba(38, 90, 140, 1.0)']).toContain(low);
+    // A user-set colour passes through unchanged.
+    expect(legendFor({ type: 'daily', temperature1_color: '#112233', temperature2_color: '#445566' }))
+      .toEqual(['#112233', '#445566']);
+  });
+
+  it('has no chart section without a chart', async () => {
+    const card = await mountCard(baseStates());
+    expect(card._sourceLegend(card.config)).toEqual([]);
+  });
+});
