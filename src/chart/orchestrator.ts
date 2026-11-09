@@ -25,7 +25,7 @@
 // main.ts and this module.
 
 import { effectiveVisibleBars, normalizeForecastMode } from '../forecast-utils.js';
-import { isDarkColor, lightenColor } from '../format-utils.js';
+import { isDarkColor, lightenColor, resolveTemp2Color } from '../format-utils.js';
 import { resolveCssVar } from '../utils/resolve-css-var.js';
 import { getThemeTokens } from '../utils/theme-tokens.js';
 import { sunshineFractions } from '../sunshine-source.js';
@@ -523,14 +523,7 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
   // through unchanged. Dark detection via the resolved card
   // background's luma (HA exposes no dark-mode flag to cards).
   const isDarkTheme = isDarkColor(backgroundColor);
-  const TEMP2_LEGACY_DEFAULT = 'rgba(68, 115, 158, 1.0)';
-  const temp2ThemedDefault = isDarkTheme
-    ? 'rgba(130, 175, 220, 1.0)'
-    : 'rgba(38, 90, 140, 1.0)';
-  const temp2Configured = config.forecast.temperature2_color;
-  const temp2Color = (!temp2Configured || temp2Configured === TEMP2_LEGACY_DEFAULT)
-    ? temp2ThemedDefault
-    : resolveCssVar(temp2Configured, temp2ThemedDefault, themeHost);
+  const temp2Color = resolveTemp2Color(config.forecast.temperature2_color, backgroundColor, themeHost);
   const precipColor = resolveCssVar(config.forecast.precipitation_color, 'rgba(132, 209, 253, 1.0)', themeHost);
   const precipColorLight = lightenColor(precipColor) as string;
   const precipPerBarColor: string[] = (data.precip || []).map(

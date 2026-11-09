@@ -267,6 +267,27 @@ export function renderLivePanelSection(editor: EditorLike, ctx: EditorContext): 
           ${nowcastHint}
         </div>
       ` : ''}
+      <div class="divider"></div>
+      <ha-form
+        .data=${{ show_sources: cfg.show_sources !== false }}
+        .schema=${gateSchema('show_sources')}
+        .hass=${editor.hass}
+        .computeLabel=${labelFor}
+        @value-changed=${(ev: Event) => {
+          // Back at the default (true) the key is dropped, like the other defaulted toggles.
+          const value = (ev as CustomEvent<{ value: Record<string, unknown> }>).detail?.value;
+          if (value?.show_sources === true) {
+            ev.stopPropagation();
+            const next: Record<string, unknown> = { ...editor._config };
+            delete next.show_sources;
+            editor.configChanged(next);
+            editor.requestUpdate();
+            return;
+          }
+          editor._livePanelChanged(ev);
+        }}
+      ></ha-form>
+      <div class="hint">${t('show_sources_hint')}</div>
     </div>
   `;
 

@@ -66,6 +66,7 @@ const LEGACY_EDITOR_KEYS = new Set([
 const PENDING_TRANSLATION = new Set([
   'location_timed_out', 'location_coordinates_changed',
   'location_coordinates_stale', 'location_determine_next',
+  'show_sources', 'show_sources_hint',
 ]);
 
 const REQUIRED_EDITOR_KEYS = Object.keys(en.editor).filter(
