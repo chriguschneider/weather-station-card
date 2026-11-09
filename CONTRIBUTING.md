@@ -35,8 +35,9 @@ To add or complete a language:
    release job (ADR-0032).
 6. Open a PR. Mention which language you added or extended.
 
-**Machine translations.** The 3.0 texts (Location panel, time zone and the
-snow line lines of the zero-degree popup) are machine translated in every
+**Machine translations.** The 3.0 texts (Location panel, time zone, the info
+button and its data-sources popup, and the snow line lines of the
+zero-degree popup) are machine translated in every
 language except English and German. Native speakers are very welcome to
 correct them: edit the values in `src/locales/<lang>.ts`, keep `{placeholders}`
 exactly, and mention the language in your PR. Tests fail if one of these
