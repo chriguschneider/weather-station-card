@@ -8,6 +8,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The live panel no longer shows "NaN m/s" for wind speed or gust when there is no value (no wind sensor, a mistyped entity id, or a sensor unavailable after a restart); the row is hidden instead.
+- While a station sensor is unavailable, the value borrowed from the weather entity is now converted into your sensor's unit. Before, a °F station could show a 20 °C entity reading as "20 °F" (and the condition icon took it as frost); the same applied to pressure (hPa / inHg) and dew point.
+- Forecast wind in Beaufort is now worked out from each forecast's own unit. Open-Meteo forecasts (m/s) showed too low a Beaufort force when your station reports km/h.
+- Removing a card (for example when a wall tablet switches views) now frees its chart; before, every removed card stayed in memory.
 - The live panel no longer shows "NaN hPa" when the weather entity has no pressure; the pressure row (and its trend), and a dew point or humidity without a numeric value, are hidden instead.
 - Wind direction now falls back to the weather entity while your wind-direction sensor is unavailable (for example an anemometer with a flat battery), like the other live values. Before, the row stayed empty.
 - `forecast.chart_text_color` and `forecast.chart_datetime_color` no longer show an "Unknown option" warning on the card.

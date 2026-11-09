@@ -101,6 +101,7 @@ import {
   toCelsius,
   fromCelsius,
   WIND_CONVERSION,
+  PRESSURE_CONVERSION,
   toMillimeters,
   isPrecipRateUnit,
   precipBaseUnit,
@@ -315,6 +316,7 @@ class WeatherStationCard extends LitElement {
   _sourceWindUnit: string = 'm/s';
   _sourcePressureUnit: string = 'hPa';
   _sourceTempUnit: string = '°C';
+  _dewPointFromEntity: boolean = false;
   // Precip source base unit ('mm' | 'in'), stripped of any /h suffix.
   // The derived-rate path and the wall-clock tick read it to label and
   // convert the rate without re-reading the sensor attribute.
@@ -916,8 +918,8 @@ _extractSensorReadings(hass: HassMain): void {
     || attrOf(sensors.gust_speed, 'unit_of_measurement')) as string | undefined;
   const sensorTempUnit = attrOf(sensors.temperature, 'unit_of_measurement') as string | undefined;
   const sourceWindUnit = sensorWindUnit || wxAttrs.wind_speed_unit || 'm/s';
-  const sourcePressureUnit = attrOf(sensors.pressure, 'unit_of_measurement')
-    || wxAttrs.pressure_unit || 'hPa';
+  const sensorPressureUnit = attrOf(sensors.pressure, 'unit_of_measurement') as string | undefined;
+  const sourcePressureUnit = sensorPressureUnit || wxAttrs.pressure_unit || 'hPa';
   const sourceTempUnit = sensorTempUnit || wxAttrs.temperature_unit || '°C';
   // Counter first, dedicated rate sensor second: a rate-only config
   // (no cumulative counter, so no chart bars) must still default its
@@ -949,9 +951,13 @@ _extractSensorReadings(hass: HassMain): void {
   // once and let any missing sensor fall back to it. illuminance and
   // precipitation rate have no weather-entity counterpart and stay
   // sensor-only.
-  // Wind speed + gust and temperature + dew point each share one source
-  // unit, so when only one of a pair comes from the entity and the
-  // units disagree, rescale the entity value into the sensor's unit.
+  // The source unit of a quantity follows its sensor's
+  // unit_of_measurement, which HA keeps while the sensor is unavailable.
+  // A value taken from the entity is in the entity's own unit, so when
+  // the two disagree it is rescaled into the sensor's unit — otherwise a
+  // 20 °C entity reading behind an unavailable °F sensor shows as 20 °F
+  // and the classifier sees frost. Wind speed + gust and temperature +
+  // dew point each share one source unit.
   const fromWxIfMissing = (
     sensorValue: string | undefined,
     key: string,
@@ -972,13 +978,22 @@ _extractSensorReadings(hass: HassMain): void {
   const rescaleTemp = sensorTempUnit && wxTempUnit && sensorTempUnit !== wxTempUnit
     ? (v: number) => fromCelsius(toCelsius(v, wxTempUnit) ?? v, sensorTempUnit)
     : undefined;
+  const wxPressureUnit = wxAttrs.pressure_unit as string | undefined;
+  const pressureFactor = sensorPressureUnit && wxPressureUnit && sensorPressureUnit !== wxPressureUnit
+    ? PRESSURE_CONVERSION[`${sensorPressureUnit}->${wxPressureUnit}`]
+    : undefined;
+  const rescalePressure = pressureFactor !== undefined ? (v: number) => v * pressureFactor : undefined;
 
-  this.temperature = fromWxIfMissing(valueOf(sensors.temperature), 'temperature');
+  this.temperature = fromWxIfMissing(valueOf(sensors.temperature), 'temperature', rescaleTemp);
   this.humidity = fromWxIfMissing(valueOf(sensors.humidity), 'humidity');
-  this.pressure = fromWxIfMissing(valueOf(sensors.pressure), 'pressure');
+  this.pressure = fromWxIfMissing(valueOf(sensors.pressure), 'pressure', rescalePressure);
   this.uv_index = fromWxIfMissing(valueOf(sensors.uv_index), 'uv_index');
   this.windSpeed = fromWxIfMissing(valueOf(sensors.wind_speed), 'wind_speed', rescaleWind);
-  this.dew_point = fromWxIfMissing(valueOf(sensors.dew_point), 'dew_point', rescaleTemp);
+  const dewSensorValue = valueOf(sensors.dew_point);
+  // An entity dew point is rescaled into the temperature source unit,
+  // not the dew sensor's; the classifier must read it in that unit.
+  this._dewPointFromEntity = dewSensorValue === undefined || dewSensorValue === '';
+  this.dew_point = fromWxIfMissing(dewSensorValue, 'dew_point', rescaleTemp);
   this.wind_gust_speed = fromWxIfMissing(valueOf(sensors.gust_speed), 'wind_gust_speed', rescaleWind);
   // Irradiance sensors (W/m², community post 15 point 5) convert to
   // lux at extraction so EVERY downstream consumer — sun-strength row,
@@ -1278,7 +1293,7 @@ _resolveLiveClassifierInputs(hass: HassMain): any {
     // °C / mm before comparing against thresholds. Dew point falls back
     // to the temperature unit (same station, same scale in practice).
     tempUnit: this._sourceTempUnit,
-    dewUnit: typeof dewUnitRaw === 'string' ? dewUnitRaw : this._sourceTempUnit,
+    dewUnit: !this._dewPointFromEntity && typeof dewUnitRaw === 'string' ? dewUnitRaw : this._sourceTempUnit,
     precipUnit,
     lat: loc?.latitude,
     lon: loc?.longitude,
@@ -1702,6 +1717,15 @@ async _refreshPressureDelta(): Promise<void> {
       if (this._actionHandlerTeardown) {
         this._actionHandlerTeardown();
         this._actionHandlerTeardown = null;
+      }
+    });
+    // uPlot keeps a window `dppxchange` listener per instance, so an
+    // undestroyed chart pins the whole removed card in memory. Reconnect
+    // rebuilds because measureCard sees no live chart.
+    r.add(() => {
+      if (this.forecastChart) {
+        try { this.forecastChart.destroy(); } catch { /* already gone */ }
+        this.forecastChart = null;
       }
     });
     r.add(() => this._stopNextRainTick());
@@ -2486,34 +2510,6 @@ getWindDir(deg: number | string): string {
   } else {
     return deg;
   }
-}
-
-calculateBeaufortScale(windSpeed: number) {
-  const unitConversion = {
-    'km/h': 1,
-    'm/s': 3.6,
-    'mph': 1.60934,
-  };
-
-  const wind_speed_unit = this.weather?.attributes
-    ? this.weather.attributes.wind_speed_unit
-    : null;
-  const conversionFactor = unitConversion[wind_speed_unit as keyof typeof unitConversion] || unitConversion['m/s'];
-  const windSpeedInKmPerHour = windSpeed * conversionFactor;
-
-  if (windSpeedInKmPerHour < 1) return 0;
-  else if (windSpeedInKmPerHour < 6) return 1;
-  else if (windSpeedInKmPerHour < 12) return 2;
-  else if (windSpeedInKmPerHour < 20) return 3;
-  else if (windSpeedInKmPerHour < 29) return 4;
-  else if (windSpeedInKmPerHour < 39) return 5;
-  else if (windSpeedInKmPerHour < 50) return 6;
-  else if (windSpeedInKmPerHour < 62) return 7;
-  else if (windSpeedInKmPerHour < 75) return 8;
-  else if (windSpeedInKmPerHour < 89) return 9;
-  else if (windSpeedInKmPerHour < 103) return 10;
-  else if (windSpeedInKmPerHour < 118) return 11;
-  else return 12;
 }
 
 async firstUpdated(changedProperties: Map<PropertyKey, unknown>) {
@@ -3673,26 +3669,24 @@ _handleVisibilityChange(): void {
 }
 
 // Thin wrappers around the pure unit-converter utilities. They thread
-// `this.unitSpeed` / `this.unitPressure` (instance state) and
-// `this.calculateBeaufortScale` (classifier method) into the pure
+// `this.unitSpeed` / `this.unitPressure` (instance state) into the pure
 // functions in src/utils/unit-converters.ts so callers stay terse and
-// the converters themselves get direct unit-test coverage.
-// deno-lint-ignore no-explicit-any
-_convertDisplayWindSpeed(windSpeed: any): any {
+// the converters themselves get direct unit-test coverage. A missing or
+// non-numeric reading returns undefined, which hides the row.
+_convertDisplayWindSpeed(windSpeed: unknown): number | undefined {
   return convertWindSpeed(
     windSpeed,
     this.weather.attributes.wind_speed_unit,
     this.unitSpeed,
-    (v) => this.calculateBeaufortScale(v),
   );
 }
 
-// deno-lint-ignore no-explicit-any
-_convertDisplayPressure(pressure: any): any {
+_convertDisplayPressure(pressure: unknown): number | undefined {
   // Math.round(null) would turn a null attribute into a bogus 0.
-  if (pressure == null) return undefined;
+  const num = parseNumericSafe(pressure);
+  if (num === null) return undefined;
   return convertPressure(
-    pressure,
+    num,
     this.weather.attributes.pressure_unit,
     this.unitPressure,
   );
@@ -4290,7 +4284,7 @@ _windRow_direction(show: boolean, windDirection: any) {
 }
 // deno-lint-ignore no-explicit-any
 _windRow_speed(show: boolean, dWindSpeed: any) {
-  if (!show || dWindSpeed === undefined) return null;
+  if (!show || dWindSpeed == null) return null;
   const unitLabel = this.unitSpeed ? this.ll('units')[this.unitSpeed] : '';
   return html`${this._entityLink(this._attrEntity('wind_speed'),
     html`<ha-icon icon="hass:weather-windy"></ha-icon>
@@ -4298,11 +4292,13 @@ _windRow_speed(show: boolean, dWindSpeed: any) {
 }
 // deno-lint-ignore no-explicit-any
 _windRow_gust(show: boolean, wind_gust_speed: any) {
-  if (!show || wind_gust_speed === undefined) return null;
+  if (!show) return null;
+  const dGust = this._convertWindSpeed(parseNumericSafe(wind_gust_speed));
+  if (dGust === null) return null;
   const unitLabel = this.unitSpeed ? this.ll('units')[this.unitSpeed] : '';
   return html`${this._entityLink(this._attrEntity('gust_speed'),
     html`<ha-icon icon="hass:weather-windy-variant"></ha-icon>
-    ${this._convertWindSpeed(parseFloat(wind_gust_speed))} ${unitLabel}`)}`;
+    ${dGust} ${unitLabel}`)}`;
 }
 
 // Attribute row (ADR-0025): the resolved layout is a list of columns,
@@ -4619,15 +4615,9 @@ renderWind({ config, forecastItems } = this) {
 // mis-converted when the station and weather entity disagree on units.
 // Delegates to the lookup-table utility per ADR-0009.
 _convertWindSpeed(raw: unknown, sourceUnit?: string): number | null {
-  if (raw === null || raw === undefined) return null;
-  if (typeof raw !== 'number') return null;
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return null;
   const fromUnit = sourceUnit ?? this.weather.attributes.wind_speed_unit;
-  return convertWindSpeed(
-    raw,
-    fromUnit,
-    this.unitSpeed,
-    (v) => this.calculateBeaufortScale(v),
-  );
+  return convertWindSpeed(raw, fromUnit, this.unitSpeed) ?? null;
 }
 
   _fire(type: string, detail: unknown, options?: { bubbles?: boolean; cancelable?: boolean; composed?: boolean }) {
