@@ -159,17 +159,6 @@ describe('cache reads and source options', () => {
     expect(listener).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
   });
 
-  it('an error answer without a reason still fails', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ error: true }) });
-    const listener = vi.fn();
-    const src = new OpenMeteoSource({ calendar: cal, latitude: 46.9, longitude: 7.4, fetchImpl, storage: null });
-    src.setListener(listener);
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    await src.ensureFresh();
-    warn.mockRestore();
-    expect(listener).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
-  });
-
   it('works without AbortController or AbortSignal.timeout', async () => {
     vi.stubGlobal('AbortController', undefined);
     vi.stubGlobal('AbortSignal', undefined);

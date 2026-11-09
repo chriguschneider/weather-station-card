@@ -59,7 +59,7 @@ becomes `Superseded by NNNN`.
 
 ## Index
 
-- [0001 — Commit `dist/weather-station-card.js` alongside source](./0001-dist-committed-for-hacs.md) (Accepted)
+- [0001 — Commit `dist/weather-station-card.js` alongside source](./0001-dist-committed-for-hacs.md) (Superseded by 0032)
 - [0002 — Sunshine duration: tiered data-source policy](./0002-sunshine-duration-tier-policy.md) (Accepted)
 - [0003 — E2E visual-regression baselines pinned to the GHA Ubuntu runner](./0003-e2e-baselines-pinned-to-gha.md) (Accepted)
 - [0004 — TypeScript: strict for leaf modules, `any` allowed at the HA boundary](./0004-typescript-strict-with-boundary-relaxations.md) (Accepted)
@@ -89,3 +89,4 @@ becomes `Superseded by NNNN`.
 - [0028 — Sunshine bar: weather entity first, Open-Meteo as fallback](./0028-sunshine-entity-first.md) (Accepted)
 - [0029 — Agent guardrails and CI conventions from repo-standard](./0029-repo-standard-agent-guardrails.md) (Accepted)
 - [0030 — Per-card calendar replaces the page-wide time zone](./0030-per-card-calendar.md) (Accepted)
+- [0032 — Build dist/ only in the release job](./0032-dist-built-in-release-job.md) (Accepted)

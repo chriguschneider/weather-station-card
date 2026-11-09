@@ -162,10 +162,9 @@ jobs:
             - Implement the issue, add/update tests, and make the checks pass:
               `npm ci`, then `npm run build` (lint + typecheck + vitest +
               rollup), `npm run depcheck` (module boundaries) and
-              `npm run coverage` (coverage floor). If you changed `src/`,
-              commit the rebuilt `dist/` in the same commit (ADR-0001; CI
-              fails when it is out of sync with `src/`). On a `dist/`
-              conflict, rebuild; never hand-merge the bundle.
+              `npm run coverage` (coverage floor). Never commit `dist/`: it
+              is gitignored and built only in the release job (ADR-0032).
+              To bring your branch up to date, `git merge origin/master`.
             - Do NOT regenerate or edit the E2E visual baselines in
               `tests-e2e/snapshots/` or `perf-baseline.json`: they are
               pinned to the GHA runner (ADR-0003, ADR-0014). CI runs the

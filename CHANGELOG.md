@@ -49,6 +49,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Two cards for the same place in different time zones no longer share cached Open-Meteo sunshine and rain data; changing a card's time zone no longer shows the previous zone's hours until the cache expires.
 - Today's sunshine on a card in another time zone no longer includes hours from the server's previous day.
 
+### Security
+
+- A `url` tap or hold action now opens only `http://`, `https://` or a path on your Home Assistant. Other links, such as `javascript:`, `data:` or `mailto:`, do nothing, and the opened page can no longer reach back into the dashboard. If you used a `mailto:` or other non-web link, open it another way.
+
 ### Under the hood
 
 - One shared calendar per time zone, one resolver for the card's zone in card and editor, one hour-key helper.

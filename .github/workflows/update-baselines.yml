@@ -96,8 +96,8 @@ jobs:
           # commit. `git pull --rebase` refuses to run with a dirty tree
           # ("cannot pull with rebase: You have unstaged changes"), so
           # discard everything except the just-committed snapshots first.
-          # We intentionally do NOT commit the CI-rebuilt dist here — the
-          # branch already carries the canonical bundle from the release
+          # dist/ is gitignored since ADR-0032, so the rebuilt bundle never
+          # lands in this commit; the rest of this note predates that
           # commit; this workflow only needs dist to render screenshots.
           git checkout -- .
           # Race-resistant push: the branch may have advanced while the

@@ -1,6 +1,6 @@
 # 0001: Commit `dist/weather-station-card.js` alongside source
 
-**Status:** Accepted
+**Status:** Superseded by [0032](./0032-dist-built-in-release-job.md)
 
 **Date:** 2026-05-08
 
