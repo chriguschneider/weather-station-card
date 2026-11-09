@@ -23,8 +23,8 @@ Add the **`agent:go`** label to an issue → Claude implements it on a
 (ideas, discussions, `enhancement` you haven't triaged) are never touched.
 
 The agent runs `npm ci`, `npm run build` (lint + typecheck + vitest +
-rollup), `npm run depcheck` and `npm run coverage`, and commits the rebuilt
-`dist/` with any `src/` change (ADR-0001). It cannot run the Playwright
+rollup), `npm run depcheck` and `npm run coverage`. It never commits `dist/`,
+which is gitignored and built only in the release job (ADR-0032). It cannot run the Playwright
 E2E / visual-regression suite or the perf gate; CI does. It never
 regenerates `tests-e2e/snapshots/` or `perf-baseline.json`: those are
 pinned to the GHA runner and only `update-baselines.yml` writes them
@@ -75,7 +75,7 @@ something:
 | Egress | harden-runner logs (mode `audit`) or blocks (mode `block`) outbound connections. | first step of each agent job |
 | Pinned actions | Every `uses:` is a full commit SHA; Dependabot bumps it after a 7-day cooldown (not for claude-code-action, whose updates are security fixes). | all workflows, `dependabot.yml` |
 | Reviewer reads CI | The reviewer never runs the PR's tests or scripts (the PR could change them, and the job holds secrets); CI runs them without secrets. | `claude-review.yml` |
-| Sensitive paths | A PR touching `.github/`, `.claude/`, `scripts/`, `docs/adr/`, `AGENTS.md`, `CLAUDE.md`, `package*.json`, `hacs.json`, `dist/`, `tests-e2e/snapshots/`, `perf-baseline.json` or a gate config (`vitest`, `eslint`, `dependency-cruiser`, `playwright`, `rollup`, `tsconfig`) is never auto-merged, whatever the model decided. | `SENSITIVE` and last steps of `claude-review.yml` |
+| Sensitive paths | A PR touching `.github/`, `.claude/`, `scripts/`, `docs/adr/`, `AGENTS.md`, `CLAUDE.md`, `package*.json`, `hacs.json`, `tests-e2e/snapshots/`, `perf-baseline.json` or a gate config (`vitest`, `eslint`, `dependency-cruiser`, `playwright`, `rollup`, `tsconfig`) is never auto-merged, whatever the model decided. | `SENSITIVE` and last steps of `claude-review.yml` |
 
 The action restores `.claude/` from the base branch on pull requests, so a
 PR cannot switch off the settings or the hook.
@@ -155,9 +155,9 @@ it early and keeps working. Its own `gh pr ready` does not start a second
 review. It first waits for the required checks, then reviews the diff adversarially
 against `AGENTS.md` and the ADRs, reads the CI result (it does not run the
 checks itself). It may fix docs, tests and comments on the branch (**at
-most 3 rounds**; CI re-runs on its pushes) but **never `src/`**: `dist/`
-must be rebuilt in the same commit and the reviewer cannot run the build,
-so for a code problem it comments the exact fix and holds. Then either:
+most 3 rounds**; CI re-runs on its pushes) but **never `src/`**: the
+reviewer cannot run the build or the tests, so for a code problem it
+comments the exact fix and holds. Then either:
 
 - **auto-merges** (`gh pr merge --auto --squash`) when green and solid, or
 - **holds for you** when the change needs a human decision or a live
@@ -166,10 +166,8 @@ so for a code problem it comments the exact fix and holds. Then either:
   `needs-verification` and comments exactly what to check.
 
 Whatever the model decided, a PR that touches sensitive paths or carries a
-`## Human-only change` is then held with `needs-verification`. Since a
-`src/` change always comes with a rebuilt `dist/`, every agent PR that
-changes the card itself is held for the maintainer; docs and test PRs can
-auto-merge. A review run
+`## Human-only change` is then held with `needs-verification`. Other PRs, including `src/` changes, auto-merge
+when CI is green and the reviewer finds them solid. A review run
 that dies (turn limit, error) labels the PR too, instead of leaving it
 open without a label. After that the job waits for the required checks; if
 one fails after auto-merge was armed, the PR gets `needs-verification` and

@@ -45,69 +45,29 @@ const LOCALES = {
   ko, lt, nb, nl, pl, pt, ro, ru, sk, sr, 'sr-Latn': srLatn, sv, uk,
 };
 
-// The active editor surface — every t() lookup the current partials
-// perform. Legacy en.ts keys (setup_heading, openmeteo_history, ...)
-// are intentionally absent.
-const REQUIRED_EDITOR_KEYS = [
-  // sensor field labels (double as live-panel vocabulary)
-  'temperature', 'humidity', 'illuminance', 'precipitation',
-  'precipitation_rate', 'pressure',
-  'wind_speed', 'gust_speed', 'wind_direction', 'uv_index', 'dew_point',
-  'sunshine_duration', 'zero_degree_level', 'zero_degree_level_48h', 'elevation', 'next_rain',
-  // location panel (#357)
-  'location_heading',
-  'location_time_zone', 'time_zone_label', 'time_zone_server',
-  'time_zone_location', 'location_summary_home',
-  'location_home_label', 'location_use_other', 'location_search_label',
-  'location_search_button', 'location_search_none', 'location_search_error',
-  'location_map_label', 'location_determine_button', 'location_determined',
-  'location_determine_error', 'location_attribution',
-  'location_timed_out', 'location_coordinates_changed',
-  'location_coordinates_stale', 'location_determine_next',
-  // basics
-  'required_marker', 'title', 'days', 'forecast_days', 'weather_entity',
-  'mode_label', 'mode_station', 'mode_forecast', 'mode_combination',
-  'chart_type_label', 'forecast_type_daily', 'forecast_type_today',
-  'forecast_type_hourly',
-  // panel + subsection headings
-  'station_sensors_heading', 'chart_section_heading', 'live_panel_heading',
-  'actions_section_heading', 'units_heading', 'reset_section',
-  'chart_time_range_heading', 'chart_rows_heading', 'chart_appearance_heading',
-  'main_panel_heading', 'attributes_heading', 'open_documentation',
-  // actions
-  'tap_action_label', 'hold_action_label', 'double_tap_action_label',
-  // live panel gates + elements
-  'show_main', 'show_temperature', 'show_current_condition',
-  'show_attributes', 'show_humidity', 'show_pressure', 'show_dew_point',
-  'show_wind_direction', 'show_wind_speed', 'show_wind_gust_speed',
-  'show_uv_index', 'show_illuminance', 'show_precipitation',
-  'show_sun', 'show_moon', 'show_zero_degree_level', 'show_zero_degree_level_48h', 'show_next_rain', 'next_rain_enable_hint',
-  'layout_board_label', 'layout_board_hint', 'layout_board_new_column', 'layout_board_reset', 'show_day', 'show_date',
-  // chart rows + hints
-  'show_chart_icons', 'show_chart_wind_direction', 'show_chart_wind_speed',
-  'show_chart_date', 'show_chart_sunshine', 'show_chart_sunshine_hint',
-  'show_chart_precip_probability', 'show_chart_precip_probability_hint',
-  'show_chart_mode_toggle', 'sunshine_availability',
-  'sunshine_availability_pending', 'sunshine_availability_warning',
-  'openmeteo_history_hint', 'openmeteo_history_unavailable',
-  // chart appearance + range
-  'chart_style', 'chart_style_without_boxes', 'chart_style_with_boxes',
-  'round_temp', 'disable_animation', 'number_of_forecasts',
-  'number_of_forecasts_helper', 'chart_height',
-  // past-source dropdown
-  'past_source_label', 'past_source_station', 'past_source_openmeteo',
-  // clock dropdown
-  'clock_label', 'clock_off', 'clock_on', 'clock_on_seconds',
-  'clock_24h', 'clock_12h', 'time_format_label', 'time_format_scope', 'time_format_hint',
-  // multi-select labels
-  'main_elements_label',
-  // units
-  'unit_pressure_label', 'unit_speed_label', 'unit_precipitation_label',
-  // panel summaries
-  'summary_connected', 'summary_no_sensors', 'summary_openmeteo',
-  'summary_days', 'summary_columns', 'summary_rows', 'summary_attributes',
-  'summary_on', 'summary_off',
-];
+// The required surface is derived from en.editor, minus two explicit,
+// shrinking exclusion lists, so a key added to en is enforced in every
+// language without touching this file.
+//
+// Legacy en.ts keys: kept for third-party translation compat, no
+// current editor partial looks them up.
+const LEGACY_EDITOR_KEYS = new Set([
+  'setup_heading', 'sensors_heading', 'layout_heading', 'style_heading',
+  'advanced_heading', 'card_setup_heading', 'weather_forecast_heading',
+  'mode_question_heading', 'display_question_heading', 'appearance_heading',
+  'tap_behavior_heading', 'card_heading', 'display_heading', 'chart_heading',
+  'show_time', 'show_time_seconds', 'openmeteo_history',
+  'disable_animation_hint', 'number_of_forecasts_hint', 'locale',
+]);
+
+// Used by the editor but not yet translated beyond en and de; they fall
+// back to English. The self-check below fails once a key is fully
+// translated, so this list only ever shrinks.
+const PENDING_TRANSLATION = new Set([]);
+
+const REQUIRED_EDITOR_KEYS = Object.keys(en.editor).filter(
+  (k) => !LEGACY_EDITOR_KEYS.has(k) && !PENDING_TRANSLATION.has(k),
+);
 
 const PLACEHOLDERS = {
   sunshine_availability: ['{past}', '{future}'],
@@ -195,9 +155,16 @@ describe('every en.ts key exists in every language', () => {
 describe('locale editor blocks (parity with en)', () => {
   const enKeys = new Set(Object.keys(en.editor));
 
-  it('the required-key list itself is a subset of en (test self-check)', () => {
-    for (const key of REQUIRED_EDITOR_KEYS) {
-      expect(enKeys.has(key), `required key "${key}" missing from en.ts`).toBe(true);
+  it('the exclusion lists only name keys en knows (test self-check)', () => {
+    for (const key of [...LEGACY_EDITOR_KEYS, ...PENDING_TRANSLATION]) {
+      expect(enKeys.has(key), `excluded key "${key}" missing from en.ts`).toBe(true);
+    }
+  });
+
+  it('every pending-translation key is still untranslated somewhere', () => {
+    for (const key of PENDING_TRANSLATION) {
+      const missing = Object.values(LOCALES).some((t) => typeof t.editor?.[key] !== 'string');
+      expect(missing, `${key} is translated everywhere; drop it from PENDING_TRANSLATION`).toBe(true);
     }
   });
 

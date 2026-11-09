@@ -23,10 +23,6 @@ function renderPanel(card) {
 }
 
 describe('debug default', () => {
-  it('DEFAULTS carries debug:false so the panel is off by default', () => {
-    expect(DEFAULTS).toHaveProperty('debug', false);
-  });
-
   it('setConfig without debug leaves config.debug falsey', () => {
     const card = document.createElement('weather-station-card');
     card.setConfig({

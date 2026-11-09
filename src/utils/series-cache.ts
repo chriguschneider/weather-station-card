@@ -20,6 +20,8 @@
  *  type keeps this module a true leaf (utils-leaf rule: no imports
  *  from other src/ subtrees, not even type-only). Callers narrow the
  *  loaded array back to their own entry type. */
+import { safeLocalStorage } from './safe-storage.js';
+
 export type CachedSeriesEntry = Record<string, unknown>;
 
 const PREFIX = 'wsc_series_';
@@ -41,14 +43,7 @@ interface StoredSeries {
   forecast: CachedSeriesEntry[];
 }
 
-function storageOrNull(): Storage | null {
-  try {
-    return typeof window !== 'undefined' && window.localStorage ? window.localStorage : null;
-  } catch {
-    // Access to localStorage itself can throw in hardened contexts.
-    return null;
-  }
-}
+const storageOrNull = safeLocalStorage;
 
 /** Stable cache key for a data source's fetch signature. `parts` should
  *  contain everything that changes the fetched payload (time zone, fetch

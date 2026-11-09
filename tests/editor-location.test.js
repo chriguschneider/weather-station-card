@@ -9,6 +9,7 @@ import { renderLocationSection } from '../src/editor/render-location.js';
 import { validateConfig } from '../src/config-validation.js';
 import { resolveElevation } from '../src/zero-degree-trend.js';
 import { DEFAULTS } from '../src/defaults.js';
+import en from '../src/locales/en.js';
 
 const HASS = {
   language: 'en',
@@ -86,11 +87,17 @@ describe('location panel: home and switch', () => {
     const real = await realEditor({ show_station: true });
     const html = JSON.stringify(real.render().strings);
     expect(html.indexOf('loc-search')).toBeGreaterThanOrEqual(0);
-    const src = (await import('node:fs')).readFileSync('src/weather-station-card-editor.ts', 'utf8');
-    const order = ['Location', 'Basics', 'Sensors', 'Chart', 'LivePanel', 'Units', 'Tap']
-      .map((n) => src.indexOf(`render${n}Section(this, ctx)`));
-    expect(order).toEqual([...order].sort((a, b) => a - b));
-    expect(order.every((i) => i > 0)).toBe(true);
+    const container = document.createElement('div');
+    render(real.render(), container);
+    const titles = [...container.querySelectorAll('.panel-title')].map((n) => n.textContent.trim());
+    const order = [
+      en.editor.location_heading, en.editor.station_sensors_heading,
+      en.editor.chart_section_heading, en.editor.live_panel_heading,
+      en.editor.units_heading, en.editor.actions_section_heading,
+    ].map((h) => titles.indexOf(h));
+    expect(order[0]).toBe(0);
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((x, y) => x - y));
   });
 
   it('shows the fields once coordinates are set, with a coordinate summary', () => {
