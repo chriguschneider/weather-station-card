@@ -35,7 +35,8 @@ describe('cardStyles clock anchoring (#404)', () => {
   it('offsets the clock from .main, not from the card edge', () => {
     const base = rulesFor(css, '.current-time')[0];
     expect(base).toContain('top: 4px');
-    expect(base).toContain('right: 0');
+    expect(base).toContain('inset-inline-end: 0');
+    expect(base).not.toMatch(/(^|\s)right:/);
     expect(base).not.toContain('top: 20px');
   });
 });

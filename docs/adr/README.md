@@ -89,4 +89,5 @@ becomes `Superseded by NNNN`.
 - [0028 — Sunshine bar: weather entity first, Open-Meteo as fallback](./0028-sunshine-entity-first.md) (Accepted)
 - [0029 — Agent guardrails and CI conventions from repo-standard](./0029-repo-standard-agent-guardrails.md) (Accepted)
 - [0030 — Per-card calendar replaces the page-wide time zone](./0030-per-card-calendar.md) (Accepted)
+- [0031 — Record and show the provenance of live values](./0031-live-value-provenance.md) (Accepted)
 - [0032 — Build dist/ only in the release job](./0032-dist-built-in-release-job.md) (Accepted)

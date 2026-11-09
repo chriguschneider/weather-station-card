@@ -4,6 +4,8 @@
 // and same-unit cases are short-circuited inside the converters and
 // never index into the tables.
 
+import { parseNumericSafe } from './numeric.js';
+
 /** Wind-speed conversion factors. multiply source-unit value by the
  *  factor for `target->source` to get the value in the target unit. */
 export const WIND_CONVERSION: Record<string, number> = {
@@ -148,27 +150,47 @@ export function formatPrecipDisplay(
   };
 }
 
-/** Beaufort scale converter — passed in by the caller because the
- *  classifier lives on the card class. Decoupling here keeps the
- *  utils module pure and dependency-free. */
-export type BeaufortFn = (windSpeed: number) => number;
+/** Upper bounds (exclusive) of Beaufort forces 0–11 in km/h; a speed at
+ *  or above the last bound is force 12. These are the km/h bands of the
+ *  Beaufort scale (WMO Code 1100), e.g.
+ *  https://en.wikipedia.org/wiki/Beaufort_scale — unchanged from the
+ *  card's former `calculateBeaufortScale` table. */
+export const BEAUFORT_KMH_UPPER: readonly number[] = [1, 6, 12, 20, 29, 39, 50, 62, 75, 89, 103, 118];
+
+/** Beaufort force (0–12) for a wind speed in `fromUnit` (m/s, km/h,
+ *  mph). The speed is brought to km/h through WIND_CONVERSION first, so
+ *  a forecast entry in m/s and a station in km/h both land on the right
+ *  force. A missing or unknown unit is read as m/s, HA's native wind
+ *  unit. Null / non-finite input returns null. */
+export function toBeaufort(
+  windSpeed: number | null | undefined,
+  fromUnit: string | undefined,
+): number | null {
+  if (windSpeed == null || !Number.isFinite(windSpeed)) return null;
+  const factor = fromUnit === 'km/h' ? 1 : (WIND_CONVERSION[`km/h->${fromUnit}`] ?? WIND_CONVERSION['km/h->m/s']);
+  const kmh = windSpeed * factor;
+  const force = BEAUFORT_KMH_UPPER.findIndex((upper) => kmh < upper);
+  return force === -1 ? BEAUFORT_KMH_UPPER.length : force;
+}
 
 /** Convert windSpeed from `fromUnit` to `toUnit`. Same-unit returns
- *  rounded value. Beaufort delegates to `beaufortFn`. Unknown unit
- *  pair returns the input value unchanged (defensive at HA boundary).
- *  `fromUnit` / `toUnit` may be undefined when the HA entity hasn't
- *  populated `wind_speed_unit` yet — falls through to the unchanged
- *  return path. */
+ *  rounded value; `Bft` goes through `toBeaufort` with the source unit.
+ *  Unknown unit pair returns the input value unchanged (defensive at HA
+ *  boundary). `fromUnit` / `toUnit` may be undefined when the HA entity
+ *  hasn't populated `wind_speed_unit` yet — falls through to the
+ *  unchanged return path. A missing or non-numeric speed returns
+ *  undefined, so the row hides instead of printing "NaN". */
 export function convertWindSpeed(
-  windSpeed: number,
+  windSpeed: unknown,
   fromUnit: string | undefined,
   toUnit: string | undefined,
-  beaufortFn: BeaufortFn,
-): number {
-  if (toUnit === fromUnit) return Math.round(windSpeed);
-  if (toUnit === 'Bft') return beaufortFn(windSpeed);
+): number | undefined {
+  const v = parseNumericSafe(windSpeed);
+  if (v === null) return undefined;
+  if (toUnit === fromUnit) return Math.round(v);
+  if (toUnit === 'Bft') return toBeaufort(v, fromUnit) ?? undefined;
   const factor = WIND_CONVERSION[`${toUnit}->${fromUnit}`];
-  return factor !== undefined ? Math.round(windSpeed * factor) : windSpeed;
+  return factor !== undefined ? Math.round(v * factor) : v;
 }
 
 /** Convert pressure from `fromUnit` to `toUnit`. Same-unit rounds to

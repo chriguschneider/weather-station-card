@@ -8,11 +8,12 @@
 //   - undefined / unknown unit fallback (defensive HA-boundary path)
 //   - edge cases (Beaufort, missing input, NaN, etc.)
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   WIND_CONVERSION,
   PRESSURE_CONVERSION,
   convertWindSpeed,
+  toBeaufort,
   convertPressure,
   toMetersPerSecond,
   toCelsius,
@@ -64,40 +65,85 @@ describe('PRESSURE_CONVERSION table', () => {
 // ── convertWindSpeed ────────────────────────────────────────────────
 
 describe('convertWindSpeed', () => {
-  const beaufort = vi.fn((v) => Math.round(v / 5)); // dummy
-
   it('rounds same-unit input', () => {
-    expect(convertWindSpeed(12.7, 'km/h', 'km/h', beaufort)).toBe(13);
+    expect(convertWindSpeed(12.7, 'km/h', 'km/h')).toBe(13);
   });
 
   it('converts km/h → m/s and rounds', () => {
-    expect(convertWindSpeed(36, 'km/h', 'm/s', beaufort)).toBe(10);
+    expect(convertWindSpeed(36, 'km/h', 'm/s')).toBe(10);
   });
 
   it('converts m/s → km/h and rounds', () => {
-    expect(convertWindSpeed(10, 'm/s', 'km/h', beaufort)).toBe(36);
+    expect(convertWindSpeed(10, 'm/s', 'km/h')).toBe(36);
   });
 
   it('converts km/h → mph and rounds', () => {
-    expect(convertWindSpeed(50, 'km/h', 'mph', beaufort)).toBe(31);
+    expect(convertWindSpeed(50, 'km/h', 'mph')).toBe(31);
   });
 
-  it('delegates Beaufort to the injected fn', () => {
-    beaufort.mockClear();
-    convertWindSpeed(20, 'km/h', 'Bft', beaufort);
-    expect(beaufort).toHaveBeenCalledWith(20);
+  it('parses a numeric state string', () => {
+    expect(convertWindSpeed('3.4', 'm/s', 'm/s')).toBe(3);
+  });
+
+  it('converts to Beaufort in the source unit', () => {
+    // 20 km/h is force 4; the same number in m/s (72 km/h) is force 8.
+    expect(convertWindSpeed(20, 'km/h', 'Bft')).toBe(4);
+    expect(convertWindSpeed(20, 'm/s', 'Bft')).toBe(8);
   });
 
   it('returns input unchanged for an unknown unit pair', () => {
-    expect(convertWindSpeed(15, 'knots', 'm/s', beaufort)).toBe(15);
+    expect(convertWindSpeed(15, 'knots', 'm/s')).toBe(15);
   });
 
   it('returns rounded input when source unit is undefined and target matches', () => {
-    expect(convertWindSpeed(12.7, undefined, undefined, beaufort)).toBe(13);
+    expect(convertWindSpeed(12.7, undefined, undefined)).toBe(13);
   });
 
   it('returns input unchanged when only source unit is undefined', () => {
-    expect(convertWindSpeed(12.7, undefined, 'km/h', beaufort)).toBe(12.7);
+    expect(convertWindSpeed(12.7, undefined, 'km/h')).toBe(12.7);
+  });
+
+  for (const raw of [undefined, null, '', 'unavailable', 'unknown', NaN]) {
+    it(`returns undefined for a missing speed (${String(raw)})`, () => {
+      expect(convertWindSpeed(raw, 'm/s', 'm/s')).toBeUndefined();
+      expect(convertWindSpeed(raw, 'm/s', 'km/h')).toBeUndefined();
+      expect(convertWindSpeed(raw, 'm/s', 'Bft')).toBeUndefined();
+    });
+  }
+});
+
+// ── toBeaufort ──────────────────────────────────────────────────────
+
+describe('toBeaufort', () => {
+  it('maps the km/h band edges (exclusive upper bound)', () => {
+    expect(toBeaufort(0, 'km/h')).toBe(0);
+    expect(toBeaufort(0.9, 'km/h')).toBe(0);
+    expect(toBeaufort(1, 'km/h')).toBe(1);
+    expect(toBeaufort(5.9, 'km/h')).toBe(1);
+    expect(toBeaufort(6, 'km/h')).toBe(2);
+    expect(toBeaufort(38.9, 'km/h')).toBe(5);
+    expect(toBeaufort(39, 'km/h')).toBe(6);
+    expect(toBeaufort(117.9, 'km/h')).toBe(11);
+    expect(toBeaufort(118, 'km/h')).toBe(12);
+    expect(toBeaufort(250, 'km/h')).toBe(12);
+  });
+
+  it('converts m/s and mph before banding', () => {
+    expect(toBeaufort(10, 'm/s')).toBe(5); // 36 km/h
+    expect(toBeaufort(11, 'm/s')).toBe(6); // 39.6 km/h
+    expect(toBeaufort(20, 'mph')).toBe(5); // 32.2 km/h
+    expect(toBeaufort(25, 'mph')).toBe(6); // 40.2 km/h
+  });
+
+  it('reads a missing or unknown unit as m/s', () => {
+    expect(toBeaufort(10, undefined)).toBe(toBeaufort(10, 'm/s'));
+    expect(toBeaufort(10, 'knots')).toBe(toBeaufort(10, 'm/s'));
+  });
+
+  it('returns null for missing input', () => {
+    expect(toBeaufort(null, 'm/s')).toBeNull();
+    expect(toBeaufort(undefined, 'm/s')).toBeNull();
+    expect(toBeaufort(NaN, 'm/s')).toBeNull();
   });
 });
 

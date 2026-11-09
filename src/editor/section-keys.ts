@@ -84,6 +84,9 @@ export const SECTION_KEYS: Record<SectionKey, ReadonlyArray<string>> = {
     'show_next_rain',
     'show_dew_point_humidity',
     'show_uv_illuminance',
+    'show_sources',
+    // YAML-only source names of the info popup, reset with its toggle.
+    'source_labels',
     // YAML-only row arrangement (ADR-0025); the attribute pills write
     // into it when set, so a section reset must clear it too.
     'attributes_layout',
