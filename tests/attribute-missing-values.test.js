@@ -33,6 +33,37 @@ describe('pressure row with missing values', () => {
   });
 });
 
+describe('wind rows with missing values (#438)', () => {
+  const windCard = (unit = 'm/s') => {
+    const card = makeCard();
+    card.weather = { attributes: { wind_speed_unit: 'm/s' } };
+    card.unitSpeed = unit;
+    return card;
+  };
+  for (const raw of [undefined, null, '', 'unavailable']) {
+    for (const unit of ['m/s', 'km/h', 'Bft']) {
+      it(`hides speed and gust for ${String(raw)} in ${unit}`, () => {
+        const card = windCard(unit);
+        expect(card._windRow_speed(true, card._convertDisplayWindSpeed(raw))).toBeNull();
+        expect(card._windRow_gust(true, raw)).toBeNull();
+      });
+    }
+  }
+
+  it('renders numeric speed and gust', () => {
+    const card = windCard('km/h');
+    const speed = text(card._windRow_speed(true, card._convertDisplayWindSpeed('10')));
+    const gust = text(card._windRow_gust(true, '5'));
+    expect(speed).toContain('36');
+    expect(gust).toContain('18');
+    expect(speed + gust).not.toContain('NaN');
+  });
+
+  it('hides a non-numeric pressure string', () => {
+    expect(makeCard()._convertDisplayPressure('unavailable')).toBeUndefined();
+  });
+});
+
 describe('dew point and humidity rows with missing values', () => {
   for (const raw of [undefined, null, 'unavailable']) {
     it(`hides both for ${String(raw)}`, () => {

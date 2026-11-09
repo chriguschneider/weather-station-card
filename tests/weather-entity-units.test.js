@@ -78,6 +78,99 @@ describe('weather-entity fallback units', () => {
   });
 });
 
+// A wired sensor that is unavailable (no last-good value) keeps its
+// unit_of_measurement, so the source unit stays the sensor's. The value
+// borrowed from the entity must be converted into it (#438).
+describe('unavailable sensor, entity value in a different unit', () => {
+  const metricEntity = {
+    state: 'sunny',
+    attributes: {
+      temperature: 20,
+      temperature_unit: '°C',
+      dew_point: 10,
+      pressure: 1013.25,
+      pressure_unit: 'hPa',
+      wind_speed: 36,
+      wind_speed_unit: 'km/h',
+    },
+  };
+  const unavailable = (unit) => ({ state: 'unavailable', attributes: { unit_of_measurement: unit } });
+
+  it('converts a °C entity temperature into a °F sensor unit', () => {
+    const card = makeCard({ temperature: 'sensor.t' });
+    card.hass = makeHass({
+      'weather.pirateweather': metricEntity,
+      'sensor.t': unavailable('°F'),
+    });
+    expect(card._sourceTempUnit).toBe('°F');
+    expect(parseFloat(card.temperature)).toBeCloseTo(68, 5);
+    // Dew point follows the temperature source unit.
+    expect(parseFloat(card.dew_point)).toBeCloseTo(50, 5);
+  });
+
+  it('converts a °F entity temperature into a °C sensor unit', () => {
+    const card = makeCard({ temperature: 'sensor.t' });
+    card.hass = makeHass({
+      'weather.pirateweather': pirateWeather,
+      'sensor.t': unavailable('°C'),
+    });
+    expect(parseFloat(card.temperature)).toBeCloseTo((70 - 32) * 5 / 9, 5);
+  });
+
+  it('converts an hPa entity pressure into an inHg sensor unit', () => {
+    const card = makeCard({ pressure: 'sensor.p' });
+    card.hass = makeHass({
+      'weather.pirateweather': metricEntity,
+      'sensor.p': unavailable('inHg'),
+    });
+    expect(card._sourcePressureUnit).toBe('inHg');
+    expect(parseFloat(card.pressure)).toBeCloseTo(29.92, 2);
+  });
+
+  it('converts an inHg entity pressure into an hPa sensor unit', () => {
+    const card = makeCard({ pressure: 'sensor.p' });
+    card.hass = makeHass({
+      'weather.pirateweather': pirateWeather,
+      'sensor.p': unavailable('hPa'),
+    });
+    expect(parseFloat(card.pressure)).toBeCloseTo(30.07 * 33.8639, 1);
+  });
+
+  it('converts km/h entity wind into an m/s sensor unit', () => {
+    const card = makeCard({ wind_speed: 'sensor.w' });
+    card.hass = makeHass({
+      'weather.pirateweather': metricEntity,
+      'sensor.w': unavailable('m/s'),
+    });
+    expect(card._sourceWindUnit).toBe('m/s');
+    expect(parseFloat(card.windSpeed)).toBeCloseTo(10, 5);
+  });
+
+  it('classifies an entity dew point in the unit it was converted into', () => {
+    // Dew sensor in °F is unavailable; the entity dew point is put into
+    // the °C temperature unit, so the classifier must read it as °C.
+    const card = makeCard({ temperature: 'sensor.t', dew_point: 'sensor.dew' });
+    card.hass = makeHass({
+      'weather.pirateweather': metricEntity,
+      'sensor.t': { state: '20', attributes: { unit_of_measurement: '°C' } },
+      'sensor.dew': unavailable('°F'),
+    });
+    expect(card._dewPointFromEntity).toBe(true);
+    expect(card._resolveLiveClassifierInputs(card._hass).dewUnit).toBe('°C');
+  });
+
+  it('keeps the dew sensor unit for a live dew sensor', () => {
+    const card = makeCard({ temperature: 'sensor.t', dew_point: 'sensor.dew' });
+    card.hass = makeHass({
+      'weather.pirateweather': metricEntity,
+      'sensor.t': { state: '20', attributes: { unit_of_measurement: '°C' } },
+      'sensor.dew': { state: '50', attributes: { unit_of_measurement: '°F' } },
+    });
+    expect(card._dewPointFromEntity).toBe(false);
+    expect(card._resolveLiveClassifierInputs(card._hass).dewUnit).toBe('°F');
+  });
+});
+
 describe('live sky state without an illuminance sensor', () => {
   const stationStates = (wxState, extra = {}) => ({
     'weather.pirateweather': { ...pirateWeather, state: wxState },
