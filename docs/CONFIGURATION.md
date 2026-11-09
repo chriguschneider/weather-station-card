@@ -278,7 +278,7 @@ Rules:
 | `uv_illuminance` | UV index and illuminance on one sun-strength line | both of the next two |
 | `uv_index` | UV index with sun-strength icon | `sensors.uv_index` or weather entity |
 | `illuminance` | Illuminance with sun-strength icon | `sensors.illuminance` |
-| `sun` | Sunrise / sunset | `sun.sun` |
+| `sun` | Sunrise / sunset | nothing (computed from the card's location) |
 | `moon` | Moon disc, illumination, next rise/set | nothing (computed) |
 | `wind_direction` | Wind-direction arrow + cardinal | `sensors.wind_direction` or weather entity |
 | `wind_speed` | Wind speed | `sensors.wind_speed` or weather entity |

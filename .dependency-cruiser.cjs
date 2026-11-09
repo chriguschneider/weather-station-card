@@ -5,9 +5,9 @@
 //  - orphans (files no entry path imports)
 //
 // Layered architecture for this card (top → bottom):
-//   main.ts (LitElement glue, @ts-nocheck)
+//   main.ts (LitElement glue, HA boundary)
 //     ├─ editor/* (config UI)
-//     ├─ chart/*  (Chart.js orchestration)
+//     ├─ chart/*  (uPlot orchestration)
 //     ├─ data-source.ts, sunshine-source.ts, openmeteo-source.ts
 //     ├─ scroll-ux.ts, action-handler.ts (DOM behaviour)
 //     └─ utils/*, format-utils, forecast-utils, condition-classifier,

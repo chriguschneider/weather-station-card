@@ -4,8 +4,8 @@ Two test layers run on every commit:
 
 | Layer | Tool | Scope |
 |---|---|---|
-| **Unit** (`tests/`) | Vitest | Pure modules — classifier, data sources, chart plugins, format/forecast utils, sunshine helpers, editor partials and handlers, locale parity. 77 spec files, 1656 tests. |
-| **E2E + visual regression** (`tests-e2e/`) | Playwright | The bundled card boots in a static-served harness with a fake-hass mock. Covers render modes (visual baselines), pointer interactions, mode toggle, jump-to-now, editor mutators, editor visual regression. 6 specs across `tests-e2e/snapshots/` directories. |
+| **Unit** (`tests/`) | Vitest | Pure modules — classifier, data sources, chart plugins, format/forecast utils, sunshine helpers, editor partials and handlers, locale parity. 83 spec files, 1855 tests. |
+| **E2E + visual regression** (`tests-e2e/`) | Playwright | The bundled card boots in a static-served harness with a fake-hass mock. Covers render modes (visual baselines), pointer interactions, mode toggle, jump-to-now, editor mutators, editor visual regression. 16 specs, with visual baselines under `tests-e2e/snapshots/`. |
 
 Both layers run in CI before bundle verification. A failure in either
 blocks the release pipeline.
@@ -189,8 +189,8 @@ alone whether the diff is intended.
 
 ## What is intentionally not tested
 
-- **Chart.js internal layout.** The visual baselines cover the
-  outcome; mocking Chart.js's internal APIs adds setup without
+- **uPlot internal layout.** The visual baselines cover the
+  outcome; mocking uPlot's internal APIs adds setup without
   payoff.
 - **Real Home Assistant frontend.** Specs run against the mock; HA
   integration is verified manually against a real HA instance — see

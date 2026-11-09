@@ -11,29 +11,28 @@ contract. About 10 minutes of reading saves an hour of reverse-engineering.
 
 ## Adding a new language
 
-The visual editor and the in-card condition labels are translated via
-[`src/locale.js`](src/locale.js). Each language has an entry that contains
-two relevant blocks:
+The visual editor and the in-card condition labels are translated in
+[`src/locales/`](src/locales/), one file per language
+(`src/locales/<lang>.ts`). Each file has two relevant blocks:
 
-- **Top-level keys** — condition names (`sunny`, `rainy`, …), unit labels,
-  cardinal directions. These already exist for ~22 languages.
-- **`editor: { … }` block** — labels shown inside the visual editor
-  (sensor picker labels, section headings, units page). Currently only `en`
-  (canonical) and `de` ship with this block; all others fall back to English
-  at runtime via `tEditor()` in `weather-station-card-editor.js`.
+- **Top-level keys**: condition names (`sunny`, `rainy`, …), unit labels,
+  cardinal directions.
+- **`editor: { … }` block**: labels shown inside the visual editor
+  (sensor picker labels, section headings, units page). All 25 languages
+  ship this block; `en` is canonical.
 
 To add or complete a language:
 
-1. Open `src/locale.js`.
-2. Find the entry for your language code (e.g. `fr`, `es`, `it`, `ja`).
-   If the language doesn't exist yet, add a new entry following the shape
-   of the `en` entry.
-3. Copy the **entire `editor: { … }` block** from the `en` entry.
-4. Translate the values (do not touch the keys).
-5. Run `npm ci` once if you haven't, then `npm run build` to check that
-   lint, types and tests pass. Do not commit `dist/`: it is built in the
-   release job (ADR-0032).
-6. Open a PR. Mention which language you added or extended.
+1. Copy `src/locales/en.ts` to `src/locales/<lang>.ts` (or open the
+   existing file for your language) and translate the values. Do not touch
+   the keys.
+2. For a new language, add its entry to the `loaders` map in
+   [`src/locale.ts`](src/locale.ts) (one static `import()` per language,
+   ADR-0013) and to `tests/locales-editor-parity.test.js`, in the same PR.
+3. Run `npm ci` once if you haven't, then `npm run build`. The parity test
+   fails when a language misses an editor key. Do not commit `dist/`: it is
+   built in the release job (ADR-0032).
+4. Open a PR. Mention which language you added or extended.
 
 **Machine translations.** The 3.0 texts (Location panel, time zone, the info
 button and its data-sources popup, and the snow line lines of the
