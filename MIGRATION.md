@@ -18,6 +18,7 @@ Existing configurations keep working. You will notice:
 - Daily columns follow the card's own calendar (its time zone), cut from hourly statistics.
 - The sunrise/sunset row is computed in the card from its location and is no longer a link to the `sun.sun` entity.
 - `time_zone` defaults to `server`: times follow the Home Assistant server's time zone unless you set `location` and `time_zone: location` (or an IANA name).
+- A small ⓘ info button appears in the top-right corner of every card (the clock moves slightly to the left). It lists where each live value comes from and turns orange when a station sensor has been unavailable for more than 5 minutes. To hide it, switch off "Info button: data sources" in the editor or set `show_sources: false`.
 - Refresh the browser cache after updating (hard reload, or clear the app cache in the Home Assistant companion app), otherwise the old card keeps running.
 
 ### Deprecated: top-level `elevation`

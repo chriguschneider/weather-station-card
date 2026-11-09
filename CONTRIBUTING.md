@@ -30,9 +30,8 @@ To add or complete a language:
    [`src/locale.ts`](src/locale.ts) (one static `import()` per language,
    ADR-0013) and to `tests/locales-editor-parity.test.js`, in the same PR.
 3. Run `npm ci` once if you haven't, then `npm run build`. The parity test
-   fails when a language misses an editor key. The bundle is regenerated at
-   `dist/` (the entry file plus one chunk per language), commit it together
-   with your locale change.
+   fails when a language misses an editor key. Do not commit `dist/`: it is
+   built in the release job (ADR-0032).
 4. Open a PR. Mention which language you added or extended.
 
 The fallback chain at runtime is: requested language → English → key name.
@@ -52,8 +51,9 @@ npm run build        # lint + typecheck + test + rollup
 npm start            # rollup --watch + dev server
 ```
 
-Built artefact: `dist/weather-station-card.js`. **Always commit the rebuilt
-bundle alongside source changes** — HACS serves it directly from the tag.
+Built artefact: `dist/` (entry `weather-station-card.js` plus hashed
+chunks). **It is not committed** (ADR-0032): the release job builds it from
+the tagged commit and attaches it to the GitHub Release, which HACS installs.
 
 ## CI & branch protection
 
@@ -63,7 +63,7 @@ button activates:
 
 - **`build`** (`.github/workflows/build.yml`) — lint, audit, typecheck,
   unit tests, coverage gate, depcheck, bundle, e2e + visual regression,
-  bundle-budget, and dist-in-sync verification.
+  bundle-budget, and the whole suite in four time zones.
 - **`Analyze (javascript-typescript)`** (CodeQL) — security analysis.
 
 SonarCloud and Dependabot run on PRs too but are advisory; CodeQL's
@@ -88,7 +88,7 @@ PRs from contributors using Claude Code, Cursor, Codex, or other AI
 assistants are welcome — see [`AGENTS.md`](AGENTS.md) for the
 conventions specific to AI-assisted work (commit attribution, comment
 discipline, parallel-work coordination, draft-PR convention,
-`dist/`-rebase recipe). Everything in this file applies to those PRs
+branch-update recipe). Everything in this file applies to those PRs
 too. The maintainer's own agent automation (`agent:go`, `@claude`, the
 reviewer) is described in
 [`docs/agent-automation.md`](docs/agent-automation.md).
@@ -129,7 +129,7 @@ criteria and template).
 
 For maintainers cutting a new `vX.Y.Z` release. The build workflow on
 `master` enforces some of these (tag-vs-package.json, CHANGELOG entry
-present, dist in sync); the rest are convention.
+present, tag on master); the rest are convention.
 
 1. **Bump version** in `package.json`.
 2. **CHANGELOG entry** — prepend a `## [X.Y.Z] — YYYY-MM-DD` block
@@ -149,9 +149,8 @@ present, dist in sync); the rest are convention.
    - `TESTING.md` — test layers, coverage scope
    - `CONTRIBUTING.md` — dev workflow changes
    - `MIGRATION.md` — breaking change for users
-4. **`npm run build`** — regenerates `dist/weather-station-card.js`.
-   Commit it together with the source. CI will reject the tag push
-   if `dist/` is out of sync with HEAD.
+4. **`npm run build`** — local check only; `dist/` is not committed
+   (ADR-0032).
 5. **Open a PR**, wait for CI green, rebase-merge to `master`.
    `master` is branch-protected — direct push will fail.
 6. **Tag and push**:
@@ -161,8 +160,9 @@ present, dist in sync); the rest are convention.
    ```
    The `build` workflow then verifies tag matches `package.json.version`,
    extracts the `[X.Y.Z]` block from `CHANGELOG.md` as release notes,
-   and uploads `dist/weather-station-card.js` to the GitHub release —
-   HACS picks it up automatically.
+   builds the bundle and uploads every `dist/*.js` to the GitHub release —
+   HACS picks it up automatically. A tag whose commit is not on master is
+   refused.
 
 ## Issues
 

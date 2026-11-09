@@ -4,8 +4,8 @@ Two test layers run on every commit:
 
 | Layer | Tool | Scope |
 |---|---|---|
-| **Unit** (`tests/`) | Vitest | Pure modules — classifier, data sources, chart plugins, format/forecast utils, sunshine helpers, time zone and calendar, editor and card render tests (jsdom). 73 spec files, 1579 tests. |
-| **E2E + visual regression** (`tests-e2e/`) | Playwright | The bundled card boots in a static-served harness with a fake-hass mock. Covers render modes (visual baselines), pointer interactions, mode toggle, jump-to-now, editor mutators, editor visual regression. 13 specs, with visual baselines under `tests-e2e/snapshots/`. |
+| **Unit** (`tests/`) | Vitest | Pure modules — classifier, data sources, chart plugins, format/forecast utils, sunshine helpers, editor partials and handlers, locale parity. 77 spec files, 1656 tests. |
+| **E2E + visual regression** (`tests-e2e/`) | Playwright | The bundled card boots in a static-served harness with a fake-hass mock. Covers render modes (visual baselines), pointer interactions, mode toggle, jump-to-now, editor mutators, editor visual regression. 16 specs, with visual baselines under `tests-e2e/snapshots/`. |
 
 Both layers run in CI before bundle verification. A failure in either
 blocks the release pipeline.
@@ -50,20 +50,15 @@ modules; the global aggregate sits comfortably above the 80 % gate.
 
 ## Unit-test layout
 
-```
-tests/
-  *.test.js      one spec per module or behaviour (ls tests/ for the list)
-  setup.js       shared vitest setup
-  fixtures/      trimmed payloads
-```
+One `tests/<topic>.test.js` per module or behaviour (`ls tests/` is the
+list; it is not repeated here so it cannot go stale). Shared fixtures
+live in `tests/fixtures/`.
 
 Tests are `.test.js` (vitest's `include` pattern) but import from `.ts`
-sources via the standard TS-resolved import. No fixtures directory yet
-— small test data is inlined. Promote to `tests/fixtures/*.ts` if a
-payload grows past ~50 lines.
+sources via the standard TS-resolved import.
 
-The two `editor-render-*.test.js` files are jsdom-environment Lit-render
-smoketests (since v1.9.x): instantiate a mock `EditorLike` +
+The `editor-schema.test.js` file is a jsdom-environment Lit-render
+test: instantiate a mock `EditorLike` +
 `EditorContext`, render the partial via Lit's `render(template,
 container)`, then assert section headings, sub-section structure, and
 gating by `hasSensor` / `hasLiveValue` / master toggles. Editor *full-

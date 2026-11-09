@@ -57,7 +57,9 @@ jobs:
           package-manager-cache: false
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        # npm ci installs exactly the lockfile (ADR-0011), so the tested
+        # and the released bundle come from the same dependency tree.
+        run: npm ci --no-audit --no-fund
 
       - name: Security audit (shipped dependencies)
         # Fails the build on high or critical advisories in what ends up
@@ -100,6 +102,19 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Test (time-zone matrix)
+        # The runner is UTC; the card keeps its own calendar per card
+        # (ADR-0030), so the whole suite also runs with the host in other
+        # zones: Zurich (DST, server zone of most users), Denver (west of
+        # UTC, DST), Kiritimati (UTC+14, the far edge). Replaces the
+        # hand-kept `npm run test:tz` file list, which never ran in CI.
+        run: |
+          for tz in Europe/Zurich America/Denver Pacific/Kiritimati; do
+            echo "::group::TZ=$tz"
+            TZ="$tz" npx vitest run
+            echo "::endgroup::"
+          done
+
       - name: Coverage gate
         # Fails the build if any of statements / branches / functions /
         # lines drops below the threshold configured in vitest.config.js.
@@ -115,7 +130,7 @@ jobs:
 
       - name: Bundle budget
         # Hard cap at 800 KB raw / 250 KB gzipped across all dist/*.js
-        # (current ~220 KB raw / ~65 KB gzip after editor split).
+        # (about 548 KB raw / 192 KB gzip at 3.0, locales and editor as lazy chunks).
         # Tripping either signals a regression in tree-shaking or an
         # accidental large dep — investigate before merging.
         # The sum-across-files shape (vs. per-file) covers the
@@ -184,20 +199,6 @@ jobs:
         # makes a regression fail the build.
         run: node scripts/perf-gate.cjs
 
-      - name: Verify committed bundle matches source
-        # After ADR-0013 (ESM code-split) `dist/` holds a hashed-chunk
-        # set alongside the entry — verify the whole directory, not
-        # just the entry file. Chunk filenames are content-hashed so
-        # any source change that touches the bundle output produces a
-        # diff here; a clean directory means committed = built.
-        run: |
-          if ! git diff --quiet -- dist/; then
-            echo "::error::dist/ is out of sync with source. Run 'npm run build' and commit the result."
-            git --no-pager diff --stat -- dist/
-            git --no-pager status --short -- dist/
-            exit 1
-          fi
-
       - name: Verify package.json version matches tag
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -205,6 +206,20 @@ jobs:
           pkg=$(node -p "require('./package.json').version")
           if [ "$tag" != "$pkg" ]; then
             echo "::error::Tag ${GITHUB_REF_NAME} does not match package.json version $pkg."
+            exit 1
+          fi
+
+      - name: Verify the tagged commit is on master
+        # A tag pushed from a feature branch would ship unreviewed code to
+        # every HACS user. The checkout is shallow, so ask the API whether
+        # master contains the commit ("identical" or "behind" = on master).
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          status=$(gh api "repos/${GITHUB_REPOSITORY}/compare/master...${GITHUB_SHA}" --jq .status)
+          if [ "$status" != "identical" ] && [ "$status" != "behind" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} points at ${GITHUB_SHA}, which is not on master (compare status: $status)."
             exit 1
           fi
 
@@ -228,8 +243,10 @@ jobs:
           cat .release-notes.md
 
       - name: Upload bundle to release
-        # ADR-0013: the dist now contains the registered entry plus
-        # content-hashed lazy chunks. HACS downloads every release
+        # ADR-0013: the dist contains the registered entry plus
+        # content-hashed lazy chunks. ADR-0032: dist/ is not committed;
+        # this upload, built from the tagged commit above, is the only
+        # copy users get. HACS downloads every release
         # asset for plugin repos (verified against HACS source —
         # gather_files_to_download), so attach all dist/*.js files.
         # Without this, lazy chunks would 404 in HACS-installed

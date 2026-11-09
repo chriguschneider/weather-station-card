@@ -88,6 +88,20 @@ converter doesn't change.
   want to display in `unitSpeed`" — that becomes the first half of the
   lookup key.
 
+## Amendment 2026-11-08 (#438): Beaufort is a pure converter
+
+The injected Beaufort callback is gone. `calculateBeaufortScale` read
+the source unit from the card's weather stand-in, so a forecast entry
+in m/s (Open-Meteo) was banded as km/h whenever the station used km/h,
+even though the per-entry unit reached the linear conversion. Beaufort
+now lives in `unit-converters.ts` as `toBeaufort(value, unit)`: the
+km/h band table `BEAUFORT_KMH_UPPER` plus a km/h normalisation through
+`WIND_CONVERSION`. `convertWindSpeed(value, from, to)` calls it with
+the same source unit as every other target, and the module stays
+leaf-only (it imports only `utils/numeric.ts`). `convertWindSpeed`
+also parses its input and returns `undefined` for a missing or
+non-numeric speed, so callers hide the row instead of printing "NaN".
+
 ## Related
 
 - Issue #57 (SonarCloud cleanup track that surfaced the complexity).

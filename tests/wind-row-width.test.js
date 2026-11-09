@@ -34,3 +34,15 @@ describe('wind row width', () => {
     expect(speeds(makeCard([{ datetime: '2026-10-01T12:00:00Z', wind_bearing: 90 }]))).toHaveLength(0);
   });
 });
+
+describe('forecast Beaufort per entry unit (#438)', () => {
+  it('reads an m/s forecast entry in m/s even when the station uses km/h', () => {
+    const card = makeCard([
+      // 10 m/s = 36 km/h → Bft 5; read as km/h it would be Bft 2.
+      { datetime: '2026-10-01T12:00:00Z', wind_speed: 10, wind_speed_unit: 'm/s' },
+      { datetime: '2026-10-02T12:00:00Z', wind_speed: 10, wind_speed_unit: 'km/h' },
+    ]);
+    card.unitSpeed = 'Bft';
+    expect(speeds(card).map((c) => c.textContent)).toEqual(['5', '2']);
+  });
+});
