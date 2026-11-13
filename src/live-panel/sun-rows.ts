@@ -65,6 +65,7 @@ export function sunRowSunStrength(
     lux: Number.isFinite(luxNum) ? luxNum : null,
     lat,
     lon,
+    calendar: ctx.calendar,
   });
 
   const showUvSegment = showUv && out.uv != null;

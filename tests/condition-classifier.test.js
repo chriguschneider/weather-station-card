@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { classifyDay, clearSkyNoonLux, clearSkyLuxAt } from '../src/condition-classifier.js';
+import { Calendar } from '../src/utils/time-zone.js';
+
+const cal = new Calendar();
 
 // Sea-level perpendicular-sun reference used by the classifier when no lat
 // is supplied — keeps the cloudRatio math stable across tests.
@@ -195,11 +198,11 @@ describe('clearSkyLuxAt', () => {
   it('returns 0 when sun is below horizon', () => {
     // Midnight UTC at lat 47, lon 8 (Switzerland) → sun far below horizon
     const midnight = new Date(Date.UTC(2026, 5, 1, 0, 0, 0));
-    expect(clearSkyLuxAt(47, 8, midnight)).toBe(0);
+    expect(clearSkyLuxAt(47, 8, cal, midnight)).toBe(0);
   });
 
   it('returns the noon-lux fallback when lat or lon is non-finite', () => {
-    expect(clearSkyLuxAt(NaN, 8, new Date())).toBe(110000);
-    expect(clearSkyLuxAt(47, NaN, new Date())).toBe(110000);
+    expect(clearSkyLuxAt(NaN, 8, cal, new Date())).toBe(110000);
+    expect(clearSkyLuxAt(47, NaN, cal, new Date())).toBe(110000);
   });
 });

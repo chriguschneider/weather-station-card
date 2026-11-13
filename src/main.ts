@@ -1394,7 +1394,7 @@ _pickLiveCondition(inputs: any): string | undefined {
   }
 
   const clearskyNow = lat != null && lon != null
-    ? clearSkyLuxAt(lat, lon, new Date())
+    ? clearSkyLuxAt(lat, lon, this.calendar, new Date())
     : 110000;
   // precip_total here is precipRateNow — an instantaneous rate (mm/h)
   // when the sensor reports a /h unit. Use period: 'hour' so the

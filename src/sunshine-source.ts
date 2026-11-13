@@ -12,6 +12,7 @@
 import { clearSkyLuxFactory } from './condition-classifier.js';
 import { resolveLocation } from './location.js';
 import type { Calendar } from './utils/time-zone.js';
+import { declinationDeg } from './utils/solar.js';
 
 
 /** Date-input shapes the lookup helpers accept. Strings go through `new
@@ -76,12 +77,6 @@ export interface AttachSunshineOpts {
    *  guess, matching the spec's "omit silently" behaviour for users
    *  who haven't opted in. */
   cloudCoverageExponent?: number | null;
-}
-
-// Solar declination in degrees (Cooper 1969). Same approximation the
-// classifier uses — accurate to ~0.5°, enough for a day-length estimate.
-function declinationDeg(dayOfYear: number): number {
-  return 23.45 * Math.sin(((360 * (284 + dayOfYear)) / 365) * Math.PI / 180);
 }
 
 /** Astronomical day length in hours for a given latitude and date.
@@ -308,7 +303,7 @@ export function attachSunshine<T extends SunshineForecastEntry>(
       // for daily granularity — hourly cloud_coverage is too coarse
       // to estimate per-hour sunshine accurately.
       const cc = (entry as { cloud_coverage?: number | null }).cloud_coverage;
-      out.sunshine = sunshineFromCloudCoverageInline(cc, out.day_length, cloudCoverageExponent);
+      out.sunshine = sunshineFromCloudCoverage(cc, out.day_length, cloudCoverageExponent);
     } else {
       out.sunshine = null;
     }
@@ -316,17 +311,16 @@ export function attachSunshine<T extends SunshineForecastEntry>(
   });
 }
 
-// Inline copy of the Kasten formula — sunshine-source has no other
-// dependency on forecast-utils today and importing one for a single
-// closed-form computation would set up a back-reference. Equivalent
-// to `sunshineFromCloudCoverage` exported from forecast-utils;
-// duplicated to keep the dep graph one-way.
-function sunshineFromCloudCoverageInline(
+/** Kasten-style estimate: sunshine_h ≈ day_length × (1 − cc^p). Lives
+ *  here rather than in forecast-utils so this module keeps no
+ *  dependency on it. */
+export function sunshineFromCloudCoverage(
   cloudPercent: number | null | undefined,
-  dayLengthH: number,
-  exponent: number,
+  dayLengthH: number | null | undefined,
+  exponent = 1.7,
 ): number | null {
   if (cloudPercent == null || !Number.isFinite(cloudPercent)) return null;
+  if (dayLengthH == null || !Number.isFinite(dayLengthH) || dayLengthH <= 0) return null;
   const cc = Math.max(0, Math.min(100, cloudPercent));
   const fraction = 1 - Math.pow(cc / 100, exponent);
   if (!Number.isFinite(fraction)) return null;
@@ -517,7 +511,7 @@ export function sunshineFromLuxHistory(
     .sort((a, b) => a.ts - b.ts);
   if (valid.length < 2) return [];
 
-  const clearsky = clearSkyLuxFactory(latitude, longitude);
+  const clearsky = clearSkyLuxFactory(latitude, longitude, calendar);
   // ms-of-sunshine accumulator, keyed by local-date YYYY-MM-DD.
   const totals = new Map<string, number>();
 
