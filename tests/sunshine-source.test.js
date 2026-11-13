@@ -286,13 +286,11 @@ describe('attachSunshine', () => {
       { date: localDateString(dayMs(-2), cal), value: 3.1 },
       { date: localDateString(dayMs(-1), cal), value: 5.9 },
       { date: localDateString(dayMs(0), cal), value: 7.0 },
-      // Every value stays below the shortest day at 47° N (~8.4 h at the
-      // winter solstice), or the day-length cap makes this date-dependent.
-      { date: localDateString(dayMs(1), cal), value: 6.1 },
+      { date: localDateString(dayMs(1), cal), value: 8.1 },
       { date: localDateString(dayMs(2), cal), value: 4.0 },
     ];
     const result = attachSunshine(fc, cal, { dailyValues, latitude: 47 });
-    expect(result.map((r) => r.sunshine)).toEqual([3.1, 5.9, 7.0, 6.1, 4.0]);
+    expect(result.map((r) => r.sunshine)).toEqual([3.1, 5.9, 7.0, 8.1, 4.0]);
   });
 
   it('omits columns silently when no dailyValues given (sunshine stays null)', () => {
@@ -474,12 +472,11 @@ describe('overlayFromOpenMeteo', () => {
     const source = makeSource([
       { date: localDateString(dayMs(-1), cal), value: 5.5 },
       { date: localDateString(dayMs(0), cal), value: 7.2 },
-      // Below the shortest day at this latitude, so the cap never bites.
-      { date: localDateString(dayMs(1), cal), value: 6.1 },
+      { date: localDateString(dayMs(1), cal), value: 9.1 },
     ]);
     const hass = { config: { latitude: 46.91 } };
     const out = overlayFromOpenMeteo(forecasts, hass, source, cal);
-    expect(out.map((r) => r.sunshine)).toEqual([5.5, 7.2, 6.1]);
+    expect(out.map((r) => r.sunshine)).toEqual([5.5, 7.2, 9.1]);
   });
 
   it('returns sunshine=null for entries the source has no value for', () => {

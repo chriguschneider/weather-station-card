@@ -10,8 +10,8 @@ import {
   stationFetchKey,
   forecastFetchKey,
   forecastsEqual,
-  sunshineFromCloudCoverage,
 } from '../src/forecast-utils.js';
+import { sunshineFromCloudCoverage } from '../src/sunshine-source.js';
 import { Calendar } from '../src/utils/time-zone.js';
 
 const cal = new Calendar();
@@ -641,6 +641,7 @@ describe('sunshineFromCloudCoverage (#6 Kasten F3 fallback)', () => {
     expect(sunshineFromCloudCoverage(50, null)).toBeNull();
     expect(sunshineFromCloudCoverage(50, 0)).toBeNull();
     expect(sunshineFromCloudCoverage(50, -1)).toBeNull();
+    expect(sunshineFromCloudCoverage(50, NaN)).toBeNull();
   });
 
   it('returns full day length on 0 % cloud (perfectly sunny)', () => {

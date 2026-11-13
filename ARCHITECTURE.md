@@ -109,8 +109,21 @@ src/
 │                              (explicit `attributes_layout` wins, else
 │                              default filtered by show_*), the shared-
 │                              line map, and the editor's insert /
-│                              remove helpers. Pure; main.ts maps the
-│                              resolved tokens onto its row helpers.
+│                              remove helpers. Pure; live-panel/attributes
+│                              maps the resolved tokens onto the rows.
+│
+├── live-panel/                (v3.0, #449)  Live-panel row renderers
+│                              (ADR-0010 as module functions): climate,
+│                              zero-degree, sun/moon and wind rows, the
+│                              attribute composer, the forecast wind row
+│                              and the sources-popup value text. Plain
+│                              functions over one `LivePanelCtx`
+│                              (context.ts) that main.ts builds in
+│                              `_liveCtx()`; link callbacks keep event
+│                              wiring in main.ts. context.ts also holds
+│                              `formatEntityNumber`, the one "format like
+│                              HA formats entity X" helper. Never imports
+│                              main.ts (`live-panel-no-uplevel`).
 │
 ├── zero-degree-popup.ts       Popup behind the zero-degree rows
 │                              (#330): parses the 48 h sensor's

@@ -1,13 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { classifySunStrength, formatLux } from '../src/sun-strength.js';
+import { clearSkyLuxAt } from '../src/condition-classifier.js';
+import { isSunUp } from '../src/moon.js';
+import { Calendar } from '../src/utils/time-zone.js';
 
 // Most fixtures use null lat/lon so `clearSkyLuxAt` falls through to
 // the 110 000 lx fallback constant — gives the test a deterministic
 // reference regardless of wall-clock or date. The `clearsky === 0`
 // branch is exercised with concrete coordinates + a UTC moment well
 // after local sunset in Köniz (the reference site in CLAUDE.md).
-const DAY = { lat: null, lon: null, now: new Date(Date.UTC(2026, 5, 21, 11, 0, 0)) };
+const calendar = new Calendar();
+const DAY = { lat: null, lon: null, calendar, now: new Date(Date.UTC(2026, 5, 21, 11, 0, 0)) };
 const NIGHT_REAL = {
+  calendar,
   lat: 46.91,
   lon: 7.42,
   now: new Date(Date.UTC(2026, 0, 15, 1, 0, 0)), // 02:00 local winter — sun below horizon
@@ -59,6 +64,24 @@ describe('classifySunStrength — night triggers', () => {
     expect(out.cloudPct).toBeNull();
   });
 
+  it('day/night follows the NOAA sun-up model, not the simple clear-sky model', () => {
+    const site = { lat: 46.91, lon: 7.42, calendar };
+    // Scan one winter morning in 1-min steps: wherever the two models
+    // disagree, the mode must follow isSunUp.
+    const base = Date.UTC(2026, 0, 15, 5, 0, 0);
+    let disagreements = 0;
+    for (let m = 0; m < 240; m++) {
+      const now = new Date(base + m * 60_000);
+      const out = classifySunStrength({ uv: 1, lux: 5000, ...site, now });
+      expect(out.mode).toBe(isSunUp(now, site.lat, site.lon) ? 'day' : 'night');
+      if ((clearSkyLuxAt(site.lat, site.lon, calendar, now) > 0) !== isSunUp(now, site.lat, site.lon)) {
+        disagreements++;
+      }
+    }
+    // The old model flipped minutes away from NOAA; the scan must cross it.
+    expect(disagreements).toBeGreaterThan(0);
+  });
+
   it('UV-sensor glitch (lux=0 AND uv>0) still flips to night — UV hidden', () => {
     const out = classifySunStrength({ uv: 4, lux: 0, ...DAY });
     expect(out.mode).toBe('night');
@@ -96,7 +119,7 @@ describe('classifySunStrength — sensor-wired degrade', () => {
 
   it('unknown lat/lon (clearSky fallback to 110k) still yields a sensible ratio', () => {
     // 80000 / 110000 = 0.727 → still sunny band
-    const out = classifySunStrength({ uv: 5, lux: 80000, lat: null, lon: null });
+    const out = classifySunStrength({ uv: 5, lux: 80000, lat: null, lon: null, calendar });
     expect(out.iconShape).toBe('weather-sunny');
     expect(out.cloudPct).toBe(73);
   });

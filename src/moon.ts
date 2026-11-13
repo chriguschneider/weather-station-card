@@ -14,10 +14,9 @@
 // crossing) — plenty for a display line, and worth staying
 // dependency-free for.
 
-import type { Calendar } from './utils/time-zone.js';
+import { DAY_MS, type Calendar } from './utils/time-zone.js';
 
 const RAD = Math.PI / 180;
-const DAY_MS = 86_400_000;
 // Days since J2000.0 — the epoch all series below are anchored to.
 const J1970 = 2440588;
 const J2000 = 2451545;

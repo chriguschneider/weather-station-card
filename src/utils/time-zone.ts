@@ -14,7 +14,8 @@
 // Date's native path, so behaviour there is identical to the pre-#285
 // code.
 
-const DAY_MS = 86_400_000;
+export const DAY_MS = 86_400_000;
+export const HOUR_MS = 3_600_000;
 
 let browserZoneCache: string | undefined;
 const validZones = new Map<string, boolean>();
@@ -73,7 +74,7 @@ export interface ZonedParts {
   second: number;
 }
 
-const pad2 = (n: number): string => String(n).padStart(2, '0');
+export const pad2 = (n: number): string => String(n).padStart(2, '0');
 
 const toMs =(d: Date | number): number => (typeof d === 'number' ? d : d.getTime());
 

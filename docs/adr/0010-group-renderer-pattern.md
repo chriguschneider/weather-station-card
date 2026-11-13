@@ -107,3 +107,20 @@ plus three method calls.
   fat method into composable units" pattern at the data path.
 - v1.10.0 release commit fe55ee7 (initial split).
 - v1.10.1 commit bb1a4dc (per-row helper extraction).
+
+## Amendment 2026-11-13 (#449): rows as module functions
+
+The Tradeoffs above picked methods because the rows read `this.ll()`,
+`this.unitPressure`, `this.weather.attributes` and similar. As main.ts
+grew past 5,000 lines, keeping the rows there cost more than passing
+those references in. The rows now live in `src/live-panel/` as plain
+functions. Each takes one `LivePanelCtx` (`src/live-panel/context.ts`)
+that main.ts builds once per render in `_liveCtx()`. The context holds
+config, hass, language, calendar, locale lookup, units and the live
+readings, plus two link callbacks (`entityLink`, `zeroDegreeLink`), so
+event wiring and popups stay in main.ts. The shape is the same as
+before: a parent (`renderAttributes`), a column composer and one
+function per row (`climateRowPressure`, `windRowGust`, ...). Only `this`
+is gone. A dependency-cruiser rule (`live-panel-no-uplevel`) stops the
+rows from importing main.ts. The modules are in the coverage gate.
+Decided by: owner (#449).
