@@ -2,12 +2,10 @@
 // opens an overlay that names the source of every live value and
 // explains the chart's encodings. The card itself stays untagged.
 //
-// Same overlay pattern as the zero-degree popup (src/zero-degree-popup.ts):
-// plain DOM in the card's shadow root outside ha-card (container
-// containment would turn `position: fixed` card-relative), no
-// `ha-dialog`, Escape / backdrop / × close, focus returns to the opener.
-// Kept as its own module so the zero-degree popup stays untouched.
+// The overlay shell (backdrop, close, Escape, Tab trap, focus return) is
+// shared with the zero-degree popup: src/popup-shell.ts.
 
+import { PopupShell, el } from './popup-shell.js';
 import type { LiveSourceKind } from './live-source.js';
 import type { LegendItem } from './chart-legend.js';
 
@@ -35,52 +33,11 @@ export function formatSourceLine(line: SourceLine): string {
   return [head, line.sourceText, line.entityName || line.entityId, line.note].filter(Boolean).join(' · ');
 }
 
+// Shell rules (backdrop, panel, header, close) live in popup-shell.ts.
 const STYLES = `
-  .wsc-src-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0, 0, 0, 0.45);
-    font-family: var(--ha-card-font-family, var(--paper-font-body1_-_font-family, inherit));
-  }
-  .wsc-src-panel {
-    box-sizing: border-box;
-    width: 100%;
-    max-width: 520px;
-    max-height: 100%;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding: 16px;
-    background: var(--ha-card-background, var(--card-background-color, #fff));
-    color: var(--primary-text-color, #212121);
-    border-radius: var(--ha-card-border-radius, 12px);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-  }
-  @media (max-width: 560px) {
-    .wsc-src-panel { max-width: none; border-radius: 0; }
-  }
-  .wsc-src-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 4px;
-  }
+  .wsc-src-panel { overflow-x: hidden; }
+  .wsc-src-header { margin-bottom: 4px; }
   .wsc-src-heading { font-size: 18px; }
-  .wsc-src-close {
-    font: inherit;
-    color: inherit;
-    background: none;
-    border: none;
-    cursor: pointer;
-    border-radius: 4px;
-    font-size: 22px;
-    line-height: 1;
-    padding: 2px 8px;
-  }
   .wsc-src-section {
     margin: 12px 0 4px;
     font-size: 13px;
@@ -101,7 +58,7 @@ const STYLES = `
   .wsc-src-label { font-weight: 500; }
   .wsc-src-meta { color: var(--secondary-text-color, #727272); }
   .wsc-src-problem .wsc-src-meta { color: var(--warning-color, #ff9800); }
-  .wsc-src-close:focus-visible, .wsc-src-line:focus-visible {
+  .wsc-src-line:focus-visible {
     outline: 2px solid var(--primary-color, #03a9f4);
     outline-offset: 2px;
   }
@@ -140,13 +97,6 @@ export interface SourcesPopupOpts {
   onMoreInfo?(entityId: string): void;
 }
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
-
 function swatch(item: LegendItem): HTMLElement {
   const box = el('span', 'wsc-src-swatch');
   box.setAttribute('aria-hidden', 'true');
@@ -168,43 +118,24 @@ function swatch(item: LegendItem): HTMLElement {
 /** One instance per card. `open` while open rebuilds; `close` is
  *  idempotent and the card's teardown calls it. */
 export class SourcesPopup {
-  private _overlay: HTMLElement | null = null;
-  private _returnFocus: HTMLElement | null = null;
+  private readonly _shell = new PopupShell('wsc-src');
 
   get isOpen(): boolean {
-    return this._overlay !== null;
+    return this._shell.isOpen;
   }
 
   open(opts: SourcesPopupOpts): void {
-    this.close(false);
     const { strings } = opts;
-    const overlay = el('div', 'wsc-src-backdrop');
-    const style = document.createElement('style');
-    style.textContent = STYLES;
-    const panel = el('div', 'wsc-src-panel');
-    panel.setAttribute('role', 'dialog');
-    panel.setAttribute('aria-modal', 'true');
-    panel.setAttribute('aria-labelledby', 'wsc-src-title');
-
-    const header = el('div', 'wsc-src-header');
-    const title = el('span', 'wsc-src-heading', strings.title);
-    title.id = 'wsc-src-title';
-    const closeBtn = el('button', 'wsc-src-close', '×');
-    closeBtn.type = 'button';
-    closeBtn.setAttribute('aria-label', strings.close);
-    closeBtn.addEventListener('click', () => this.close());
-    header.append(title, closeBtn);
-    panel.append(header);
-
-    const focusables: HTMLElement[] = [closeBtn];
+    const body: HTMLElement[] = [];
+    const focusables: HTMLElement[] = [];
     if (opts.lines.length > 0) {
-      panel.append(el('div', 'wsc-src-section', strings.liveTitle));
+      body.push(el('div', 'wsc-src-section', strings.liveTitle));
       const list = el('ul', 'wsc-src-list');
       for (const line of opts.lines) list.append(this._lineItem(line, opts, focusables));
-      panel.append(list);
+      body.push(list);
     }
     if (opts.legend.length > 0) {
-      panel.append(el('div', 'wsc-src-section', strings.chartTitle));
+      body.push(el('div', 'wsc-src-section', strings.chartTitle));
       const list = el('ul', 'wsc-src-list');
       for (const item of opts.legend) {
         const li = el('li', 'wsc-src-line wsc-src-legend');
@@ -212,29 +143,23 @@ export class SourcesPopup {
         li.append(swatch(item), el('span', '', item.text));
         list.append(li);
       }
-      panel.append(list);
+      body.push(list);
     }
-
-    overlay.append(style, panel);
-    overlay.addEventListener('click', (ev) => {
-      if (ev.target === overlay) this.close();
+    this._shell.open({
+      root: opts.root,
+      heading: el('span', 'wsc-src-heading', strings.title),
+      closeLabel: strings.close,
+      body,
+      focusables,
+      css: STYLES,
+      returnFocus: opts.returnFocus,
     });
-    overlay.addEventListener('keydown', (ev) => this._onKeydown(ev, focusables));
-    opts.root.appendChild(overlay);
-    this._overlay = overlay;
-    this._returnFocus = opts.returnFocus ?? null;
-    closeBtn.focus();
   }
 
   /** `restoreFocus` false is the rebuild path of `open` and the hand-off
    *  to HA's more-info dialog. */
   close(restoreFocus = true): void {
-    if (!this._overlay) return;
-    this._overlay.remove();
-    this._overlay = null;
-    const target = this._returnFocus;
-    this._returnFocus = null;
-    if (restoreFocus && target?.isConnected) target.focus();
+    this._shell.close(restoreFocus);
   }
 
   private _lineItem(line: SourceLine, opts: SourcesPopupOpts, focusables: HTMLElement[]): HTMLElement {
@@ -266,24 +191,5 @@ export class SourcesPopup {
       focusables.push(li);
     }
     return li;
-  }
-
-  private _onKeydown(ev: KeyboardEvent, focusables: HTMLElement[]): void {
-    if (ev.key === 'Escape') {
-      ev.preventDefault();
-      ev.stopPropagation();
-      this.close();
-      return;
-    }
-    if (ev.key !== 'Tab') return;
-    // aria-modal promises focus stays inside: wrap between the controls.
-    const root = this._overlay?.getRootNode() as Document | ShadowRoot | undefined;
-    const active = root?.activeElement ?? null;
-    const n = focusables.length;
-    const idx = focusables.indexOf(active as HTMLElement);
-    let next = ev.shiftKey ? idx - 1 : idx + 1;
-    if (idx === -1) next = 0;
-    ev.preventDefault();
-    focusables[(next + n) % n].focus();
   }
 }

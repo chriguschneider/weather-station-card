@@ -9,7 +9,13 @@
 // resolved colour strings and does not resolve `var()` natively in
 // series stroke / fill colours.
 
-export function resolveCssVar(value: string | undefined | null, defaultFallback: string = '', host?: Element | null): string {
+/** Same as `resolveCssVar`, against an already computed style (or a lazy
+ *  getter for one that may throw). */
+export function resolveCssVarIn(
+  value: string | undefined | null,
+  defaultFallback: string,
+  style: CSSStyleDeclaration | (() => CSSStyleDeclaration),
+): string {
   if (!value) return defaultFallback;
   const trimmed = value.trim();
   // Cheap structural check — avoids a regex with backtracking risk on the
@@ -22,10 +28,15 @@ export function resolveCssVar(value: string | undefined | null, defaultFallback:
   const fallback = commaIdx === -1 ? '' : inner.slice(commaIdx + 1).trim();
   let computed = '';
   try {
-    computed = getComputedStyle(host ?? document.body).getPropertyValue(name).trim();
+    const s = typeof style === 'function' ? style() : style;
+    computed = s.getPropertyValue(name).trim();
   } catch {
     // SSR / non-browser environments — fall through to the inline fallback.
   }
   if (computed) return computed;
   return fallback || defaultFallback;
+}
+
+export function resolveCssVar(value: string | undefined | null, defaultFallback: string = '', host?: Element | null): string {
+  return resolveCssVarIn(value, defaultFallback, () => getComputedStyle(host ?? document.body));
 }
