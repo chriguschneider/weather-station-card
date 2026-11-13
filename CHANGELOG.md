@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The visual editor now shows a one-line hint when your card still uses the deprecated top-level `elevation`; move it to `location.elevation` (it keeps working until 4.0).
+
 ## [3.0.0-beta.3] — 2026-11-09
 
 **Beta**, third round: beta.2 plus the additions and fixes below. Same rules as before: only shown by HACS if you enabled beta versions for this card; 3.0.0 follows after about a week without problems. Report in [#358](https://github.com/chriguschneider/weather-station-card/issues/358).

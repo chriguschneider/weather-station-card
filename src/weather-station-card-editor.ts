@@ -25,6 +25,7 @@ import {
   tokenOfShowKey,
 } from './attributes-layout.js';
 import { DEFAULTS } from './defaults.js';
+import { deprecatedOptions } from './config-validation.js';
 
 const LOOKUP_TIMEOUT_MS = 10_000;
 
@@ -1022,6 +1023,9 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
       </style>
 
       <div>
+        ${deprecatedOptions(cfg).length ? html`<div class="hint deprecated-options">
+          ${deprecatedOptions(cfg).map((d) => `\`${d.key}\` → \`${d.replacement}\``).join(', ')} (deprecated, removed in 4.0)
+        </div>` : ''}
         ${renderLocationSection(this, ctx)}
         ${renderBasicsSection(this, ctx)}
         ${renderSensorsSection(this, ctx)}

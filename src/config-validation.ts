@@ -262,6 +262,25 @@ export function validateConfig(rawConfig: unknown): string[] {
   return problems;
 }
 
+// Deprecated options: still honoured, so they are not problems and stay
+// out of `validateConfig` (the card's warning band). The editor shows
+// them as one hint line.
+const DEPRECATED_TOP_LEVEL_KEYS: Readonly<Record<string, string>> = {
+  elevation: 'location.elevation', // deprecated since 3.0, removal announced for 4.0
+};
+
+export interface DeprecatedOption {
+  key: string;
+  replacement: string;
+}
+
+export function deprecatedOptions(rawConfig: unknown): DeprecatedOption[] {
+  if (!isPlainObject(rawConfig)) return [];
+  return Object.entries(DEPRECATED_TOP_LEVEL_KEYS)
+    .filter(([key]) => rawConfig[key] !== undefined && rawConfig[key] !== null)
+    .map(([key, replacement]) => ({ key, replacement }));
+}
+
 // `attributes_layout` (ADR-0025): a list of columns, each a list of row
 // tokens. A bare token in place of a column is accepted by the renderer
 // (one-row column) so it is not flagged; unknown tokens get the same

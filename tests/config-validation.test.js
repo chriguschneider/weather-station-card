@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateConfig } from '../src/config-validation.js';
+import { validateConfig, deprecatedOptions } from '../src/config-validation.js';
 import {
   DEFAULTS,
   DEFAULTS_FORECAST,
@@ -415,6 +415,19 @@ describe('validateConfig — elevation (#333)', () => {
     const problems = validateConfig({ ...validBaseConfig(), location: { ...location, elevation: 'high' } });
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain('location.elevation');
+  });
+});
+
+describe('deprecatedOptions', () => {
+  it('flags top-level elevation, not location.elevation', () => {
+    expect(deprecatedOptions({ elevation: 500 })).toEqual([{ key: 'elevation', replacement: 'location.elevation' }]);
+    expect(deprecatedOptions({ location: { elevation: 500 } })).toEqual([]);
+    expect(deprecatedOptions({ elevation: null })).toEqual([]);
+    expect(deprecatedOptions(null)).toEqual([]);
+  });
+
+  it('is not a validateConfig problem', () => {
+    expect(validateConfig({ ...validBaseConfig(), elevation: 500 })).toEqual([]);
   });
 });
 

@@ -65,9 +65,34 @@ module.exports = {
       comment:
         'src/editor/* must not import from main or runtime concerns. The ' +
         'editor renders the config UI; main consumes the output via setConfig.',
-      from: { path: '^src/editor/' },
+      from: { path: ['^src/editor/', '^src/weather-station-card-editor\\.ts$'] },
       to: {
         path: ['^src/main\\.ts$', '^src/chart/', '^src/scroll-ux\\.ts$'],
+      },
+    },
+    {
+      name: 'domain-no-uplevel',
+      severity: 'error',
+      comment:
+        'Top-level data/domain modules must not import main, chart/ or ' +
+        'editor/. They feed the orchestrator, never the other way round.',
+      from: {
+        path: '^src/(data-source|openmeteo-source|sunshine-source|location|live-source|sources-popup)\\.ts$',
+      },
+      to: {
+        path: ['^src/main\\.ts$', '^src/chart/', '^src/editor/', '^src/weather-station-card-editor\\.ts$'],
+      },
+    },
+    {
+      name: 'editor-dynamic-only',
+      severity: 'error',
+      comment:
+        'ADR-0013: the editor is its own lazy chunk. main.ts must import it ' +
+        'with a dynamic import() only, never statically.',
+      from: { path: '^src/main\\.ts$' },
+      to: {
+        path: ['^src/editor/', '^src/weather-station-card-editor\\.ts$'],
+        dependencyTypesNot: ['dynamic-import'],
       },
     },
     {

@@ -61,26 +61,15 @@ export default tseslint.config(
       'lit/no-useless-template-literals': 'error',
       'lit/attribute-value-entities': 'error',
 
-      // Pragmatic relaxations for this codebase.
-      // main.ts is the HA integration boundary; type-checked rules
-      // generate noise on `any`-flavoured HASS objects.
-      '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-unsafe-assignment': 'off',
-      '@typescript-eslint/no-unsafe-member-access': 'off',
-      '@typescript-eslint/no-unsafe-call': 'off',
-      '@typescript-eslint/no-unsafe-argument': 'off',
-      '@typescript-eslint/no-unsafe-return': 'off',
-      '@typescript-eslint/restrict-template-expressions': 'off',
-      '@typescript-eslint/restrict-plus-operands': 'off',
-      '@typescript-eslint/no-misused-promises': 'off',
+      // The `any` relaxations live in the src/main.ts block below
+      // (ADR-0004); the rest of src/ is strictly typed.
       '@typescript-eslint/no-floating-promises': 'warn',
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       // unbound-method false-positives on Lit method.bind() patterns.
       '@typescript-eslint/unbound-method': 'off',
-      // ADR-0004: no new @ts-nocheck. The rule stays permissive for
-      // ts-nocheck only to avoid churn; ts-expect-error / ts-ignore need a description.
+      // ADR-0004: no new @ts-nocheck; a described one is tolerated.
       '@typescript-eslint/ban-ts-comment': ['error', {
-        'ts-nocheck': false,
+        'ts-nocheck': 'allow-with-description',
         'ts-expect-error': 'allow-with-description',
         'ts-ignore': 'allow-with-description',
         minimumDescriptionLength: 10,
@@ -142,6 +131,45 @@ export default tseslint.config(
       '@typescript-eslint/prefer-readonly': 'error',
       'no-nested-ternary': 'warn',
       'no-useless-return': 'error',
+    },
+  },
+
+  // ADR-0004: main.ts is the HA integration boundary; type-checked
+  // rules generate noise on `any`-flavoured HASS objects.
+  {
+    files: ['src/main.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
+      '@typescript-eslint/restrict-template-expressions': 'off',
+      '@typescript-eslint/restrict-plus-operands': 'off',
+      '@typescript-eslint/no-misused-promises': 'off',
+    },
+  },
+
+  // Transitional (ADR-0004 limits the relaxations to main.ts): these
+  // files still carry untyped forecast / history payloads. Fix the
+  // types and delete the entry; never add a file here.
+  {
+    files: [
+      'src/chart/draw.ts',
+      'src/chart/orchestrator.ts',
+      'src/chart/plugins/sunshine-label.ts',
+      'src/forecast-utils.ts',
+      'src/precip-probability.ts',
+      'src/sunshine-source.ts',
+    ],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
     },
   },
 
