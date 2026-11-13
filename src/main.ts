@@ -69,7 +69,8 @@ import {
 import { normalizeConfig, type CardConfig } from './card-config.js';
 import { pastFromOpenMeteo } from './past-source.js';
 import { OpenMeteoSource } from './openmeteo-source.js';
-import { resolveLiveSource, sourceLabel, labelText, isSensorProblem, sensorDownId, type LiveSource } from './live-source.js';
+import { sourceLabel, labelText, isSensorProblem, sensorDownId, type LiveSource } from './live-source.js';
+import { extractSensorReadings, liveSourcesOf, precipRateReading, unavailableSensors, type Reading, type SensorReadings, type StateLike, type StatesLike } from './sensor-readings.js';
 import { buildChartLegend, type LegendItem } from './chart-legend.js';
 import { SourcesPopup, type SourceLine } from './sources-popup.js';
 import { cardCalendar, resolveLocation } from './location.js';
@@ -91,12 +92,8 @@ import {
 import {
   toMetersPerSecond,
   toCelsius,
-  fromCelsius,
-  WIND_CONVERSION,
-  PRESSURE_CONVERSION,
   toMillimeters,
   isPrecipRateUnit,
-  precipBaseUnit,
   formatPrecipDisplay,
   luxScaleFor,
 } from './utils/unit-converters.js';
@@ -327,7 +324,9 @@ class WeatherStationCard extends LitElement {
   _sourceWindUnit: string = 'm/s';
   _sourcePressureUnit: string = 'hPa';
   _sourceTempUnit: string = '°C';
-  _dewPointFromEntity: boolean = false;
+  // Last extraction (value, unit and source per key); the classifier
+  // reads units from it, the popup the sources via _liveSources.
+  _readings: SensorReadings | null = null;
   // Precip source base unit ('mm' | 'in'), stripped of any /h suffix.
   // The derived-rate path and the wall-clock tick read it to label and
   // convert the rate without re-reading the sensor attribute.
@@ -371,6 +370,8 @@ class WeatherStationCard extends LitElement {
    *  restart. Live panel dims and shows a subtle "waiting" hint;
    *  values fall back to the last known good state. Reactive. */
   _staleSensors: string[] = [];
+  /** Entity ids behind `_missingSensors`, for the sources popup. */
+  _overdueIds: Set<string> = new Set();
   /** entityId → first-seen-unavailable timestamp (availability-grace). */
   _missingSince: MissingSinceMap = {};
   /** entityId → last parseable state, feeding the unavailable-fallback
@@ -871,143 +872,47 @@ _watchedStatesUnchanged(hass: HassMain): boolean {
   return true;
 }
 
-// Phase 1: read sensor entity states, detect source units, populate
-// the per-reading instance fields, and apply the weather_entity
-// attribute fallback for forecast-only mode.
+// Phase 1: read the live readings (value, unit and source per key,
+// src/sensor-readings.ts) into the reactive per-reading fields, then
+// turn the precipitation state into the live rate.
 _extractSensorReadings(hass: HassMain): void {
   const sensors = this.config.sensors || {};
-  const stateOf = (eid: string | undefined): HassEntityState | null =>
-    (eid && hass.states?.[eid]) ? hass.states[eid] : null;
-  // `unavailable`/`unknown` states fall back to the last known good
-  // value (issue #213): during an HA restart the panel keeps showing
-  // the pre-restart readings (dimmed via .wsc-stale) instead of NaN /
-  // raw "unavailable" text. The fallback map is in-memory only — on a
-  // fresh page load with no last-good value the row renders empty.
-  const valueOf = (eid: string | undefined): string | undefined => {
-    const s = stateOf(eid);
-    if (!s) return undefined;
-    if (s.state === 'unavailable' || s.state === 'unknown') {
-      return eid ? this._lastGoodStates[eid] : undefined;
-    }
-    if (eid) this._lastGoodStates[eid] = s.state;
-    return s.state;
-  };
-  const attrOf = (eid: string | undefined, attr: string): unknown => {
-    const s = stateOf(eid);
-    return s?.attributes?.[attr];
-  };
+  const r = extractSensorReadings({
+    sensors,
+    states: hass.states as StatesLike,
+    weatherEntity: this.config.weather_entity,
+    lastGood: this._lastGoodStates,
+  });
+  this._readings = r;
 
-  // Source units come from the actual sensor entities; target units come
-  // from config (or default to source). Keeping them separate is what
-  // _convertWindSpeed / pressure conversion compare against — feeding the
-  // target into both ends silently skips the conversion and the displayed
-  // numbers stay in source units under a target-unit label.
-  //
-  // Readings without a station sensor fall back to the weather entity
-  // (see below), so a quantity with no sensor wired takes the entity's
-  // own unit (#253: PirateWeather mph read as m/s, which also tripped
-  // the windy classification).
-  const wxEntity = this.config.weather_entity ? hass.states?.[this.config.weather_entity] : null;
-  const wxAttrs = wxEntity?.attributes ?? {};
-  const sensorWindUnit = (attrOf(sensors.wind_speed, 'unit_of_measurement')
-    || attrOf(sensors.gust_speed, 'unit_of_measurement')) as string | undefined;
-  const sensorTempUnit = attrOf(sensors.temperature, 'unit_of_measurement') as string | undefined;
-  const sourceWindUnit = sensorWindUnit || wxAttrs.wind_speed_unit || 'm/s';
-  const sensorPressureUnit = attrOf(sensors.pressure, 'unit_of_measurement') as string | undefined;
-  const sourcePressureUnit = sensorPressureUnit || wxAttrs.pressure_unit || 'hPa';
-  const sourceTempUnit = sensorTempUnit || wxAttrs.temperature_unit || '°C';
-  // Counter first, dedicated rate sensor second: a rate-only config
-  // (no cumulative counter, so no chart bars) must still default its
-  // display unit to the station's own base, or an in/h sensor would
-  // read as mm/h. Same source-fallback shape as sourceWindUnit.
-  const sourcePrecipBase = precipBaseUnit(
-    (attrOf(sensors.precipitation, 'unit_of_measurement')
-      || attrOf(sensors.precipitation_rate, 'unit_of_measurement')) as string | undefined,
-  );
+  // Target units come from config and default to the source units.
+  // Keeping the two apart is what the display conversions compare.
+  this.unitSpeed = this.config.units.speed || r.units.wind;
+  this.unitPressure = this.config.units.pressure || r.units.pressure;
+  this.unitPrecip = this.config.units.precipitation || r.units.precipBase;
+  this._sourceWindUnit = r.units.wind;
+  this._sourcePressureUnit = r.units.pressure;
+  this._sourceTempUnit = r.units.temperature;
+  this._sourcePrecipUnit = r.units.precipBase;
 
-  this.unitSpeed = this.config.units.speed || sourceWindUnit;
-  this.unitPressure = this.config.units.pressure || sourcePressureUnit;
-  // Default the precip display unit to the sensor's own base unit, so an
-  // inch sensor reads in/h with no YAML; an explicit units.precipitation
-  // overrides. Mirrors the source-default behaviour of unitSpeed.
-  this.unitPrecip = this.config.units.precipitation || sourcePrecipBase;
-  // Stash the source units so phase 2 can build the weather stand-in
-  // without re-deriving them from the sensor attributes.
-  this._sourceWindUnit = sourceWindUnit as string;
-  this._sourcePressureUnit = sourcePressureUnit as string;
-  this._sourceTempUnit = sourceTempUnit as string;
-  this._sourcePrecipUnit = sourcePrecipBase;
+  this.temperature = r.temperature.value;
+  this.humidity = r.humidity.value;
+  this.pressure = r.pressure.value;
+  this.uv_index = r.uv_index.value;
+  this.windSpeed = r.wind_speed.value;
+  this.dew_point = r.dew_point.value;
+  this.wind_gust_speed = r.gust_speed.value;
+  this.windDirection = r.wind_direction.value;
+  this.illuminance = r.illuminance.value;
+  this.precipitation = r.precipitation.value;
+  this.precipitation_unit = r.precipitation.unit;
+  this.zero_degree_level = r.zero_degree_level.value;
+  this.zero_degree_unit = r.zero_degree_level.unit;
+  this.zero_degree_48h_level = r.zero_degree_level_48h.value;
+  this.zero_degree_48h_unit = r.zero_degree_level_48h.unit;
 
-  // Forecast-only fallback: in pure forecast mode users typically don't
-  // wire station sensors, but HA's weather.* entity already exposes
-  // standard current attributes (temperature, humidity, pressure,
-  // wind_speed, wind_bearing, wind_gust_speed; uv_index / dew_point
-  // when the integration provides them). Read the live entity state
-  // once and let any missing sensor fall back to it. illuminance and
-  // precipitation rate have no weather-entity counterpart and stay
-  // sensor-only.
-  // The source unit of a quantity follows its sensor's
-  // unit_of_measurement, which HA keeps while the sensor is unavailable.
-  // A value taken from the entity is in the entity's own unit, so when
-  // the two disagree it is rescaled into the sensor's unit — otherwise a
-  // 20 °C entity reading behind an unavailable °F sensor shows as 20 °F
-  // and the classifier sees frost. Wind speed + gust and temperature +
-  // dew point each share one source unit.
-  const fromWxIfMissing = (
-    sensorValue: string | undefined,
-    key: string,
-    rescale?: (v: number) => number,
-  ): string | undefined => {
-    if (sensorValue !== undefined && sensorValue !== '') return sensorValue;
-    const v = wxAttrs[key];
-    if (v === undefined || v === null) return undefined;
-    const num = Number(v);
-    return rescale && Number.isFinite(num) ? String(rescale(num)) : String(v);
-  };
-  const wxWindUnit = wxAttrs.wind_speed_unit as string | undefined;
-  const windFactor = sensorWindUnit && wxWindUnit && sensorWindUnit !== wxWindUnit
-    ? WIND_CONVERSION[`${sensorWindUnit}->${wxWindUnit}`]
-    : undefined;
-  const rescaleWind = windFactor !== undefined ? (v: number) => v * windFactor : undefined;
-  const wxTempUnit = wxAttrs.temperature_unit as string | undefined;
-  const rescaleTemp = sensorTempUnit && wxTempUnit && sensorTempUnit !== wxTempUnit
-    ? (v: number) => fromCelsius(toCelsius(v, wxTempUnit) ?? v, sensorTempUnit)
-    : undefined;
-  const wxPressureUnit = wxAttrs.pressure_unit as string | undefined;
-  const pressureFactor = sensorPressureUnit && wxPressureUnit && sensorPressureUnit !== wxPressureUnit
-    ? PRESSURE_CONVERSION[`${sensorPressureUnit}->${wxPressureUnit}`]
-    : undefined;
-  const rescalePressure = pressureFactor !== undefined ? (v: number) => v * pressureFactor : undefined;
-
-  this.temperature = fromWxIfMissing(valueOf(sensors.temperature), 'temperature', rescaleTemp);
-  this.humidity = fromWxIfMissing(valueOf(sensors.humidity), 'humidity');
-  this.pressure = fromWxIfMissing(valueOf(sensors.pressure), 'pressure', rescalePressure);
-  this.uv_index = fromWxIfMissing(valueOf(sensors.uv_index), 'uv_index');
-  this.windSpeed = fromWxIfMissing(valueOf(sensors.wind_speed), 'wind_speed', rescaleWind);
-  const dewSensorValue = valueOf(sensors.dew_point);
-  // An entity dew point is rescaled into the temperature source unit,
-  // not the dew sensor's; the classifier must read it in that unit.
-  this._dewPointFromEntity = dewSensorValue === undefined || dewSensorValue === '';
-  this.dew_point = fromWxIfMissing(dewSensorValue, 'dew_point', rescaleTemp);
-  this.wind_gust_speed = fromWxIfMissing(valueOf(sensors.gust_speed), 'wind_gust_speed', rescaleWind);
-  // Irradiance sensors (W/m², community post 15 point 5) convert to
-  // lux at extraction so EVERY downstream consumer — sun-strength row,
-  // live classifier, formatLux display — sees the pipeline's native
-  // unit. Plain lux sensors pass through unchanged (scale 1).
-  {
-    const rawIll = valueOf(sensors.illuminance);
-    const illAttrs = sensors.illuminance ? hass.states?.[sensors.illuminance]?.attributes : undefined;
-    const scale = luxScaleFor(illAttrs?.unit_of_measurement, illAttrs?.device_class);
-    const num = rawIll !== undefined ? parseFloat(String(rawIll)) : NaN;
-    this.illuminance = (scale !== 1 && Number.isFinite(num))
-      ? String(Math.round(num * scale))
-      : rawIll;
-  }
-  this.precipitation = valueOf(sensors.precipitation);
-  this.zero_degree_level = valueOf(sensors.zero_degree_level);
-  this.zero_degree_unit = (attrOf(sensors.zero_degree_level, 'unit_of_measurement') as string | undefined) || undefined;
-  this.zero_degree_48h_level = valueOf(sensors.zero_degree_level_48h);
-  this.zero_degree_48h_unit = (attrOf(sensors.zero_degree_level_48h, 'unit_of_measurement') as string | undefined) || undefined;
+  const attrOf = (eid: string | undefined, attr: string): unknown =>
+    eid ? hass.states?.[eid]?.attributes?.[attr] : undefined;
   const rawChange = attrOf(sensors.zero_degree_level_48h, 'change');
   const changeNum = rawChange === undefined || rawChange === null || rawChange === '' ? NaN : Number(rawChange);
   this.zero_degree_48h_change = Number.isFinite(changeNum) ? changeNum : undefined;
@@ -1018,8 +923,7 @@ _extractSensorReadings(hass: HassMain): void {
   }
   const rawAt = attrOf(sensors.zero_degree_level_48h, 'at');
   this.zero_degree_48h_at = typeof rawAt === 'string' && rawAt ? rawAt : undefined;
-  const rawPrecipUnit = (attrOf(sensors.precipitation, 'unit_of_measurement') as string | undefined) || undefined;
-  this.precipitation_unit = rawPrecipUnit;
+
   // Three precip shapes, all gated on whether the row is actually
   // rendered (show_precipitation). When the row is hidden the
   // derivation alone would still cost a buffer-prune + localStorage
@@ -1029,90 +933,29 @@ _extractSensorReadings(hass: HassMain): void {
   //
   //   - Dedicated `sensors.precipitation_rate` (#253): a measured mm/h
   //     reading wins over both paths below — nothing to reconstruct.
+  //     It replaces the precipitation reading, source included.
   //   - Native rate sensor (unit ends in /h): convert the live value to
   //     the configured display unit (mm ↔ in) and relabel.
   //   - Cumulative counter (everything else): derive a rate from the
   //     sliding-anchor buffer; the derivation handles display
   //     conversion internally.
-  let precipFromRateSensor = false;
   if (this.config.show_precipitation !== false) {
-    precipFromRateSensor = this._applyLivePrecipRateSensor(hass);
-    if (!precipFromRateSensor) {
-      if (isPrecipRateUnit(rawPrecipUnit)) {
-        const num = parseNumericSafe(this.precipitation);
-        if (num != null) {
-          const { value, unit } = formatPrecipDisplay(num, rawPrecipUnit, this.unitPrecip);
-          this.precipitation = value;
-          this.precipitation_unit = unit;
-        }
-      } else {
-        this._maybeDerivePrecipRate(hass);
+    const rate = this._applyLivePrecipRateSensor(hass);
+    if (rate) {
+      r.precipitation = rate;
+    } else if (isPrecipRateUnit(r.precipitation.unit)) {
+      const num = parseNumericSafe(this.precipitation);
+      if (num != null) {
+        const { value, unit } = formatPrecipDisplay(num, r.precipitation.unit, this.unitPrecip);
+        this.precipitation = value;
+        this.precipitation_unit = unit;
       }
+    } else {
+      this._maybeDerivePrecipRate(hass);
     }
   }
 
-  // An unavailable direction sensor parses to NaN; fall back to the
-  // entity's bearing like every other live reading instead of showing
-  // an empty row.
-  const sensorBearing = sensors.wind_direction
-    ? parseFloat(String(hass.states?.[sensors.wind_direction]?.state))
-    : NaN;
-  if (Number.isFinite(sensorBearing)) {
-    this.windDirection = sensorBearing;
-  } else if (wxAttrs.wind_bearing != null) {
-    this.windDirection = parseFloat(String(wxAttrs.wind_bearing));
-  } else {
-    this.windDirection = undefined;
-  }
-
-  this._recordLiveSources(sensors, stateOf, valueOf, wxAttrs, precipFromRateSensor);
-}
-
-// Records where each live value came from, using the same fallback
-// rule as fromWxIfMissing above: a sensor value (live or last good)
-// wins, else the weather entity's attribute. Sensor-only rows record
-// `station`; rows with no weather counterpart never record `weather`.
-// deno-lint-ignore no-explicit-any
-_recordLiveSources(sensors: any, stateOf: (eid: string | undefined) => HassEntityState | null, valueOf: (eid: string | undefined) => string | undefined, wxAttrs: Record<string, unknown>, precipFromRateSensor = false): void {
-  const weatherEntity = this.config.weather_entity || undefined;
-  const pairs: ReadonlyArray<[string, string | null]> = [
-    ['temperature', 'temperature'],
-    ['humidity', 'humidity'],
-    ['pressure', 'pressure'],
-    ['uv_index', 'uv_index'],
-    ['wind_speed', 'wind_speed'],
-    ['dew_point', 'dew_point'],
-    ['gust_speed', 'wind_gust_speed'],
-    ['wind_direction', 'wind_bearing'],
-    ['illuminance', null],
-    ['precipitation', null],
-  ];
-  const next: Record<string, LiveSource | undefined> = {};
-  for (const [key, wxKey] of pairs) {
-    // The precipitation row shows the rate sensor only while it has a
-    // numeric state (#253); otherwise the counter produced the value.
-    const raw: unknown = key === 'precipitation'
-      ? (precipFromRateSensor ? sensors.precipitation_rate : sensors.precipitation)
-      : sensors[key];
-    const sensorId = typeof raw === 'string' && raw ? raw : undefined;
-    const st = stateOf(sensorId);
-    next[key] = resolveLiveSource({
-      sensorId,
-      sensorState: st?.state,
-      // Wind direction uses the sensor only while its state is numeric and
-      // otherwise falls back to the entity's bearing, without a last-good
-      // value (#437) — mirror that, so an unavailable sensor reads as a
-      // weather-service fallback, not as a stale station value.
-      sensorValue: key === 'wind_direction'
-        ? (Number.isFinite(parseFloat(String(st?.state))) ? st?.state : undefined)
-        : valueOf(sensorId),
-      weatherEntity,
-      weatherHasValue: wxKey !== null && wxAttrs[wxKey] !== undefined && wxAttrs[wxKey] !== null,
-    });
-  }
-  next.sun = { kind: 'computed' };
-  next.moon = { kind: 'computed' };
-  this._liveSources = next;
+  this._liveSources = liveSourcesOf(r);
 }
 
 // A dedicated `sensors.precipitation_rate` entity (#253) short-circuits
@@ -1122,31 +965,23 @@ _recordLiveSources(sensors: any, stateOf: (eid: string | undefined) => HassEntit
 // Ecowitt, WeatherFlow) can now feed both — the counter keeps driving
 // the chart bars, this drives the live cell and the classifier.
 //
-// Returns false when no rate sensor is configured or its state isn't
-// numeric (unavailable / unknown / not yet in hass.states), so the
-// caller falls back to the `sensors.precipitation` paths.
-_applyLivePrecipRateSensor(hass: HassMain): boolean {
+// Returns the rate reading, or null when no rate sensor is configured
+// or its state isn't numeric (unavailable / unknown / not yet in
+// hass.states), so the caller falls back to the `sensors.precipitation`
+// paths.
+_applyLivePrecipRateSensor(hass: HassMain): Reading | null {
   const eid = this.config.sensors?.precipitation_rate;
-  if (!eid) return false;
-  const state = hass.states?.[eid];
-  const num = parseNumericSafe(state?.state);
-  if (num == null) return false;
+  const reading = precipRateReading(eid, eid ? hass.states?.[eid] as StateLike | undefined : undefined, this.unitPrecip);
+  if (!reading) return null;
 
   // The cumulative derivation may have been running before the user
   // added the rate sensor. Its 30-s tick would keep overwriting
   // `precipitation` from the now-orphaned buffer, so release it here —
   // at the point we actually take over, not on every miss.
   this._stopPrecipDerivation();
-
-  const rawUnit = (state?.attributes?.unit_of_measurement as string | undefined) || undefined;
-  // The slot's contract is a rate, so a bare `mm` from an integration
-  // that forgot the `/h` still gets the rate label — formatPrecipDisplay
-  // decides the suffix from the source unit alone.
-  const sourceUnit = isPrecipRateUnit(rawUnit) ? rawUnit : `${precipBaseUnit(rawUnit)}/h`;
-  const { value, unit } = formatPrecipDisplay(num, sourceUnit, this.unitPrecip);
-  this.precipitation = value;
-  this.precipitation_unit = unit;
-  return true;
+  this.precipitation = reading.value;
+  this.precipitation_unit = reading.unit;
+  return reading;
 }
 
 // Release the cumulative→rate machinery: the wall-clock tick and the
@@ -1316,12 +1151,10 @@ _resolveLiveClassifierInputs(hass: HassMain): any {
   const loc = resolveLocation(this.config, hass);
   const wxEntity = this.config.weather_entity ? hass.states?.[this.config.weather_entity] : null;
   const illuminanceState = sensors.illuminance ? hass.states?.[sensors.illuminance] : null;
-  const dewState = sensors.dew_point ? hass.states?.[sensors.dew_point] : null;
   const { precipRateNow, precipUnit } = resolvePrecipRateInput(
     sensors.precipitation_rate ? hass.states?.[sensors.precipitation_rate] : null,
     sensors.precipitation ? hass.states?.[sensors.precipitation] : null,
   );
-  const dewUnitRaw = dewState?.attributes?.unit_of_measurement;
 
   return {
     sensors,
@@ -1341,7 +1174,7 @@ _resolveLiveClassifierInputs(hass: HassMain): any {
     // °C / mm before comparing against thresholds. Dew point falls back
     // to the temperature unit (same station, same scale in practice).
     tempUnit: this._sourceTempUnit,
-    dewUnit: !this._dewPointFromEntity && typeof dewUnitRaw === 'string' ? dewUnitRaw : this._sourceTempUnit,
+    dewUnit: this._readings?.dew_point.unit ?? this._sourceTempUnit,
     precipUnit,
     lat: loc?.latitude,
     lon: loc?.longitude,
@@ -1583,15 +1416,9 @@ _syncDataSources(hass: HassMain): void {
 // Both fields are reactive; assignment is skipped when the content is
 // unchanged so a no-op scan stays render-inert (ADR-0017).
 _scanSensorAvailability(hass: HassMain): void {
-  const sensors = this.config?.sensors || {};
-  const missingNow: Array<{ key: string; eid: string }> = [];
-  for (const [key, eid] of Object.entries(sensors)) {
-    if (!eid || typeof eid !== 'string') continue;
-    const s = hass.states?.[eid];
-    if (!s || s.state === 'unavailable' || s.state === 'unknown') {
-      missingNow.push({ key, eid });
-    }
-  }
+  // Same unavailable test as the extraction's stale fallback, so a
+  // value recorded as `stale` is the one this scan times.
+  const missingNow = unavailableSensors(this.config?.sensors || {}, hass.states as StatesLike);
   const now = Date.now();
   this._missingSince = updateMissingSince(
     this._missingSince, missingNow.map((m) => m.eid), now);
@@ -1607,6 +1434,7 @@ _scanSensorAvailability(hass: HassMain): void {
   const label = (m: { key: string; eid: string }): string => `${m.key} (${m.eid})`;
   const overdue = missingNow.filter((m) => overdueSet.has(m.eid)).map(label);
   const inGrace = missingNow.filter((m) => !overdueSet.has(m.eid)).map(label);
+  this._overdueIds = new Set(missingNow.filter((m) => overdueSet.has(m.eid)).map((m) => m.eid));
   if (overdue.join('|') !== this._missingSensors.join('|')) {
     this._missingSensors = overdue;
   }
@@ -3512,14 +3340,10 @@ _renderSourcesButton(place: 'main' | 'chart' = 'main'): unknown {
 }
 
 // Entity ids of sensors that stayed unavailable past the grace period
-// while HA runs; `_missingSensors` entries read `key (entity_id)`.
+// while HA runs. Written by the scan next to the reactive
+// `_missingSensors`, whose change triggers the re-render.
 _overdueSensorIds(): Set<string> {
-  const ids = new Set<string>();
-  for (const entry of this._missingSensors ?? []) {
-    const m = /\(([^()]+)\)$/.exec(entry);
-    if (m) ids.add(m[1]);
-  }
-  return ids;
+  return this._overdueIds;
 }
 
 // Popup line label: the editor's sensor-field names double as the
