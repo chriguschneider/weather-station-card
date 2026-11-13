@@ -13,6 +13,8 @@
 // (`uv >= 3` → moderate; `uv = 2.999` stays low).
 
 import { clearSkyLuxAt } from './condition-classifier.js';
+import { isSunUp } from './moon.js';
+import type { Calendar } from './utils/time-zone.js';
 
 export type SunMode = 'day' | 'night';
 
@@ -36,6 +38,8 @@ export interface SunStrengthInputs {
   lat: number | null;
   /** Site longitude in degrees. Null → fallback as above. */
   lon: number | null;
+  /** Card calendar, for the day-of-year of the clear-sky model. */
+  calendar: Calendar;
   /** Wall-clock moment used for the solar geometry. Defaults to now. */
   now?: Date;
 }
@@ -76,12 +80,12 @@ function asFinite(v: number | null): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
 
-function detectMode(luxFinite: number | null, clearSky: number): {
+function detectMode(luxFinite: number | null, sunUp: boolean): {
   mode: SunMode;
   nightReason: NightReason;
 } {
   if (luxFinite === 0) return { mode: 'night', nightReason: 'lux_zero' };
-  if (clearSky === 0) return { mode: 'night', nightReason: 'clearsky_zero' };
+  if (!sunUp) return { mode: 'night', nightReason: 'clearsky_zero' };
   return { mode: 'day', nightReason: null };
 }
 
@@ -107,14 +111,19 @@ function pickIconAndCloud(
  *  the caller is expected to render only the segments it has data
  *  for. */
 export function classifySunStrength(input: SunStrengthInputs): SunStrengthResult {
-  const { uv, lux, lat, lon } = input;
+  const { uv, lux, lat, lon, calendar } = input;
   const now = input.now instanceof Date ? input.now : new Date();
 
   const uvFinite = asFinite(uv);
   const luxFinite = asFinite(lux);
-  const clearSky = clearSkyLuxAt(lat ?? NaN, lon ?? NaN, now);
+  const clearSky = clearSkyLuxAt(lat ?? NaN, lon ?? NaN, calendar, now);
+  // Same NOAA model as the night icon (moon.ts) decides day/night; the
+  // simple clear-sky model only supplies the lux reference.
+  const sunUp = lat == null || lon == null || !Number.isFinite(lat) || !Number.isFinite(lon)
+    ? true
+    : isSunUp(now, lat, lon);
 
-  const { mode, nightReason } = detectMode(luxFinite, clearSky);
+  const { mode, nightReason } = detectMode(luxFinite, sunUp);
   const { iconShape, cloudPct } = pickIconAndCloud(mode, luxFinite, clearSky);
 
   const band: UvBand | null =

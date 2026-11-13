@@ -139,3 +139,15 @@ button.
 - ADR-0008 (single source of defaults), ADR-0022 (computed sun/moon),
   ADR-0025 (attribute layout tokens), issue #213 (last-good fallback),
   #424 (tag presentation), #431 (info button), #330 (popup pattern).
+
+## Amendment 2026-11-13 (#449): popup values come from the row helpers
+
+The Consequences above name `_sourceValueText` as a second formatter
+and say that sun and moon read the rendered line text. Both are gone.
+`sourceValueText` (`src/live-panel/source-values.ts`) builds each value
+from the same text helpers the row renders with (`pressureText`,
+`dewPointText`, `sunText`, `moonText`, ...). Sun and moon derive their
+times once and both the row and the popup read them. So the attribute
+lines no longer carry a `data-wsc-token` marker, and `show_sources`
+leaves the attribute markup unchanged in both states. Decided by: owner
+(#449).

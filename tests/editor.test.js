@@ -439,6 +439,12 @@ describe('editor._pastDataAvailable', () => {
   it('ignores empty-string sensor slots', () => {
     expect(makeEditor({ sensors: { temperature: '' } })._pastDataAvailable()).toBe(false);
   });
+
+  it('follows the card: no Open-Meteo past with the master switch off (#450)', () => {
+    const editor = makeEditor({ forecast: { openmeteo_history: true, openmeteo: false } });
+    expect(editor._pastDataAvailable()).toBe(false);
+    expect(editor._pastSource).toBe('station');
+  });
 });
 
 describe('editor auto-flip to forecast-only (no past data)', () => {

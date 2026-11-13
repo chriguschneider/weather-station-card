@@ -67,6 +67,7 @@ export default {
         'src/live-source.ts',
         'src/chart-legend.ts',
         'src/sources-popup.ts',
+        'src/popup-shell.ts',
         'src/precip-probability.ts',
         'src/weather-code-map.ts',
         'src/editor/toggle-pills.ts',
@@ -74,6 +75,12 @@ export default {
         'src/editor/render-sensors.ts',
         'src/editor/section-keys.ts',
         'src/weather-station-card-editor.ts',
+        // Live-panel row renderers split out of main.ts (#449).
+        'src/live-panel/*.ts',
+        // Forecast pipeline split out of main.ts (#450).
+        'src/forecast-pipeline.ts',
+        'src/past-source.ts',
+        'src/card-config.ts',
       ],
       thresholds: {
         statements: 80,
@@ -89,11 +96,14 @@ export default {
         'src/chart-legend.ts': { statements: 98, branches: 98, functions: 98, lines: 98 },
         'src/sources-popup.ts': { statements: 95, branches: 75, functions: 98, lines: 98 },
         // Modules at (or near) 100 % that were not gated before (#456).
+        'src/popup-shell.ts': { statements: 98, branches: 90, functions: 98, lines: 98 },
         'src/precip-probability.ts': { statements: 100, branches: 95, functions: 100, lines: 100 },
         'src/weather-code-map.ts': { statements: 100, branches: 100, functions: 100, lines: 100 },
         'src/editor/toggle-pills.ts': { statements: 100, branches: 100, functions: 100, lines: 100 },
         'src/editor/section-keys.ts': { statements: 100, branches: 100, functions: 100, lines: 100 },
         'src/utils/resolve-css-var.ts': { statements: 100, branches: 100, functions: 100, lines: 100 },
+        // Live-panel rows (#449), each file at or near 100 %.
+        'src/live-panel/*.ts': { statements: 98, branches: 90, functions: 98, lines: 98 },
         // Low floors just under what is reached; they stop a slide, they
         // do not claim these files are well covered. main.ts has none: at
         // ~67 % it would pull the global 80 below the gate, and changing

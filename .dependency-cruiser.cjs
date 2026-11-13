@@ -96,6 +96,17 @@ module.exports = {
       },
     },
     {
+      name: 'live-panel-no-uplevel',
+      severity: 'error',
+      comment:
+        'src/live-panel/* are pure row renderers over a context object (#449). ' +
+        'main.ts builds the context; the rows must not reach back into it.',
+      from: { path: '^src/live-panel/' },
+      to: {
+        path: ['^src/main\\.ts$', '^src/editor/', '^src/scroll-ux\\.ts$', '^src/chart/orchestrator\\.ts$'],
+      },
+    },
+    {
       name: 'utils-leaf',
       severity: 'error',
       comment:

@@ -26,6 +26,7 @@ import {
 } from './attributes-layout.js';
 import { DEFAULTS } from './defaults.js';
 import { deprecatedOptions } from './config-validation.js';
+import { pastSource } from './past-source.js';
 
 const LOOKUP_TIMEOUT_MS = 10_000;
 
@@ -119,19 +120,12 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
   }
 
   // ── Past-data source (UI-only abstraction, ADR-0015 / ADR-0023) ──────
-  // The runtime always prefers station sensors over the Open-Meteo
-  // history opt-in, so the editor presents the two as one exclusive
-  // dropdown. Reading: any configured sensor wins; otherwise the
-  // opt-in decides. Writing "openmeteo" drops the sensors block so the
-  // editor and the card agree (reversible until the user saves).
+  // The card's past-source rule (past-source.ts) shown as one exclusive
+  // dropdown: any configured sensor wins, otherwise the opt-in.
+  // Writing "openmeteo" drops the sensors block so the editor and the
+  // card agree (reversible until the user saves).
   get _pastSource(): PastSource {
-    const sensors = (this._config?.sensors as Record<string, string>) || {};
-    const hasSensor = Object.values(sensors).some(
-      (v) => typeof v === 'string' && v.trim() !== '',
-    );
-    if (hasSensor) return 'station';
-    const fc = this._config?.forecast as { openmeteo_history?: boolean } | undefined;
-    return fc?.openmeteo_history === true ? 'openmeteo' : 'station';
+    return pastSource(this._config) === 'openmeteo' ? 'openmeteo' : 'station';
   }
 
   _setPastSource = (value: PastSource): void => {
@@ -295,16 +289,12 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     this._expandedPanels[sectionKey] = expanded;
   }
 
-  // True when the card can render a past chart block: a station sensor
-  // is configured, or the Open-Meteo past opt-in is on (ADR-0015).
+  // True when the card can render a past chart block (ADR-0015). The
+  // weather entity the card also needs for the Open-Meteo past is left
+  // out: picking it after the past source must not force forecast mode.
   _pastDataAvailable(): boolean {
     if (!this._config) return true;
-    const sensors = (this._config.sensors as Record<string, unknown>) || {};
-    const hasSensor = Object.values(sensors).some(
-      (v) => typeof v === 'string' && v.trim() !== '',
-    );
-    const fc = this._config.forecast as { openmeteo_history?: boolean } | undefined;
-    return hasSensor || fc?.openmeteo_history === true;
+    return pastSource(this._config) !== null;
   }
 
   // When the card has no way to show past data (no station sensors AND

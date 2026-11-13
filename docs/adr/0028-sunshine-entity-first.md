@@ -78,6 +78,20 @@ solved the same problem for the chance of rain.
 - **Run the entity value through `normalizeSunshineValue`**: its
   ≥ 30 → seconds rule misreads minutes.
 
+## Amendment 2026-11-13 (#450): one source plan
+
+The rule of decision 3 no longer lives in main.ts. `planSources` in
+`src/forecast-pipeline.ts` decides it once per refresh, together with
+the ADR-0015 past block and the ADR-0027 chance-of-rain gate, and
+returns a source plan: the past source, where each part of the
+sunshine bar comes from, the cloud-cover exponent, and why Open-Meteo
+is needed. The fetch gate (`_ensureOpenMeteoSource`), the chart
+entries and the info popup's legend (ADR-0031) read that plan, so the
+legend can no longer drift from what the card fetches. The past-source
+rule itself is `pastSource` / `pastFromOpenMeteo` in
+`src/past-source.ts`, shared with the editor. The decisions are
+unchanged. Decided by: owner (#450).
+
 ## Related
 
 - ADR-0002: sunshine duration, the tiered data-source policy this
