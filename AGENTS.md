@@ -177,6 +177,7 @@ src/
 ├── defaults.ts                   # DEFAULTS, single source of truth (ADR-0008)
 ├── chart/                        # uPlot orchestration + plugins (ADR-0012, ADR-0019)
 ├── editor/                       # visual editor partials (lazy chunk, ADR-0013)
+├── live-panel/                   # live-panel row renderers over one context (ADR-0010)
 ├── utils/                        # time zone, caches, request dedup (ADR-0020, ADR-0026)
 ├── locales/                      # one file per language, one chunk each
 └── *-source.ts, data-source.ts   # recorder / forecast / Open-Meteo sources
@@ -205,8 +206,8 @@ Re-read `docs/adr/` for the full set; new ADRs land regularly.
 - **TypeScript strict** everywhere except the `main.ts` boundary; no new
   `@ts-nocheck` (ADR-0004).
 - **One source of defaults**: `src/defaults.ts` (ADR-0008).
-- **Module boundaries**: `src/chart/`, `src/editor/`, `src/utils/` never
-  import upwards (`.dependency-cruiser.cjs`, `npm run depcheck`).
+- **Module boundaries**: `src/chart/`, `src/editor/`, `src/live-panel/`,
+  `src/utils/` never import upwards (`.dependency-cruiser.cjs`, `npm run depcheck`).
 - **Version only in `package.json`**, injected at build time via
   `'__CARD_VERSION__'` (ADR-0006); `package-lock.json` is tracked
   (ADR-0011).

@@ -9,6 +9,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - The sun-strength row (UV and lux) now flips between sun and moon at the same moment as the main condition icon. Near sunrise and sunset the two could disagree by up to about 20 minutes.
+- While a zero-degree sensor is unavailable, the zero-degree popup and the snow-line tooltip now show their numbers in the same format as the row, instead of a different format.
+- Where a language is missing a text, the card shows the English text instead of an empty spot. This includes the condition text, unit labels and wind directions.
+
+### Under the hood
+
+- The live panel's rows moved out of the main card file into their own modules (step 1 of the main-file split). The info button's popup now takes its values from the same code as the rows.
 
 ## [3.0.0-beta.3] — 2026-11-09
 
