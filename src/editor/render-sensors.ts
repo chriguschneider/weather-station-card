@@ -12,18 +12,15 @@
 // The 12 pickers render in a 2-column ha-form grid — each full-width
 // row was half empty anyway, and entity names elide gracefully.
 //
-// Per-metric selector filtering: most filter by `device_class`; wind
-// direction has no canonical class but a stable unit (degrees) so it
-// gets a runtime predicate. Precipitation rate unions its class with a
-// rate-unit predicate — integrations often ship mm/h and no class. UV
-// index has neither a class nor a universal unit and gets a name/id
-// pattern match. Each entry's `key` is the YAML key under `sensors:`
-// and doubles as the i18n key.
+// Per-metric selector filtering comes from src/sensor-match.ts (#451),
+// the matcher the card also auto-picks a new card's sensors with. Each
+// entry's `key` is the YAML key under `sensors:` and doubles as the
+// i18n key.
 
 import { html, type TemplateResult } from 'lit';
 import type { EditorLike, EditorContext, HomeAssistant } from './types.js';
 import { renderEditorPanel } from './expansion-panel.js';
-import { findNextRainEntity } from '../next-rain.js';
+import { sensorCandidates } from '../sensor-match.js';
 
 interface SensorState {
   state: string;
@@ -41,59 +38,13 @@ interface HassWithStates extends HomeAssistant {
 const REQUIRED_KEYS = new Set(['temperature']);
 
 function buildSensorFields(hass: HassWithStates | null): Array<{ key: string; candidates: string[] }> {
-  const all: Array<[string, SensorState]> = hass?.states
-    ? (Object.entries(hass.states).filter(([, s]) => !!s) as Array<[string, SensorState]>)
+  // The same matcher picks a new card's sensors (getStubConfig), so the
+  // auto-picked entity is always among a slot's candidates.
+  const ids = hass?.states
+    ? Object.entries(hass.states).filter(([, s]) => !!s).map(([id]) => id)
     : [];
-  const byDeviceClass = (classes: string[]): string[] => all
-    .filter(([id, s]) => id.startsWith('sensor.') &&
-      classes.includes((s.attributes?.device_class) || ''))
-    .map(([id]) => id);
-
-  const directionEntities = all
-    .filter(([id, s]) => id.startsWith('sensor.') &&
-      ((s.attributes?.unit_of_measurement) === '°' ||
-       (s.attributes?.unit_of_measurement) === 'deg'))
-    .map(([id]) => id);
-
-  // Precipitation-rate candidates: `device_class: precipitation_intensity`
-  // is the canonical marker, but plenty of integrations (Z-Wave POPP,
-  // hand-rolled ESPHome templates) ship the right unit and no class at
-  // all. Union both so a working mm/h entity is never hidden behind a
-  // class the integration forgot to set.
-  const rateUnitRegex = /^(mm|in|inch|inches|")\/(h|hr|hour)$/i;
-  const rateEntities = all
-    .filter(([id, s]) => id.startsWith('sensor.') &&
-      ((s.attributes?.device_class) === 'precipitation_intensity' ||
-       rateUnitRegex.test((s.attributes?.unit_of_measurement) || '')))
-    .map(([id]) => id);
-
-  // Zero-degree level: no device_class, and the metre unit alone would
-  // sweep in every altitude / distance sensor — match on the name.
-  const zeroDegreeRegex = /zero[._ -]?degree|freezing[._ -]?level|nullgrad|snow[._ -]?line/i;
-  const zeroDegreeEntities = all
-    .filter(([id, s]) => id.startsWith('sensor.') &&
-      (zeroDegreeRegex.test(id) || zeroDegreeRegex.test((s.attributes?.friendly_name) || '')))
-    .map(([id]) => id);
-
-  // Next rain: the radar's sensor by registry identity (survives an
-  // entity-id rename), plus anything named like it.
-  const nextRainRegex = /next[._ -]?rain|n[aä]chster[._ -]?regen/i;
-  const registryNextRain = findNextRainEntity(hass as Parameters<typeof findNextRainEntity>[0]);
-  const nextRainEntities = all
-    .filter(([id, s]) => id.startsWith('sensor.') &&
-      (id === registryNextRain || nextRainRegex.test(id) ||
-       nextRainRegex.test((s.attributes?.friendly_name) || '')))
-    .map(([id]) => id);
-
-  const uvRegex = /(?:^|[._-])uv(?:[._-]|index|$)/i;
-  const uvNameRegex = /\buv[\s_-]?index\b|\buv\b/i;
-  const uvEntities = all
-    .filter(([id, s]) => {
-      if (!id.startsWith('sensor.')) return false;
-      const name = (s.attributes?.friendly_name) || '';
-      return uvRegex.test(id) || uvNameRegex.test(name);
-    })
-    .map(([id]) => id);
+  const candidates = (key: string): string[] =>
+    sensorCandidates(key, ids, hass);
 
   // Ordered as logical 2-column rows (the grid flows row-wise):
   //   temperature    | pressure           — base climate
@@ -114,26 +65,18 @@ function buildSensorFields(hass: HassWithStates | null): Array<{ key: string; ca
   // station readings (they come from forecast / nowcast models) and
   // share a seventh row.
   return [
-    { key: 'temperature',         candidates: byDeviceClass(['temperature']) },
-    { key: 'pressure',            candidates: byDeviceClass(['atmospheric_pressure', 'pressure']) },
-    { key: 'humidity',            candidates: byDeviceClass(['humidity']) },
-    { key: 'dew_point',           candidates: byDeviceClass(['temperature']) },
+    'temperature', 'pressure',
+    'humidity', 'dew_point',
     // The counter feeds the chart bars, the rate feeds the live cell and
     // the condition classifier — a station that exposes both wires both.
-    { key: 'precipitation',       candidates: byDeviceClass(['precipitation']) },
-    { key: 'precipitation_rate',  candidates: rateEntities },
-    { key: 'wind_speed',          candidates: byDeviceClass(['wind_speed', 'speed']) },
-    { key: 'gust_speed',          candidates: byDeviceClass(['wind_speed', 'speed']) },
-    { key: 'wind_direction',      candidates: directionEntities },
-    // Solar-irradiance sensors (W/m²) share the slot — the card
-    // converts them to lux internally (community post 15, point 5).
-    { key: 'illuminance',         candidates: byDeviceClass(['illuminance', 'irradiance']) },
-    { key: 'uv_index',            candidates: uvEntities },
-    { key: 'sunshine_duration',   candidates: [] },
-    { key: 'zero_degree_level',   candidates: zeroDegreeEntities },
-    { key: 'zero_degree_level_48h', candidates: zeroDegreeEntities },
-    { key: 'next_rain',           candidates: nextRainEntities },
-  ];
+    'precipitation', 'precipitation_rate',
+    'wind_speed', 'gust_speed',
+    'wind_direction', 'illuminance',
+    // sunshine_duration has no matcher: its picker lists every sensor.
+    'uv_index', 'sunshine_duration',
+    'zero_degree_level', 'zero_degree_level_48h',
+    'next_rain',
+  ].map((key) => ({ key, candidates: candidates(key) }));
 }
 
 // One 2-column grid container wrapping every per-metric entity

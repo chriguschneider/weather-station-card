@@ -81,6 +81,9 @@ export default {
         'src/forecast-pipeline.ts',
         'src/past-source.ts',
         'src/card-config.ts',
+        // Sensor extraction and slot matcher split out of main.ts (#451).
+        'src/sensor-readings.ts',
+        'src/sensor-match.ts',
       ],
       thresholds: {
         statements: 80,
@@ -94,6 +97,9 @@ export default {
         // show_sources modules (ADR-0031)
         'src/live-source.ts': { statements: 98, branches: 98, functions: 98, lines: 98 },
         'src/chart-legend.ts': { statements: 98, branches: 98, functions: 98, lines: 98 },
+        // Sensor extraction and slot matcher (#451).
+        'src/sensor-readings.ts': { statements: 98, branches: 95, functions: 98, lines: 98 },
+        'src/sensor-match.ts': { statements: 98, branches: 95, functions: 98, lines: 98 },
         'src/sources-popup.ts': { statements: 95, branches: 75, functions: 98, lines: 98 },
         // Modules at (or near) 100 % that were not gated before (#456).
         'src/popup-shell.ts': { statements: 98, branches: 90, functions: 98, lines: 98 },

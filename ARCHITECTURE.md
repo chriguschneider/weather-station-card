@@ -69,6 +69,25 @@ src/
 │                              fetch gate, the chart and the info
 │                              popup's legend read the same plan. Pure.
 │
+├── sensor-readings.ts         (v3.0, #451)  Live sensor extraction.
+│                              `extractSensorReadings` returns one
+│                              `{ value, unit, source }` per live key:
+│                              the source (station / stale / weather,
+│                              ADR-0031) is picked first and the value
+│                              follows from it; weather values are
+│                              rescaled into the sensor's unit. Also the
+│                              rate-sensor reading, `liveSourcesOf` for
+│                              the info popup and the unavailable test
+│                              the availability scan shares. Pure apart
+│                              from the caller's last-good map.
+│
+├── sensor-match.ts            (v3.0, #451)  Which entity fits which
+│                              sensor slot: per-slot auto tiers plus
+│                              list-only predicates. `autoPickSensor`
+│                              (getStubConfig) and `sensorCandidates`
+│                              (editor pickers) read the same table, so
+│                              every auto-pick is a picker candidate.
+│
 ├── config-validation.ts       (v2)  Advisory config validator —
 │                              raw user YAML → list of human-readable
 │                              problems (unknown keys, wrong-typed
@@ -382,6 +401,10 @@ graph TD
     pipeline --> sunshine
     pipeline --> fcutils
     editor --> pastsrc
+    main --> readings[sensor-readings.ts]
+    readings --> livesrc[live-source.ts]
+    main --> match[sensor-match.ts]
+    editorParts --> match
     main --> cardcfg[card-config.ts]
     cardcfg --> defaults
     cfgval --> defaults

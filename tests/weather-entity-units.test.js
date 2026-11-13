@@ -155,7 +155,7 @@ describe('unavailable sensor, entity value in a different unit', () => {
       'sensor.t': { state: '20', attributes: { unit_of_measurement: '°C' } },
       'sensor.dew': unavailable('°F'),
     });
-    expect(card._dewPointFromEntity).toBe(true);
+    expect(card._readings.dew_point.source.kind).toBe('weather');
     expect(card._resolveLiveClassifierInputs(card._hass).dewUnit).toBe('°C');
   });
 
@@ -166,7 +166,7 @@ describe('unavailable sensor, entity value in a different unit', () => {
       'sensor.t': { state: '20', attributes: { unit_of_measurement: '°C' } },
       'sensor.dew': { state: '50', attributes: { unit_of_measurement: '°F' } },
     });
-    expect(card._dewPointFromEntity).toBe(false);
+    expect(card._readings.dew_point.source.kind).toBe('station');
     expect(card._resolveLiveClassifierInputs(card._hass).dewUnit).toBe('°F');
   });
 });
