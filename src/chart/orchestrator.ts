@@ -107,7 +107,7 @@ interface SegmentCtx {
 /** True when the station/forecast boundary represents the SAME calendar
  *  day, i.e. station's last entry and forecast's first entry are both
  *  "today". Used to gate the daily-doubled-today framing — see the
- *  `doubledToday` site in `drawChartUnsafe`. Exported for unit testing
+ *  `doubledToday` site in `buildForecastChart`. Exported for unit testing
  *  the post-midnight regression (#162 follow-up). */
 export function boundaryIsSameDay(
   dateTime: ReadonlyArray<string | undefined>,

@@ -2717,7 +2717,8 @@ _renderSourcesButton(place: 'main' | 'chart' = 'main'): unknown {
     placeClass = toggleShown ? ' wsc-sources-chart' : ' wsc-sources-chart wsc-sources-chart-alone';
   }
   // Derived at render time from the availability scan's overdue list
-  // (reactive `_missingSensors`), so grace expiry re-renders the button.
+  // (`_sources.missingSensors`; the controller requests an update when
+  // it changes), so grace expiry re-renders the button.
   const overdueIds = this._overdueSensorIds();
   const alert = this._sourceLiveKeys().some((k) => isSensorProblem(this._liveSources[k], overdueIds));
   const label = this._str(alert ? 'sources_button_problem' : 'sources_button');
@@ -2731,8 +2732,8 @@ _renderSourcesButton(place: 'main' | 'chart' = 'main'): unknown {
 }
 
 // Entity ids of sensors that stayed unavailable past the grace period
-// while HA runs. Written by the scan next to the reactive
-// `_missingSensors`, whose change triggers the re-render.
+// while HA runs. Written by the controller's availability scan next to
+// `missingSensors`, whose change requests the re-render.
 _overdueSensorIds(): Set<string> {
   return this._sources.overdueIds;
 }
