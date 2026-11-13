@@ -76,6 +76,10 @@ export default {
         'src/weather-station-card-editor.ts',
         // Live-panel row renderers split out of main.ts (#449).
         'src/live-panel/*.ts',
+        // Forecast pipeline split out of main.ts (#450).
+        'src/forecast-pipeline.ts',
+        'src/past-source.ts',
+        'src/card-config.ts',
       ],
       thresholds: {
         statements: 80,

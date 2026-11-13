@@ -11,10 +11,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The sun-strength row (UV and lux) now flips between sun and moon at the same moment as the main condition icon. Near sunrise and sunset the two could disagree by up to about 20 minutes.
 - While a zero-degree sensor is unavailable, the zero-degree popup and the snow-line tooltip now show their numbers in the same format as the row, instead of a different format.
 - Where a language is missing a text, the card shows the English text instead of an empty spot. This includes the condition text, unit labels and wind directions.
+- With `forecast.openmeteo: false` in YAML, the visual editor no longer shows Open-Meteo as the source of past data. The card never fetched it in that case, so the past block stayed empty; the editor now treats the card as having no past data, as the card does.
 
 ### Under the hood
 
 - The live panel's rows moved out of the main card file into their own modules (step 1 of the main-file split). The info button's popup now takes its values from the same code as the rows.
+- The forecast pipeline moved out of the main card file (step 2): one plan now decides where each part of the chart comes from, and the Open-Meteo request, the chart and the info popup all read it. The card and the editor share one rule for the source of past data, and `days` / `forecast_days` are read once when the config loads.
 
 ## [3.0.0-beta.3] — 2026-11-09
 

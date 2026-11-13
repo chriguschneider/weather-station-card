@@ -42,6 +42,33 @@ src/
 │                              add" path) consume this object so the
 │                              two cannot drift (ADR-0008).
 │
+├── card-config.ts             (v3.0, #450)  `CardConfig`, typed from
+│                              DEFAULTS, and `normalizeConfig`: the
+│                              merge `setConfig` runs, which also turns
+│                              `days` / `forecast_days` into positive
+│                              integers once. Pure.
+│
+├── past-source.ts             (v3.0, #450)  The one past-data rule
+│                              (ADR-0015), shared by card and editor:
+│                              `pastSource` (sensors win, then the
+│                              Open-Meteo opt-in) and `pastFromOpenMeteo`
+│                              (the card also needs the station block
+│                              on and a weather entity). Pure.
+│
+├── forecast-pipeline.ts       (v3.0, #450)  Forecast pipeline.
+│                              `planSources` returns the source plan:
+│                              past source, forecast slice, sunshine
+│                              parts, cloud-cover exponent, and why the
+│                              Open-Meteo source is needed (ADR-0015 /
+│                              0027 / 0028). `buildForecastEntries`
+│                              merges station + forecast into the chart
+│                              entries (3-hour blocks in today mode);
+│                              `openMeteoStationWindow` /
+│                              `openMeteoFetchWindow` shape the
+│                              Open-Meteo past block and request. The
+│                              fetch gate, the chart and the info
+│                              popup's legend read the same plan. Pure.
+│
 ├── config-validation.ts       (v2)  Advisory config validator —
 │                              raw user YAML → list of human-readable
 │                              problems (unknown keys, wrong-typed
@@ -350,6 +377,13 @@ graph TD
     editor --> location[location.ts]
     editor --> lookup[editor/location-lookup.ts]
     main --> location
+    main --> pipeline[forecast-pipeline.ts]
+    pipeline --> pastsrc[past-source.ts]
+    pipeline --> sunshine
+    pipeline --> fcutils
+    editor --> pastsrc
+    main --> cardcfg[card-config.ts]
+    cardcfg --> defaults
     cfgval --> defaults
     locale -. lazy import .-> locales[locales/*.ts]
     locale --> localeTypes[locale-types.ts]
@@ -379,7 +413,8 @@ static assertConfig(config)
      visual editor against an invalid config.
 
 setConfig(config)
-  ├─ defaults applied (DEFAULTS / DEFAULTS_FORECAST / DEFAULTS_UNITS)
+  ├─ normalizeConfig(config) — DEFAULTS merged, days / forecast_days
+  │     normalised once (card-config.ts)
   ├─ validateConfig(config) — advisory; problems queued for the
   │     error banner, never blocks the render
   ├─ invalidation flags reset
@@ -418,9 +453,9 @@ updated(changedProperties)
 data callbacks (from sources):
   this._stationData / this._forecastData ← event.forecast
   └─ _refreshForecasts()
-       ├─ midnight-transition guards
-       │   (filterMidnightStaleForecast, dropEmptyStationToday)
-       ├─ overlayFromOpenMeteo (sunshine attach)
+       ├─ _ensureOpenMeteoSource() → planSources (the source plan)
+       ├─ buildForecastEntries(station, plan) — slice, midnight guard,
+       │   de-overlap, entity sunshine, Open-Meteo / estimate overlays
        └─ measureCard → drawChart
 
 disconnectedCallback()
@@ -470,16 +505,15 @@ of merged station + forecast entries. Every entry has:
 }
 ```
 
-`_refreshForecasts` is the single concatenation point:
+`_refreshForecasts` is the single concatenation point; the merge
+itself is pure (`src/forecast-pipeline.ts`):
 
 ```js
-const station = this._stationData;       // 7 days
-const forecast = filterMidnightStaleForecast(this._forecastData, todayStartMs)
-  .slice(0, limit);                       // 7 days, no leftover yesterday
-const cleaned = dropEmptyStationToday(station, todayStartMs);
-this.forecasts = overlayFromOpenMeteo(
-  [...cleaned, ...forecast], hass, sunshineSource, granularity
-);
+const plan = planSources(config, this._forecastData, calendar);
+// plan.forecastSlice: midnight-guarded, cut to forecast_days
+const { entries, stationCount, forecastCount } =
+  buildForecastEntries(this._stationData, { plan, calendar, hass, openMeteo, location });
+this.forecasts = entries;
 ```
 
 The two midnight-transition guards (added in v1.0.2) handle the corner
