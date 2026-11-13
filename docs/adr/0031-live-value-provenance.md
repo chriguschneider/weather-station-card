@@ -151,3 +151,21 @@ times once and both the row and the popup read them. So the attribute
 lines no longer carry a `data-wsc-token` marker, and `show_sources`
 leaves the attribute markup unchanged in both states. Decided by: owner
 (#449).
+
+## Amendment 2026-11-13 (#451): the source is decided with the value
+
+The Decision above has `_recordLiveSources()` re-run the fallback rule
+after the extraction, with wind direction mirroring its own rule. That
+mirror is gone. `src/sensor-readings.ts` reads every live key into one
+`{ value, unit, source }` record: each reader calls
+`resolveLiveSource()` first and takes the value from the side it picked
+(the sensor, its last good value, or the weather entity's attribute
+rescaled into the sensor's unit). The dedicated precipitation-rate
+sensor returns its own reading and replaces the counter's, source
+included. main.ts copies the values into its reactive fields and builds
+`_liveSources` from the record with `liveSourcesOf()`. The unit travels
+with the value (#438): the classifier reads the dew point's unit from
+the record instead of a separate `_dewPointFromEntity` flag. The
+availability scan (#213) uses the same `isUnavailableState()` test as
+the stale fallback, and keeps the overdue entity ids as a set instead of
+parsing them back out of the warning text. Decided by: owner (#451).

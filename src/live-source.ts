@@ -1,7 +1,7 @@
 // Provenance of each live-panel value (`show_sources`, ADR-0031).
 //
 // A live reading has exactly one origin, decided in
-// _extractSensorReadings: the configured station sensor, the sensor's
+// sensor-readings.ts: the configured station sensor, the sensor's
 // last good value while it is unavailable (#213), or the weather
 // entity's current attributes when no usable sensor value exists.
 // The card used to know this only implicitly; recording it lets the
@@ -42,9 +42,10 @@ export interface SourceLabels {
   computed?: string;
 }
 
-// Mirrors the fallback rule of `fromWxIfMissing` in main.ts so the
-// recorded source always matches the value that is actually shown.
-// `sensorValue` is what valueOf() returned for the sensor (its live
+// The fallback rule itself: sensor-readings.ts calls this first and
+// takes the value from the side it picks, so the recorded source is
+// the value's source by construction (#451).
+// `sensorValue` is the sensor's usable value (its live
 // state, or its last good state while unavailable); `weatherHasValue`
 // whether the weather entity carries the matching attribute.
 export function resolveLiveSource(opts: {
