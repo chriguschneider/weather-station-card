@@ -6,6 +6,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- While a zero-degree sensor is unavailable, the zero-degree popup and the snow-line tooltip now show their numbers in the same format as the row, instead of a different format.
+- Where a language is missing a text, the card shows the English text instead of an empty spot. This includes the condition text, unit labels and wind directions.
+
+### Under the hood
+
+- The live panel's rows moved out of the main card file into their own modules (step 1 of the main-file split). The info button's popup now takes its values from the same code as the rows.
+
 ## [3.0.0-beta.3] — 2026-11-09
 
 **Beta**, third round: beta.2 plus the additions and fixes below. Same rules as before: only shown by HACS if you enabled beta versions for this card; 3.0.0 follows after about a week without problems. Report in [#358](https://github.com/chriguschneider/weather-station-card/issues/358).

@@ -39,7 +39,7 @@ export function dewPointText(ctx: LivePanelCtx, dewPoint: unknown): string {
   return v && unit ? `${v} ${unit}` : v;
 }
 
-export function precipitationText(precipitation: unknown, unit: unknown): string {
+export function precipitationText(precipitation: unknown, unit: string | undefined): string {
   return unit ? `${precipitation} ${unit}` : String(precipitation);
 }
 

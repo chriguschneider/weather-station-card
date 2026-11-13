@@ -13,47 +13,43 @@ function finite(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+type TextFn = (ctx: LivePanelCtx, temperatureUnit: string) => string;
+
+const VALUE_TEXT: Record<string, TextFn> = {
+  temperature: ({ values: v }, unit) => (v.temperature === undefined ? '' : `${oneDecimal(v.temperature)}${unit}`),
+  humidity: ({ values: v }) => (v.humidity === undefined ? '' : humidityText(v.humidity)),
+  dew_point: (ctx) => (ctx.values.dew_point === undefined ? '' : dewPointText(ctx, ctx.values.dew_point)),
+  pressure: (ctx) => {
+    const p = displayPressure(ctx, ctx.values.pressure);
+    return p === undefined ? '' : pressureText(ctx, p);
+  },
+  precipitation: ({ values: v }) =>
+    (isPresent(v.precipitation) ? precipitationText(v.precipitation, v.precipitation_unit) : ''),
+  uv_index: ({ values: v }) => {
+    const uv = finite(v.uv_index);
+    return uv === null ? '' : uvText(uv);
+  },
+  illuminance: ({ values: v }) => {
+    const lux = finite(v.illuminance);
+    return lux === null ? '' : formatLux(lux);
+  },
+  wind_speed: (ctx) => {
+    const w = displayWindSpeed(ctx, ctx.values.windSpeed);
+    return w === undefined ? '' : windSpeedText(ctx, w);
+  },
+  gust_speed: (ctx) => {
+    const g = gustSpeed(ctx, ctx.values.wind_gust_speed);
+    return g === null ? '' : windSpeedText(ctx, g);
+  },
+  wind_direction: (ctx) => {
+    const dir = ctx.values.windDirection;
+    return dir === undefined ? '' : windDirText(ctx.cardinalDirections, dir as number | string);
+  },
+  sun: (ctx) => sunText(ctx),
+  moon: (ctx) => moonText(ctx),
+};
+
 /** `temperatureUnit` is the main temperature's unit (HA's unit system). */
 export function sourceValueText(ctx: LivePanelCtx, key: string, temperatureUnit: string): string {
-  const v = ctx.values;
-  switch (key) {
-    case 'temperature':
-      return v.temperature === undefined ? '' : `${oneDecimal(v.temperature)}${temperatureUnit}`;
-    case 'humidity':
-      return v.humidity === undefined ? '' : humidityText(v.humidity);
-    case 'dew_point':
-      return v.dew_point === undefined ? '' : dewPointText(ctx, v.dew_point);
-    case 'pressure': {
-      const p = displayPressure(ctx, v.pressure);
-      return p === undefined ? '' : pressureText(ctx, p);
-    }
-    case 'precipitation':
-      return isPresent(v.precipitation) ? precipitationText(v.precipitation, v.precipitation_unit) : '';
-    case 'uv_index': {
-      const uv = finite(v.uv_index);
-      return uv === null ? '' : uvText(uv);
-    }
-    case 'illuminance': {
-      const lux = finite(v.illuminance);
-      return lux === null ? '' : formatLux(lux);
-    }
-    case 'wind_speed': {
-      const w = displayWindSpeed(ctx, v.windSpeed);
-      return w === undefined ? '' : windSpeedText(ctx, w);
-    }
-    case 'gust_speed': {
-      const g = gustSpeed(ctx, v.wind_gust_speed);
-      return g === null ? '' : windSpeedText(ctx, g);
-    }
-    case 'wind_direction':
-      return v.windDirection === undefined
-        ? ''
-        : windDirText(ctx.cardinalDirections, v.windDirection as number | string);
-    case 'sun':
-      return sunText(ctx);
-    case 'moon':
-      return moonText(ctx);
-    default:
-      return '';
-  }
+  return VALUE_TEXT[key]?.(ctx, temperatureUnit) ?? '';
 }
