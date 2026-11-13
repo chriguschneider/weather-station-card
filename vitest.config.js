@@ -67,6 +67,7 @@ export default {
         'src/live-source.ts',
         'src/chart-legend.ts',
         'src/sources-popup.ts',
+        'src/popup-shell.ts',
         'src/precip-probability.ts',
         'src/weather-code-map.ts',
         'src/editor/toggle-pills.ts',
@@ -91,6 +92,7 @@ export default {
         'src/chart-legend.ts': { statements: 98, branches: 98, functions: 98, lines: 98 },
         'src/sources-popup.ts': { statements: 95, branches: 75, functions: 98, lines: 98 },
         // Modules at (or near) 100 % that were not gated before (#456).
+        'src/popup-shell.ts': { statements: 98, branches: 90, functions: 98, lines: 98 },
         'src/precip-probability.ts': { statements: 100, branches: 95, functions: 100, lines: 100 },
         'src/weather-code-map.ts': { statements: 100, branches: 100, functions: 100, lines: 100 },
         'src/editor/toggle-pills.ts': { statements: 100, branches: 100, functions: 100, lines: 100 },

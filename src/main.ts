@@ -4002,6 +4002,7 @@ _sourceLegend(config: any): LegendItem[] {
 _openSourcesPopup(returnFocus: HTMLElement | null): void {
   const root = this.shadowRoot;
   if (!root) return;
+  this._zeroDegreePopup?.close(false);
   const popup = this._sourcesPopup ??= new SourcesPopup();
   popup.open({
     root,
@@ -4033,6 +4034,7 @@ _openZeroDegreePopup(returnFocus: HTMLElement | null): void {
   const ctx = this._liveCtx();
   const historyEid = this._attrEntity('zero_degree_level_48h', false);
   const elevation = zeroDegreeElevation(ctx);
+  this._sourcesPopup?.close(false);
   const popup = this._zeroDegreePopup ??= new ZeroDegreePopup();
   popup.open({
     root,

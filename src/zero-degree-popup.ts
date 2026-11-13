@@ -18,6 +18,8 @@
 import uPlot from 'uplot';
 import { getDateTimeFormat, getNumberFormat } from './utils/intl-cache.js';
 import type { Calendar } from './utils/time-zone.js';
+import { resolveCssVarIn } from './utils/resolve-css-var.js';
+import { PopupShell, el } from './popup-shell.js';
 
 import { isSignificantChange, metresPerUnit, siteLineLevel, type ZeroDegreePoint } from './zero-degree-trend.js';
 
@@ -82,14 +84,7 @@ export function markedExtremes(
  *  cannot parse that, so resolve it against the card host like the other
  *  theme variables. Plain colours pass through. */
 export function resolvePopupColor(value: string | undefined, style: CSSStyleDeclaration, fallback: string): string {
-  const v = value?.trim();
-  if (!v) return fallback;
-  if (!v.startsWith('var(') || !v.endsWith(')')) return v;
-  const inner = v.slice(4, -1);
-  const comma = inner.indexOf(',');
-  const name = (comma === -1 ? inner : inner.slice(0, comma)).trim();
-  const fb = comma === -1 ? '' : inner.slice(comma + 1).trim();
-  return (name.startsWith('--') ? cssVar(style, name) : '') || fb || fallback;
+  return resolveCssVarIn(value, fallback, style);
 }
 
 /** Y range snapped to whole hundreds with at least 100 of headroom on
@@ -350,56 +345,24 @@ export const buildZeroDegreeChart: ZeroDegreeChartFactory = (target, curve, opts
   };
 };
 
+// Shell rules (backdrop, panel, header, close) live in popup-shell.ts.
 const STYLES = `
-  .wsc-zd-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0, 0, 0, 0.45);
-    font-family: var(--ha-card-font-family, var(--paper-font-body1_-_font-family, inherit));
-  }
-  .wsc-zd-panel {
-    box-sizing: border-box;
-    width: 100%;
-    max-width: 520px;
-    max-height: 100%;
-    overflow: auto;
-    padding: 16px;
-    background: var(--ha-card-background, var(--card-background-color, #fff));
-    color: var(--primary-text-color, #212121);
-    border-radius: var(--ha-card-border-radius, 12px);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-  }
-  @media (max-width: 560px) {
-    .wsc-zd-panel { max-width: none; border-radius: 0; }
-  }
-  .wsc-zd-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 8px;
-  }
   .wsc-zd-heading { display: block; font-size: 18px; }
   .wsc-zd-range {
     display: block;
     font-size: 13px;
     color: var(--secondary-text-color, #727272);
   }
-  .wsc-zd-close, .wsc-zd-history {
+  .wsc-zd-history {
     font: inherit;
-    color: inherit;
     background: none;
     border: none;
     cursor: pointer;
     border-radius: 4px;
+    color: var(--primary-color, #03a9f4);
+    padding: 4px 6px;
   }
-  .wsc-zd-close { font-size: 22px; line-height: 1; padding: 2px 8px; }
-  .wsc-zd-history { color: var(--primary-color, #03a9f4); padding: 4px 6px; }
-  .wsc-zd-close:focus-visible, .wsc-zd-history:focus-visible {
+  .wsc-zd-history:focus-visible {
     outline: 2px solid var(--primary-color, #03a9f4);
     outline-offset: 2px;
   }
@@ -457,55 +420,31 @@ function cssVar(style: CSSStyleDeclaration, name: string): string {
   return style.getPropertyValue(name).trim();
 }
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
-
 /** One instance per card. `open` while open rebuilds from the new
  *  options; `close` is idempotent and the card's teardown calls it. */
 export class ZeroDegreePopup {
-  private _overlay: HTMLElement | null = null;
+  private readonly _shell = new PopupShell('wsc-zd');
   private _chart: ZeroDegreeChart | null = null;
-  private _returnFocus: HTMLElement | null = null;
   private _onResize: (() => void) | null = null;
 
   get isOpen(): boolean {
-    return this._overlay !== null;
+    return this._shell.isOpen;
   }
 
   open(opts: ZeroDegreePopupOpts): void {
-    this.close(false);
     const { curve, strings } = opts;
-    const overlay = el('div', 'wsc-zd-backdrop');
-    const style = document.createElement('style');
-    style.textContent = STYLES;
-    const panel = el('div', 'wsc-zd-panel');
-    panel.setAttribute('role', 'dialog');
-    panel.setAttribute('aria-modal', 'true');
-    panel.setAttribute('aria-labelledby', 'wsc-zd-title');
-
-    const header = el('div', 'wsc-zd-header');
     const title = el('div', 'wsc-zd-title');
-    title.id = 'wsc-zd-title';
     title.append(
       el('span', 'wsc-zd-heading', strings.title),
       el('span', 'wsc-zd-range', formatCurveRange(curve[0].t, curve[curve.length - 1].t, opts)),
     );
-    const closeBtn = el('button', 'wsc-zd-close', '×');
-    closeBtn.type = 'button';
-    closeBtn.setAttribute('aria-label', strings.close);
-    closeBtn.addEventListener('click', () => this.close());
-    header.append(title, closeBtn);
 
     const chartTarget = el('div', 'wsc-zd-chart');
     const readout = el('div', 'wsc-zd-readout');
     const footer = el('div', 'wsc-zd-footer');
     const min = findCurveMinimum(curve);
     footer.append(el('span', 'wsc-zd-lowest', min ? formatLowest(min, strings.lowest, opts, findWindowMinimum(curve, 48)) : ''));
-    const focusables: HTMLElement[] = [closeBtn];
+    const focusables: HTMLElement[] = [];
     if (opts.onHistory) {
       const onHistory = opts.onHistory;
       const historyBtn = el('button', 'wsc-zd-history', strings.history);
@@ -515,15 +454,16 @@ export class ZeroDegreePopup {
       focusables.push(historyBtn);
     }
 
-    panel.append(header, chartTarget, readout, footer);
-    overlay.append(style, panel);
-    overlay.addEventListener('click', (ev) => {
-      if (ev.target === overlay) this.close();
+    const { panel } = this._shell.open({
+      root: opts.root,
+      heading: title,
+      closeLabel: strings.close,
+      body: [chartTarget, readout, footer],
+      focusables,
+      css: STYLES,
+      returnFocus: opts.returnFocus,
+      onClose: () => this._teardownChart(),
     });
-    overlay.addEventListener('keydown', (ev) => this._onKeydown(ev, focusables));
-    opts.root.appendChild(overlay);
-    this._overlay = overlay;
-    this._returnFocus = opts.returnFocus ?? null;
 
     const theme = getComputedStyle(opts.themeHost);
     const muted = cssVar(theme, '--secondary-text-color') || '#727272';
@@ -566,12 +506,15 @@ export class ZeroDegreePopup {
       };
       window.addEventListener('resize', this._onResize);
     }
-    closeBtn.focus();
   }
 
   /** Tear the overlay and its chart down. `restoreFocus` false is the
    *  rebuild path of `open`, where focus moves into the new overlay. */
   close(restoreFocus = true): void {
+    this._shell.close(restoreFocus);
+  }
+
+  private _teardownChart(): void {
     if (this._onResize) {
       window.removeEventListener('resize', this._onResize);
       this._onResize = null;
@@ -580,30 +523,5 @@ export class ZeroDegreePopup {
       try { this._chart.destroy(); } catch { /* already gone */ }
       this._chart = null;
     }
-    if (!this._overlay) return;
-    this._overlay.remove();
-    this._overlay = null;
-    const target = this._returnFocus;
-    this._returnFocus = null;
-    if (restoreFocus && target?.isConnected) target.focus();
-  }
-
-  private _onKeydown(ev: KeyboardEvent, focusables: HTMLElement[]): void {
-    if (ev.key === 'Escape') {
-      ev.preventDefault();
-      ev.stopPropagation();
-      this.close();
-      return;
-    }
-    if (ev.key !== 'Tab') return;
-    // aria-modal promises focus stays inside: wrap between the buttons.
-    const root = this._overlay?.getRootNode() as Document | ShadowRoot | undefined;
-    const active = root?.activeElement ?? null;
-    const n = focusables.length;
-    const idx = focusables.indexOf(active as HTMLElement);
-    let next = ev.shiftKey ? idx - 1 : idx + 1;
-    if (idx === -1) next = 0;
-    ev.preventDefault();
-    focusables[(next + n) % n].focus();
   }
 }
