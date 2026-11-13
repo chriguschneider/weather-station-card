@@ -69,7 +69,7 @@ function makeCard() {
   // The real refresh would hit the recorder; the callback-ordering
   // contract under test only needs the invocation count. Chart
   // rebuilds are equally out of scope.
-  const refreshDelta = vi.spyOn(card, '_refreshPressureDelta').mockResolvedValue(undefined);
+  const refreshDelta = vi.spyOn(card._sources, 'refreshPressureDelta').mockResolvedValue(undefined);
   const refreshForecasts = vi.spyOn(card, '_refreshForecasts').mockImplementation(() => {});
   card.hass = makeHass(baseStates());
   // `set hass` itself runs a first `_refreshForecasts` pass; zero both
@@ -92,8 +92,8 @@ describe('station callback — pressure delta refresh ordering', () => {
 
     // Simulate the stale-while-revalidate hydration: the persisted
     // payload is already in place when the live result arrives.
-    card._stationData = payload();
-    card._stationDataReady = true;
+    card._sources.stationData = payload();
+    card._sources.stationReady = true;
 
     captured.cbs[0]({ forecast: payload() });
 
@@ -108,14 +108,14 @@ describe('station callback — pressure delta refresh ordering', () => {
     const first = payload();
 
     captured.cbs[0]({ forecast: first });
-    expect(card._stationData).toBe(first);
+    expect(card._sources.stationData).toBe(first);
     expect(refreshForecasts).toHaveBeenCalledTimes(1);
     expect(refreshDelta).toHaveBeenCalledTimes(1);
 
     // Identical fan-out (sibling-card resubscribe): render path skipped,
     // delta refresh still invoked — its hourly cache absorbs the cost.
     captured.cbs[0]({ forecast: payload() });
-    expect(card._stationData).toBe(first);
+    expect(card._sources.stationData).toBe(first);
     expect(refreshForecasts).toHaveBeenCalledTimes(1);
     expect(refreshDelta).toHaveBeenCalledTimes(2);
   });

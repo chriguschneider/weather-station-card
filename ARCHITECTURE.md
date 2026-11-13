@@ -8,9 +8,12 @@ technical structure, and the v2 cycle (May 2026) added a resilience
 layer (config validation, graceful degradation, debug overlay), swapped
 the charting library from Chart.js to uPlot (ADR-0012), moved to an
 ESM code-split bundle with a lazy editor chunk (ADR-0013), and made the
-card theme-token-aware. `main.ts` is now ~3,000 LOC of orchestrator —
-it holds reactive properties, wires the data sources, and delegates
-behaviour to the modules below.
+card theme-token-aware. The v3.0 split (#449–#452) moved the live-panel
+rows, the forecast pipeline, the sensor readings and the data-source
+lifecycle out of `main.ts`, which is now about 3,350 lines (from 3,900
+before step 4; the target of ~1,500 needs the render path split as
+well). It holds the reactive properties, the `set hass` gate and the
+render templates, and delegates behaviour to the modules below.
 
 If you're new to the codebase, read this in order: **[Module map](#module-map)**
 → **[Lifecycle](#lifecycle)** → **[Data flow](#data-flow)**, then dive
@@ -97,6 +100,22 @@ src/
 │                              drift (ADR-0008). Surfaced through
 │                              `renderErrorBanner()`.
 │
+├── data-source-controller.ts  (v3.0, #452)  The card's data-source
+│                              lifecycle as a Lit ReactiveController:
+│                              creates / keeps / drops the station,
+│                              forecast and Open-Meteo sources to match
+│                              the config (`sync`, `invalidate`,
+│                              `ensureOpenMeteo`), owns their data,
+│                              errors, ready flags and mode lazy-cache,
+│                              the card calendar (`syncCalendar`), the
+│                              3-h pressure delta and the availability
+│                              scan with its grace timer. Its own
+│                              TeardownRegistry drains on
+│                              hostDisconnected. Talks back to the card
+│                              only through `DataSourceHost`
+│                              (onSourceData / onOverlayData /
+│                              onSourceDropped / requestUpdate).
+│
 ├── data-source.ts             MeasuredDataSource (recorder polling)
 │                              and ForecastDataSource (weather/subscribe_
 │                              forecast). Both expose subscribe(cb) →
@@ -171,6 +190,30 @@ src/
 │                              HA formats entity X" helper. Never imports
 │                              main.ts (`live-panel-no-uplevel`).
 │
+├── next-rain.ts               "Next rain" live row: reads the
+│                              radar nowcast schema (`at`, `source`,
+│                              `checked_until`) and formats the
+│                              countdown card-side. Pure.
+│
+├── zero-degree-trend.ts       (#333)  Zero-degree rows: 48 h trend of
+│                              the 0 °C isotherm and the snow line
+│                              relative to the location. Pure.
+│
+├── live-source.ts             (ADR-0031)  Provenance of each live
+│                              value (station / stale / weather) and the
+│                              source labels the info popup shows.
+│
+├── sources-popup.ts           (ADR-0031)  Data-sources popup behind the
+│                              ⓘ button: one line per live value plus
+│                              the chart legend (chart-legend.ts, pure).
+│
+├── popup-shell.ts             Shared overlay shell of both popups:
+│                              backdrop, close, Escape, Tab trap, focus
+│                              return, mounted outside ha-card.
+│
+├── weather-code-map.ts        WMO weather code → HA condition lookup for
+│                              the Open-Meteo past block (ADR-0009).
+│
 ├── zero-degree-popup.ts       Popup behind the zero-degree rows
 │                              (#330): parses the 48 h sensor's
 │                              `forecast` attribute, builds a small
@@ -218,11 +261,9 @@ src/
 │                              perform-action, assist, fire-dom-event).
 │                              setupActionHandler(card) + runAction.
 │
-├── teardown-registry.ts       Lifecycle-cleanup primitive. Test-covered
-│                              and ready for wider use, but currently
-│                              only partially wired — depcruise allow-
-│                              lists it as a documented orphan exception
-│                              pending full re-integration.
+├── teardown-registry.ts       Lifecycle-cleanup primitive: push on
+│                              setup, drain on disconnect. The card and
+│                              the DataSourceController each own one.
 │
 ├── const.ts                   weatherIcons / cardinal-direction tables,
 │                              MIN_HA_VERSION + isHaVersionBelow (v2
@@ -261,6 +302,14 @@ src/
 │   │                          invalidates the cache on theme switch.
 │   ├── unit-converters.ts     (v2)  Pure wind / pressure unit-
 │   │                          conversion lookup tables (ADR-0009).
+│   ├── availability-grace.ts  (#213)  Grace-period bookkeeping for
+│   │                          unavailable sensors (in grace vs overdue).
+│   ├── fetch-signal.ts        Abort signal + 15 s timeout for the
+│   │                          Open-Meteo requests.
+│   ├── safe-storage.ts        Guarded localStorage access (blocked
+│   │                          storage returns null instead of throwing).
+│   ├── solar.ts               Solar declination for the clear-sky and
+│   │                          day-length estimates.
 │   ├── shared-requests.ts     (v2.2)  Module-level request dedup —
 │   │                          identical recorder / Open-Meteo calls
 │   │                          from sibling cards collapse into one
@@ -281,8 +330,13 @@ src/
 │                              Replaces Date's local getters.
 │
 ├── chart/
-│   ├── orchestrator.ts        drawChartUnsafe(card, args) — assembles
-│   │                          datasets + plugins, calls buildChart.
+│   ├── orchestrator.ts        buildForecastChart(inputs) — pure inputs
+│   │                          (target, config, data, counts, units,
+│   │                          theme host) in, assembles datasets +
+│   │                          plugins, calls buildChart and returns the
+│   │                          chart handle. Never touches the card; a
+│   │                          failure comes back as ChartBuildError
+│   │                          tagged 'compute' or 'init' (#452).
 │   │
 │   ├── draw.ts                uPlot instance builder — buildChart(ctx,
 │   │                          opts) returns a configured uPlot chart
@@ -382,7 +436,31 @@ graph TD
     main --> scroll[scroll-ux.ts]
     main --> action[action-handler.ts]
     main --> liverows[precip-rate / pressure-trend / dew-point-comfort / sun-strength]
+    openmeteo --> wmo[weather-code-map.ts]
     main --> orchestrator[chart/orchestrator.ts]
+    main --> ctrl[data-source-controller.ts]
+    ctrl --> data
+    ctrl --> openmeteo
+    ctrl --> pipeline
+    ctrl --> pastsrc
+    ctrl --> location
+    ctrl --> readings
+    ctrl --> teardown[teardown-registry.ts]
+    main --> teardown
+    main --> moon[moon.ts]
+    main --> nextrain[next-rain.ts]
+    main --> zdpopup[zero-degree-popup.ts]
+    zdpopup --> popupshell[popup-shell.ts]
+    main --> srcpopup[sources-popup.ts]
+    srcpopup --> popupshell
+    main --> legend[chart-legend.ts]
+    pipeline --> precipprob[precip-probability.ts]
+    zdpopup --> zdtrend
+    main --> livepanel[live-panel/*]
+    livepanel --> moon
+    livepanel --> zdtrend[zero-degree-trend.ts]
+    livepanel --> liverows
+    readings --> livesrc
     main --> skeleton[chart/skeleton.ts]
     main --> styles[chart/styles.ts]
     main --> locale[locale.ts]
@@ -445,7 +523,10 @@ setConfig(config)
      (station mode → sensors.temperature; forecast → weather_entity)
 
 set hass(hass)               ← v1.9.x: 12-line orchestrator (ADR-0007)
-  ├─ this._hass / language / sun (3 lines)
+  ├─ this._hass / _sources.syncCalendar / language
+  ├─ entity-delta gate (ADR-0017): nothing watched changed →
+  │     _sources.setHass(hass) and return
+  ├─ sun
   ├─ _extractSensorReadings(hass)
   │     Phase 1 — sensor entity reads, source-unit detection,
   │     weather_entity attribute fallback for forecast-only mode.
@@ -454,14 +535,18 @@ set hass(hass)               ← v1.9.x: 12-line orchestrator (ADR-0007)
   │     Phase 2 — minute-memoized classifier + synthesized weather
   │     stand-in. Same classifier as forecast columns, fed with
   │     instantaneous values + an instantaneous clear-sky reference.
-  └─ _syncDataSources(hass)
+  └─ _sources.sync(hass)       (DataSourceController, #452)
         Phase 3 — subscribe / unsubscribe MeasuredDataSource and
         ForecastDataSource to match show_station / show_forecast,
-        scan for missing sensor entities. Symmetrical to
-        disconnectedCallback's teardown side.
+        scan for missing sensor entities. Symmetrical to the
+        controller's hostDisconnected teardown.
+
+constructor()
+  └─ _sources = new DataSourceController(this)   ← host.addController
 
 connectedCallback()
-  └─ schedules attachResizeObserver
+  ├─ schedules attachResizeObserver
+  └─ controller.hostConnected — registers the source teardowns
 
 firstUpdated()
   └─ measureCard → drawChart  (skeleton shown until first data lands)
@@ -471,19 +556,23 @@ updated(changedProperties)
   ├─ _maybeApplyInitialScroll(...)
   ├─ setupScrollUx(this)             ← idempotent on stable wrapper
   └─ if config changed:
-       _invalidateStaleSources(oldConfig)
+       _sources.invalidate(oldConfig) — tears down a stale source and
+       restores cached data for the new mode; on true the card re-enters
+       `set hass` to resubscribe at once
 
-data callbacks (from sources):
-  this._stationData / this._forecastData ← event.forecast
-  └─ _refreshForecasts()
-       ├─ _ensureOpenMeteoSource() → planSources (the source plan)
+data callbacks (from sources, inside the controller):
+  _sources.stationData / forecastData ← event.forecast
+  └─ host.onSourceData() → _refreshForecasts()
+       ├─ _sources.ensureOpenMeteo() → planSources (the source plan)
        ├─ buildForecastEntries(station, plan) — slice, midnight guard,
        │   de-overlap, entity sunshine, Open-Meteo / estimate overlays
        └─ measureCard → drawChart
+            └─ buildForecastChart(inputs) → this.forecastChart
 
 disconnectedCallback()
+  ├─ controller.hostDisconnected — station / forecast / Open-Meteo
+  │     teardown, grace timer
   ├─ detachResizeObserver
-  ├─ _teardownStation / _teardownForecast
   ├─ _teardownInitialScrollObserver
   ├─ _scrollUxTeardown / _actionHandlerTeardown
   └─ clearInterval(this._clockTimer)
@@ -497,10 +586,11 @@ degradation slice). With `debug: true` in YAML, `renderDebugPanel()`
 appends a diagnostics panel showing the resolved entities, the chosen
 render mode, and why a column came up empty.
 
-The phase tag (`this._chartPhase`) is set at three points in
-`drawChartUnsafe` (`'compute'`, `'init'`, then cleared on success). When
-something throws, the catch block in `main.ts` `drawChart()` reads it
-to label the error banner — useful when the error message is generic
+The phase tag comes back on the error: `buildForecastChart` rethrows
+any failure as `ChartBuildError` with `phase` `'compute'` or `'init'`
+(the card tags a throwing `computeForecastData` as `'compute'` too).
+The catch block in `main.ts` `drawChart()` reads it to label the error
+banner, `'draw'` for anything untagged — useful when the error message is generic
 and you need to know whether the crash was during data shaping vs.
 chart init vs. plugin draw. `_refreshForecasts` follows the same
 safe/unsafe split (`_refreshForecasts` → `_refreshForecastsUnsafe`).
@@ -532,10 +622,10 @@ of merged station + forecast entries. Every entry has:
 itself is pure (`src/forecast-pipeline.ts`):
 
 ```js
-const plan = planSources(config, this._forecastData, calendar);
+const plan = this._sources.ensureOpenMeteo();  // planSources(config, forecastData, calendar)
 // plan.forecastSlice: midnight-guarded, cut to forecast_days
 const { entries, stationCount, forecastCount } =
-  buildForecastEntries(this._stationData, { plan, calendar, hass, openMeteo, location });
+  buildForecastEntries(this._sources.stationData, { plan, calendar, hass, openMeteo, location });
 this.forecasts = entries;
 ```
 
@@ -578,7 +668,7 @@ unchanged; the shim costs about one object per plugin per frame.
 ```
 npm run lint       →  eslint src tests-e2e   (ESLint 10 flat-config)
 npm run typecheck  →  tsc --noEmit
-npm run test       →  vitest run             (744 tests across 30 files)
+npm run test       →  vitest run             (1,975 tests across 90 files)
 npm run depcheck   →  depcruise src          (architecture rules)
 npm run rollup     →  rollup -c              (ESM code-split, dist/)
 npm run build      =  lint + typecheck + test + rollup
@@ -638,10 +728,9 @@ extended with these gates:
 - **E2E + visual regression**: Playwright render-mode, editor, mobile-
   layout and scroll specs, with PNG baselines pinned to the GHA runner
   (ADR-0003).
-- Verifies `dist/` is in sync with source by re-running the bundler
-  in CI and comparing the output.
 - On tag pushes, verifies `package.json` version matches the tag,
-  then uploads the bundle as a release asset.
+  builds `dist/` from the tagged commit and attaches every
+  `dist/*.js` to the release (`dist/` is not committed, ADR-0032).
 
 `permissions: contents: write` is set at job level so the release action
 can attach the bundle.
@@ -672,7 +761,7 @@ Cache-busting goes through the resource URL's `?hacstag=` query — see
 
 ## Testing scope
 
-What's tested (Vitest, `tests/*.test.js`, **744 tests across 30
+What's tested (Vitest, `tests/*.test.js`, **1,975 tests across 90
 files**):
 
 - `condition-classifier.ts` — every decision-tree branch, threshold
@@ -695,6 +784,12 @@ files**):
 - `chart/skeleton.ts` — placeholder shape + space reservation.
 - `scroll-ux.ts`, `action-handler.ts`, `teardown-registry.ts` — the
   extracted interaction modules.
+- `data-source-controller.ts` — source create / keep / drop, callbacks
+  and their identical-payload guard, invalidate + lazy cache, calendar
+  change, Open-Meteo gating, pressure delta, availability grace timer,
+  teardown on disconnect (driven through a plain host object).
+- `chart/orchestrator.ts` — `buildForecastChart` inputs → chart options
+  and the ChartBuildError phases (buildChart stubbed).
 - The live-row classifiers — `precip-rate.ts`, `pressure-trend.ts`,
   `dew-point-comfort.ts`, `sun-strength.ts`.
 - `utils/*` — safe-query, numeric, intl-cache, resolve-css-var,
@@ -749,7 +844,7 @@ Substantial architectural decisions are captured under `docs/adr/`. The
 template (`docs/adr/template.md`) follows the Nygard format. Existing
 records:
 
-- **0001** dist committed for HACS distribution
+- **0001** dist committed for HACS distribution (superseded by 0032)
 - **0002** Sunshine-duration tier policy
 - **0003** E2E baselines pinned to GHA runners
 - **0004** TypeScript strict for leaf modules, `any` at the HA boundary
@@ -763,6 +858,25 @@ records:
 - **0012** Chart library — uPlot replaces Chart.js
 - **0013** ESM output with content-hashed chunks for lazy editor
 - **0014** Cold-mount perf regression gate in CI
+- **0015** Open-Meteo as a no-station data source
+- **0016** Two-phase forecast render (rows deferred past first paint)
+- **0017** Entity-delta gate in `set hass` + non-reactive `_hass`
+- **0018** In-bundle SVG sprite for the per-column forecast rows
+- **0019** Virtualized chart canvas
+- **0020** Cross-card request dedup and persistent caches
+- **0021** 'today' mode as a day pager over 3-hour blocks
+- **0022** Computed moon line
+- **0023** Editor expansion panels with state summaries
+- **0024** Toggle pills for editor multi-selects
+- **0025** Attribute row layout as a list of columns
+- **0026** Calendar math follows the HA server's time zone
+- **0027** Chance of rain: weather entity first, Open-Meteo as fallback
+- **0028** Sunshine bar: weather entity first, Open-Meteo as fallback
+- **0029** Agent guardrails and CI conventions from repo-standard
+- **0030** Per-card calendar
+- **0031** Provenance of live values
+- **0032** Build `dist/` only in the release job
+- **0033** Data-source lifecycle as a Lit ReactiveController, pure chart builder
 
 Add a new ADR when a decision is hard to reverse, surprising without
 context, *and* the result of a real trade-off — see

@@ -2,7 +2,7 @@
 // series (station statistics, weather forecast). Perf pass 2026-08.
 //
 // Why: the FIRST chart paint is gated on every expected data source
-// having produced a value (`_allExpectedDataReady`). The forecast
+// having produced a value (`DataSourceController.allExpectedDataReady`). The forecast
 // usually lands in tens of ms (HA serves the weather entity's cached
 // forecast), but the station side is a recorder/statistics_during_period
 // roundtrip — 0.5–3 s on Pi-class hosts. Until then the user sees the

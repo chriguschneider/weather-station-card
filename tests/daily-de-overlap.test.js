@@ -18,7 +18,7 @@ function makeCard(type) {
     forecast_days: 2,
     forecast: { type },
   });
-  card._syncCalendar('Europe/Zurich');
+  card._sources.syncCalendar('Europe/Zurich');
   return card;
 }
 
@@ -29,8 +29,8 @@ describe('daily de-overlap', () => {
     const card = makeCard('daily');
     const cal = card.calendar;
     const today = cal.startOfDay(Date.now());
-    card._stationData = [entry(cal.addDays(today, -1), 10), entry(today, 11)];
-    card._forecastData = [entry(today, 20), entry(cal.addDays(today, 1), 21)];
+    card._sources.stationData = [entry(cal.addDays(today, -1), 10), entry(today, 11)];
+    card._sources.forecastData = [entry(today, 20), entry(cal.addDays(today, 1), 21)];
     card._refreshForecastsUnsafe();
     expect(card.forecasts.map((e) => e.temperature)).toEqual([10, 11, 20, 21]);
   });
@@ -40,8 +40,8 @@ describe('daily de-overlap', () => {
     const cal = card.calendar;
     const hour = cal.startOfHour(Date.now());
     const next = new Date(hour.getTime() + 3600_000);
-    card._stationData = [entry(hour, 11)];
-    card._forecastData = [entry(hour, 20), entry(next, 21)];
+    card._sources.stationData = [entry(hour, 11)];
+    card._sources.forecastData = [entry(hour, 20), entry(next, 21)];
     card._refreshForecastsUnsafe();
     expect(card.forecasts.map((e) => e.temperature)).toEqual([11, 21]);
   });

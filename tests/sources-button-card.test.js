@@ -73,7 +73,7 @@ async function tickAfter(card, states, minutes, hassExtra = {}) {
   card.hass = hass;
   // The entity-delta gate skips unchanged ticks; the card's grace timer
   // re-scans directly, so do the same here.
-  card._scanSensorAvailability(hass);
+  card._sources.scanAvailability(hass);
   await card.updateComplete;
 }
 const overdue = async (card, states) => {
@@ -196,7 +196,7 @@ describe('show_sources: info button', () => {
     states['sensor.hum'] = sensor('unavailable', '%', { last_changed: '2026-11-08T08:12:00Z' });
     await tickAfter(card, states, 0, { state: 'NOT_RUNNING' });
     await tickAfter(card, states, 30, { state: 'NOT_RUNNING' });
-    expect(card._missingSensors).toEqual([]);
+    expect(card._sources.missingSensors).toEqual([]);
     expect(button(card).classList.contains('wsc-sources-alert')).toBe(false);
     buttonLink(card).click();
     const hum = popupLines(card).find((l) => l.textContent.includes('Humidity'));

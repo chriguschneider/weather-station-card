@@ -22,6 +22,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The live panel's rows moved out of the main card file into their own modules (step 1 of the main-file split). The info button's popup now takes its values from the same code as the rows.
 - The forecast pipeline moved out of the main card file (step 2): one plan now decides where each part of the chart comes from, and the Open-Meteo request, the chart and the info popup all read it. The card and the editor share one rule for the source of past data, and `days` / `forecast_days` are read once when the config loads.
 - Reading the live sensors moved out of the main card file (step 3). Each live value now carries its unit and its source from the moment it is read, so the info popup can no longer name a different source than the one shown. A new card's sensor auto-pick and the editor's sensor pickers share one set of matching rules.
+- The data sources' lifecycle moved out of the main card file (step 4): subscribing, the Open-Meteo source, the time zone, the pressure trend and the sensor-availability check now live in one controller that cleans up after itself when the card is removed. The chart builder now takes its inputs and returns the chart instead of writing into the card.
 
 ## [3.0.0-beta.3] — 2026-11-09
 

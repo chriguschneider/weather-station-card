@@ -99,7 +99,7 @@ export interface UplotChart {
     }>;
   };
   /** The render-data object the label plugins close over — the SAME
-   *  reference drawChartUnsafe hands to both buildPlugins() and this
+   *  reference buildForecastChart hands to both buildPlugins() and this
    *  builder. The value-printing plugins (precip / temp / sunshine /
    *  daily-tick) read their numbers from it LAZILY at draw time, so
    *  refreshing its fields in place re-prints fresh values on the next

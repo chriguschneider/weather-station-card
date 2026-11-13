@@ -125,8 +125,23 @@ tick **that changed a watched entity**".
   documents the deliberate non-reactivity in the one place future
   readers will look.
 
+## Amendment 2026-11-13 (#452): sources in a controller
+
+The gate stays in the card. Its source check is now
+`_sources.sourcesMatchConfig()` on the `DataSourceController`
+(ADR-0033), and the snapshot is nulled through the controller's
+`onSourceDropped()` callback, which both teardowns (and so the
+`_sources.invalidate` re-entry and a calendar change) fire.
+`_missingSensors` / `_staleSensors` moved into the controller as
+`missingSensors` / `staleSensors`; they are no longer reactive
+properties, but the controller calls `host.requestUpdate()` only when a
+list's joined content changed, so the scan stays render-inert on
+unchanged passes. The 3-h pressure delta follows the same rule.
+
 ## Related
 
+- [0033](0033-data-source-reactive-controller.md) — the data-source
+  controller
 - [0007](0007-set-hass-three-phase.md) — the three-phase decomposition
   this gates
 - [0014](0014-perf-regression-gate.md) — cold-mount gate (unaffected;

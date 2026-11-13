@@ -91,7 +91,7 @@ function makeCard(config, hassConfig, tz) {
   const card = document.createElement('weather-station-card');
   card.setConfig({ ...config });
   card._hass = { config: hassConfig };
-  card._syncCalendar(tz);
+  card._sources.syncCalendar(tz);
   return card;
 }
 const text = (tpl) => tpl.values.filter((v) => typeof v === 'string').map((s) => s.trim());

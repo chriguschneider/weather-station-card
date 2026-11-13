@@ -76,7 +76,7 @@ function makeCard(config) {
   main.className = 'main';
   main.innerHTML = '<span id="digital-clock"></span>';
   (card.shadowRoot ?? card.attachShadow({ mode: 'open' })).appendChild(main);
-  card._syncCalendar(SERVER);
+  card._sources.syncCalendar(SERVER);
   return card;
 }
 
@@ -185,7 +185,7 @@ function makeLegacyCard(config) {
   main.className = 'main';
   main.innerHTML = '<span id="digital-clock"></span>';
   (card.shadowRoot ?? card.attachShadow({ mode: 'open' })).appendChild(main);
-  card._syncCalendar('Europe/Zurich');
+  card._sources.syncCalendar('Europe/Zurich');
   return card;
 }
 
