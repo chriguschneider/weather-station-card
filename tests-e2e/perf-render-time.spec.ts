@@ -7,7 +7,7 @@
 // in the build summary line over multiple PRs.
 //
 // Three configs (combination/daily, today, hourly) cover the three
-// drawChartUnsafe code paths (separator+labels / today / hourly).
+// buildForecastChart code paths (separator+labels / today / hourly).
 
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
