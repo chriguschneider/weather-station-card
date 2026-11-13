@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The sensor pickers in the visual editor now also list the sensors the card picks on its own for a new card, for example a dew-point, gust or wind-direction sensor named that way but without the matching sensor type. Before, the picker could hide the sensor the card had just chosen.
+
 ### Fixed
 
 - The sun-strength row (UV and lux) now flips between sun and moon at the same moment as the main condition icon. Near sunrise and sunset the two could disagree by up to about 20 minutes.
@@ -17,6 +21,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - The live panel's rows moved out of the main card file into their own modules (step 1 of the main-file split). The info button's popup now takes its values from the same code as the rows.
 - The forecast pipeline moved out of the main card file (step 2): one plan now decides where each part of the chart comes from, and the Open-Meteo request, the chart and the info popup all read it. The card and the editor share one rule for the source of past data, and `days` / `forecast_days` are read once when the config loads.
+- Reading the live sensors moved out of the main card file (step 3). Each live value now carries its unit and its source from the moment it is read, so the info popup can no longer name a different source than the one shown. A new card's sensor auto-pick and the editor's sensor pickers share one set of matching rules.
 
 ## [3.0.0-beta.3] — 2026-11-09
 

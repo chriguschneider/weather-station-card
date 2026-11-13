@@ -14,6 +14,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, html } from 'lit';
 import { renderBasicsSection } from '../src/editor/render-basics.js';
 import { renderSensorsSection } from '../src/editor/render-sensors.js';
+import { autoPickSensor } from '../src/sensor-match.js';
 import { renderChartSection } from '../src/editor/render-chart.js';
 import { renderLivePanelSection } from '../src/editor/render-live-panel.js';
 import { DEFAULTS, DEFAULTS_FORECAST } from '../src/defaults.js';
@@ -293,6 +294,36 @@ describe('renderSensorsSection (schema-driven)', () => {
       makeCtx({ showsStation: false, mode: 'forecast', pastDataAvailable: false }),
     );
     expect(allFieldNames(container)).toContain('past_source');
+  });
+
+  // #451: the pickers and getStubConfig share one matcher, so the entity
+  // a new card picks is always in its slot's list.
+  it('offers the sensor a new card auto-picks', () => {
+    const states = {
+      'sensor.ws_dew': { state: '8', attributes: {} },
+      'sensor.ws_gust': { state: '4', attributes: {} },
+      'sensor.ws_rain_daily': { state: '1', attributes: { unit_of_measurement: 'mm' } },
+    };
+    const hass = { states };
+    const pick = (key) => autoPickSensor(key, Object.keys(states), hass);
+    const container = renderInto(renderSensorsSection, makeEditor({ hass }), makeCtx());
+    for (const key of ['dew_point', 'gust_speed']) {
+      expect(pick(key)).not.toBe('');
+      expect(findField(container, key).field.selector.entity.include_entities).toContain(pick(key));
+    }
+  });
+
+  it('marks the required picker and routes a source change to the editor', () => {
+    const editor = makeEditor();
+    const container = renderInto(renderSensorsSection, editor, makeCtx());
+    const [sourceForm, sensorForm] = Array.from(container.querySelectorAll('ha-form'));
+    expect(sensorForm.computeLabel({ name: 'temperature', required: true })).toBe('temperature (required_marker)');
+    expect(sensorForm.computeLabel({ name: 'humidity' })).toBe('humidity');
+    expect(sourceForm.computeLabel()).toBe('past_source_label');
+    sourceForm.dispatchEvent(new CustomEvent('value-changed', { detail: { value: { past_source: 'station' } } }));
+    expect(editor._setPastSource).not.toHaveBeenCalled();
+    sourceForm.dispatchEvent(new CustomEvent('value-changed', { detail: { value: { past_source: 'openmeteo' } } }));
+    expect(editor._setPastSource).toHaveBeenCalledWith('openmeteo');
   });
 });
 

@@ -71,6 +71,7 @@ import { pastFromOpenMeteo } from './past-source.js';
 import { OpenMeteoSource } from './openmeteo-source.js';
 import { sourceLabel, labelText, isSensorProblem, sensorDownId, type LiveSource } from './live-source.js';
 import { extractSensorReadings, liveSourcesOf, precipRateReading, unavailableSensors, type Reading, type SensorReadings, type StateLike, type StatesLike } from './sensor-readings.js';
+import { AUTO_PICK_KEYS, autoPickSensor } from './sensor-match.js';
 import { buildChartLegend, type LegendItem } from './chart-legend.js';
 import { SourcesPopup, type SourceLine } from './sources-popup.js';
 import { cardCalendar, resolveLocation } from './location.js';
@@ -111,7 +112,7 @@ import { renderChartSkeleton } from './chart/skeleton.js';
 import { cardStyles } from './chart/styles.js';
 import { getDateTimeFormat } from './utils/intl-cache.js';
 import { isSunUp } from './moon.js';
-import { classifyNextRain, findNextRainEntity, formatCheckedUntil, formatNextRain, nextRainIcon } from './next-rain.js';
+import { classifyNextRain, formatCheckedUntil, formatNextRain, nextRainIcon } from './next-rain.js';
 import { parseZeroDegreeCurve, ZeroDegreePopup, type ZeroDegreePoint } from './zero-degree-popup.js';
 import { attrEntity, type LiveHass, type LivePanelCtx } from './live-panel/context.js';
 import { renderAttributes as renderLiveAttributes } from './live-panel/attributes.js';
@@ -545,43 +546,10 @@ static assertConfig(config: any): void {
 }
 
 static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntities: string[]) {
-  // Auto-detect station sensors. Where multiple entities match, rank by
-  // friendly-name signals (outdoor / garden / weather-station beats
-  // indoor / kitchen) and area, with most-recent activity as the
-  // tie-breaker. Falls through to first-match if no candidate scores.
-  const rankCandidate = (eid: string): number => {
-    const st = hass?.states?.[eid];
-    if (!st) return -1;
-    let score = 0;
-    const name = ((st.attributes?.friendly_name as string) || '').toLowerCase();
-    if (/\b(outdoor|outside|garden|weather|draussen|aussen|pool)\b/.test(name)) score += 10;
-    if (/\b(indoor|inside|drinnen|kitchen|living|bedroom|fridge)\b/.test(name)) score -= 5;
-    const areaId = ((st.attributes?.area_id as string) || '').toLowerCase();
-    if (/garden|outdoor|outside/.test(areaId)) score += 5;
-    const lastChanged = (st as { last_changed?: string }).last_changed;
-    if (lastChanged && Date.now() - new Date(lastChanged).getTime() < 3_600_000) score += 1;
-    return score;
-  };
-  const pickRanked = (candidates: string[]): string | undefined => {
-    if (candidates.length === 0) return undefined;
-    if (candidates.length === 1) return candidates[0];
-    return candidates
-      .map((eid) => ({ eid, score: rankCandidate(eid) }))
-      .sort((a, b) => b.score - a.score)[0].eid;
-  };
-  const findByClass = (cls: string): string | undefined => {
-    const all = allEntities || [];
-    const matches = all.filter((eid: string) => {
-      if (!eid.startsWith('sensor.')) return false;
-      return hass?.states?.[eid]?.attributes?.device_class === cls;
-    });
-    return pickRanked(matches);
-  };
-  const findByPattern = (re: RegExp): string | undefined => {
-    const all = allEntities || [];
-    const matches = all.filter((eid: string) => eid.startsWith('sensor.') && re.test(eid));
-    return pickRanked(matches);
-  };
+  // Auto-detect station sensors with the matcher the editor's pickers
+  // use (sensor-match.ts), so every pick is also a picker candidate.
+  const ids = allEntities || [];
+  const pick = (key: string): string => autoPickSensor(key, ids, hass as Parameters<typeof autoPickSensor>[2]);
 
   // A freshly-added card lands with a fuller, closer-to-finished
   // layout than bare DEFAULTS — the live panel, current condition, the
@@ -618,39 +586,7 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
       show_sunshine: true,
     },
     // Key order mirrors the editor's picker grid (render-sensors.ts).
-    sensors: {
-      temperature: findByClass('temperature') || '',
-      pressure: findByClass('atmospheric_pressure') || findByClass('pressure') || '',
-      humidity: findByClass('humidity') || '',
-      dew_point: findByPattern(/dew/) || '',
-      // Prefer a daily-reset sensor (e.g. utility_meter cycle: daily) so the
-      // statistics max-per-day equals the day's rainfall. A cumulative
-      // (lifetime) sensor would yield the running total, not daily mm.
-      // The loose fallback excludes `*_precipitation_rate` (Pirateweather
-      // and friends) — a rate in the counter slot draws garbage bars; it
-      // belongs in precipitation_rate below.
-      precipitation: findByPattern(/precipitation_today/)
-        || findByPattern(/precipitation_daily/)
-        || findByPattern(/precipitation(?!_rate)/)
-        || '',
-      // The rate channel most stations ship next to the counter (#253).
-      precipitation_rate: findByClass('precipitation_intensity')
-        || findByPattern(/(precipitation_rate|rain_rate)/)
-        || '',
-      wind_speed: findByClass('wind_speed') || '',
-      gust_speed: findByPattern(/gust/) || '',
-      wind_direction: findByPattern(/(direction|bearing|wind.?dir)/) || '',
-      // Solar-irradiance sensors (W/m²) work in the same slot — the
-      // card converts them to lux internally.
-      illuminance: findByClass('illuminance') || findByClass('irradiance') || '',
-      uv_index: findByPattern(/uv/) || '',
-      // Forecast-derived snow-line altitude (MeteoSwiss `zero_degree_level`,
-      // Open-Meteo-style `freezing_level_height`). No device_class exists.
-      zero_degree_level: findByPattern(/(zero_degree(?!.*48h)|freezing_level|nullgrad)/) || '',
-      zero_degree_level_48h: findByPattern(/zero_degree.*48h/) || '',
-      // MeteoSwiss radar nowcast; registry identity first, id pattern second.
-      next_rain: findNextRainEntity(hass as Parameters<typeof findNextRainEntity>[0]) || '',
-    },
+    sensors: Object.fromEntries(AUTO_PICK_KEYS.map((key) => [key, pick(key)])),
   };
 }
 

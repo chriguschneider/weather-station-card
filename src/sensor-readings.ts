@@ -119,40 +119,19 @@ export function extractSensorReadings(input: {
     return typeof u === 'string' && u ? u : undefined;
   };
 
-  // Source units come from the sensors; a quantity with no sensor unit
-  // takes the weather entity's own unit (#253: PirateWeather mph read
-  // as m/s), then the card's base unit.
   const sensorWindUnit = sensorUnit('wind_speed') || sensorUnit('gust_speed');
   const sensorTempUnit = sensorUnit('temperature');
   const sensorPressureUnit = sensorUnit('pressure');
-  const units = {
-    wind: sensorWindUnit || wxUnit('wind_speed_unit') || 'm/s',
-    pressure: sensorPressureUnit || wxUnit('pressure_unit') || 'hPa',
-    temperature: sensorTempUnit || wxUnit('temperature_unit') || '°C',
-    // Counter first, rate sensor second: a rate-only config must still
-    // default its display unit to the station's own base (in/h stays in).
-    precipBase: precipBaseUnit(sensorUnit('precipitation') || sensorUnit('precipitation_rate')),
-  };
+  const units = sourceUnits(sensorUnit, wxUnit);
 
   // A weather value is in the entity's unit. When the station sensor of
   // the same quantity uses another unit (HA keeps unit_of_measurement
   // while a sensor is unavailable), rescale it into the sensor's unit:
   // otherwise a 20 °C entity reading behind an unavailable °F sensor
   // shows as 20 °F and the classifier sees frost (#438).
-  const wxWindUnit = wxUnit('wind_speed_unit');
-  const windFactor = sensorWindUnit && wxWindUnit && sensorWindUnit !== wxWindUnit
-    ? WIND_CONVERSION[`${sensorWindUnit}->${wxWindUnit}`]
-    : undefined;
-  const rescaleWind = windFactor !== undefined ? (v: number) => v * windFactor : undefined;
-  const wxTempUnit = wxUnit('temperature_unit');
-  const rescaleTemp = sensorTempUnit && wxTempUnit && sensorTempUnit !== wxTempUnit
-    ? (v: number) => fromCelsius(toCelsius(v, wxTempUnit) ?? v, sensorTempUnit)
-    : undefined;
-  const wxPressureUnit = wxUnit('pressure_unit');
-  const pressureFactor = sensorPressureUnit && wxPressureUnit && sensorPressureUnit !== wxPressureUnit
-    ? PRESSURE_CONVERSION[`${sensorPressureUnit}->${wxPressureUnit}`]
-    : undefined;
-  const rescalePressure = pressureFactor !== undefined ? (v: number) => v * pressureFactor : undefined;
+  const rescaleWind = factorRescale(WIND_CONVERSION, sensorWindUnit, wxUnit('wind_speed_unit'));
+  const rescaleTemp = tempRescale(sensorTempUnit, wxUnit('temperature_unit'));
+  const rescalePressure = factorRescale(PRESSURE_CONVERSION, sensorPressureUnit, wxUnit('pressure_unit'));
 
   // The sensor's value (live or last good) wins, else the weather
   // entity's current attribute. `unit` returns the unit for each side.
@@ -182,14 +161,10 @@ export function extractSensorReadings(input: {
   };
 
   const dewSensorUnit = sensorUnit('dew_point');
-  // Irradiance (W/m²) scales into lux here, so every consumer sees lux.
-  const illId = idOf(sensors.illuminance);
-  const illState = stateOf(illId);
+  // 'lx' is HA's illuminance unit (developers.home-assistant.io/docs/core/entity/sensor/).
+  const illState = stateOf(idOf(sensors.illuminance));
   const illScale = luxScaleFor(illState?.attributes?.unit_of_measurement, illState?.attributes?.device_class);
-  const illuminance = read('illuminance', null, () => (illScale !== 1 ? 'lx' : unitOf(illState)));
-  const illNum = illuminance.value !== undefined ? parseFloat(illuminance.value) : NaN;
-  if (illScale !== 1 && Number.isFinite(illNum)) illuminance.value = String(Math.round(illNum * illScale));
-
+  const illuminance = toLux(read('illuminance', null, () => (illScale !== 1 ? 'lx' : unitOf(illState))), illScale);
   return {
     temperature: read('temperature', 'temperature', () => units.temperature, rescaleTemp),
     // HA weather entities report humidity in % (developers.home-assistant.io/docs/core/entity/weather/).
@@ -208,6 +183,47 @@ export function extractSensorReadings(input: {
     zero_degree_level_48h: read('zero_degree_level_48h', null, () => sensorUnit('zero_degree_level_48h')),
     units,
   };
+}
+
+// Source units come from the sensors; a quantity with no sensor unit
+// takes the weather entity's own unit (#253: PirateWeather mph read as
+// m/s), then the card's base unit.
+function sourceUnits(
+  sensorUnit: (key: string) => string | undefined,
+  wxUnit: (attr: string) => string | undefined,
+): SensorReadings['units'] {
+  return {
+    wind: sensorUnit('wind_speed') || sensorUnit('gust_speed') || wxUnit('wind_speed_unit') || 'm/s',
+    pressure: sensorUnit('pressure') || wxUnit('pressure_unit') || 'hPa',
+    temperature: sensorUnit('temperature') || wxUnit('temperature_unit') || '°C',
+    // Counter first, rate sensor second: a rate-only config must still
+    // default its display unit to the station's own base (in/h stays in).
+    precipBase: precipBaseUnit(sensorUnit('precipitation') || sensorUnit('precipitation_rate')),
+  };
+}
+
+// The weather entity's value expressed in the sensor's unit; undefined
+// when the units agree or the pair is not in the table.
+function factorRescale(
+  table: Readonly<Partial<Record<string, number>>>,
+  sensorUnit: string | undefined,
+  wxUnit: string | undefined,
+): ((v: number) => number) | undefined {
+  if (!sensorUnit || !wxUnit || sensorUnit === wxUnit) return undefined;
+  const factor = table[`${sensorUnit}->${wxUnit}`];
+  return factor !== undefined ? (v: number) => v * factor : undefined;
+}
+
+function tempRescale(sensorUnit: string | undefined, wxUnit: string | undefined): ((v: number) => number) | undefined {
+  if (!sensorUnit || !wxUnit || sensorUnit === wxUnit) return undefined;
+  return (v: number) => fromCelsius(toCelsius(v, wxUnit) ?? v, sensorUnit);
+}
+
+// Irradiance (W/m²) scales into lux here, so every consumer sees lux.
+function toLux(reading: Reading, scale: number): Reading {
+  const num = reading.value !== undefined ? parseFloat(reading.value) : NaN;
+  if (scale === 1 || !Number.isFinite(num)) return reading;
+  return { ...reading, value: String(Math.round(num * scale)) };
 }
 
 // Wind direction takes the sensor only while its state is numeric and
