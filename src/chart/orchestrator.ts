@@ -1,13 +1,10 @@
-// Chart orchestration: takes the card's `forecasts` + config and
-// produces a configured chart instance (uPlot under the hood since
-// slice 2 of the 2026-05 perf stack — see ADR-0012).
+// Chart orchestration: pure inputs in, a configured chart out (uPlot,
+// ADR-0012). The card finds the container, destroys the previous chart
+// and stores the returned handle; nothing here reads or writes the card.
 //
 // Responsibilities:
 //   - normalize the config (forecast.type fallback for typo'd YAML)
-//   - locate the chart container in card.renderRoot, RAF-retry if Lit
-//     hasn't committed it yet
-//   - destroy any previous chart instance so we don't leak handles
-//   - read live theme tokens from getComputedStyle(document.body)
+//   - read live theme tokens from the theme host
 //   - resolve the precip-axis floor, station/forecast gap framing, sunshine
 //     fraction data, dataset segment-options (transparent boundary
 //     at daily combination, dashed at hourly combination), per-bar
@@ -18,11 +15,8 @@
 //     optional sunshineLabel (gated on daily + show_sunshine)
 //   - call buildChart() in chart/draw.ts for the actual instance
 //
-// Coupling to the card instance is captured by the `CardLike` interface
-// below — the union of card fields and methods this function reads or
-// writes. Keeping it as a structural interface (rather than importing
-// the LitElement class) avoids a circular type dependency between
-// main.ts and this module.
+// A failure is rethrown as ChartBuildError tagged with the phase it
+// happened in ('compute' or 'init') for the card's error banner.
 
 import { effectiveVisibleBars, normalizeForecastMode } from '../forecast-utils.js';
 import { isDarkColor, lightenColor, resolveTemp2Color } from '../format-utils.js';
@@ -45,11 +39,11 @@ import {
 } from './plugins.js';
 import type { Calendar } from '../utils/time-zone.js';
 
-/** Per-render data bag — what `card.computeForecastData()` returns.
+/** Per-render data bag — what the card's `computeForecastData()` returns.
  *  All arrays are positional. `tempLowAvailable` lets the caller hide
  *  the second line dataset entirely when the upstream forecast had no
  *  `templow` field (hourly mode). */
-interface ForecastChartData extends PluginRenderData {
+export interface ForecastChartData extends PluginRenderData {
   tempHigh: ReadonlyArray<number | null | undefined>;
   tempLow: ReadonlyArray<number | null | undefined>;
   tempLowAvailable: boolean;
@@ -77,35 +71,32 @@ interface OrchestratorConfig extends PluginCardConfig {
   use_12hour_format?: boolean;
 }
 
-/** Structural interface for the card instance the orchestrator
- *  cooperates with. `forecastChart` is read AND written; `_chartPhase`
- *  is set at the boundaries of the long-running phases. */
-export interface CardLike {
-  forecasts: ReadonlyArray<unknown> | null;
-  forecastChart: UplotChart | null;
-  renderRoot: ParentNode;
-  _hass: { config: { unit_system: { temperature: string; length: string } } };
-  _stationCount?: number;
-  _forecastCount?: number;
-  _chartPhase: string | null;
-  // True when the card is mounted inside the card-config dialog's
-  // live preview. Forces chart animation duration to 0 regardless of
-  // the user's forecast.disable_animation setting.
-  _isInPreview?: boolean;
-  computeForecastData(): ForecastChartData;
-  ll(key: string): string | Record<string, string>;
-  drawChart(): void;
-}
-
-/** Args bag — `forecastItems` and `weather` are kept in the contract
- *  for future callers and to mirror the destructure shape used in
- *  main.ts. */
-export interface DrawChartArgs {
+/** Everything one chart build reads. */
+export interface ChartInputs {
+  /** The `#forecastChart` container; the chart mounts inside it. */
+  target: HTMLElement;
   config: OrchestratorConfig;
   language: string;
   calendar: Calendar;
-  weather?: unknown;
-  forecastItems?: unknown;
+  data: ForecastChartData;
+  stationCount: number;
+  forecastCount: number;
+  /** HA's unit system (`hass.config.unit_system`). */
+  unitSystem: { temperature: string; length: string };
+  ll(key: string): string | Record<string, string>;
+  /** Element whose computed style supplies the theme tokens. */
+  themeHost: HTMLElement;
+  /** Card-editor live preview: no animation. */
+  inPreview: boolean;
+}
+
+/** A chart build failed; `phase` says whether while shaping the data
+ *  ('compute') or constructing the chart ('init'). */
+export class ChartBuildError extends Error {
+  constructor(readonly phase: 'compute' | 'init', readonly original: unknown) {
+    super(String((original as { message?: unknown } | null)?.message ?? original));
+    this.name = 'ChartBuildError';
+  }
 }
 
 interface SegmentCtx {
@@ -246,7 +237,7 @@ function buildSegmentHelpers(args: SegmentHelpersArgs): SegmentHelpers {
 
 // deno-lint-ignore no-explicit-any
 interface BuildDatasetsArgs {
-  card: CardLike;
+  ll: ChartInputs['ll'];
   config: any;
   data: any;
   tempSegmentOpts: { borderColor: unknown; borderDash: unknown };
@@ -263,7 +254,7 @@ interface BuildDatasetsArgs {
  *  value labels are drawn by createTempLabelsPlugin, not here. */
 function buildDatasets(args: BuildDatasetsArgs): Array<Record<string, unknown>> {
   const {
-    card, config, data, tempSegmentOpts,
+    ll, config, data, tempSegmentOpts,
     temp1Color, temp2Color, precipPerBarColor,
     showSunshine, sunshineFractionData, sunshinePerBarColor,
   } = args;
@@ -280,7 +271,7 @@ function buildDatasets(args: BuildDatasetsArgs): Array<Record<string, unknown>> 
 
   const datasets: Array<Record<string, unknown>> = [
     {
-      label: card.ll('tempHi'),
+      label: ll('tempHi'),
       type: 'line',
       data: tempHighSeries,
       yAxisID: 'TempAxis',
@@ -289,7 +280,7 @@ function buildDatasets(args: BuildDatasetsArgs): Array<Record<string, unknown>> 
       segment: tempSegmentOpts,
     },
     {
-      label: card.ll('tempLo'),
+      label: ll('tempLo'),
       type: 'line',
       data: tempLowSeries,
       yAxisID: 'TempAxis',
@@ -299,7 +290,7 @@ function buildDatasets(args: BuildDatasetsArgs): Array<Record<string, unknown>> 
       hidden: !data.tempLowAvailable,
     },
     {
-      label: card.ll('precip'),
+      label: ll('precip'),
       type: 'bar',
       data: precipSeries,
       yAxisID: 'PrecipAxis',
@@ -312,7 +303,7 @@ function buildDatasets(args: BuildDatasetsArgs): Array<Record<string, unknown>> 
 
   if (showSunshine) {
     datasets.push({
-      label: card.ll('sunshine'),
+      label: ll('sunshine'),
       type: 'bar',
       data: sunshineFractionData,
       yAxisID: 'SunshineAxis',
@@ -418,43 +409,27 @@ function buildPlugins(args: BuildPluginsArgs): ChartPlugin[] {
   return plugins;
 }
 
-export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unknown[] | undefined {
-  const { config: rawConfig, language, calendar, weather, forecastItems } = args ?? (card as unknown as DrawChartArgs);
-  // Silence "unused" lint — `weather` is part of the destructure-from-`card`
-  // contract and may be needed by future callers (and was in the prior
-  // signature). Discarding here keeps the destructure shape stable.
-  void weather;
-  void forecastItems;
-  if (!card.forecasts?.length) {
-    return [];
+/** Build the forecast chart into `inputs.target` and return its handle.
+ *  The caller owns the previous chart (destroy it first) and the result. */
+export function buildForecastChart(inputs: ChartInputs): UplotChart {
+  const phase: { current: 'compute' | 'init' } = { current: 'compute' };
+  try {
+    return composeChart(inputs, phase);
+  } catch (err) {
+    throw new ChartBuildError(phase.current, err);
   }
+}
+
+function composeChart(inputs: ChartInputs, phase: { current: 'compute' | 'init' }): UplotChart {
+  const { target: chartTarget, language, calendar, data, ll, themeHost } = inputs;
   // All downstream references read `config` — by binding it to the
   // normalized result we get one consistent view of the mode (and
   // forecast.type fallback to 'daily' for typo'd YAML) across the
   // chart code path.
-  const { config } = normalizeForecastMode(rawConfig);
-
-  const chartTarget = card.renderRoot?.querySelector<HTMLElement>('#forecastChart');
-  if (!chartTarget) {
-    // Target isn't in the DOM yet. With the loading-placeholder flow
-    // in main.ts, drawChart is called synchronously inside
-    // _refreshForecasts before Lit's microtask commits the new
-    // template — the chart-container only appears on the NEXT render.
-    // requestAnimationFrame retries on the next browser tick, by
-    // which point Lit has committed and the target is mountable.
-    if (typeof requestAnimationFrame !== 'undefined') {
-      requestAnimationFrame(() => card.drawChart());
-    }
-    return undefined;
-  }
-
-  if (card.forecastChart) {
-    card.forecastChart.destroy();
-  }
-  card._chartPhase = 'compute';
-  const tempUnit = card._hass.config.unit_system.temperature;
-  const lengthUnit = card._hass.config.unit_system.length;
-  const llUnits = card.ll('units') as Record<string, string>;
+  const { config } = normalizeForecastMode(inputs.config);
+  const tempUnit = inputs.unitSystem.temperature;
+  const lengthUnit = inputs.unitSystem.length;
+  const llUnits = ll('units') as Record<string, string>;
   // Chart precip values arrive in HA's system length unit (mm for
   // metric, in for imperial). An explicit `units.precipitation` overrides
   // the DISPLAY unit (label + per-bar value); without it the chart keeps
@@ -465,7 +440,6 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
   const cfgPrecip = config.units?.precipitation;
   const precipTargetBase = (cfgPrecip === 'mm' || cfgPrecip === 'in') ? cfgPrecip : precipSourceBase;
   const precipUnit = llUnits[precipTargetBase] ?? precipTargetBase;
-  const data = card.computeForecastData();
 
   // Theme tokens (background / primary-text / divider / secondary-text)
   // are stable within a theme session. The cache memoises them across
@@ -474,11 +448,6 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
   // from the cache; any other CSS var falls back to a live read
   // (no plugin currently needs that path, but it keeps the
   // `CssStyleLike` contract honest).
-  // The card element inherits the global AND the view-level theme; a
-  // detached element or a test double falls back to the body.
-  const themeHost: HTMLElement = (typeof HTMLElement !== 'undefined' && card instanceof HTMLElement && card.isConnected)
-    ? card
-    : document.body;
   const tokens = getThemeTokens(themeHost);
   const backgroundColor = tokens.backgroundColor;
   const textColor = tokens.textColor;
@@ -506,8 +475,8 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
 
   applyChartDefaults(textColor, dividerColor);
 
-  const stationCountForGap = card._stationCount || 0;
-  const forecastCountForGap = card._forecastCount || 0;
+  const stationCountForGap = inputs.stationCount;
+  const forecastCountForGap = inputs.forecastCount;
   const hasBothBlocks = stationCountForGap > 0 && forecastCountForGap > 0;
   const { tempSegmentOpts } = buildSegmentHelpers({
     stationCountForGap, forecastCountForGap, hasBothBlocks, isHourlyish,
@@ -572,14 +541,14 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
     : config.forecast.chart_text_color;
 
   const datasets = buildDatasets({
-    card, config, data, tempSegmentOpts,
+    ll, config, data, tempSegmentOpts,
     temp1Color, temp2Color,
     precipPerBarColor,
     showSunshine, sunshineFractionData, sunshinePerBarColor,
   });
 
-  const stationCount = card._stationCount || 0;
-  const forecastCount = card._forecastCount || 0;
+  const stationCount = inputs.stationCount;
+  const forecastCount = inputs.forecastCount;
   const isHourly = isHourlyish;
   // doubled-today only makes sense at daily — at hourly / today station
   // and forecast meet at "now" with a single separator line.
@@ -613,9 +582,9 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
     temp1Color, temp2Color,
   });
 
-  card._chartPhase = 'init';
+  phase.current = 'init';
   const chartHeightPx = Number((config as { forecast: { chart_height?: number } }).forecast.chart_height) || 200;
-  card.forecastChart = buildChart(chartTarget, {
+  return buildChart(chartTarget, {
     datasets: datasets as unknown as Parameters<typeof buildChart>[1]['datasets'],
     plugins,
     chartHeight: chartHeightPx,
@@ -636,13 +605,11 @@ export function drawChartUnsafe(card: CardLike, args: DrawChartArgs | null): unk
     // Config interpretation happens HERE (the wiring layer) — draw.ts
     // only consumes the resolved number. 'today' is pinned to 8 bars.
     visibleBars: effectiveVisibleBars(config as { forecast?: { type?: string; number_of_forecasts?: number | string } }),
-    inPreview: card._isInPreview === true,
+    inPreview: inputs.inPreview,
     // The two-line precip box (chance of rain, #288) hangs further
     // below the baseline than the one-line box.
     extraBottomPad: config.forecast.show_precip_probability === true
       ? PROBABILITY_EXTRA_BOTTOM_PAD
       : 0,
   });
-  card._chartPhase = null;
-  return undefined;
 }

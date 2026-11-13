@@ -88,13 +88,13 @@ describe('card: _sunshineNeedsOpenMeteo', () => {
   function setup(config, forecastData) {
     const card = document.createElement('weather-station-card');
     card.setConfig({ weather_entity: 'weather.home', show_forecast: true, ...config });
-    card._forecastData = forecastData;
+    card._sources.forecastData = forecastData;
     return card;
   }
 
   it('is false while the sunshine bar is off', () => {
     const card = setup({ show_station: false, forecast: { show_sunshine: false } }, days(5));
-    expect(card._sunshineNeedsOpenMeteo(card.config)).toBe(false);
+    expect(card._sources.plan().openMeteo.sunshine).toBe(false);
   });
 
   it('is false when the entity covers every forecast column', () => {
@@ -102,19 +102,19 @@ describe('card: _sunshineNeedsOpenMeteo', () => {
       { show_station: false, forecast: { show_sunshine: true } },
       days(5, { sunshine_duration: 300 }),
     );
-    expect(card._sunshineNeedsOpenMeteo(card.config)).toBe(false);
+    expect(card._sources.plan().openMeteo.sunshine).toBe(false);
   });
 
   it('is true when one forecast column has no sunshine', () => {
     const data = days(5, { sunshine_duration: 300 });
     delete data[3].sunshine_duration;
     const card = setup({ show_station: false, forecast: { show_sunshine: true } }, data);
-    expect(card._sunshineNeedsOpenMeteo(card.config)).toBe(true);
+    expect(card._sources.plan().openMeteo.sunshine).toBe(true);
   });
 
   it('treats a forecast that has not arrived yet as covered', () => {
     const card = setup({ show_station: false, forecast: { show_sunshine: true } }, null);
-    expect(card._sunshineNeedsOpenMeteo(card.config)).toBe(false);
+    expect(card._sources.plan().openMeteo.sunshine).toBe(false);
   });
 
   it('is false for a daily station block with a sunshine sensor and a covering entity', () => {
@@ -122,7 +122,7 @@ describe('card: _sunshineNeedsOpenMeteo', () => {
       sensors: { temperature: 'sensor.t', sunshine_duration: 'sensor.sun' },
       forecast: { show_sunshine: true, type: 'daily' },
     }, days(5, { sunshine_duration: 300 }));
-    expect(card._sunshineNeedsOpenMeteo(card.config)).toBe(false);
+    expect(card._sources.plan().openMeteo.sunshine).toBe(false);
   });
 
   it('is true for a station block with no sunshine or illuminance sensor', () => {
@@ -130,7 +130,7 @@ describe('card: _sunshineNeedsOpenMeteo', () => {
       sensors: { temperature: 'sensor.t' },
       forecast: { show_sunshine: true, type: 'daily' },
     }, days(5, { sunshine_duration: 300 }));
-    expect(card._sunshineNeedsOpenMeteo(card.config)).toBe(true);
+    expect(card._sources.plan().openMeteo.sunshine).toBe(true);
   });
 
   it('is true for an hourly station block even with a sunshine sensor', () => {
@@ -138,6 +138,6 @@ describe('card: _sunshineNeedsOpenMeteo', () => {
       sensors: { temperature: 'sensor.t', sunshine_duration: 'sensor.sun' },
       forecast: { show_sunshine: true, type: 'hourly' },
     }, null);
-    expect(card._sunshineNeedsOpenMeteo(card.config)).toBe(true);
+    expect(card._sources.plan().openMeteo.sunshine).toBe(true);
   });
 });

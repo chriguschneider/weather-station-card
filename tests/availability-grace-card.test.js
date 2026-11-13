@@ -41,12 +41,12 @@ describe('last-good value and grace period', () => {
     const card = makeCard();
     card.hass = hassWith('19.4');
     expect(card.temperature).toBe('19.4');
-    expect(card._staleSensors).toEqual([]);
+    expect(card._sources.staleSensors).toEqual([]);
 
     card.hass = hassWith('unavailable');
     expect(card.temperature).toBe('19.4');
-    expect(card._staleSensors).toEqual(['temperature (sensor.t)']);
-    expect(card._missingSensors).toEqual([]);
+    expect(card._sources.staleSensors).toEqual(['temperature (sensor.t)']);
+    expect(card._sources.missingSensors).toEqual([]);
   });
 
   it('keeps the last-good value through "unknown" too', () => {
@@ -61,11 +61,11 @@ describe('last-good value and grace period', () => {
     card.hass = hassWith('19.4');
     card.hass = hassWith('unavailable');
     vi.advanceTimersByTime(4 * MIN);
-    expect(card._missingSensors).toEqual([]);
+    expect(card._sources.missingSensors).toEqual([]);
 
     vi.advanceTimersByTime(MIN + 2000);
-    expect(card._missingSensors).toEqual(['temperature (sensor.t)']);
-    expect(card._staleSensors).toEqual([]);
+    expect(card._sources.missingSensors).toEqual(['temperature (sensor.t)']);
+    expect(card._sources.staleSensors).toEqual([]);
     expect(card.temperature).toBe('19.4');
   });
 
@@ -75,8 +75,8 @@ describe('last-good value and grace period', () => {
     card.hass = hassWith('unavailable');
     card.hass = hassWith('20.1');
     expect(card.temperature).toBe('20.1');
-    expect(card._staleSensors).toEqual([]);
-    expect(card._missingSensors).toEqual([]);
+    expect(card._sources.staleSensors).toEqual([]);
+    expect(card._sources.missingSensors).toEqual([]);
   });
 
   it('stays in grace for as long as HA is not RUNNING', () => {
@@ -84,8 +84,8 @@ describe('last-good value and grace period', () => {
     card.hass = hassWith('19.4');
     card.hass = hassWith('unavailable', 'NOT_RUNNING');
     vi.advanceTimersByTime(10 * MIN);
-    expect(card._missingSensors).toEqual([]);
-    expect(card._staleSensors).toEqual(['temperature (sensor.t)']);
+    expect(card._sources.missingSensors).toEqual([]);
+    expect(card._sources.staleSensors).toEqual(['temperature (sensor.t)']);
   });
 
   it('turns overdue once HA reports RUNNING after the grace has elapsed', () => {
@@ -94,7 +94,7 @@ describe('last-good value and grace period', () => {
     card.hass = hassWith('unavailable', 'NOT_RUNNING');
     vi.advanceTimersByTime(10 * MIN);
     card.hass = hassWith('unavailable', 'RUNNING');
-    expect(card._missingSensors).toEqual(['temperature (sensor.t)']);
+    expect(card._sources.missingSensors).toEqual(['temperature (sensor.t)']);
   });
 
   it('never saw a good value: nothing to fall back to', () => {

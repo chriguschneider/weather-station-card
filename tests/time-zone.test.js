@@ -118,7 +118,7 @@ describe('two calendars on one page', () => {
       main.className = 'main';
       main.innerHTML = '<span id="digital-clock"></span>';
       (card.shadowRoot ?? card.attachShadow({ mode: 'open' })).appendChild(main);
-      card._syncCalendar(zone);
+      card._sources.syncCalendar(zone);
       return card;
     };
     const clock = (card) => card.shadowRoot.querySelector('#digital-clock').textContent;

@@ -33,13 +33,7 @@ import { validateConfig } from './config-validation.js';
 import {LitElement, html, nothing, svg} from 'lit';
 import {MDI_PATHS} from './icons/mdi-paths.js';
 import {guard} from 'lit/directives/guard.js';
-import {
-  MeasuredDataSource,
-  ForecastDataSource,
-  fetchPressure3hDelta,
-  type HassLike,
-  type PressureDeltaCache,
-} from './data-source.js';
+import type { HassLike } from './data-source.js';
 import { classifyDay, clearSkyLuxAt } from './condition-classifier.js';
 import { computeInitialScrollLeft, resolveTemp2Color } from './format-utils.js';
 import { resolveCssVar } from './utils/resolve-css-var.js';
@@ -50,31 +44,23 @@ import {
   effectiveVisibleBars,
   computeTodayPagerScrollLeft,
   nextForecastType,
-  stationFetchKey,
-  forecastFetchKey,
-  forecastsEqual,
 } from './forecast-utils.js';
 import { sunshineFractions } from './sunshine-source.js';
 import {
   buildForecastEntries,
-  needsOpenMeteo,
-  openMeteoFetchWindow,
-  openMeteoStationWindow,
   overlayOnEntries,
   planSources,
-  sliceForecast,
   type PipelineContext,
   type SourcePlan,
 } from './forecast-pipeline.js';
 import { normalizeConfig, type CardConfig } from './card-config.js';
 import { pastFromOpenMeteo } from './past-source.js';
-import { OpenMeteoSource } from './openmeteo-source.js';
 import { sourceLabel, labelText, isSensorProblem, sensorDownId, type LiveSource } from './live-source.js';
-import { extractSensorReadings, liveSourcesOf, precipRateReading, unavailableSensors, type Reading, type SensorReadings, type StateLike, type StatesLike } from './sensor-readings.js';
+import { extractSensorReadings, liveSourcesOf, precipRateReading, type Reading, type SensorReadings, type StateLike, type StatesLike } from './sensor-readings.js';
 import { AUTO_PICK_KEYS, autoPickSensor } from './sensor-match.js';
 import { buildChartLegend, type LegendItem } from './chart-legend.js';
 import { SourcesPopup, type SourceLine } from './sources-popup.js';
-import { cardCalendar, resolveLocation } from './location.js';
+import { resolveLocation } from './location.js';
 import { PROBABILITY_EXTRA_BOTTOM_PAD } from './chart/plugins/precip-label.js';
 import { safeQuery } from './utils/safe-query.js';
 import { parseNumericSafe } from './utils/numeric.js';
@@ -98,15 +84,8 @@ import {
   formatPrecipDisplay,
   luxScaleFor,
 } from './utils/unit-converters.js';
-import { drawChartUnsafe } from './chart/orchestrator.js';
-import { seriesCacheKey, loadSeriesCache, saveSeriesCache } from './utils/series-cache.js';
-import {
-  UNAVAILABLE_GRACE_MS,
-  updateMissingSince,
-  overdueMissing,
-  nextExpiryDelay,
-  type MissingSinceMap,
-} from './utils/availability-grace.js';
+import { buildForecastChart, ChartBuildError, type ChartInputs } from './chart/orchestrator.js';
+import { DataSourceController } from './data-source-controller.js';
 import { sanitizeForecastEntries } from './chart/sanitize.js';
 import { renderChartSkeleton } from './chart/skeleton.js';
 import { cardStyles } from './chart/styles.js';
@@ -350,35 +329,16 @@ class WeatherStationCard extends LitElement {
   // teardown).
   _watchedStatesSnapshot: Record<string, unknown> | null = null;
 
-  // --- Data-source state ---
-  _dataSource: MeasuredDataSource | null = null;
-  _dataUnsubscribe: (() => void) | null = null;
-  _forecastSource: ForecastDataSource | null = null;
-  _forecastUnsubscribe: (() => void) | null = null;
-  // deno-lint-ignore no-explicit-any
-  _stationData: any[] = [];
-  // deno-lint-ignore no-explicit-any
-  _forecastData: any[] = [];
-  _stationError: string | null = null;
-  _forecastError: string | null = null;
+  // --- Data sources (data-source-controller.ts) ---
+  // Station / forecast / Open-Meteo sources, calendar sync, pressure
+  // delta and the availability scan. Created in the constructor.
+  _sources: DataSourceController;
+  // Column counts of the last merge; the chart frames the boundary with them.
   _stationCount: number = 0;
   _forecastCount: number = 0;
-  /** OVERDUE unavailable sensors — missing longer than the grace
-   *  period (issue #213). Surfaced as a compact warning hint, not the
-   *  red error banner. Reactive. */
-  _missingSensors: string[] = [];
-  /** IN-GRACE unavailable sensors — recently gone, typically an HA
-   *  restart. Live panel dims and shows a subtle "waiting" hint;
-   *  values fall back to the last known good state. Reactive. */
-  _staleSensors: string[] = [];
-  /** Entity ids behind `_missingSensors`, for the sources popup. */
-  _overdueIds: Set<string> = new Set();
-  /** entityId → first-seen-unavailable timestamp (availability-grace). */
-  _missingSince: MissingSinceMap = {};
   /** entityId → last parseable state, feeding the unavailable-fallback
    *  in _extractSensorReadings. In-memory only — resets on reload. */
   _lastGoodStates: Record<string, string> = {};
-  _graceTimer: ReturnType<typeof setTimeout> | null = null;
   /** Advisory config-schema warnings from `validateConfig` (Slice 2) —
    *  unknown YAML keys / wrong-typed values. Surfaced through
    *  `renderErrorBanner()`; never blocks the render. */
@@ -405,19 +365,6 @@ class WeatherStationCard extends LitElement {
    *  start animation has finished. Stored so the scheduling guard
    *  doesn't run twice and so disconnectedCallback can clear it. */
   _chartMountAnimationTimer: number | null = null;
-  // Tracks whether each configured data source has produced at least
-  // one value (either via subscribe callback or by restoring a cached
-  // payload on setConfig). Read in _refreshForecasts to hold off the
-  // very first chart render until BOTH expected sources are ready —
-  // otherwise the chart renders once with only the fast source's data
-  // (typically forecast, via HA's cached weather entity) and then
-  // again once the slower one lands (typically station, via a
-  // recorder query). With doubled-today layout, the second render
-  // adds the station-today column to a chart that was previously
-  // forecast-only, narrowing every existing column. Visible as bars
-  // starting wide and then snapping to a tighter spacing.
-  _stationDataReady: boolean = false;
-  _forecastDataReady: boolean = false;
   _initialChartBuilt: boolean = false;
   // Set by _refreshForecastsUnsafe whenever `this.forecasts` was rebuilt
   // from source data. measureCard's skip-path (chart alive, same column
@@ -427,25 +374,8 @@ class WeatherStationCard extends LitElement {
   // tick (temperature 0.1° change → full canvas repaint) even though
   // the chart reads only `forecasts` — see the perf pass 2026-08.
   _forecastsDirty: boolean = false;
-  // Lazy-cache for #10 mode-toggle.
-  // deno-lint-ignore no-explicit-any
-  _stationCache: Record<string, any[]> = {};
-  // deno-lint-ignore no-explicit-any
-  _forecastCache: Record<string, any[]> = {};
-  // Open-Meteo source — backs the sunshine overlay and (ADR-0015) the
-  // no-station past block. Lazy-created by `_ensureOpenMeteoSource`.
-  // deno-lint-ignore no-explicit-any
-  _openMeteoSource: any = null;
-
-  // 3-h pressure tendency (hPa-normalized), populated by the station
-  // refresh callback. `null` until the first fetch resolves or when
-  // history is insufficient — render falls back to legacy gauge icon.
-  _pressureDelta3h: number | null = null;
-  _pressureDeltaCache: PressureDeltaCache = { bucketMs: null, value: null };
-
   // --- Chart / scroll lifecycle ---
   _chartError: unknown = null;
-  _chartPhase: string | null = null;
   // Set when a `_refreshForecasts` pass throws on malformed source
   // data. Surfaced through `renderErrorBanner()`; cleared by the next
   // clean `_refreshForecasts`.
@@ -635,11 +565,8 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
       unitSpeed: { attribute: false },
       unitPressure: { attribute: false },
       unitPrecip: { attribute: false },
-      // Reassigned only when the joined list actually differs (see
-      // _syncDataSources) — a fresh array every pass would defeat the
-      // reference check and re-render on every full hass pass.
-      _missingSensors: { attribute: false },
-      _staleSensors: { attribute: false },
+      // The availability lists and the pressure delta live in
+      // `_sources`, which requests an update only when one changed.
     };
   }
 
@@ -672,7 +599,7 @@ setConfig(config: any) {
   // A changed `time_zone` / `location.time_zone` must reach the calendar
   // without waiting for the next hass push.
   if (this._hass) {
-    this._syncCalendar((this._hass.config as { time_zone?: unknown } | undefined)?.time_zone);
+    this._sources.syncCalendar((this._hass.config as { time_zone?: unknown } | undefined)?.time_zone);
   }
 
   // Mode-aware completeness check. Each enabled block has a required
@@ -709,13 +636,14 @@ setConfig(config: any) {
 // entity in `hass.states` updates. Three phases:
 //   1. _extractSensorReadings — sensor → this.<reading> + unit detection
 //   2. _classifyLiveCondition — derive "now" condition + synthesize weather obj
-//   3. _syncDataSources       — subscribe/unsubscribe + missing-sensor scan
+//   3. _sources.sync          — subscribe/unsubscribe + missing-sensor scan
+//                               (DataSourceController)
 // Splitting the work keeps each phase under a screenful and lets the
 // memoization in phase 2 be reasoned about in isolation from the
 // subscription churn in phase 3.
 set hass(hass: HassMain) {
   this._hass = hass;
-  this._syncCalendar((hass.config as { time_zone?: unknown } | undefined)?.time_zone);
+  this._sources.syncCalendar((hass.config as { time_zone?: unknown } | undefined)?.time_zone);
   const lang = this.config.locale || hass.selectedLanguage || hass.language || 'en';
   if (lang !== this.language) {
     this.language = lang;
@@ -741,8 +669,7 @@ set hass(hass: HassMain) {
   // or subscription churn runs, and (since nothing reactive is
   // assigned) no Lit update is scheduled.
   if (this._watchedStatesUnchanged(hass)) {
-    this._dataSource?.setHass(hass);
-    this._forecastSource?.setHass(hass);
+    this._sources.setHass(hass);
     return;
   }
 
@@ -751,7 +678,9 @@ set hass(hass: HassMain) {
   this._extractSensorReadings(hass);
   this._refreshNextRain();
   this._classifyLiveCondition(hass);
-  this._syncDataSources(hass);
+  this._sources.sync(hass);
+  // Initial merge so forecasts is at least an empty array (not undefined).
+  if (!this.forecasts) this._refreshForecasts();
   this._watchedStatesSnapshot = this._captureWatchedStates(hass);
 }
 
@@ -786,18 +715,15 @@ _captureWatchedStates(hass: HassMain): Record<string, unknown> {
 _watchedStatesUnchanged(hass: HassMain): boolean {
   const snapshot = this._watchedStatesSnapshot;
   if (!snapshot) return false;
-  // First full pass must have completed — _syncDataSources seeds
-  // `forecasts` with at least an empty merge.
+  // First full pass must have completed — it seeds `forecasts` with
+  // at least an empty merge.
   if (!this.forecasts) return false;
-  // Never skip data-source (re)creation: _invalidateStaleSources tears
+  // Never skip data-source (re)creation: a config change tears
   // a source down and re-enters via `this.hass = this._hass` with the
   // SAME hass object — phase 3 must run then to rebuild the source.
   // (The teardowns also null the snapshot; this guard is the backstop
   // for any future path that drops a source without doing that.)
-  const wantMeasured = this.config?.show_station !== false
-    && !this._openMeteoStationFallbackActive(this.config);
-  const wantForecast = this.config?.show_forecast === true && !!this.config.weather_entity;
-  if (wantMeasured !== !!this._dataSource || wantForecast !== !!this._forecastSource) return false;
+  if (!this._sources.sourcesMatchConfig()) return false;
   // HA state objects are immutable — an entity that didn't change
   // keeps its object reference across hass objects, so reference
   // equality is an exact "unchanged" test (the same check
@@ -1211,263 +1137,25 @@ _synthesizeWeatherEntity(currentCondition: string | undefined): any {
   };
 }
 
-// Phase 3: subscribe/unsubscribe data sources to match current mode
-// flags, and rescan for missing/unavailable sensor entities.
-// Symmetrical to disconnectedCallback's teardown side.
-//
-// Both subscribe callbacks are invoked from HA's WebSocket listener
-// (ForecastDataSource) or our own polling timer (MeasuredDataSource).
-// A throw out of the callback would propagate into those code paths
-// and could detach the listener — wrap each body in try/catch so the
-// chart can recover via _chartError instead.
-_syncDataSources(hass: HassMain): void {
-  this._stationData = this._stationData || [];
-  this._forecastData = this._forecastData || [];
-
-  const wantStation = this.config.show_station !== false;
-  const wantForecast = this.config.show_forecast === true && !!this.config.weather_entity;
-  // When the Open-Meteo fallback feeds the station block (no sensors +
-  // weather entity + opt-in, ADR-0015), the recorder-backed
-  // MeasuredDataSource is NOT created — `_ensureOpenMeteoSource` owns
-  // `_stationData` instead. Creating both would let the recorder's
-  // empty result overwrite the Open-Meteo past block on every poll.
-  const wantMeasured = wantStation && !this._openMeteoStationFallbackActive(this.config);
-
-  if (wantMeasured) {
-    if (!this._dataSource) {
-      // Stale-while-revalidate (perf pass 2026-08): hydrate the station
-      // block from the last persisted payload for this fetch signature
-      // so the first paint shows real data instead of the skeleton
-      // while the recorder roundtrip (0.5–3 s on a Pi) is in flight.
-      // The live result overwrites it; identical payloads are absorbed
-      // by the forecastsEqual gate below.
-      if (!this._stationDataReady) {
-        const cached = loadSeriesCache(this._stationSeriesKey());
-        if (cached?.length) {
-          this._stationData = cached;
-          this._stationDataReady = true;
-        }
-      }
-      this._dataSource = new MeasuredDataSource(hass, this.config, this.calendar);
-      this._dataUnsubscribe = this._dataSource.subscribe((event) => {
-        try {
-          // Refresh the 3-h pressure tendency on the same cadence as the
-          // station fetch (POLL_INTERVAL_MS, currently hourly). MUST stay
-          // above the identical-payload guard below: since the v2.2.0
-          // stale-while-revalidate hydration, the first live recorder
-          // result after a page load usually matches the persisted
-          // payload, so the early return would skip the fetch and leave
-          // the pressure row on the legacy gauge icon until the next
-          // hour bucket. `fetchPressure3hDelta` dedupes per hour via
-          // `_pressureDeltaCache`, so redundant invocations cost one
-          // cache lookup. Fire-and-forget: errors degrade silently to
-          // the gauge icon.
-          void this._refreshPressureDelta();
-          const newData = event.forecast || [];
-          const newError = event.error || null;
-          // Skip the re-render path when HA's WS layer fan-outs an
-          // identical payload — common when a sibling card on
-          // the same dashboard resubscribes against the same recorder
-          // bucket and HA broadcasts the cached state to every
-          // subscriber. The error string flips equally rarely so an
-          // identical-data + identical-error event is a true no-op.
-          if (forecastsEqual(this._stationData, newData) && this._stationError === newError) {
-            return;
-          }
-          this._stationData = newData;
-          this._stationDataReady = true;
-          this._stationCache[stationFetchKey(this.config)] = this._stationData;
-          if (newData.length) saveSeriesCache(this._stationSeriesKey(), newData);
-          this._stationError = newError;
-          this._refreshForecasts();
-        } catch (err) {
-          console.error('[weather-station-card] station callback failed', err);
-        }
-      });
-    } else {
-      this._dataSource.setHass(hass);
-    }
-  } else if (this._dataSource) {
-    this._teardownStation();
-    this._stationError = null;
-  }
-
-  if (wantForecast) {
-    if (!this._forecastSource) {
-      // Same stale-while-revalidate hydration as the station side.
-      if (!this._forecastDataReady) {
-        const cached = loadSeriesCache(this._forecastSeriesKey());
-        if (cached?.length) {
-          this._forecastData = cached;
-          this._forecastDataReady = true;
-        }
-      }
-      this._forecastSource = new ForecastDataSource(hass, this.config, this.calendar);
-      this._forecastUnsubscribe = this._forecastSource.subscribe((event) => {
-        try {
-          const newData = event.forecast || [];
-          const newError = event.error || null;
-          // Same fan-out suppression as the station path above.
-          // weather/subscribe_forecast in HA fan-outs the entity's
-          // current forecast to every active subscriber whenever
-          // any one of them (re)subscribes — without this guard, a
-          // mode-toggle on Card A would visibly redraw Card B's
-          // chart on the same dashboard.
-          if (forecastsEqual(this._forecastData, newData) && this._forecastError === newError) {
-            return;
-          }
-          this._forecastData = newData;
-          this._forecastDataReady = true;
-          this._forecastCache[forecastFetchKey(this.config)] = this._forecastData;
-          if (newData.length) saveSeriesCache(this._forecastSeriesKey(), newData);
-          this._forecastError = newError;
-          this._refreshForecasts();
-        } catch (err) {
-          console.error('[weather-station-card] forecast callback failed', err);
-        }
-      });
-    } else {
-      this._forecastSource.setHass(hass);
-    }
-  } else if (this._forecastSource) {
-    this._teardownForecast();
-    this._forecastError = null;
-  }
-
-  // Initial merge so forecasts is at least an empty array (not undefined).
-  if (!this.forecasts) this._refreshForecasts();
-
-  this._scanSensorAvailability(hass);
-}
-
-// Availability scan with a grace period (issue #213). An HA restart
-// flips every sensor to `unavailable` for a minute or two — that used
-// to paint the red error banner instantly, one line per sensor. Now:
-//   - IN GRACE (missing < 5 min, or HA reports it is still starting):
-//     `_staleSensors` — live panel dims, last known values keep
-//     showing, a subtle "waiting" hint appears.
-//   - OVERDUE (missing ≥ 5 min while HA runs): `_missingSensors` — a
-//     compact warning hint (NOT the red banner; that stays reserved
-//     for config/fetch/render errors).
-// Both fields are reactive; assignment is skipped when the content is
-// unchanged so a no-op scan stays render-inert (ADR-0017).
-_scanSensorAvailability(hass: HassMain): void {
-  // Same unavailable test as the extraction's stale fallback, so a
-  // value recorded as `stale` is the one this scan times.
-  const missingNow = unavailableSensors(this.config?.sensors || {}, hass.states as StatesLike);
-  const now = Date.now();
-  this._missingSince = updateMissingSince(
-    this._missingSince, missingNow.map((m) => m.eid), now);
-
-  // While HA itself reports a non-running core (restart in progress),
-  // nothing is "overdue" — the sensors are expected back shortly.
-  const coreState = (hass as unknown as { config?: { state?: string } }).config?.state;
-  const haStarting = typeof coreState === 'string' && coreState !== 'RUNNING';
-  const overdueSet = haStarting
-    ? new Set<string>()
-    : new Set(overdueMissing(this._missingSince, UNAVAILABLE_GRACE_MS, now));
-
-  const label = (m: { key: string; eid: string }): string => `${m.key} (${m.eid})`;
-  const overdue = missingNow.filter((m) => overdueSet.has(m.eid)).map(label);
-  const inGrace = missingNow.filter((m) => !overdueSet.has(m.eid)).map(label);
-  this._overdueIds = new Set(missingNow.filter((m) => overdueSet.has(m.eid)).map((m) => m.eid));
-  if (overdue.join('|') !== this._missingSensors.join('|')) {
-    this._missingSensors = overdue;
-  }
-  if (inGrace.join('|') !== this._staleSensors.join('|')) {
-    this._staleSensors = inGrace;
-  }
-
-  // In-grace entries must surface as overdue even if HA goes silent
-  // (no further hass ticks): arm a one-shot re-scan for the earliest
-  // expiry. Cleared on disconnect via the teardown registry.
-  if (this._graceTimer) {
-    clearTimeout(this._graceTimer);
-    this._graceTimer = null;
-  }
-  const delay = haStarting ? 30_000 : nextExpiryDelay(this._missingSince, UNAVAILABLE_GRACE_MS, now);
-  if (delay !== null && missingNow.length) {
-    this._graceTimer = setTimeout(() => {
-      this._graceTimer = null;
-      if (this._hass) this._scanSensorAvailability(this._hass);
-    }, delay + 1000);
-  }
-}
-
-// Persistent-cache keys (perf pass 2026-08). Everything that changes
-// the fetched payload is part of the key: the recorder period / the
-// subscribe forecast_type, the window size, and the sensor→entity
-// MAPPING (role included — swapping two entities between roles, e.g.
-// temperature ↔ dew_point, changes what each series means and must
-// land on a different slot). A config edit that changes any of these
-// gets a fresh key, so hydration can never show data fetched for
-// another signature.
-_stationSeriesKey(): string {
-  const sensors = this.config?.sensors || {};
-  const roleEids = Object.entries(sensors)
-    .filter((kv): kv is [string, string] => typeof kv[1] === 'string' && kv[1] !== '')
-    .map(([role, eid]) => `${role}=${eid}`)
-    .sort((a, b) => a.localeCompare(b));
-  return seriesCacheKey('station', [
-    this.calendar.timeZone,
-    stationFetchKey(this.config),
-    this.config.days,
-    ...roleEids,
-  ]);
-}
-
-_forecastSeriesKey(): string {
-  return seriesCacheKey('forecast', [
-    this.calendar.timeZone,
-    forecastFetchKey(this.config),
-    String(this.config?.weather_entity || ''),
-  ]);
-}
-
-// Pull the 3-h pressure delta from the recorder and stash it on the
-// instance. `fetchPressure3hDelta` deduplicates within the same hour via
-// `_pressureDeltaCache`, so re-renders triggered by mode toggles don't
-// re-fetch. A trailing requestUpdate() ensures the row re-renders when
-// the delta lands AFTER the station callback already triggered one.
-async _refreshPressureDelta(): Promise<void> {
-  const pressureId = this.config?.sensors?.pressure;
-  if (!pressureId || this.config?.show_pressure === false) {
-    this._pressureDelta3h = null;
-    return;
-  }
-  try {
-    const delta = await fetchPressure3hDelta(
-      this._hass as HassLike | null,
-      pressureId,
-      this.calendar,
-      this._pressureDeltaCache,
-    );
-    if (delta !== this._pressureDelta3h) {
-      this._pressureDelta3h = delta;
-      this.requestUpdate();
-    }
-  } catch (err) {
-    console.debug('[weather-station-card] pressure delta refresh failed', err);
-  }
-}
-
   constructor() {
     super();
     this.resizeObserver = null;
     this.resizeInitialized = false;
     this._teardownRegistry = new TeardownRegistry();
-    // Lazy-cache: when forecast.type changes, save the current
-    // data under the OLD fetch-key and restore the NEW key from cache
-    // for an instant render. Fresh data lands on the resubscribe
-    // callback and overwrites the cached entry.
-    //   _stationCache  → keyed by recorder period: 'day' | 'hour'
-    //   _forecastCache → keyed by subscribe forecast_type: 'daily' | 'hourly'
-    // 'today' shares 'hour' / 'hourly' with the dedicated hourly mode
-    // because both fetch the same buckets — the difference is purely
-    // render-time aggregation. Toggling hourly↔today therefore needs
-    // no teardown at all.
-    this._stationCache = {};
-    this._forecastCache = {};
+    this._sources = new DataSourceController(this);
+  }
+
+  // DataSourceHost (data-source-controller.ts).
+  onSourceData(): void {
+    this._refreshForecasts();
+  }
+
+  onOverlayData(): void {
+    this._overlaySunshineOnExisting();
+  }
+
+  onSourceDropped(): void {
+    this._watchedStatesSnapshot = null;
   }
 
   connectedCallback() {
@@ -1501,7 +1189,8 @@ async _refreshPressureDelta(): Promise<void> {
   }
 
   // Wire every disconnect-time cleanup site through the single
-  // TeardownRegistry. Closures dereference `this._foo` at drain time,
+  // TeardownRegistry (the data sources drain their own, see
+  // data-source-controller.ts). Closures dereference `this._foo` at drain time,
   // so resources that get replaced during the card's lifetime
   // (e.g. _clockTimer rebuilt on settings change) are still torn down
   // correctly. Registration is gated on registry.size to keep
@@ -1510,15 +1199,7 @@ async _refreshPressureDelta(): Promise<void> {
     if (this._teardownRegistry.size > 0) return;
     const r = this._teardownRegistry;
     r.add(() => this.detachResizeObserver());
-    r.add(() => this._teardownStation());
-    r.add(() => this._teardownForecast());
     r.add(() => this._teardownInitialScrollObserver());
-    r.add(() => {
-      if (this._openMeteoSource) {
-        this._openMeteoSource.abort();
-        this._openMeteoSource = null;
-      }
-    });
     r.add(() => {
       if (this._scrollUxTeardown) {
         this._scrollUxTeardown();
@@ -1547,12 +1228,6 @@ async _refreshPressureDelta(): Promise<void> {
       if (this._clockTimer) {
         clearInterval(this._clockTimer);
         this._clockTimer = null;
-      }
-    });
-    r.add(() => {
-      if (this._graceTimer) {
-        clearTimeout(this._graceTimer);
-        this._graceTimer = null;
       }
     });
     // Visibility gate (perf pass 2026-08): pause the 1 Hz clock and
@@ -1596,7 +1271,7 @@ async _refreshPressureDelta(): Promise<void> {
   // datetime) must degrade to the error banner — never throw uncaught
   // (the setHass call site at line ~866 has no catch of its own) and
   // never leave `this.forecasts` undefined (which would blank the
-  // chart block). Mirrors the drawChart → drawChartUnsafe split.
+  // chart block). Mirrors the drawChart try/catch.
   _refreshForecasts() {
     try {
       this._refreshForecastsUnsafe();
@@ -1617,30 +1292,22 @@ async _refreshPressureDelta(): Promise<void> {
     }
   }
 
-  // The source plan for the current config and forecast (#450): which
-  // part comes from the weather entity, the recorder, Open-Meteo or the
-  // cloud-cover estimate. One decision feeds the fetch gate, the chart
-  // entries and the info popup's legend.
-  _sourcePlan(): SourcePlan {
-    return planSources(this.config, this._forecastData, this.calendar);
-  }
-
   _pipelineCtx(plan: SourcePlan): PipelineContext {
     return {
       plan,
       calendar: this.calendar,
       hass: this._hass,
-      openMeteo: this._openMeteoSource,
+      openMeteo: this._sources.openMeteoReader,
       location: this.config.location,
     };
   }
 
   _refreshForecastsUnsafe() {
     // Ensure the Open-Meteo source up front. When it feeds the station
-    // block (ADR-0015) a warm cache populates `_stationData`
+    // block (ADR-0015) a warm cache populates the station data
     // synchronously here, so the build below sees it on the same render.
-    const plan = this._ensureOpenMeteoSource();
-    const built = buildForecastEntries(this._stationData, this._pipelineCtx(plan));
+    const plan = this._sources.ensureOpenMeteo();
+    const built = buildForecastEntries(this._sources.stationData, this._pipelineCtx(plan));
     // Earlier code dropped the trailing station-today entry while it
     // carried no recorded data yet, which removed the column from ~00:00
     // to ~00:15 every day. It is kept: partial values show at once and
@@ -1666,19 +1333,6 @@ async _refreshPressureDelta(): Promise<void> {
     if (this.shadowRoot) this.measureCard();
   }
 
-  _allExpectedDataReady(): boolean {
-    const wantStation = this.config.show_station !== false;
-    const wantForecast = this.config.show_forecast === true && !!this.config.weather_entity;
-    if (wantStation && !this._stationDataReady) return false;
-    if (wantForecast && !this._forecastDataReady) return false;
-    return true;
-  }
-
-  // deno-lint-ignore no-explicit-any
-  _sliceForecast(): any[] {
-    return sliceForecast(this.config, this._forecastData, this.calendar);
-  }
-
   // Async sunshine-arrival path. Updates this.forecasts in place with
   // the freshly-fetched sunshine values and pushes them through the
   // existing chart via updateChart (no destroy + rebuild). Falls back to
@@ -1687,128 +1341,13 @@ async _refreshPressureDelta(): Promise<void> {
   // whole forecasts array, not just the sunshine column). The chance-
   // of-rain overlay (#288) rides the same path.
   _overlaySunshineOnExisting(): void {
-    const plan = this._sourcePlan();
+    const plan = this._sources.plan();
     if (!this.forecasts || !this.forecastChart || plan.type === 'today') {
       this._refreshForecasts();
       return;
     }
     this.forecasts = overlayOnEntries(this.forecasts, this._stationCount || 0, this._pipelineCtx(plan));
     this.updateChart();
-  }
-
-  // ADR-0027: the chance-of-rain row needs Open-Meteo.
-  _precipProbabilityNeedsOpenMeteo(): boolean {
-    return this._sourcePlan().openMeteo.precipProbability;
-  }
-
-  // ADR-0028: the sunshine bar has a column only Open-Meteo can fill.
-  _sunshineNeedsOpenMeteo(): boolean {
-    return this._sourcePlan().openMeteo.sunshine;
-  }
-
-  // ADR-0015: the past block comes from Open-Meteo, not the recorder.
-  // deno-lint-ignore no-explicit-any
-  _openMeteoStationFallbackActive(cfg: any): boolean {
-    return pastFromOpenMeteo(cfg);
-  }
-
-  // deno-lint-ignore no-explicit-any
-  _openMeteoStationWindow(): any[] {
-    return openMeteoStationWindow(this._openMeteoSource, this.config, this.calendar);
-  }
-
-  // Lazy-init the Open-Meteo source and trigger a fetch when the cache
-  // is stale (no-op if a fetch is already in flight). The source backs
-  // three features off one call — the sunshine overlay, the
-  // chance-of-rain fallback and the past block — as the source plan
-  // says. It is created when any is needed, torn down when none is.
-  // Returns the plan it decided on.
-  _ensureOpenMeteoSource(): SourcePlan {
-    const plan = this._sourcePlan();
-    const feedsStation = plan.openMeteo.past;
-    if (!needsOpenMeteo(plan)) {
-      if (this._openMeteoSource) {
-        this._openMeteoSource.abort();
-        this._openMeteoSource = null;
-      }
-      return plan;
-    }
-    const loc = resolveLocation(this.config, this._hass);
-    const lat = loc ? loc.latitude : null;
-    const lon = loc ? loc.longitude : null;
-    if (lat == null || lon == null) {
-      // No HA location → no Open-Meteo fetch is possible. When the
-      // source is the station block's only data provider, mark the
-      // station "ready but empty" so the card settles into a
-      // forecast-only render instead of waiting on the loading skeleton.
-      if (feedsStation) {
-        this._stationData = [];
-        this._stationDataReady = true;
-      }
-      return plan;
-    }
-
-    const { pastDays, forecastDays, includeHourly } = openMeteoFetchWindow(this.config);
-    // Re-create when location, hourly-mode flag, or the fetch window
-    // changes — each is baked into the request URL, so a change needs a
-    // fresh fetch (a wider `days` must widen the past block).
-    const same = this._openMeteoSource?.latitude === lat
-      && this._openMeteoSource?.longitude === lon
-      && this._openMeteoSource?.includeHourly === includeHourly
-      && this._openMeteoSource?.pastDays === pastDays
-      && this._openMeteoSource?.forecastDays === forecastDays;
-    if (!same) {
-      if (this._openMeteoSource) this._openMeteoSource.abort();
-      this._openMeteoSource = new OpenMeteoSource({
-        latitude: lat,
-        longitude: lon,
-        pastDays,
-        forecastDays,
-        includeHourly,
-        calendar: this.calendar,
-      });
-      this._openMeteoSource.setListener((event: { ok: boolean; error?: string } | null) => {
-        // When the source feeds the station block, every completed
-        // fetch — success OR failure — resolves the station's loading
-        // state: on success the past columns populate, on failure the
-        // block stays empty but the card still renders. Re-evaluate the
-        // predicate against the CURRENT config: it may have changed
-        // since the source was created.
-        if (pastFromOpenMeteo(this.config)) {
-          this._stationData = this._openMeteoStationWindow();
-          this._stationDataReady = true;
-          this._refreshForecasts();
-          return;
-        }
-        // Sunshine-only path. On a successful refresh, re-overlay
-        // sunshine on the existing forecasts and push the new values
-        // into the live chart via updateChart — NOT _refreshForecasts.
-        // Going through the _refreshForecasts → measureCard → drawChart
-        // path destroys and rebuilds the chart, which between the first
-        // build (sunshine values still null) and the rebuild (sunshine
-        // values populated) caused the bar ruler to recompute the
-        // per-column slot allocation. The visible result was precip
-        // bars rendering wide for a moment and then snapping to their
-        // final half-column width once sunshine landed — read by the
-        // user as a "the bars start twice as wide and then narrow"
-        // artefact. Keeping the same chart instance and only mutating
-        // dataset data sidesteps the ruler recompute entirely.
-        if (event?.ok) this._overlaySunshineOnExisting();
-      });
-    }
-    // Surface cached station data immediately — the source rehydrates
-    // from localStorage in its constructor, so a warm cache fills the
-    // past block on the very first render with no fetch wait.
-    if (feedsStation) {
-      const win = this._openMeteoStationWindow();
-      if (win.length) {
-        this._stationData = win;
-        this._stationDataReady = true;
-      }
-    }
-    // Fire-and-forget — the listener handles the redraw on completion.
-    this._openMeteoSource.ensureFresh();
-    return plan;
   }
 
   attachResizeObserver() {
@@ -2052,7 +1591,14 @@ async updated(changedProperties: Map<PropertyKey, unknown>) {
   if (changedProperties.has('config')) {
     const oldConfig = changedProperties.get('config');
     if (oldConfig) {
-      this._invalidateStaleSources(oldConfig);
+      // A source with a changed config dependency was torn down (cached
+      // data for the new mode restored). Re-enter `set hass` right away
+      // to resubscribe instead of waiting for HA's next state push
+      // (1-3 s on a Pi).
+      if (this._sources.invalidate(oldConfig)) {
+        if (this._hass) this.hass = this._hass;
+        this._refreshForecasts();
+      }
 
       // Pure render-only config changes (round_temp, colours, labels, …)
       // re-merge against existing forecasts; teardowns above will refill
@@ -2074,137 +1620,7 @@ async updated(changedProperties: Map<PropertyKey, unknown>) {
   // chart via the `_forecastsDirty` flag in measureCard.
 }
 
-// Tear down whichever data source had a config dependency change. The next
-// `set hass` tick rebuilds the source with the new config and emits a fresh
-// merge via _refreshForecasts. Adding a new field that drives a source is
-// a one-line edit to the keys table, not a new branch in updated().
-//
-// Mode-toggle lazy-cache: when only forecast.type changed and the
-// underlying recorder/subscribe fetch-key is the same (e.g. hourly↔today
-// share period='hour' and forecast_type='hourly'), no teardown is needed
-// at all — the displayed data is already correct, only the render-time
-// aggregation differs. When the fetch-key DOES change, the previous data
-// is preserved in `_stationCache` / `_forecastCache` and restored from
-// cache for the new mode if available — so a daily→hourly→daily cycle
-// re-displays the daily data immediately while the new subscribe is
-// in-flight, and again when the user goes back to hourly.
-// deno-lint-ignore no-explicit-any
-_invalidateStaleSources(oldConfig: any) {
-  // deno-lint-ignore no-explicit-any
-  const get = (obj: any, path: string) => path.split('.').reduce<any>(
-    (o, k) => (o == null ? undefined : o[k]),
-    obj,
-  );
-  const stale = (key: string) => JSON.stringify(get(this.config, key)) !== JSON.stringify(get(oldConfig, key));
-  // forecast.type also drives MeasuredDataSource (hourly station
-  // aggregates use period:'hour'), so toggling it can rebuild both
-  // sources; lazy-cache below decides whether the rebuild is needed.
-  // forecast.openmeteo_history toggles the no-station past block on/off
-  // (ADR-0015) — a station-source rebuild, so it belongs here.
-  const STATION_KEYS = ['sensors', 'days', 'show_station', 'forecast.type', 'forecast.openmeteo_history', 'forecast.openmeteo'];
-  const FORECAST_KEYS = ['show_forecast', 'weather_entity', 'forecast.type'];
-
-  const stationStale = STATION_KEYS.some(stale);
-  const forecastStale = FORECAST_KEYS.some(stale);
-  if (!stationStale && !forecastStale) return;
-
-  const oldStationKey = stationFetchKey(oldConfig);
-  const newStationKey = stationFetchKey(this.config);
-  const oldForecastKey = forecastFetchKey(oldConfig);
-  const newForecastKey = forecastFetchKey(this.config);
-
-  // The only mode-toggle case that doesn't need a refetch: forecast.type
-  // changed but the underlying fetch keys did NOT (hourly ↔ today). In
-  // that case `stale` flagged forecast.type but the data we have is
-  // still correct — just refresh the render.
-  const onlyForecastTypeChanged =
-    stale('forecast.type') &&
-    !STATION_KEYS.filter((k) => k !== 'forecast.type').some(stale) &&
-    !FORECAST_KEYS.filter((k) => k !== 'forecast.type').some(stale);
-  if (onlyForecastTypeChanged && oldStationKey === newStationKey && oldForecastKey === newForecastKey) {
-    return;
-  }
-
-  // Everything else needs at least one teardown. Try to surface cached
-  // data for the new mode immediately so the chart doesn't go blank
-  // while the resubscribe is in flight.
-  if (stationStale) {
-    this._teardownStation();
-    if (oldStationKey !== newStationKey) {
-      const cached = this._stationCache[newStationKey];
-      if (cached?.length) {
-        this._stationData = cached.slice();
-        this._stationDataReady = true;
-      }
-    }
-    // If the pressure sensor itself changed, the cached delta points at
-    // a different entity and must be invalidated — the next station
-    // callback will re-fetch.
-    const oldPressureId = (oldConfig as { sensors?: { pressure?: string } } | undefined)?.sensors?.pressure;
-    const newPressureId = this.config?.sensors?.pressure;
-    if (oldPressureId !== newPressureId) {
-      this._pressureDelta3h = null;
-      this._pressureDeltaCache = { bucketMs: null, value: null };
-    }
-  }
-  if (forecastStale) {
-    this._teardownForecast();
-    if (oldForecastKey !== newForecastKey) {
-      const cached = this._forecastCache[newForecastKey];
-      if (cached?.length) {
-        this._forecastData = cached.slice();
-        this._forecastDataReady = true;
-      }
-    }
-  }
-
-  // Re-run the data-source-creation path proactively. Without this the
-  // chart waits for HA's next state push (1-3 s on a Pi) before
-  // subscribing — defeating the lazy-cache UX.
-  if (this._hass) this.hass = this._hass;
-  this._refreshForecasts();
-}
-
-// Day boundaries and every displayed time follow one zone per card: the
-// HA server's by default, `location.time_zone` or an IANA override via
-// the `time_zone` option (#357, ADR-0030). A zone change rebuilds the
-// sources that hold the old calendar or cached its days.
-_syncCalendar(serverZone: unknown): void {
-  const next = cardCalendar(this.config, serverZone);
-  if (next.timeZone === this.calendar.timeZone) return;
-  this.calendar = next;
-  this._stationCache = {};
-  this._pressureDeltaCache = { bucketMs: null, value: null };
-  if (this._dataSource) this._teardownStation();
-  // Daily forecast entries are anchored at the calendar's midnight.
-  this._forecastCache = {};
-  if (this._forecastSource) this._teardownForecast();
-  if (this._openMeteoSource) {
-    this._openMeteoSource.abort();
-    this._openMeteoSource = null;
-  }
-}
-
-_teardownStation() {
-  if (this._dataUnsubscribe) { this._dataUnsubscribe(); this._dataUnsubscribe = null; }
-  this._dataSource = null;
-  this._stationData = [];
-  this._stationDataReady = false;
-  // Force the next hass tick down the full path so phase 3 rebuilds
-  // the source (ADR-0017 fast path would otherwise skip it).
-  this._watchedStatesSnapshot = null;
-}
-
-_teardownForecast() {
-  if (this._forecastUnsubscribe) { this._forecastUnsubscribe(); this._forecastUnsubscribe = null; }
-  this._forecastSource = null;
-  this._forecastDataReady = false;
-  this._forecastData = [];
-  this._watchedStatesSnapshot = null;
-}
-
-// deno-lint-ignore no-explicit-any
-drawChart(args?: any): unknown[] | undefined {
+drawChart(): void {
   // Hold off the FIRST chart render until every expected data source
   // has produced at least one value. Forecast (HA's cached weather
   // entity) typically lands in tens of ms; station (recorder query)
@@ -2217,11 +1633,11 @@ drawChart(args?: any): unknown[] | undefined {
   // chart is built, the gate is permanently lifted; subsequent updates
   // proceed normally (in-place data updates via updateChart, full
   // rebuilds via drawChart for shape changes).
-  if (!this._initialChartBuilt && !this._allExpectedDataReady()) {
-    return undefined;
+  if (!this._initialChartBuilt && !this._sources.allExpectedDataReady()) {
+    return;
   }
   try {
-    const result = drawChartUnsafe(this as unknown as Parameters<typeof drawChartUnsafe>[0], args);
+    this._buildChart();
     if (this.forecastChart) {
       this._initialChartBuilt = true;
       // A full rebuild consumed the freshest `forecasts` — no in-place
@@ -2297,13 +1713,13 @@ drawChart(args?: any): unknown[] | undefined {
       this._chartError = null;
       this.requestUpdate();
     }
-    return result;
-  } catch (e) {
-    // The phase tag (set by chart/orchestrator's drawChartUnsafe before each sub-step)
-    // tells us where we crashed — without it, the banner just says "render
+  } catch (thrown) {
+    // The phase tag (ChartBuildError from chart/orchestrator) tells us
+    // where we crashed — without it, the banner just says "render
     // failed" and we have to repro to find the spot. Falls back to "draw"
     // for failures that happen outside any tagged step.
-    const phase = this._chartPhase || 'draw';
+    const phase = thrown instanceof ChartBuildError ? thrown.phase : 'draw';
+    const e = thrown instanceof ChartBuildError ? thrown.original : thrown;
     console.error(`[weather-station-card] chart ${phase} failed`, e);
     if (this.forecastChart) {
       try { this.forecastChart.destroy(); } catch { /* already gone */ }
@@ -2312,10 +1728,49 @@ drawChart(args?: any): unknown[] | undefined {
     const err = e as { message?: string } | null;
     const msg = String(err?.message ? err.message : e);
     this._chartError = `${phase}: ${msg}`;
-    this._chartPhase = null;
     this.requestUpdate();
-    return undefined;
   }
+}
+
+// Destroy the previous chart and build a fresh one from the current
+// forecasts (chart/orchestrator.ts). Throws ChartBuildError.
+_buildChart(): void {
+  if (!this.forecasts?.length) return;
+  const target = this.renderRoot?.querySelector<HTMLElement>('#forecastChart');
+  if (!target) {
+    // drawChart can run inside _refreshForecasts before Lit commits the
+    // chart container; retry on the next frame, after the commit.
+    if (typeof requestAnimationFrame !== 'undefined') {
+      requestAnimationFrame(() => this.drawChart());
+    }
+    return;
+  }
+  if (this.forecastChart) {
+    this.forecastChart.destroy();
+    this.forecastChart = null;
+  }
+  let data;
+  try {
+    data = this.computeForecastData();
+  } catch (err) {
+    throw new ChartBuildError('compute', err);
+  }
+  this.forecastChart = buildForecastChart({
+    target,
+    config: this.config,
+    language: this.language,
+    calendar: this.calendar,
+    data,
+    stationCount: this._stationCount || 0,
+    forecastCount: this._forecastCount || 0,
+    unitSystem: (this._hass?.config as { unit_system?: ChartInputs['unitSystem'] } | undefined)
+      ?.unit_system as ChartInputs['unitSystem'],
+    ll: (key: string) => this.ll(key),
+    // The card inherits the global AND the view-level theme; detached,
+    // it falls back to the body.
+    themeHost: this.isConnected ? this : document.body,
+    inPreview: this._isInPreview,
+  });
 }
 
 computeForecastData({ config, forecastItems } = this) {
@@ -2505,7 +1960,7 @@ renderScrollTimeline() {
 }
 
 // Cycle through daily → today → hourly → daily via the same setConfig
-// path the editor radio uses. _invalidateStaleSources picks up the
+// path the editor radio uses. _sources.invalidate picks up the
 // forecast.type change and rebuilds both station and forecast data
 // sources, so the new mode's data loads on demand. The mutation does
 // NOT persist to the user's saved YAML — refresh resets to whatever
@@ -2686,7 +2141,7 @@ _scheduleForecastRowsReveal(): void {
           ${this.renderIconSpriteDefs()}
           ${banner}
           ${this._safeSection('availability note', () => this.renderAvailabilityNote())}
-          <div class="${(this._staleSensors?.length || this._missingSensors?.length) ? 'wsc-stale' : ''}">
+          <div class="${(this._sources.staleSensors?.length || this._sources.missingSensors?.length) ? 'wsc-stale' : ''}">
             ${mainSection}
             ${attributesSection}
           </div>
@@ -2702,7 +2157,7 @@ _scheduleForecastRowsReveal(): void {
   // instance state, returns a TemplateResult.
   // deno-lint-ignore no-explicit-any
   _renderForecastBlock({ config, scrolling, contentWidthPct, visibleBars }: any) {
-    return this._allExpectedDataReady() ? (() => {
+    return this._sources.allExpectedDataReady() ? (() => {
           // Pick the animation class for this render. Three cases:
           //   1. Block has never been rendered → 'first-mount' (slide-up + fade-in)
           //   2. Block was rendered before AND forecast.type just changed → 'view-changing' (opacity dip)
@@ -2844,7 +2299,7 @@ renderDebugPanel() {
   const wantForecast = cfg.show_forecast === true && !!cfg.weather_entity;
   // True when the past block is backfilled from Open-Meteo rather than
   // the recorder (no station sensors + weather entity + opt-in, ADR-0015).
-  const stationFromOpenMeteo = this._openMeteoStationFallbackActive(cfg);
+  const stationFromOpenMeteo = pastFromOpenMeteo(cfg);
   let renderMode = 'none (both blocks disabled)';
   if (wantStation && wantForecast) renderMode = 'combination (station + forecast)';
   else if (wantStation) renderMode = 'station-only';
@@ -2869,13 +2324,13 @@ renderDebugPanel() {
 
   const stationStatus = sourceStatus(
     wantStation,
-    stationFromOpenMeteo ? this._openMeteoSource : this._dataSource,
-    this._stationError,
-    this._stationDataReady, this._stationData?.length ?? 0,
+    stationFromOpenMeteo ? this._sources.openMeteo : this._sources.measured,
+    this._sources.stationError,
+    this._sources.stationReady, this._sources.stationData?.length ?? 0,
   );
   const forecastStatus = sourceStatus(
-    wantForecast, this._forecastSource, this._forecastError,
-    this._forecastDataReady, this._forecastData?.length ?? 0,
+    wantForecast, this._sources.forecastSource, this._sources.forecastError,
+    this._sources.forecastReady, this._sources.forecastData?.length ?? 0,
   );
 
   // Why a chart column might be empty — the most common support
@@ -2887,16 +2342,16 @@ renderDebugPanel() {
   if (cfg.show_forecast === true && !cfg.weather_entity) {
     emptyReasons.push('show_forecast is true, but weather_entity is unset — forecast block cannot load.');
   }
-  if (wantStation && this._stationDataReady && (this._stationData?.length ?? 0) === 0 && !this._stationError) {
+  if (wantStation && this._sources.stationReady && (this._sources.stationData?.length ?? 0) === 0 && !this._sources.stationError) {
     emptyReasons.push(stationFromOpenMeteo
       ? 'Open-Meteo returned no past data — check the browser network connection and the HA location.'
       : 'Station source returned 0 points — the recorder has no history for the configured window.');
   }
-  if (wantForecast && this._forecastDataReady && (this._forecastData?.length ?? 0) === 0 && !this._forecastError) {
+  if (wantForecast && this._sources.forecastReady && (this._sources.forecastData?.length ?? 0) === 0 && !this._sources.forecastError) {
     emptyReasons.push('Forecast source returned 0 points — the weather entity published an empty forecast.');
   }
-  if (this._missingSensors?.length) {
-    emptyReasons.push(`Sensors unavailable in HA: ${this._missingSensors.join(', ')}.`);
+  if (this._sources.missingSensors?.length) {
+    emptyReasons.push(`Sensors unavailable in HA: ${this._sources.missingSensors.join(', ')}.`);
   }
 
   // Resolved sensor entities — only the slots the user actually set.
@@ -2936,7 +2391,7 @@ renderDebugPanel() {
         ${row('Weather entity', cfg.weather_entity || '(unset)')}
         ${row('Station source', stationStatus)}
         ${row('Forecast source', forecastStatus)}
-        ${row('All expected data ready', this._allExpectedDataReady())}
+        ${row('All expected data ready', this._sources.allExpectedDataReady())}
         ${row('Chart built', this._initialChartBuilt)}
         <div style="margin-top: 4px;"><strong>Resolved sensors:</strong></div>
         ${sensorRows.length ? sensorRows : html`<div>(none configured)</div>`}
@@ -2961,11 +2416,11 @@ renderErrorBanner() {
   if (this._configError) {
     errors.push(this._configError);
   }
-  if (this._stationError) {
-    errors.push(`Statistics fetch failed: ${this._stationError}`);
+  if (this._sources.stationError) {
+    errors.push(`Statistics fetch failed: ${this._sources.stationError}`);
   }
-  if (this._forecastError) {
-    errors.push(`Forecast unavailable: ${this._forecastError}`);
+  if (this._sources.forecastError) {
+    errors.push(`Forecast unavailable: ${this._sources.forecastError}`);
   }
   if (this._chartError) {
     errors.push(`Chart render failed: ${this._chartError}`);
@@ -3011,8 +2466,8 @@ renderErrorBanner() {
 // HA restart) renders neutral with a clock icon; overdue renders in
 // the warning colour. Nothing renders when all sensors are live.
 renderAvailabilityNote() {
-  const overdue = this._missingSensors ?? [];
-  const inGrace = this._staleSensors ?? [];
+  const overdue = this._sources.missingSensors ?? [];
+  const inGrace = this._sources.staleSensors ?? [];
   if (!overdue.length && !inGrace.length) return html``;
   const isOverdue = overdue.length > 0;
   const all = [...overdue, ...inGrace];
@@ -3161,7 +2616,7 @@ _handleVisibilityChange(): void {
     // Wake the station poller: a poll that came due while the tab was
     // hidden was skipped (see MeasuredDataSource) — run it now so the
     // returning user sees fresh data instead of waiting up to an hour.
-    this._dataSource?.notifyVisible();
+    this._sources.notifyVisible();
   }
 }
 
@@ -3210,7 +2665,7 @@ _liveCtx(language?: string): LivePanelCtx {
       next_rain_text: this.next_rain_text,
       next_rain_icon: this.next_rain_icon,
       next_rain_title: this.next_rain_title,
-      pressureDelta3h: this._pressureDelta3h,
+      pressureDelta3h: this._sources.pressureDelta3h,
     },
     entityLink: (eid, content) => this._entityLink(eid, content),
     zeroDegreeLink: (eid, content) => this._zeroDegreeLink(eid, content),
@@ -3279,7 +2734,7 @@ _renderSourcesButton(place: 'main' | 'chart' = 'main'): unknown {
 // while HA runs. Written by the scan next to the reactive
 // `_missingSensors`, whose change triggers the re-render.
 _overdueSensorIds(): Set<string> {
-  return this._overdueIds;
+  return this._sources.overdueIds;
 }
 
 // Popup line label: the editor's sensor-field names double as the
@@ -3402,7 +2857,7 @@ _sourceLegend(config: any): LegendItem[] {
   if (!showStation && !showForecast) return [];
   const fc = config.forecast || {};
   const labels = config.source_labels || {};
-  const plan = planSources(config, this._forecastData, this.calendar);
+  const plan = planSources(config, this._sources.forecastData, this.calendar);
   // Same resolved colours as chart/orchestrator.ts draws with.
   const host: HTMLElement = this.isConnected ? this : document.body;
   const bg = getThemeTokens(host).backgroundColor;

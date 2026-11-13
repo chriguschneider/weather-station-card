@@ -57,7 +57,7 @@ describe('set hass — entity-delta fast path', () => {
 
     const extractSpy = vi.spyOn(card, '_extractSensorReadings');
     const classifySpy = vi.spyOn(card, '_classifyLiveCondition');
-    const syncSpy = vi.spyOn(card, '_syncDataSources');
+    const syncSpy = vi.spyOn(card._sources, 'sync');
 
     // Fresh hass object, fresh states bag — but every WATCHED entity
     // keeps its state-object reference. Only an unrelated entity moved.
@@ -127,12 +127,12 @@ describe('set hass — entity-delta fast path', () => {
     card.hass = makeHass(baseStates());
     expect(card._watchedStatesSnapshot).not.toBeNull();
 
-    card._teardownStation();
+    card._sources.teardownStation();
     expect(card._watchedStatesSnapshot).toBeNull();
 
     card.hass = makeHass(baseStates());
     expect(card._watchedStatesSnapshot).not.toBeNull();
-    card._teardownForecast();
+    card._sources.teardownForecast();
     expect(card._watchedStatesSnapshot).toBeNull();
   });
 });

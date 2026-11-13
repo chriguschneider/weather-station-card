@@ -98,33 +98,33 @@ describe('card — Open-Meteo source coordinates', () => {
 
   it('builds the source from the configured location', () => {
     const card = makeCard({ location: SKI });
-    card._ensureOpenMeteoSource(card.config);
-    expect(card._openMeteoSource.latitude).toBe(SKI.latitude);
-    expect(card._openMeteoSource.longitude).toBe(SKI.longitude);
+    card._sources.ensureOpenMeteo();
+    expect(card._sources.openMeteo.latitude).toBe(SKI.latitude);
+    expect(card._sources.openMeteo.longitude).toBe(SKI.longitude);
   });
 
   it('uses the HA location without the option', () => {
     const card = makeCard();
-    card._ensureOpenMeteoSource(card.config);
-    expect(card._openMeteoSource.latitude).toBe(46.92);
-    expect(card._openMeteoSource.longitude).toBe(7.41);
+    card._sources.ensureOpenMeteo();
+    expect(card._sources.openMeteo.latitude).toBe(46.92);
+    expect(card._sources.openMeteo.longitude).toBe(7.41);
   });
 
   it('rebuilds the source when the location changes', () => {
     const card = makeCard();
-    card._ensureOpenMeteoSource(card.config);
-    const first = card._openMeteoSource;
+    card._sources.ensureOpenMeteo();
+    const first = card._sources.openMeteo;
     card.setConfig({ ...card.config, location: SKI });
-    card._ensureOpenMeteoSource(card.config);
-    expect(card._openMeteoSource).not.toBe(first);
-    expect(card._openMeteoSource.latitude).toBe(SKI.latitude);
+    card._sources.ensureOpenMeteo();
+    expect(card._sources.openMeteo).not.toBe(first);
+    expect(card._sources.openMeteo.latitude).toBe(SKI.latitude);
   });
 
   it('puts the configured coordinates into the request URL', async () => {
     // Coordinates no other test uses: the module-level request dedup
     // would otherwise hand back an earlier test's pending request.
     const card = makeCard({ location: { latitude: 46.1234, longitude: 8.4321 } });
-    card._ensureOpenMeteoSource(card.config);
+    card._sources.ensureOpenMeteo();
     await new Promise((resolve) => setTimeout(resolve, 0));
     const urls = globalThis.fetch.mock.calls.map((c) => String(c[0]));
     expect(urls.length).toBeGreaterThan(0);
