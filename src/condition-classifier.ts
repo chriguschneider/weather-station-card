@@ -13,6 +13,8 @@
 // hail-pad / impact sensor) which a typical weather station does not provide.
 
 import type { ConditionId } from './const.js';
+import { declinationDeg } from './utils/solar.js';
+import type { Calendar } from './utils/time-zone.js';
 
 /** Threshold-set that the classifier consults — both the built-in
  *  `DEFAULTS` (calibrated for daily totals) and any user-supplied
@@ -120,12 +122,6 @@ const HOURLY_PRECIP_OVERRIDES: Partial<ConditionThresholds> = Object.freeze({
   exceptional_precip_mm: 30,
 });
 
-/** Solar declination in degrees (Cooper 1969 — accurate to ~0.5°,
- *  plenty for a ratio-based cloud check). */
-function declinationDeg(dayOfYear: number): number {
-  return 23.45 * Math.sin(((360 * (284 + dayOfYear)) / 365) * Math.PI / 180);
-}
-
 /** Theoretical clear-sky illuminance at solar noon in lux. Based on
  *  cos(zenith) × 110 000 lx, with zenith = |lat − declination| at solar
  *  noon. Reference: AMS Glossary "Solar elevation"; IES Lighting
@@ -144,12 +140,10 @@ export function clearSkyNoonLux(latDeg: number, dayOfYear: number): number {
  *  (UTC + longitude/15); equation-of-time correction omitted (max
  *  ~16 min, negligible at the cloud-ratio resolution we need).
  *  cos(zenith) = sinφ·sinδ + cosφ·cosδ·cos(H). */
-export function clearSkyLuxAt(latDeg: number, lonDeg: number, date?: Date): number {
+export function clearSkyLuxAt(latDeg: number, lonDeg: number, calendar: Calendar, date?: Date): number {
   const d = date instanceof Date ? date : new Date();
   if (!Number.isFinite(latDeg) || !Number.isFinite(lonDeg)) return 110000;
-  const start = new Date(d.getFullYear(), 0, 0);
-  const dayOfYear = Math.floor((d.getTime() - start.getTime()) / (24 * 60 * 60 * 1000));
-  const decl = declinationDeg(dayOfYear) * Math.PI / 180;
+  const decl = declinationDeg(calendar.dayOfYear(d)) * Math.PI / 180;
   const lat = latDeg * Math.PI / 180;
   const utcHours = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
   const solarHour = utcHours + lonDeg / 15;
@@ -169,6 +163,7 @@ export function clearSkyLuxAt(latDeg: number, lonDeg: number, date?: Date): numb
 export function clearSkyLuxFactory(
   latDeg: number | null | undefined,
   lonDeg: number | null | undefined,
+  calendar: Calendar,
 ): (date?: Date) => number {
   if (!Number.isFinite(latDeg) || !Number.isFinite(lonDeg)) {
     return () => 110000;
@@ -181,8 +176,7 @@ export function clearSkyLuxFactory(
   let cosDecl = 0;
   return (date?: Date): number => {
     const d = date instanceof Date ? date : new Date();
-    const yearStart = new Date(d.getFullYear(), 0, 0);
-    const dayOfYear = Math.floor((d.getTime() - yearStart.getTime()) / (24 * 60 * 60 * 1000));
+    const dayOfYear = calendar.dayOfYear(d);
     if (dayOfYear !== cachedDayOfYear) {
       cachedDayOfYear = dayOfYear;
       const decl = declinationDeg(dayOfYear) * Math.PI / 180;

@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The sun-strength row (UV and lux) now flips between sun and moon at the same moment as the main condition icon. Near sunrise and sunset the two could disagree by up to about 20 minutes.
+
 ## [3.0.0-beta.3] — 2026-11-09
 
 **Beta**, third round: beta.2 plus the additions and fixes below. Same rules as before: only shown by HACS if you enabled beta versions for this card; 3.0.0 follows after about a week without problems. Report in [#358](https://github.com/chriguschneider/weather-station-card/issues/358).

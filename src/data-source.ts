@@ -35,7 +35,7 @@ import {
 } from './utils/unit-converters.js';
 import { dedupeRequest } from './utils/shared-requests.js';
 import { safeLocalStorage } from './utils/safe-storage.js';
-import { serverCalendar, type Calendar } from './utils/time-zone.js';
+import { HOUR_MS, serverCalendar, type Calendar } from './utils/time-zone.js';
 
 // Dedup TTL for identical recorder requests across sibling cards on
 // the same dashboard. Long enough to absorb staggered card mounts and
@@ -44,7 +44,6 @@ import { serverCalendar, type Calendar } from './utils/time-zone.js';
 const STATS_DEDUPE_TTL_MS = 60 * 1000;
 
 const POLL_INTERVAL_MS = 60 * 60 * 1000;
-const HOUR_MS = 60 * 60 * 1000;
 
 /** A single recorder/statistics_during_period bucket. The recorder
  *  fills only the keys for the `types` requested in the WS call. */
@@ -1094,7 +1093,7 @@ export class MeasuredDataSource {
     // ops; with this factory it's ~168 (one cos(hourAngle) per row, the
     // rest reused from the cache).
     const loc = resolveLocation(this.config, this.hass);
-    const luxFor = clearSkyLuxFactory(loc ? loc.latitude : null, loc ? loc.longitude : null);
+    const luxFor = clearSkyLuxFactory(loc ? loc.latitude : null, loc ? loc.longitude : null, this.calendar);
 
     const hourMs = (date: Date): number => this.calendar.startOfHour(date).getTime();
 
@@ -1203,7 +1202,7 @@ export class MeasuredDataSource {
       const lat = loc ? loc.latitude : null;
       const lon = loc ? loc.longitude : null;
       clearsky_lux = (lat != null && lon != null)
-        ? clearSkyLuxAt(lat, lon, hour.hourStart)
+        ? clearSkyLuxAt(lat, lon, this.calendar, hour.hourStart)
         : 110000;
     }
     const { hourStart: _ignored, clearsky_lux: _ignoredLux, ...inputs } = hour;

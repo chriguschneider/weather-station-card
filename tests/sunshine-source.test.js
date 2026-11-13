@@ -286,11 +286,11 @@ describe('attachSunshine', () => {
       { date: localDateString(dayMs(-2), cal), value: 3.1 },
       { date: localDateString(dayMs(-1), cal), value: 5.9 },
       { date: localDateString(dayMs(0), cal), value: 7.0 },
-      { date: localDateString(dayMs(1), cal), value: 9.1 },
+      { date: localDateString(dayMs(1), cal), value: 8.1 },
       { date: localDateString(dayMs(2), cal), value: 4.0 },
     ];
     const result = attachSunshine(fc, cal, { dailyValues, latitude: 47 });
-    expect(result.map((r) => r.sunshine)).toEqual([3.1, 5.9, 7.0, 9.1, 4.0]);
+    expect(result.map((r) => r.sunshine)).toEqual([3.1, 5.9, 7.0, 8.1, 4.0]);
   });
 
   it('omits columns silently when no dailyValues given (sunshine stays null)', () => {

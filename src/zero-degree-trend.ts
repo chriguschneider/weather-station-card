@@ -10,6 +10,7 @@
 // The thresholds below are the card's own heuristics, decided in #333.
 
 import { parseLocation } from './location.js';
+import { HOUR_MS } from './utils/time-zone.js';
 
 export interface ZeroDegreePoint {
   /** Epoch ms. */
@@ -37,7 +38,6 @@ export interface ZeroDegreeTrend {
   max: number;
 }
 
-const HOUR_MS = 3_600_000;
 const WINDOW_HOURS = 48;
 // A movement smaller than this is noise at the scale of the model's
 // hourly isotherm — the row calls it stable (#333).
