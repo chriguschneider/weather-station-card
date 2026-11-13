@@ -120,6 +120,15 @@ that the editor still references — fails CI.
   force `setConfig` to re-run sensor detection on every config change
   (defeats the point of stable defaults).
 
+## Amendment 2026-11-13 (#450): typed, normalised config
+
+`setConfig` merges through `normalizeConfig` (`src/card-config.ts`),
+whose `CardConfig` type is derived from `DEFAULTS`. It also normalises
+the values several modules parse: `days` becomes a positive integer
+(the default otherwise) and `forecast_days` one too (`days`
+otherwise), so no reader re-parses them with its own fallback.
+DEFAULTS stays the one source of the values. Decided by: owner (#450).
+
 ## Related
 
 - [`../../src/defaults.ts`](../../src/defaults.ts) — DEFAULTS, DEFAULTS_FORECAST, DEFAULTS_UNITS

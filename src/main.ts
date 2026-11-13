@@ -28,7 +28,7 @@ import {
   MIN_HA_VERSION,
   isHaVersionBelow,
 } from './const.js';
-import { DEFAULTS, DEFAULTS_FORECAST, DEFAULTS_UNITS } from './defaults.js';
+import { DEFAULTS, DEFAULTS_FORECAST } from './defaults.js';
 import { validateConfig } from './config-validation.js';
 import {LitElement, html, nothing, svg} from 'lit';
 import {MDI_PATHS} from './icons/mdi-paths.js';
@@ -46,14 +46,7 @@ import { resolveCssVar } from './utils/resolve-css-var.js';
 import { getThemeTokens } from './utils/theme-tokens.js';
 import {
   hourlyTempSeries,
-  normalizeForecastMode,
   startOfTodayMs,
-  filterMidnightStaleForecast,
-  aggregateThreeHourCalendar,
-  trimLeadingEmptyBlocks,
-  trimTrailingEmptyBlocks,
-  trimToWholeDayStart,
-  trimToWholeDayEnd,
   effectiveVisibleBars,
   computeTodayPagerScrollLeft,
   nextForecastType,
@@ -61,20 +54,25 @@ import {
   forecastFetchKey,
   forecastsEqual,
 } from './forecast-utils.js';
+import { sunshineFractions } from './sunshine-source.js';
 import {
-  attachEntitySunshine,
-  entitySunshineHours,
-  type EntitySunshineEntry,
-  forecastCoversSunshine,
-  overlayFromOpenMeteo,
-  sunshineFractions,
-} from './sunshine-source.js';
+  buildForecastEntries,
+  needsOpenMeteo,
+  openMeteoFetchWindow,
+  openMeteoStationWindow,
+  overlayOnEntries,
+  planSources,
+  sliceForecast,
+  type PipelineContext,
+  type SourcePlan,
+} from './forecast-pipeline.js';
+import { normalizeConfig, type CardConfig } from './card-config.js';
+import { pastFromOpenMeteo } from './past-source.js';
 import { OpenMeteoSource } from './openmeteo-source.js';
 import { resolveLiveSource, sourceLabel, labelText, isSensorProblem, sensorDownId, type LiveSource } from './live-source.js';
-import { buildChartLegend, type LegendItem, type SunshineParts } from './chart-legend.js';
+import { buildChartLegend, type LegendItem } from './chart-legend.js';
 import { SourcesPopup, type SourceLine } from './sources-popup.js';
 import { cardCalendar, resolveLocation } from './location.js';
-import { forecastHasProbability, overlayPrecipProbability } from './precip-probability.js';
 import { PROBABILITY_EXTRA_BOTTOM_PAD } from './chart/plugins/precip-label.js';
 import { safeQuery } from './utils/safe-query.js';
 import { parseNumericSafe } from './utils/numeric.js';
@@ -713,23 +711,7 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
 // `any` and let `cardConfig` apply defaults and structural normalisation.
 // deno-lint-ignore no-explicit-any
 setConfig(config: any) {
-  const cardConfig = {
-    ...DEFAULTS,
-    ...config,
-    forecast: {
-      ...DEFAULTS_FORECAST,
-      ...(config.forecast || {}),
-    },
-    units: {
-      ...DEFAULTS_UNITS,
-      ...(config.units || {}),
-    },
-    sensors: {
-      ...(config.sensors || {}),
-    },
-  };
-
-  cardConfig.units.speed = config.speed ? config.speed : cardConfig.units.speed;
+  const cardConfig: CardConfig = normalizeConfig(config);
 
   // Live-condition memoization (set hass) keys partly off `condition_mapping`;
   // wipe the cached entry so the next hass tick reclassifies with the new
@@ -772,7 +754,7 @@ setConfig(config: any) {
   if (
     cardConfig.show_station
     && !cardConfig.sensors?.temperature
-    && !this._openMeteoStationFallbackActive(cardConfig)
+    && !pastFromOpenMeteo(cardConfig)
   ) {
     configErrors.push(
       'Station mode needs a temperature sensor — set `sensors.temperature` in the card config.',
@@ -1665,7 +1647,7 @@ _stationSeriesKey(): string {
   return seriesCacheKey('station', [
     this.calendar.timeZone,
     stationFetchKey(this.config),
-    parseInt(String(this.config?.days), 10) || 7,
+    this.config.days,
     ...roleEids,
   ]);
 }
@@ -1871,63 +1853,37 @@ async _refreshPressureDelta(): Promise<void> {
     }
   }
 
+  // The source plan for the current config and forecast (#450): which
+  // part comes from the weather entity, the recorder, Open-Meteo or the
+  // cloud-cover estimate. One decision feeds the fetch gate, the chart
+  // entries and the info popup's legend.
+  _sourcePlan(): SourcePlan {
+    return planSources(this.config, this._forecastData, this.calendar);
+  }
+
+  _pipelineCtx(plan: SourcePlan): PipelineContext {
+    return {
+      plan,
+      calendar: this.calendar,
+      hass: this._hass,
+      openMeteo: this._openMeteoSource,
+      location: this.config.location,
+    };
+  }
+
   _refreshForecastsUnsafe() {
-    // normalizeForecastMode validates forecast.type (typo'd values fall
-    // back to 'daily'). Station block is now coherent at hourly too —
-    // MeasuredDataSource fetches with period:'hour' when the type is
-    // hourly — so the previous show_station-override at hourly is gone.
-    const { config: effectiveCfg } = normalizeForecastMode(this.config);
     // Ensure the Open-Meteo source up front. When it feeds the station
-    // block (no sensors + weather entity + opt-in, ADR-0015) a warm
-    // cache populates `_stationData` synchronously here, so the
-    // `station` capture below sees it on the same render.
-    this._ensureOpenMeteoSource(effectiveCfg);
-    const todayStartMs = startOfTodayMs(this.calendar);
-    const fcType = effectiveCfg.forecast.type;
-    const isToday = fcType === 'today';
-
-    const station = effectiveCfg.show_station !== false ? (this._stationData || []) : [];
-    const rawForecast = this._sliceForecast(effectiveCfg, fcType, isToday, todayStartMs);
-    // De-overlap forecast against station's last observed hour/day.
-    // Providers emit forecast entries at different anchors: meteoswiss
-    // starts at the NEXT full hour after "now", openmeteo-hourly
-    // includes the CURRENT hour (which is already in station's last
-    // bucket). Without trim, the chart shows duplicate adjacent columns
-    // at the boundary (visible 13/13 or 15/15) AND the icon row below
-    // ends up misaligned because the icons are emitted one-per-data-row
-    // but the chart columns are one-per-unique-timestamp. Station is
-    // observed truth, so trim forecast.
-    const lastStationMs = station.length
-      ? new Date((station[station.length - 1] as { datetime?: string }).datetime ?? '').getTime()
-      : -Infinity;
-    // Daily entries on both sides sit at the card's midnight (#355), so
-    // the forecast's own today shares the station's last datetime and
-    // stays: that is the doubled-today column.
-    const isDaily = fcType === 'daily';
-    const trimmed = Number.isFinite(lastStationMs)
-      ? rawForecast.filter((e: { datetime?: string }) => {
-          const t = new Date(e.datetime ?? '').getTime();
-          return !Number.isFinite(t) || t > lastStationMs || (isDaily && t === lastStationMs);
-        })
-      : rawForecast;
-    // The entity's own sunshine goes on first (ADR-0028); the overlays
-    // further down keep it and only fill the entries without one.
-    const forecast = attachEntitySunshine(trimmed);
-    // Earlier code dropped the trailing station-today entry when it
-    // carried no recorded data yet (temperature + templow + precipitation
-    // all null). That removed the FR-station column from ~00:00 to ~00:15
-    // every day, breaking the doubled-today framing and stranding the
-    // weekday labels. The column is now kept: HA's running aggregates
-    // fill in over the first quarter-hour, partial values (e.g. 1 mm
-    // precip since midnight) are visible immediately, and missing fields
-    // render as gaps — same convention as an offline sensor on a
-    // historical day.
-
-    if (isToday) {
-      this._buildTodayForecasts(station, forecast);
-    } else {
-      this._buildDailyOrHourlyForecasts(station, forecast, fcType, effectiveCfg);
-    }
+    // block (ADR-0015) a warm cache populates `_stationData`
+    // synchronously here, so the build below sees it on the same render.
+    const plan = this._ensureOpenMeteoSource();
+    const built = buildForecastEntries(this._stationData, this._pipelineCtx(plan));
+    // Earlier code dropped the trailing station-today entry while it
+    // carried no recorded data yet, which removed the column from ~00:00
+    // to ~00:15 every day. It is kept: partial values show at once and
+    // missing fields render as gaps.
+    this._stationCount = built.stationCount;
+    this._forecastCount = built.forecastCount;
+    this.forecasts = built.entries;
     // Data genuinely changed shape or content — flag it so measureCard's
     // skip-path pushes the fresh arrays into the live chart in place.
     this._forecastsDirty = true;
@@ -1954,128 +1910,9 @@ async _refreshPressureDelta(): Promise<void> {
     return true;
   }
 
-  // `days` / `forecast_days` define the data-loading window for both
-  // daily and hourly modes; at hourly each day expands to 24 buckets.
-  // 'today' (the day pager, 2026-08 rework) uses the SAME window as
-  // hourly — the whole span is 3-h-aggregated and paged one day per
-  // viewport, so the forecast side is no longer capped at end-of-today.
   // deno-lint-ignore no-explicit-any
-  _sliceForecast(effectiveCfg: any, fcType: string, isToday: boolean, todayStartMs: number): any[] {
-    if (effectiveCfg.show_forecast !== true || !effectiveCfg.weather_entity) return [];
-    const isHourlyish = fcType === 'hourly' || isToday;
-    const slotsPerUnit = isHourlyish ? 24 : 1;
-    const cap = parseInt(effectiveCfg.forecast_days, 10);
-    const dayLimit = cap > 0 ? cap : (parseInt(effectiveCfg.days, 10) || 7);
-    const limit = dayLimit * slotsPerUnit;
-    const sliced = filterMidnightStaleForecast(this._forecastData || [], todayStartMs)
-      .slice(0, limit);
-    // Hourly-ish modes end on a WHOLE calendar day ("nur volle Tage"):
-    // the count cap lands mid-day (days × 24 h from now), which grew a
-    // sliver segment on the day timeline — a "day" holding a single
-    // trailing hour. Daily mode is day-granular already.
-    return isHourlyish ? trimToWholeDayEnd(sliced, this.calendar) : sliced;
-  }
-
-  // 'today' flow (day pager, 2026-08 rework):
-  //   1. Apply HOURLY sunshine to each entry (per-hour value).
-  //   2. Calendar-aligned 3-hour aggregation over the MERGED series —
-  //      blocks anchor at local 00/03/…/21 and the output is
-  //      gap-filled to whole days (8 blocks per day, empty blocks all
-  //      null). Every viewport page is exactly one calendar day.
-  //   3. day_length = 3 per block (denominator for the sunshine
-  //      fraction: sunshine_h / 3).
-  //
-  // Station/forecast split happens at block granularity AFTER the
-  // merge: a boundary block containing both measured and forecast
-  // hours counts as station (measured wins). The split drives the
-  // solid/dashed line styling and the separator, same as before.
-  // deno-lint-ignore no-explicit-any
-  _buildTodayForecasts(station: any[], forecast: any[]): void {
-    // De-overlap is done centrally in _refreshForecasts so the hourly
-    // + daily flows benefit too. Forecast here is already strictly
-    // after station's last hour.
-    const merged = overlayFromOpenMeteo(
-      [...station, ...this._withPrecipProbability(forecast, 0, 'hourly')],
-      this._hass,
-      this._openMeteoSource,
-      this.calendar,
-      'hourly',
-      null,
-      this.config.location,
-    );
-    const allBlocks = aggregateThreeHourCalendar(merged, this.calendar);
-    // Drop data-less leading blocks: whole empty days always (short
-    // recorder history), and in FORECAST-ONLY mode the empty start of
-    // the first day too — otherwise an evening mount shows a
-    // near-blank current-day page with the forecast squeezed into the
-    // last columns. Without a station side the pages anchor at the
-    // first forecast block (rolling next-24-h windows); the
-    // day-page-scroll helper falls back to the boundary-centred
-    // position since no block sits at today's local midnight.
-    const blocks = trimTrailingEmptyBlocks(
-      trimLeadingEmptyBlocks(allBlocks, station.length === 0),
-      forecast.length === 0,
-    );
-    for (const e of blocks) e.day_length = 3;
-
-    // Anchor of the block containing the last STATION hour — every
-    // block up to and including it is the measured side.
-    let lastStationAnchorMs = -Infinity;
-    if (station.length) {
-      const lastDt = (station[station.length - 1] as { datetime?: string }).datetime;
-      const d = lastDt ? new Date(lastDt) : null;
-      if (d && Number.isFinite(d.getTime())) {
-        lastStationAnchorMs = this.calendar.withHour(d, Math.floor(this.calendar.hourOf(d) / 3) * 3).getTime();
-      }
-    }
-    let stationBlocks = 0;
-    for (const b of blocks) {
-      if (new Date(b.datetime).getTime() <= lastStationAnchorMs) stationBlocks++;
-      else break;
-    }
-    this._stationCount = stationBlocks;
-    this._forecastCount = blocks.length - stationBlocks;
-    this.forecasts = blocks;
-  }
-
-  // Daily / hourly flow: overlay sunshine at the matching granularity.
-  // F3 fallback: when neither sensor.sunshine_duration nor Open-Meteo
-  // resolves a forecast value, the configured exponent
-  // (default 1.7, tunable via condition_mapping.sunshine_cloud_exponent)
-  // lets attachSunshine derive the value from forecast.cloud_coverage via
-  // the Kasten formula. Setting the exponent to null disables F3 entirely.
-  // deno-lint-ignore no-explicit-any
-  _buildDailyOrHourlyForecasts(station: any[], forecast: any[], fcType: string, effectiveCfg: any): void {
-    this._stationCount = station.length;
-    this._forecastCount = forecast.length;
-    const granularity = fcType === 'hourly' ? 'hourly' : 'daily';
-    const cm = effectiveCfg.condition_mapping || {};
-    const cloudExp = (cm.sunshine_cloud_exponent != null && Number.isFinite(cm.sunshine_cloud_exponent))
-      ? Number(cm.sunshine_cloud_exponent)
-      : 1.7;
-    this.forecasts = overlayFromOpenMeteo(
-      [...station, ...this._withPrecipProbability(forecast, 0, granularity)],
-      this._hass,
-      this._openMeteoSource,
-      this.calendar,
-      granularity,
-      granularity === 'daily' ? cloudExp : null,
-      this.config.location,
-    );
-  }
-
-  // Chance-of-rain overlay for the precip pill (#288, ADR-0027). Only
-  // the entries from `fromIndex` on are forecast — measured station
-  // entries never get a probability. Entity-provided values are kept
-  // (normalized); gaps are filled from the Open-Meteo source when one
-  // exists. No-op while the row toggle is off.
-  // deno-lint-ignore no-explicit-any
-  _withPrecipProbability(entries: any[], fromIndex: number, granularity: 'daily' | 'hourly'): any[] {
-    if (this.config?.forecast?.show_precip_probability !== true) return entries;
-    if (!entries.length || fromIndex >= entries.length) return entries;
-    const head = entries.slice(0, fromIndex);
-    const tail = overlayPrecipProbability(entries.slice(fromIndex), this._openMeteoSource, this.calendar, granularity);
-    return head.length ? [...head, ...tail] : tail;
+  _sliceForecast(): any[] {
+    return sliceForecast(this.config, this._forecastData, this.calendar);
   }
 
   // Async sunshine-arrival path. Updates this.forecasts in place with
@@ -2086,202 +1923,51 @@ async _refreshPressureDelta(): Promise<void> {
   // whole forecasts array, not just the sunshine column). The chance-
   // of-rain overlay (#288) rides the same path.
   _overlaySunshineOnExisting(): void {
-    if (!this.forecasts || !this.forecastChart) {
+    const plan = this._sourcePlan();
+    if (!this.forecasts || !this.forecastChart || plan.type === 'today') {
       this._refreshForecasts();
       return;
     }
-    // deno-lint-ignore no-explicit-any
-    const { config: effectiveCfg } = normalizeForecastMode(this.config) as { config: any };
-    const fcType = effectiveCfg.forecast.type;
-    if (fcType === 'today') {
-      this._refreshForecasts();
-      return;
-    }
-    const granularity = fcType === 'hourly' ? 'hourly' : 'daily';
-    const cm = effectiveCfg.condition_mapping || {};
-    const cloudExp = (cm.sunshine_cloud_exponent != null && Number.isFinite(cm.sunshine_cloud_exponent))
-      ? Number(cm.sunshine_cloud_exponent)
-      : 1.7;
-    this.forecasts = this._withPrecipProbability(
-      overlayFromOpenMeteo(
-        // deno-lint-ignore no-explicit-any
-        [...this.forecasts] as any,
-        this._hass,
-        this._openMeteoSource,
-        this.calendar,
-        granularity,
-        granularity === 'daily' ? cloudExp : null,
-        this.config.location,
-      ),
-      this._stationCount || 0,
-      granularity,
-    );
+    this.forecasts = overlayOnEntries(this.forecasts, this._stationCount || 0, this._pipelineCtx(plan));
     this.updateChart();
   }
 
-  // True when the chance-of-rain row is on AND the weather entity's own
-  // forecast leaves `precipitation_probability` empty, so Open-Meteo
-  // has to fill it (ADR-0027). Unknown (no forecast yet) counts as
-  // "entity covers it": the source is re-evaluated on every forecast
-  // arrival, so the fallback kicks in as soon as the gap is real, and
-  // a MeteoSwiss / AccuWeather user never sends their location to
-  // Open-Meteo for a value the entity already provides.
-  // deno-lint-ignore no-explicit-any
-  _precipProbabilityNeedsOpenMeteo(effectiveCfg: any): boolean {
-    if (effectiveCfg?.forecast?.openmeteo === false) return false;
-    if (effectiveCfg?.forecast?.show_precip_probability !== true) return false;
-    const raw = this._forecastData;
-    if (!Array.isArray(raw) || raw.length === 0) return false;
-    return !forecastHasProbability(raw);
+  // ADR-0027: the chance-of-rain row needs Open-Meteo.
+  _precipProbabilityNeedsOpenMeteo(): boolean {
+    return this._sourcePlan().openMeteo.precipProbability;
   }
 
-  // True when the sunshine bar has a column only Open-Meteo can fill
-  // (ADR-0028, same gating as ADR-0027). Forecast columns are covered
-  // when every entry of the visible slice carries the entity's
-  // `sunshine_duration`; until the forecast arrives that counts as
-  // covered, and the next arrival re-evaluates. Station columns are
-  // covered only in daily mode with a sunshine or illuminance sensor —
-  // the hourly recorder builder carries no sunshine at all.
-  // deno-lint-ignore no-explicit-any
-  _sunshineNeedsOpenMeteo(effectiveCfg: any): boolean {
-    if (effectiveCfg?.forecast?.openmeteo === false) return false;
-    if (effectiveCfg?.forecast?.show_sunshine !== true) return false;
-    const fcType = effectiveCfg.forecast.type;
-    if (effectiveCfg.show_station !== false) {
-      const sensors = this.config?.sensors || {};
-      const hasSensor = Object.values(sensors).some(
-        (v) => typeof v === 'string' && v.trim() !== '',
-      );
-      const stationHasSunshine = fcType === 'daily'
-        && !!(sensors.sunshine_duration || sensors.illuminance);
-      if (hasSensor && !stationHasSunshine) return true;
-    }
-    const raw = this._forecastData;
-    if (!Array.isArray(raw) || raw.length === 0) return false;
-    const slice = this._sliceForecast(effectiveCfg, fcType, fcType === 'today', startOfTodayMs(this.calendar));
-    return !forecastCoversSunshine(slice);
+  // ADR-0028: the sunshine bar has a column only Open-Meteo can fill.
+  _sunshineNeedsOpenMeteo(): boolean {
+    return this._sourcePlan().openMeteo.sunshine;
   }
 
-  // True when the Open-Meteo source should drive the past/station chart
-  // block instead of the recorder (ADR-0015). All must hold:
-  //   - no station sensors configured (any one sensor → recorder wins,
-  //     all-or-nothing — no per-channel top-up);
-  //   - a weather_entity is set (it supplies the forecast half);
-  //   - the station block is enabled (show_station);
-  //   - the forecast.openmeteo_history opt-in is on.
-  // Applies in all three chart resolutions (daily / hourly / today).
+  // ADR-0015: the past block comes from Open-Meteo, not the recorder.
   // deno-lint-ignore no-explicit-any
   _openMeteoStationFallbackActive(cfg: any): boolean {
-    if (!cfg || cfg.show_station === false) return false;
-    if (cfg.forecast?.openmeteo === false) return false;
-    if (cfg.forecast?.openmeteo_history !== true) return false;
-    if (!cfg.weather_entity) return false;
-    const sensors = cfg.sensors || {};
-    const hasSensor = Object.values(sensors).some(
-      (v) => typeof v === 'string' && v.trim() !== '',
-    );
-    return !hasSensor;
+    return pastFromOpenMeteo(cfg);
   }
 
-  // The past-window slice of the Open-Meteo forecast, shaped like
-  // MeasuredDataSource's output for the current chart mode:
-  //   - daily: the last `days` daily entries up to and including today;
-  //   - hourly: the last `days * 24` hourly entries up to the current
-  //     hour;
-  //   - today: the last 12 hourly entries (combination) or 24
-  //     (station-only) — matching MeasuredDataSource's today windowing.
-  // Future entries are filtered out — they belong to the weather
-  // entity's forecast block, and keeping them here would make the
-  // forecast-trim in _refreshForecastsUnsafe drop the real forecast.
   // deno-lint-ignore no-explicit-any
   _openMeteoStationWindow(): any[] {
-    const src = this._openMeteoSource;
-    if (!src) return [];
-    const rawType = this.config?.forecast?.type;
-    const type = (rawType === 'hourly' || rawType === 'today') ? rawType : 'daily';
-
-    if (type === 'daily') {
-      if (typeof src.getDailyStationForecast !== 'function') return [];
-      const all = src.getDailyStationForecast() || [];
-      const tomorrowMs = this.calendar.addDays(this.calendar.startOfDay(Date.now()), 1).getTime();
-      const past = all.filter((e: { datetime?: string }) => {
-        const t = new Date(e.datetime ?? '').getTime();
-        return Number.isFinite(t) && t < tomorrowMs;
-      });
-      const days = parseInt(String(this.config?.days), 10) || 7;
-      return past.slice(-days);
-    }
-
-    // hourly / today — slice the hourly entries up to the current hour.
-    if (typeof src.getHourlyStationForecast !== 'function') return [];
-    const all = src.getHourlyStationForecast() || [];
-    const nowHourMs = this.calendar.startOfHour(Date.now()).getTime();
-    const past = all.filter((e: { datetime?: string }) => {
-      const t = new Date(e.datetime ?? '').getTime();
-      return Number.isFinite(t) && t <= nowHourMs;
-    });
-    // 'today' (day pager) uses the same full hourly window as
-    // 'hourly' — the render layer aggregates and pages it.
-    // The OLDEST day is trimmed to a whole calendar day (mirror of the
-    // forecast tail's whole-day rule) so the day timeline's first
-    // segment is a full day; the "now" end stays untouched.
-    const count = (parseInt(String(this.config?.days), 10) || 7) * 24;
-    return trimToWholeDayStart(past.slice(-count), this.calendar);
-  }
-
-  // Per-part sunshine source for the popup, mirroring the decisions of
-  // _sunshineNeedsOpenMeteo: station column from the sensor (daily with a
-  // sunshine / illuminance sensor) else Open-Meteo; forecast columns from
-  // the entity when it carries sunshine_duration, else Open-Meteo.
-  // deno-lint-ignore no-explicit-any
-  _sunshineSourceParts(effectiveCfg: any): SunshineParts {
-    const om = effectiveCfg?.forecast?.openmeteo !== false;
-    const fcType = effectiveCfg?.forecast?.type || 'daily';
-    const sensors = this.config?.sensors || {};
-    let station: SunshineParts['station'] = null;
-    if (effectiveCfg?.show_station !== false
-      && Object.values(sensors).some((v) => typeof v === 'string' && v.trim() !== '')) {
-      station = fcType === 'daily' && (sensors.sunshine_duration || sensors.illuminance)
-        ? 'sensor' : (om ? 'openmeteo' : null);
-    }
-    let forecast: SunshineParts['forecast'] = null;
-    if (effectiveCfg?.show_forecast === true && effectiveCfg?.weather_entity) {
-      const raw = this._forecastData;
-      const slice = Array.isArray(raw) && raw.length
-        ? this._sliceForecast(effectiveCfg, fcType, fcType === 'today', startOfTodayMs(this.calendar))
-        : [];
-      // No columns yet (forecast not loaded): nothing to attribute.
-      if (slice.length > 0) {
-        const covered = slice.filter((e: EntitySunshineEntry) => entitySunshineHours(e) != null).length;
-        if (covered === slice.length) forecast = 'entity';
-        else if (!om) forecast = covered ? 'entity' : null;
-        else forecast = covered ? 'mixed' : 'openmeteo';
-      }
-    }
-    return { station, forecast };
+    return openMeteoStationWindow(this._openMeteoSource, this.config, this.calendar);
   }
 
   // Lazy-init the Open-Meteo source and trigger a fetch when the cache
   // is stale (no-op if a fetch is already in flight). The source backs
-  // three features off one call: the in-chart sunshine overlay
-  // (forecast.show_sunshine), the chance-of-rain fallback for weather
-  // entities without `precipitation_probability`
-  // (forecast.show_precip_probability, ADR-0027) and — when the card
-  // has a weather entity but no station sensors — the past/station
-  // block itself (forecast.openmeteo_history, ADR-0015). It is created
-  // when any is active, torn down when none is.
-  // deno-lint-ignore no-explicit-any
-  _ensureOpenMeteoSource(effectiveCfg: any) {
-    const feedsStation = this._openMeteoStationFallbackActive(this.config);
-    const enabled = this._sunshineNeedsOpenMeteo(effectiveCfg)
-      || feedsStation
-      || this._precipProbabilityNeedsOpenMeteo(effectiveCfg);
-    if (!enabled) {
+  // three features off one call — the sunshine overlay, the
+  // chance-of-rain fallback and the past block — as the source plan
+  // says. It is created when any is needed, torn down when none is.
+  // Returns the plan it decided on.
+  _ensureOpenMeteoSource(): SourcePlan {
+    const plan = this._sourcePlan();
+    const feedsStation = plan.openMeteo.past;
+    if (!needsOpenMeteo(plan)) {
       if (this._openMeteoSource) {
         this._openMeteoSource.abort();
         this._openMeteoSource = null;
       }
-      return;
+      return plan;
     }
     const loc = resolveLocation(this.config, this._hass);
     const lat = loc ? loc.latitude : null;
@@ -2295,21 +1981,10 @@ async _refreshPressureDelta(): Promise<void> {
         this._stationData = [];
         this._stationDataReady = true;
       }
-      return;
+      return plan;
     }
 
-    // 'today' uses hourly Open-Meteo data (per-hour bars), same as
-    // 'hourly' mode. Daily-only modes don't need the hourly fetch.
-    const includeHourly = effectiveCfg.forecast.type === 'hourly'
-      || effectiveCfg.forecast.type === 'today';
-
-    const days = parseInt(effectiveCfg.days, 10) || 7;
-    const fcDays = parseInt(effectiveCfg.forecast_days, 10) || days;
-    // +1 covers today's column when the station block ends at today's
-    // local midnight (the entry has datetime today 00:00).
-    const pastDays = Math.min(92, days + 1);
-    const forecastDays = Math.min(16, fcDays + 1);
-
+    const { pastDays, forecastDays, includeHourly } = openMeteoFetchWindow(this.config);
     // Re-create when location, hourly-mode flag, or the fetch window
     // changes — each is baked into the request URL, so a change needs a
     // fresh fetch (a wider `days` must widen the past block).
@@ -2335,7 +2010,7 @@ async _refreshPressureDelta(): Promise<void> {
         // block stays empty but the card still renders. Re-evaluate the
         // predicate against the CURRENT config: it may have changed
         // since the source was created.
-        if (this._openMeteoStationFallbackActive(this.config)) {
+        if (pastFromOpenMeteo(this.config)) {
           this._stationData = this._openMeteoStationWindow();
           this._stationDataReady = true;
           this._refreshForecasts();
@@ -2369,6 +2044,7 @@ async _refreshPressureDelta(): Promise<void> {
     }
     // Fire-and-forget — the listener handles the redraw on completion.
     this._openMeteoSource.ensureFresh();
+    return plan;
   }
 
   attachResizeObserver() {
@@ -3966,15 +3642,16 @@ _sourceLegend(config: any): LegendItem[] {
   if (!showStation && !showForecast) return [];
   const fc = config.forecast || {};
   const labels = config.source_labels || {};
+  const plan = planSources(config, this._forecastData, this.calendar);
   // Same resolved colours as chart/orchestrator.ts draws with.
   const host: HTMLElement = this.isConnected ? this : document.body;
   const bg = getThemeTokens(host).backgroundColor;
   return buildChartLegend({
     showStation,
     showForecast,
-    pastFromOpenMeteo: this._openMeteoStationFallbackActive(config),
+    pastFromOpenMeteo: plan.past === 'openmeteo',
     showSunshine: fc.show_sunshine === true,
-    sunshineParts: this._sunshineSourceParts(config),
+    sunshineParts: plan.sunshine,
     showTempLow: (fc.type || 'daily') === 'daily',
     colors: {
       high: resolveCssVar(fc.temperature1_color, 'rgba(255, 152, 0, 1.0)', host),
