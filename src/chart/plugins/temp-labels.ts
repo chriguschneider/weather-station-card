@@ -8,6 +8,7 @@
 // (temp1Color for high, temp2Color for low).
 
 import type { ChartLike, ChartPlugin, PluginCardConfig, PluginRenderData } from './_shared.js';
+import { startOfTodayMs } from '../../forecast-utils.js';
 import type { Calendar } from '../../utils/time-zone.js';
 
 export interface TempLabelsPluginOpts {
@@ -44,7 +45,7 @@ export function createTempLabelsPlugin(opts: TempLabelsPluginOpts): ChartPlugin 
   const fontFamily = 'Helvetica, Arial, sans-serif';
 
   // Today's pixel-day key; used to pick bold vs normal per column.
-  const todayMs = calendar.startOfDay(Date.now()).getTime();
+  const todayMs = startOfTodayMs(calendar);
 
   function isTodayAt(i: number): boolean {
     const dt = data.dateTime?.[i];

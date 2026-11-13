@@ -19,6 +19,7 @@
 
 import { getDateTimeFormat } from '../../utils/intl-cache.js';
 import type { ChartLike, ChartPlugin, CssStyleLike, PluginCardConfig, PluginRenderData } from './_shared.js';
+import { startOfTodayMs } from '../../forecast-utils.js';
 import type { Calendar } from '../../utils/time-zone.js';
 
 export interface DailyTickLabelsPluginOpts {
@@ -166,7 +167,7 @@ function drawDailyDateWeekdayLabels(chart: ChartLike, ctx: RenderContext): void 
   const weekdayColor = ctx.config.forecast.chart_datetime_color || ctx.textColor;
   const dateColor = ctx.style.getPropertyValue('--secondary-text-color') || weekdayColor;
 
-  const todayMs = ctx.calendar.startOfDay(Date.now()).getTime();
+  const todayMs = startOfTodayMs(ctx.calendar);
   c.save();
   c.textAlign = 'center';
   c.textBaseline = 'bottom';

@@ -2,7 +2,7 @@
 // they can be unit-tested without pulling in Lit, Chart.js, or HA — vitest
 // runs in node (no jsdom) and these stay fully exercisable there.
 
-import type { Calendar } from './utils/time-zone.js';
+import { pad2, type Calendar } from './utils/time-zone.js';
 
 /** Forecast entry shape consumed by the chart. Both data sources
  *  (`MeasuredDataSource`, `ForecastDataSource`) emit objects matching
@@ -45,7 +45,7 @@ export interface ForecastEntry {
    *  weather/subscribe_forecast payload (HA Forecast TypedDict
    *  `cloud_coverage` slot — not all providers populate it; Met.no
    *  and AccuWeather do, OpenWeatherMap on daily does not).
-   *  Used by `sunshineFromCloudCoverage` as a last-resort sunshine
+   *  Used by `sunshine-source.ts` as a last-resort sunshine
    *  estimator when no recorder sensor or Open-Meteo overlay
    *  resolves a value (#6 Option F3). */
   cloud_coverage?: number | null;
@@ -261,43 +261,6 @@ export function stationFetchKey(cfg: { forecast?: { type?: string } | null } | n
 export function forecastFetchKey(cfg: { forecast?: { type?: string } | null } | null | undefined): 'daily' | 'hourly' {
   const type = cfg?.forecast?.type;
   return (type === 'hourly' || type === 'today') ? 'hourly' : 'daily';
-}
-
-/** Estimate sunshine duration in hours from a forecast's cloud-coverage
- *  fraction (Kasten-style empirical formula).
- *
- *    sunshine_h ≈ day_length × (1 − (cloud_coverage / 100)^p)
- *
- *  with p ≈ 1.7 by default (configurable via
- *  `condition_mapping.sunshine_cloud_exponent`). A higher exponent
- *  gives full days more sunshine for the same cloud coverage —
- *  appropriate for thin-cirrus-prone climates; the 1.7 default is the
- *  middle of the 1.5–2.0 range Kasten suggests.
- *
- *  Used as the LAST-RESORT estimator on the forecast tier when no
- *  WMO-conformant source resolves: a recorder \`sensors.sunshine_duration\`
- *  wins, then the Open-Meteo overlay, then this estimate. The result
- *  is honest about being a proxy — the chart still calls it "sunshine"
- *  but the documentation flags the precision differential.
- *
- *  Returns null when either input is missing / out-of-range. The chart
- *  draws nothing for null entries (matching the existing convention). */
-export function sunshineFromCloudCoverage(
-  cloudPercent: number | null | undefined,
-  dayLengthH: number | null | undefined,
-  exponent = 1.7,
-): number | null {
-  if (cloudPercent == null || !Number.isFinite(cloudPercent)) return null;
-  if (dayLengthH == null || !Number.isFinite(dayLengthH) || dayLengthH <= 0) return null;
-  // Clamp coverage to [0, 100] — providers occasionally report 100.5
-  // or other near-bound noise.
-  const cc = Math.max(0, Math.min(100, cloudPercent));
-  const fraction = 1 - Math.pow(cc / 100, exponent);
-  // Numerical safety: 0^x in JS is 0, but float arithmetic at the
-  // boundaries can yield -0 or microscopic negatives.
-  if (!Number.isFinite(fraction)) return null;
-  const hours = dayLengthH * Math.max(0, fraction);
-  return hours;
 }
 
 /** Calendar-aligned 3-hour aggregator — the day-pager variant of
@@ -633,8 +596,6 @@ function parseIso(s: string): IsoParts | null {
   out.offsetMin = off[1] === undefined ? 0 : sign * (Number(off[2]) * 60 + Number(off[3] ?? 0));
   return out;
 }
-
-const pad2 = (n: number): string => String(n).padStart(2, '0');
 
 const isMidnightIn = (cal: Calendar, t: number): boolean => cal.startOfDay(t).getTime() === t;
 
