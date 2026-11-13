@@ -123,8 +123,17 @@ to `this`.
   in the orchestrator (verbose) or refactoring all render paths to
   consume a SensorReadings object (much larger change).
 
+## Amendment 2026-11-13 (#452): phase 3 in a controller
+
+Phase 3 is now `this._sources.sync(hass)` on the
+`DataSourceController` (ADR-0033); the initial empty merge
+(`_refreshForecasts` while `forecasts` is unset) stays in `set hass`.
+Phases 1 and 2 are unchanged.
+
 ## Related
 
+- [0033](0033-data-source-reactive-controller.md) — the data-source
+  controller behind phase 3
 - [`../../src/main.ts`](../../src/main.ts) — `set hass` orchestrator and
   the three private phase methods
 - ARCHITECTURE.md → [Lifecycle](../../ARCHITECTURE.md#lifecycle)

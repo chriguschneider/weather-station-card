@@ -84,6 +84,9 @@ export default {
         // Sensor extraction and slot matcher split out of main.ts (#451).
         'src/sensor-readings.ts',
         'src/sensor-match.ts',
+        // Data-source lifecycle and the pure chart builder (#452).
+        'src/data-source-controller.ts',
+        'src/chart/orchestrator.ts',
       ],
       thresholds: {
         statements: 80,

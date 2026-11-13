@@ -45,4 +45,26 @@ describe('forecast chart lifecycle', () => {
     expect(draw).toHaveBeenCalled();
     card.remove();
   });
+
+  it('drops the data sources on disconnect (DataSourceController)', () => {
+    const card = mountCard();
+    const teardown = vi.spyOn(card._sources, 'teardownForecast');
+    card.remove();
+    expect(teardown).toHaveBeenCalledTimes(1);
+  });
+
+  it('labels a failure while shaping chart data as compute', () => {
+    const card = mountCard();
+    card._initialChartBuilt = true;
+    card.forecasts = [{ datetime: '2026-08-20T00:00:00Z' }];
+    const target = document.createElement('div');
+    target.id = 'forecastChart';
+    card.shadowRoot.appendChild(target);
+    card.computeForecastData = () => { throw new Error('bad entry'); };
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    card.drawChart();
+    expect(card._chartError).toBe('compute: bad entry');
+    expect(card.forecastChart).toBeNull();
+    card.remove();
+  });
 });
