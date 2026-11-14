@@ -25,6 +25,14 @@ export type CardConfig = Omit<Widen<typeof DEFAULTS>, 'forecast' | 'sensors' | '
   [key: string]: unknown;
 };
 
+interface RawConfig {
+  forecast?: Record<string, unknown> | null;
+  units?: Record<string, unknown> | null;
+  sensors?: Record<string, unknown> | null;
+  speed?: string;
+  [key: string]: unknown;
+}
+
 /** `value` as a positive integer, `fallback` for anything else. */
 export function positiveInt(value: unknown, fallback: number): number {
   const n = parseInt(String(value), 10);
@@ -34,9 +42,8 @@ export function positiveInt(value: unknown, fallback: number): number {
 /** Merge user YAML over DEFAULTS and normalise the values several
  *  modules read: `days` (past window) and `forecast_days` (forecast
  *  window, `days` when unset or invalid) become positive integers. */
-// deno-lint-ignore no-explicit-any
-export function normalizeConfig(config: any): CardConfig {
-  const raw = config && typeof config === 'object' ? config : {};
+export function normalizeConfig(config: unknown): CardConfig {
+  const raw: RawConfig = config && typeof config === 'object' ? (config as RawConfig) : {};
   const cardConfig = {
     ...DEFAULTS,
     ...raw,

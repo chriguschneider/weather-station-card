@@ -8,6 +8,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The visual editor now shows a one-line hint when your card still uses the deprecated top-level `elevation`; move it to `location.elevation` (it keeps working until 4.0).
 - The sensor pickers in the visual editor now also list the sensors the card picks on its own for a new card, for example a dew-point, gust or wind-direction sensor named that way but without the matching sensor type. Before, the picker could hide the sensor the card had just chosen.
 
 ### Fixed

@@ -99,7 +99,7 @@ export function renderChartSection(editor: EditorLike, ctx: EditorContext): Temp
     ...(showsForecast ? [String(cfg.forecast_days ?? 7)] : []),
   ].join('+');
   const cols = fcfg.number_of_forecasts ?? 8;
-  const summary = `${daysPart} ${t('summary_days')} · ${cols} ${t('summary_columns')} · ${selectedRows.length} ${t('summary_rows')}`;
+  const summary = `${daysPart} ${t('summary_days')} · ${String(cols)} ${t('summary_columns')} · ${selectedRows.length} ${t('summary_rows')}`;
 
   const body = html`
     <h4 class="subsection">${t('chart_time_range_heading')}</h4>

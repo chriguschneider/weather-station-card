@@ -24,11 +24,11 @@ export function displayPressure(ctx: LivePanelCtx, pressure: unknown): number | 
 
 export function pressureText(ctx: LivePanelCtx, dPressure: unknown): string {
   const u = unitLabel(ctx, ctx.unitPressure);
-  return u ? `${dPressure} ${u}` : String(dPressure);
+  return u ? `${String(dPressure)} ${u}` : String(dPressure);
 }
 
 export function humidityText(humidity: unknown): string {
-  return `${humidity} %`;
+  return `${String(humidity)} %`;
 }
 
 /** Dew point capped at one decimal, same rule as the main temperature:
@@ -40,7 +40,7 @@ export function dewPointText(ctx: LivePanelCtx, dewPoint: unknown): string {
 }
 
 export function precipitationText(precipitation: unknown, unit: string | undefined): string {
-  return unit ? `${precipitation} ${unit}` : String(precipitation);
+  return unit ? `${String(precipitation)} ${unit}` : String(precipitation);
 }
 
 export function climateRowPressure(ctx: LivePanelCtx, show: boolean, dPressure: unknown, deltaHpa: number | null) {
