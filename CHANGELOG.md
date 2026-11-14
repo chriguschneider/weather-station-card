@@ -6,6 +6,62 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.0.0] — 2026-11-14
+
+![The same place, two clocks: a card for Denver in Denver time (top) and in the Home Assistant server's time (bottom)](https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/images/3.0-location-two-time-zones.png)
+
+**Why 3.0:** a card can now show any place, not only your Home Assistant home: a relative's house in another time zone, a holiday flat, a ski hut. Above, the same weather in Denver, once in Denver time and once in the server's time. To make that possible, the logic behind the card had to be rebuilt. Up to 2.x everything (the days in the chart, sun and moon, the clock, the caches) assumed one place and one clock, the server's. In 3.0 every card has its own place and its own calendar. It is a major version because the card's time model changes; your existing cards keep working as they are.
+
+**What you need to do:** nothing in your configuration. After updating, refresh the browser cache (hard reload, or clear the app cache in the Home Assistant companion app), otherwise the old card keeps running. If a card still uses the top-level `elevation:`, the editor shows a hint to move it to `location.elevation`; it keeps working until 4.0 (see the [migration guide](https://github.com/chriguschneider/weather-station-card/blob/master/MIGRATION.md#v30)). Thanks to everyone who tried the four betas.
+
+### Added
+
+- **A card for another place.** Set `location` (latitude, longitude, time zone) and `time_zone: location`, and the clock, sun, moon, next rain and the chart's days and axes follow that place's time. With `time_zone: server` the card shows that place's weather in your own time. `time_zone` also accepts an IANA name such as `America/Denver` (#343, #351).
+- **Location panel, first in the editor.** A place search, a map with a draggable marker and a button "Determine elevation and time zone" fill in the place (one Open-Meteo request per click, nothing is fetched on its own). The site elevation lives here now (`location.elevation`).
+- **Info button ⓘ** in the top-right corner of every card. It lists every live value with where it comes from (your station, the weather service, or calculated from the location) and explains the chart's colours, lines and bars. It turns orange when a station sensor you configured has been unavailable for more than 5 minutes. Hide it with "Info button: data sources" in the editor or `show_sources: false`; rename the sources with `source_labels`. Thanks to carsmie for the idea and the first build (#424).
+- **Time format** selector (24-hour / 12-hour) for the clock and the attributes row; the clock dropdown is now Off / On / On with seconds (#343).
+- **Snow line at your site** in the zero-degree popup: a dashed line at your elevation + 300 m, labelled with the place and its elevation, plus a mark at the highest point of the curve.
+
+### Changed
+
+- Daily columns follow the card's own calendar, cut from hourly statistics. Daily forecasts are read as calendar days, so providers that write UTC midnight (Open-Meteo, MeteoSwiss) no longer show the previous day west of UTC.
+- Sunrise, sunset, moon and sun strength are computed in the card from its location. The sunrise/sunset row is no longer a link to the `sun.sun` entity.
+- After sunset at the card's location, the main condition icon shows a moon or the night icon instead of a sun.
+- The 3.0 texts are translated into all languages (machine translation, corrections welcome). Where a language is missing a text, the card shows the English one instead of an empty spot.
+- The editor's sensor pickers now also list the sensors the card picks on its own for a new card.
+
+### Deprecated
+
+- The top-level `elevation:` option moves to `location.elevation` and will be removed in 4.0. It keeps working until then; the editor shows a one-line hint and moves the value when you edit the location.
+
+### Fixed
+
+- No more "NaN m/s" or "NaN hPa" when a value is missing; the row is hidden instead.
+- While a station sensor is unavailable, the value borrowed from the weather entity is converted into your sensor's unit (°C / °F, hPa / inHg), and wind direction falls back to the weather entity like the other values.
+- Forecast wind in Beaufort is worked out from each forecast's own unit.
+- Removing a card (for example when a wall tablet switches views) frees its chart instead of keeping it in memory.
+- The card no longer fails when the browser blocks local storage.
+- Open-Meteo: a longer `days` window loads right away, several cards at the same place no longer lose data when one of them closes, an error answer no longer empties the data, requests give up after 15 s, and the hours are right in half-hour time zones and across daylight-saving changes.
+- Past days' sunshine from a sunshine sensor shows the day's final value, not its highest intermediate value.
+- Moonrise and moonset are correct on the day the clocks change.
+- The chart follows a view-level theme (also when casting to a Nest Hub), and `forecast.chart_text_color` / `forecast.chart_datetime_color` no longer show an "Unknown option" warning.
+- Forecast wind speeds wrap evenly, and the clock no longer covers the configuration hint or the error band.
+- The zero-degree popup and the snow-line tooltip use the same number format as the row, and the sun-strength row flips between sun and moon together with the condition icon.
+- With `forecast.openmeteo: false`, the editor no longer shows Open-Meteo as the source of past data.
+
+### Security
+
+- A `url` tap or hold action opens only `http://`, `https://` or a path on your Home Assistant. Other links such as `javascript:`, `data:` or `mailto:` do nothing. If you used a `mailto:` link, open it another way.
+
+### Removed
+
+- Unused SVG weather icons left over from the animated icon set removed in v1.9. Nothing changes on screen.
+
+### Under the hood
+
+- Every card keeps its own time zone and calendar instead of sharing one per page. The card's main file was split into parts for the live panel, the forecast, reading the sensors and the data sources, so the place logic has clear boundaries and its own tests.
+- The details of each beta are in the 3.0.0-beta.1 to 3.0.0-beta.4 sections below.
+
 ## [3.0.0-beta.4] — 2026-11-14
 
 ![The same place, two clocks: a card for Denver in Denver time (top) and in the Home Assistant server's time (bottom)](https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/images/3.0-location-two-time-zones.png)
