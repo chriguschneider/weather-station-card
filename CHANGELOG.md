@@ -6,6 +6,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.0.0-beta.4] — 2026-11-14
+
+![The same place, two clocks: a card for Denver in Denver time (top) and in the Home Assistant server's time (bottom)](https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/images/3.0-location-two-time-zones.png)
+
+**Why 3.0:** a card can now show any place, not only your Home Assistant home: a relative's house in another time zone, a holiday flat, a ski hut. Above, the same weather in Denver, once in Denver time and once in the server's time. To make that possible, the logic behind the card had to be rebuilt. Up to 2.x everything (the days in the chart, sun and moon, the clock, the caches) assumed one place and one clock, the server's. In 3.0 every card has its own place and its own calendar. This beta finishes that rebuild: the card's main file is split into parts that each do one job (from about 5,300 to 3,350 lines), so the place logic has clear boundaries and its own tests.
+
+**Beta**, fourth and last round before 3.0.0: beta.3 plus the fixes below. No new options, nothing to change in your configuration. If HACS does not offer the beta as an update, open the card in HACS, ⋮ → Redownload, and pick 3.0.0-beta.4. Refresh the browser cache afterwards (hard reload, or clear the app cache in the Home Assistant companion app). Report anything odd in [#358](https://github.com/chriguschneider/weather-station-card/issues/358); 3.0.0 follows shortly.
+
 ### Changed
 
 - The visual editor now shows a one-line hint when your card still uses the deprecated top-level `elevation`; move it to `location.elevation` (it keeps working until 4.0).
@@ -24,6 +32,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The forecast pipeline moved out of the main card file (step 2): one plan now decides where each part of the chart comes from, and the Open-Meteo request, the chart and the info popup all read it. The card and the editor share one rule for the source of past data, and `days` / `forecast_days` are read once when the config loads.
 - Reading the live sensors moved out of the main card file (step 3). Each live value now carries its unit and its source from the moment it is read, so the info popup can no longer name a different source than the one shown. A new card's sensor auto-pick and the editor's sensor pickers share one set of matching rules.
 - The data sources' lifecycle moved out of the main card file (step 4): subscribing, the Open-Meteo source, the time zone, the pressure trend and the sensor-availability check now live in one controller that cleans up after itself when the card is removed. The chart builder now takes its inputs and returns the chart instead of writing into the card.
+- The zero-degree and data-sources popups share one frame (keyboard, focus and closing behave the same), "is the sun up" comes from one solar model, and the lint and module-boundary rules now enforce what the architecture docs say.
 
 ## [3.0.0-beta.3] — 2026-11-09
 
