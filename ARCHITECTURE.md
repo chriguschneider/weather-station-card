@@ -10,10 +10,13 @@ the charting library from Chart.js to uPlot (ADR-0012), moved to an
 ESM code-split bundle with a lazy editor chunk (ADR-0013), and made the
 card theme-token-aware. The v3.0 split (#449–#452) moved the live-panel
 rows, the forecast pipeline, the sensor readings and the data-source
-lifecycle out of `main.ts`, which is now about 3,350 lines (from 3,900
-before step 4; the target of ~1,500 needs the render path split as
-well). It holds the reactive properties, the `set hass` gate and the
-render templates, and delegates behaviour to the modules below.
+lifecycle out of `main.ts`; step 5 (#472, ADR-0034) moved the render
+path (forecast block, banners, debug panel, sources-popup content,
+scroll math) into `render/` and the precip-rate derivation into its own
+controller. `main.ts` is now about 2,600 lines (3,354 before step 5).
+It holds the reactive properties, the `set hass` gate and its phases,
+the chart lifecycle, the live panel's main block and clock, the popups
+and the Lit hooks, and delegates the rest to the modules below.
 
 If you're new to the codebase, read this in order: **[Module map](#module-map)**
 → **[Lifecycle](#lifecycle)** → **[Data flow](#data-flow)**, then dive
@@ -116,6 +119,15 @@ src/
 │                              (onSourceData / onOverlayData /
 │                              onSourceDropped / requestUpdate).
 │
+├── precip-rate-controller.ts  (v3.x, #472)  Counter → mm/h derivation
+│                              as a Lit ReactiveController: the sample
+│                              buffer (persisted per entity), the entity
+│                              it was hydrated for and the 30-s decay
+│                              tick, cleared on hostDisconnected. Talks
+│                              back through `PrecipRateHost`
+│                              (precipUnits / applyDerivedPrecip /
+│                              onDerivedPrecipTick). ADR-0034.
+│
 ├── data-source.ts             MeasuredDataSource (recorder polling)
 │                              and ForecastDataSource (weather/subscribe_
 │                              forecast). Both expose subscribe(cb) →
@@ -189,6 +201,28 @@ src/
 │                              `formatEntityNumber`, the one "format like
 │                              HA formats entity X" helper. Never imports
 │                              main.ts (`live-panel-no-uplevel`).
+│
+├── render/                    (v3.x, #472)  Card-section renderers
+│                              (ADR-0010 pattern, ADR-0034): plain
+│                              functions over small contexts that
+│                              main.ts builds per render.
+│   ├── forecast-block.ts      Forecast block: chart container, deferred
+│   │                          / real per-column rows (ADR-0016), mode
+│   │                          toggle, scroll controls, scroll timeline,
+│   │                          loading skeleton.
+│   ├── banners.ts             Error and config-warning bands, the
+│   │                          availability hint, the onboarding and
+│   │                          no-weather placeholder cards.
+│   ├── debug-panel.ts         `debug: true` diagnostics and the
+│   │                          empty-column reasons.
+│   ├── source-lines.ts        Sources popup content (ADR-0031): shown
+│   │                          live keys, one line per value with its
+│   │                          origin, alert state, the chart legend.
+│   └── scroll-position.ts     Initial "scroll to now" target and the
+│                              day-pager realignment, from measured
+│                              sizes. Never imports main.ts, the
+│                              controllers or the DOM-behaviour modules
+│                              (`render-no-uplevel`).
 │
 ├── next-rain.ts               "Next rain" live row: reads the
 │                              radar nowcast schema (`at`, `source`,
@@ -457,6 +491,13 @@ graph TD
     pipeline --> precipprob[precip-probability.ts]
     zdpopup --> zdtrend
     main --> livepanel[live-panel/*]
+    main --> render[render/*]
+    render --> livepanel
+    render --> legend
+    render --> skeleton
+    render --> sanitize
+    main --> precipctrl[precip-rate-controller.ts]
+    precipctrl --> liverows
     livepanel --> moon
     livepanel --> zdtrend[zero-degree-trend.ts]
     livepanel --> liverows
@@ -790,6 +831,11 @@ files**):
   teardown on disconnect (driven through a plain host object).
 - `chart/orchestrator.ts` — `buildForecastChart` inputs → chart options
   and the ChartBuildError phases (buildChart stubbed).
+- `render/*` — forecast block branches, timeline segments, banners,
+  debug panel, sources-popup lines and legend, scroll-position math
+  (`tests/render-modules.test.js`).
+- `precip-rate-controller.ts` — derive, persist, decay tick, stop and
+  disconnect, driven through a plain host object.
 - The live-row classifiers — `precip-rate.ts`, `pressure-trend.ts`,
   `dew-point-comfort.ts`, `sun-strength.ts`.
 - `utils/*` — safe-query, numeric, intl-cache, resolve-css-var,
@@ -877,6 +923,7 @@ records:
 - **0031** Provenance of live values
 - **0032** Build `dist/` only in the release job
 - **0033** Data-source lifecycle as a Lit ReactiveController, pure chart builder
+- **0034** Render path as module functions, precip-rate derivation as a controller
 
 Add a new ADR when a decision is hard to reverse, surprising without
 context, *and* the result of a real trade-off — see

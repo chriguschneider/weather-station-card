@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Under the hood
+
+- The card's render path (forecast block, banners, debug panel, info-popup content, scroll position) and the rain-rate derivation moved out of the main file into their own tested modules. Nothing changes on the dashboard (#472).
+
 ## [3.0.0] — 2026-11-14
 
 ![The same place, two clocks: a card for Denver in Denver time (top) and in the Home Assistant server's time (bottom)](https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/images/3.0-location-two-time-zones.png)

@@ -91,3 +91,11 @@ Options for the sources:
   [0030](0030-per-card-calendar.md) — behaviour unchanged, now in the
   controller
 - #449, #450, #451, #452 — the main.ts split
+
+## Amendment 2026-11-15 (#472): the timers, one by one
+
+The rejected move above stays rejected for this controller. The
+precip-rate tick moved into its own `PrecipRateController` instead,
+next to the buffer it recomputes; the clock and next-rain timers stay
+with the live-panel render in the card. Per-timer reasons are in
+[0034](0034-render-path-modules-and-precip-rate-controller.md).
