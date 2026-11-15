@@ -6,6 +6,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.1.0-beta.1] — 2026-11-15
+
+![Nothing changes on the dashboard: the card looks exactly as in 3.0.0](https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/images/main.png)
+
+**Why this beta:** 3.0 rebuilt the card's sense of time so that a card can show any place. The last piece of that rebuild, the code that draws the card, now lives in its own tested parts as well; the card's main file shrank from about 5,300 lines before 3.0 to about 2,600. Nothing should change on your dashboard, and this beta is there to make sure of exactly that before it goes into 3.1.0.
+
+**Beta.** HACS only offers it if you enabled beta versions for this card: HACS → Weather Station Card → ⋮ → Redownload → pick 3.1.0-beta.1. Refresh the browser cache afterwards (hard reload, or clear the app cache in the Home Assistant companion app). If anything looks or behaves differently from 3.0.0, please [open an issue](https://github.com/chriguschneider/weather-station-card/issues).
+
 ### Under the hood
 
 - The card's render path (forecast block, banners, debug panel, info-popup content, scroll position) and the rain-rate derivation moved out of the main file into their own tested modules. Nothing changes on the dashboard (#472).
