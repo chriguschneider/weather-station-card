@@ -108,8 +108,8 @@ describe('sensors.precipitation_rate — derivation shutdown', () => {
     const card = makeCard();
     card.hass = makeHass(states());
     expect(setItemSpy).not.toHaveBeenCalled();
-    expect(card._precipRecomputeTimer).toBeNull();
-    expect(card._precipBuffer).toEqual([]);
+    expect(card._precipRate.timer).toBeNull();
+    expect(card._precipRate.buffer).toEqual([]);
   });
 
   it('stops an already-armed derivation tick when the rate sensor appears', () => {
@@ -118,7 +118,7 @@ describe('sensors.precipitation_rate — derivation shutdown', () => {
       sensors: { temperature: 'sensor.t', precipitation: 'sensor.rain_total' },
     });
     card.hass = makeHass(states());
-    expect(card._precipRecomputeTimer).not.toBeNull();
+    expect(card._precipRate.timer).not.toBeNull();
 
     // User adds the rate sensor in the editor — setConfig, then a pass.
     card.setConfig({
@@ -135,8 +135,8 @@ describe('sensors.precipitation_rate — derivation shutdown', () => {
 
     // The tick is released, so it can no longer overwrite the measured
     // value from the now-orphaned buffer.
-    expect(card._precipRecomputeTimer).toBeNull();
-    expect(card._precipBufferEntity).toBeUndefined();
+    expect(card._precipRate.timer).toBeNull();
+    expect(card._precipRate.bufferEntity).toBeUndefined();
     expect(card.precipitation).toBe('3.4');
   });
 
@@ -146,7 +146,7 @@ describe('sensors.precipitation_rate — derivation shutdown', () => {
       'sensor.rain_rate': { state: 'unavailable', attributes: {} },
     }));
     // Derivation took over — buffer identity proves which path ran.
-    expect(card._precipBufferEntity).toBe('sensor.rain_total');
+    expect(card._precipRate.bufferEntity).toBe('sensor.rain_total');
     expect(card.precipitation_unit).toBe('mm/h');
   });
 });
