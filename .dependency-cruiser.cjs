@@ -107,6 +107,26 @@ module.exports = {
       },
     },
     {
+      name: 'render-no-uplevel',
+      severity: 'error',
+      comment:
+        'src/render/* are pure card-section renderers over a context object ' +
+        '(#472). main.ts builds the context and owns the lifecycle; the ' +
+        'renderers must not reach back into it or into the DOM behaviour.',
+      from: { path: '^src/render/' },
+      to: {
+        path: [
+          '^src/main\\.ts$',
+          '^src/editor/',
+          '^src/scroll-ux\\.ts$',
+          '^src/action-handler\\.ts$',
+          '^src/chart/orchestrator\\.ts$',
+          '^src/data-source-controller\\.ts$',
+          '^src/precip-rate-controller\\.ts$',
+        ],
+      },
+    },
+    {
       name: 'utils-leaf',
       severity: 'error',
       comment:

@@ -87,6 +87,9 @@ export default {
         // Data-source lifecycle and the pure chart builder (#452).
         'src/data-source-controller.ts',
         'src/chart/orchestrator.ts',
+        // Render path and the precip-rate controller (#472).
+        'src/render/*.ts',
+        'src/precip-rate-controller.ts',
       ],
       thresholds: {
         statements: 80,

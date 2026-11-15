@@ -23,26 +23,19 @@
 // gets typed exports.
 
 import locale, { ensureLocaleLoaded, resolveLocaleKey } from './locale.js';
-import {
-  weatherIcons,
-  MIN_HA_VERSION,
-  isHaVersionBelow,
-} from './const.js';
+import { weatherIcons } from './const.js';
 import { DEFAULTS, DEFAULTS_FORECAST } from './defaults.js';
 import { validateConfig } from './config-validation.js';
 import {LitElement, html, nothing, svg} from 'lit';
 import {MDI_PATHS} from './icons/mdi-paths.js';
-import {guard} from 'lit/directives/guard.js';
 import type { HassLike } from './data-source.js';
 import { classifyDay, clearSkyLuxAt } from './condition-classifier.js';
-import { computeInitialScrollLeft, resolveTemp2Color } from './format-utils.js';
+import { resolveTemp2Color } from './format-utils.js';
 import { resolveCssVar } from './utils/resolve-css-var.js';
 import { getThemeTokens } from './utils/theme-tokens.js';
 import {
   hourlyTempSeries,
-  startOfTodayMs,
   effectiveVisibleBars,
-  computeTodayPagerScrollLeft,
   nextForecastType,
 } from './forecast-utils.js';
 import { sunshineFractions } from './sunshine-source.js';
@@ -55,10 +48,10 @@ import {
 } from './forecast-pipeline.js';
 import { normalizeConfig, type CardConfig } from './card-config.js';
 import { pastFromOpenMeteo } from './past-source.js';
-import { sourceLabel, labelText, isSensorProblem, sensorDownId, type LiveSource } from './live-source.js';
+import type { LiveSource } from './live-source.js';
 import { extractSensorReadings, liveSourcesOf, precipRateReading, type Reading, type SensorReadings, type StateLike, type StatesLike } from './sensor-readings.js';
 import { AUTO_PICK_KEYS, autoPickSensor } from './sensor-match.js';
-import { buildChartLegend, type LegendItem } from './chart-legend.js';
+import type { LegendItem } from './chart-legend.js';
 import { SourcesPopup, type SourceLine } from './sources-popup.js';
 import { resolveLocation } from './location.js';
 import { PROBABILITY_EXTRA_BOTTOM_PAD } from './chart/plugins/precip-label.js';
@@ -67,15 +60,7 @@ import { parseNumericSafe } from './utils/numeric.js';
 import { setupScrollUx } from './scroll-ux.js';
 import { setupActionHandler } from './action-handler.js';
 import { TeardownRegistry } from './teardown-registry.js';
-import {
-  appendSample,
-  pruneOlderThan,
-  computeRate,
-  loadBuffer,
-  saveBuffer,
-  DEFAULT_MAX_AGE_MS,
-  type Sample,
-} from './precip-rate.js';
+import { PrecipRateController, type CounterState, type PrecipDisplay } from './precip-rate-controller.js';
 import {
   toMetersPerSecond,
   toCelsius,
@@ -87,7 +72,6 @@ import {
 import { buildForecastChart, ChartBuildError, type ChartInputs } from './chart/orchestrator.js';
 import { DataSourceController } from './data-source-controller.js';
 import { sanitizeForecastEntries } from './chart/sanitize.js';
-import { renderChartSkeleton } from './chart/skeleton.js';
 import { cardStyles } from './chart/styles.js';
 import { getDateTimeFormat } from './utils/intl-cache.js';
 import { isSunUp } from './moon.js';
@@ -98,11 +82,32 @@ import { renderAttributes as renderLiveAttributes } from './live-panel/attribute
 import { renderSun as renderLiveSun, renderMoonLine } from './live-panel/sun-rows.js';
 import { renderForecastWind, spriteIcon } from './live-panel/wind-rows.js';
 import { zeroDegreeElevation, zeroDegreeFormat, zeroDegreePlace } from './live-panel/zero-degree-rows.js';
-import { sourceValueText } from './live-panel/source-values.js';
 import {
-  resolveAttributesLayout,
-  type AttributeToken,
-} from './attributes-layout.js';
+  renderAvailabilityNote,
+  renderErrorBanner,
+  renderNoWeather,
+  renderOnboarding,
+  type BannerCtx,
+} from './render/banners.js';
+import { renderDebugPanel as renderDebugView } from './render/debug-panel.js';
+import {
+  forecastRowsGenKey,
+  renderForecastBlock,
+  renderScrollTimeline as renderTimeline,
+} from './render/forecast-block.js';
+import {
+  entityName,
+  sourceLabelFor,
+  sourceLegend,
+  sourceLines,
+  sourcesAlert,
+  type EntityNameHass,
+} from './render/source-lines.js';import {
+  dayPagerRealignLeft,
+  initialScrollDataReady,
+  initialScrollGeneration,
+  resolveInitialScrollLeft,
+} from './render/scroll-position.js';
 import { calendarFor, type Calendar } from './utils/time-zone.js';
 // Chart library: uPlot. Imported transitively via ./chart/draw.js —
 // there is no global registration step (uPlot has no plugin registry;
@@ -177,25 +182,6 @@ const ICON_SPRITE_TEMPLATE = html`<svg class="wsc-sprite" aria-hidden="true">${
   Object.entries(MDI_PATHS).map(([name, path]) =>
     svg`<symbol id="wsc-i-${name}" viewBox="0 0 24 24"><path d="${path}"></path></symbol>`)
 }</svg>`;
-
-// Attribute-row token → live-source keys it displays (show_sources).
-// Zero-degree and next-rain rows carry forecast / radar data from a
-// sensor, so neither "station" nor "weather service" fits them.
-const SOURCE_KEYS_BY_TOKEN: Readonly<Partial<Record<AttributeToken, ReadonlyArray<string>>>> = {
-  pressure: ['pressure'],
-  dew_point_humidity: ['dew_point', 'humidity'],
-  dew_point: ['dew_point'],
-  humidity: ['humidity'],
-  precipitation: ['precipitation'],
-  uv_illuminance: ['uv_index', 'illuminance'],
-  uv_index: ['uv_index'],
-  illuminance: ['illuminance'],
-  sun: ['sun'],
-  moon: ['moon'],
-  wind_direction: ['wind_direction'],
-  wind_speed: ['wind_speed'],
-  wind_gust_speed: ['gust_speed'],
-};
 
 // Field-declaration block for the WeatherStationCard class. HA-shaped
 // fields are typed as `any` (or HassMain where threaded) — the full
@@ -282,20 +268,9 @@ class WeatherStationCard extends LitElement {
   next_rain_title: string | undefined;
   // Only runs while the row shows a minute countdown.
   _nextRainTimer: ReturnType<typeof setInterval> | null = null;
-  // Sliding-anchor buffer for deriving a mm/h rate from a cumulative
-  // rain counter when the configured precipitation sensor reports a
-  // total instead of a rate (unit not ending in /h). Persisted to
-  // localStorage per entity so a hard-reload doesn't restart the 2-15
-  // min warm-up. `_precipBufferEntity` tracks which entity the current
-  // buffer was hydrated for — a config change to a different sensor
-  // re-seeds from that sensor's own slot.
-  _precipBuffer: Sample[] = [];
-  _precipBufferEntity: string | undefined;
-  // Wall-clock recompute timer. Scheduled lazily on first activation
-  // of the cumulative path so configs without a cumulative-precip
-  // sensor never burn a timer. Cleared from the TeardownRegistry
-  // closure on disconnect, matching the `_clockTimer` pattern.
-  _precipRecomputeTimer: ReturnType<typeof setInterval> | null = null;
+  // Counter → mm/h derivation: buffer, entity and its 30-s tick
+  // (precip-rate-controller.ts). Created in the constructor.
+  _precipRate: PrecipRateController;
   unitSpeed: string | undefined;
   unitPressure: string | undefined;
   unitPrecip: string | undefined;
@@ -375,7 +350,7 @@ class WeatherStationCard extends LitElement {
   // the chart reads only `forecasts` — see the perf pass 2026-08.
   _forecastsDirty: boolean = false;
   // --- Chart / scroll lifecycle ---
-  _chartError: unknown = null;
+  _chartError: string | null = null;
   // Set when a `_refreshForecasts` pass throws on malformed source
   // data. Surfaced through `renderErrorBanner()`; cleared by the next
   // clean `_refreshForecasts`.
@@ -434,6 +409,9 @@ class WeatherStationCard extends LitElement {
   // tap_action. Owned by scroll-ux but lives on the card so the
   // action-handler can read it.
   _dragMoved: boolean = false;
+  // Stable listener identity, so Lit doesn't rebind the mode toggle's
+  // click handler on every render.
+  _onModeToggle = (ev: Event): void => this._onModeToggleClick(ev);
   // deno-lint-ignore no-explicit-any
   _teardownRegistry: any;
 
@@ -840,129 +818,38 @@ _applyLivePrecipRateSensor(hass: HassMain): Reading | null {
   // added the rate sensor. Its 30-s tick would keep overwriting
   // `precipitation` from the now-orphaned buffer, so release it here —
   // at the point we actually take over, not on every miss.
-  this._stopPrecipDerivation();
+  this._precipRate.stop();
   this.precipitation = reading.value;
   this.precipitation_unit = reading.unit;
   return reading;
 }
 
-// Release the cumulative→rate machinery: the wall-clock tick and the
-// per-entity buffer identity. localStorage is deliberately left alone —
-// dropping the rate sensor again rehydrates from it (loadBuffer prunes
-// by age), so a temporary reconfiguration doesn't cost a 15-min warm-up.
-_stopPrecipDerivation(): void {
-  if (this._precipRecomputeTimer) {
-    clearInterval(this._precipRecomputeTimer);
-    this._precipRecomputeTimer = null;
-  }
-  this._precipBuffer = [];
-  this._precipBufferEntity = undefined;
-}
-
-// When the configured precipitation sensor is a cumulative counter
-// (unit not ending in /h, e.g. Ecowitt `*_precipitation` reporting
-// total mm), derive a live mm/h rate from a sliding-anchor buffer of
-// recent samples and override `this.precipitation` + `_unit` so the
-// _climateRow_precip cell renders `🌧 X.X mm/h` instead of the
-// meaningless cumulative total. Rate sensors (unit ends in /h) are
-// untouched — the v1.9 pass-through path remains the gate.
-//
-// Three slices layered:
-//   1. In-memory mini-buffer + adaptive sliding-anchor compute.
-//   2. localStorage hydration / persistence + `🌧 ⋯ mm/h` placeholder.
-//   3. Wall-clock recompute tick (this method schedules it lazily) +
-//      counter-reset detection inside `computeRate` / `findUsableSlice`.
-//
-// Per-tick design: append the fresh sample, persist, recompute. The
-// recompute helper is shared with the 30-s wall-clock interval so a
-// dry period (no `set hass` for our sensor) still ages entries out
-// and snaps the displayed rate to 0 mm/h once the buffer empties.
+// A cumulative counter (unit not ending in /h) shows a live mm/h rate
+// derived from recent samples (precip-rate-controller.ts) instead of its
+// meaningless total. Rate units pass through untouched.
 _maybeDerivePrecipRate(hass: HassMain): void {
-  const unit = this.precipitation_unit ?? '';
-  if (/\/(h|hr|hour)$/i.test(unit)) return;
-
-  const sensors = this.config.sensors || {};
-  const precipEid: string | undefined = sensors.precipitation;
-  if (!precipEid) return;
-  const state = hass.states?.[precipEid];
-  if (!state) return;
-
-  const v = parseNumericSafe(state.state);
-  if (v == null) return;
-  const lastUpdated = (state as { last_updated?: string }).last_updated;
-  const t = lastUpdated ? Date.parse(lastUpdated) : Date.now();
-  if (!Number.isFinite(t)) return;
-
-  // Hydrate once per entity (and re-hydrate if the user repointed
-  // the card at a different sensor via the editor). loadBuffer drops
-  // over-age entries inline, so the buffer starts pre-pruned.
-  if (this._precipBufferEntity !== precipEid) {
-    this._precipBuffer = loadBuffer(precipEid);
-    this._precipBufferEntity = precipEid;
-  }
-
-  const beforeAppend = this._precipBuffer;
-  this._precipBuffer = appendSample(this._precipBuffer, { t, v });
-  // appendSample returns the SAME reference when the sample is a
-  // duplicate (same t+v) — only a genuinely new sample needs to reach
-  // localStorage. Without this gate every full hass pass paid a
-  // synchronous JSON.stringify + setItem.
-  this._recomputePrecipDisplay(precipEid, this._precipBuffer !== beforeAppend);
-  this._schedulePrecipRecomputeTick();
+  if (/\/(h|hr|hour)$/i.test(this.precipitation_unit ?? '')) return;
+  const eid: string | undefined = this.config.sensors?.precipitation;
+  this._precipRate.derive(eid, eid ? hass.states?.[eid] as CounterState | undefined : undefined);
 }
 
-// Re-derive the displayed rate from the in-memory buffer alone, with
-// no new sample read from hass. Shared between the `set hass`-driven
-// path and the wall-clock interval — the interval is what makes the
-// rate decay during dry periods, because `computeRate` uses `now` as
-// the Δt denominator (the rate falls as wall-clock advances without
-// new ticks).
-//
-// Idempotent: walks prune → save → computeRate → format → assign.
-// Returns true when the displayed value changed (so the interval
-// caller can `requestUpdate()` only when the DOM would actually differ).
-_recomputePrecipDisplay(entityId: string, bufferDirty: boolean = false): boolean {
-  const beforePrune = this._precipBuffer;
-  this._precipBuffer = pruneOlderThan(this._precipBuffer, DEFAULT_MAX_AGE_MS);
-  // Persist only when the buffer content changed (new sample appended
-  // by the caller, or samples aged out here). localStorage.setItem is
-  // synchronous and this runs on the hass path AND the 30-s interval —
-  // a no-change write is pure blocking I/O.
-  if (bufferDirty || this._precipBuffer !== beforePrune) {
-    saveBuffer(entityId, this._precipBuffer);
-  }
+// PrecipRateHost (precip-rate-controller.ts).
+precipUnits(): { source: string; display: string | undefined } {
+  return { source: this._sourcePrecipUnit, display: this.unitPrecip };
+}
 
-  // The buffer holds raw sensor values, so the rate is in the source
-  // base unit per hour (in/h for an inch counter). Convert + label it
-  // for the configured display unit; precision is unit-aware.
-  const { rate } = computeRate(this._precipBuffer, Date.now());
-  const { value, unit } = formatPrecipDisplay(
-    rate, `${this._sourcePrecipUnit}/h`, this.unitPrecip,
-  );
-  const changed = this.precipitation !== value || this.precipitation_unit !== unit;
-  this.precipitation = value;
-  this.precipitation_unit = unit;
+applyDerivedPrecip(display: PrecipDisplay): boolean {
+  const changed = this.precipitation !== display.value || this.precipitation_unit !== display.unit;
+  this.precipitation = display.value;
+  this.precipitation_unit = display.unit;
   return changed;
 }
 
-// Schedule the 30-s wall-clock recompute on first activation of the
-// cumulative path. Reads `this._precipBufferEntity` at fire time so
-// a sensor repoint (via editor) follows along without re-arming.
-// Teardown is via the TeardownRegistry closure registered in
-// `_registerLifecycleTeardowns`.
-_schedulePrecipRecomputeTick(): void {
-  if (this._precipRecomputeTimer) return;
-  this._precipRecomputeTimer = setInterval(() => {
-    const eid = this._precipBufferEntity;
-    if (!eid) return;
-    if (this._recomputePrecipDisplay(eid)) {
-      // The derived rate feeds the "Now" override of the next-rain
-      // row, and this tick runs outside the hass path that normally
-      // refreshes it.
-      this._refreshNextRain();
-      this.requestUpdate();
-    }
-  }, 30_000);
+onDerivedPrecipTick(): void {
+  // The derived rate feeds the "Now" override of the next-rain row, and
+  // the tick runs outside the hass path that normally refreshes it.
+  this._refreshNextRain();
+  this.requestUpdate();
 }
 
 // Phase 2: classify the live "now" condition with minute-level
@@ -1143,6 +1030,7 @@ _synthesizeWeatherEntity(currentCondition: string | undefined): any {
     this.resizeInitialized = false;
     this._teardownRegistry = new TeardownRegistry();
     this._sources = new DataSourceController(this);
+    this._precipRate = new PrecipRateController(this);
   }
 
   // DataSourceHost (data-source-controller.ts).
@@ -1238,12 +1126,6 @@ _synthesizeWeatherEntity(currentCondition: string | undefined): any {
       document.addEventListener('visibilitychange', onVisibility);
       r.add(() => document.removeEventListener('visibilitychange', onVisibility));
     }
-    r.add(() => {
-      if (this._precipRecomputeTimer) {
-        clearInterval(this._precipRecomputeTimer);
-        this._precipRecomputeTimer = null;
-      }
-    });
   }
 
   delayedAttachResizeObserver() {
@@ -1865,98 +1747,9 @@ updateChart({ forecasts, forecastChart } = this) {
   }
 }
 
-// Renders the daily ↔ hourly mode toggle as a small circular button
-// overlaid on the chart at the precipitation-baseline level. Only
-// visible when there's a station OR forecast block to switch
-// (`forecast.type` drives both MeasuredDataSource period:hour|day
-// and ForecastDataSource forecast_type — toggling is meaningful
-// whenever any block renders, including station-only).
-renderModeToggle() {
-  const cfg = this.config || {};
-  // Opt-out: hide the in-card view-switch button entirely so the card
-  // stays pinned to the configured forecast.type. Default (unset / true)
-  // keeps the button — existing cards are unchanged.
-  if (cfg.forecast?.show_mode_toggle === false) return html``;
-  const showsStation = cfg.show_station !== false;
-  const showsForecast = cfg.show_forecast === true && !!cfg.weather_entity;
-  if (!showsStation && !showsForecast) return html``;
-  const type = cfg.forecast?.type;
-  // 3-way cycle: daily → today → hourly → daily.
-  // Icon shows the NEXT mode you'd land on, so users can predict the
-  // click. "today" is signified by mdi:clock-time-eight-outline (the
-  // hour-clock face); "hourly" by mdi:weather-sunset (the multi-hour
-  // strip); "daily" by mdi:calendar-month-outline (the multi-day grid).
-  let icon, label;
-  if (type === 'today') {
-    icon = 'mdi:weather-sunset';
-    label = 'Switch to hourly (7-day) forecast';
-  } else if (type === 'hourly') {
-    icon = 'mdi:calendar-month-outline';
-    label = 'Switch to daily forecast';
-  } else {
-    icon = 'mdi:clock-time-eight-outline';
-    label = 'Switch to today (24-hour) forecast';
-  }
-  return html`
-    <button type="button" class="mode-toggle" aria-label="${label}"
-            title="${label}"
-            @click=${this._onModeToggleClick}>
-      <ha-icon icon=${icon} aria-hidden="true"></ha-icon>
-    </button>
-  `;
-}
-
-// Scroll timeline / minimap (2026-08): a slim track below the chart
-// for the scrolling hourly-ish modes. One segment per calendar day
-// (width proportional to that day's share of the columns), today's
-// label bold, and a translucent thumb marking the currently visible
-// section. The thumb is positioned imperatively from scroll-ux's
-// rAF-coalesced scroll handler — Lit only renders the static track;
-// pointer interaction (click/scrub to navigate) is bound in
-// scroll-ux alongside the other scroll controls.
+// Scroll timeline below the chart (render/forecast-block.ts).
 renderScrollTimeline() {
-  const fc = (this.forecasts ?? []) as Array<{ datetime?: string }>;
-  const total = fc.length;
-  if (total < 2) return html``;
-
-  interface TimelineSeg { start: number; count: number; ms: number }
-  const segs: TimelineSeg[] = [];
-  let curKey = '';
-  for (let i = 0; i < total; i++) {
-    const dt = fc[i]?.datetime;
-    if (!dt) continue;
-    const d = new Date(dt);
-    if (!Number.isFinite(d.getTime())) continue;
-    const key = this.calendar.dayKey(d);
-    if (key !== curKey) {
-      curKey = key;
-      segs.push({ start: i, count: 0, ms: this.calendar.startOfDay(d).getTime() });
-    }
-    segs[segs.length - 1].count++;
-  }
-  if (!segs.length) return html``;
-
-  const todayMs = startOfTodayMs(this.calendar);
-  const wdFmt = getDateTimeFormat(this._lang, { weekday: 'short', timeZone: this.calendar.timeZone });
-  const dayFmt = getDateTimeFormat(this._lang, { day: 'numeric', timeZone: this.calendar.timeZone });
-  const visible = effectiveVisibleBars(this.config);
-  const thumbPct = visible > 0 ? Math.min(100, (visible / total) * 100) : 100;
-
-  // The track is NOT aria-hidden: it carries real day labels, and an
-  // interactive element hidden from assistive tech is a WCAG smell.
-  // Keyboard users navigate via the chevron buttons instead; the
-  // thumb is a pure decoration (empty div) and stays hidden.
-  return html`
-    <div class="scroll-timeline">
-      ${segs.map((s) => html`
-        <div class="tl-seg ${s.ms === todayMs ? 'tl-today' : ''}"
-             style="left:${(s.start / total) * 100}%;width:${(s.count / total) * 100}%">
-          <span class="tl-seg-label">${wdFmt.format(new Date(s.ms))} ${dayFmt.format(new Date(s.ms))}</span>
-        </div>
-      `)}
-      <div class="tl-thumb" aria-hidden="true" style="left:0%;width:${thumbPct}%"></div>
-    </div>
-  `;
+  return renderTimeline(this.forecasts, this.calendar, this._lang, effectiveVisibleBars(this.config));
 }
 
 // Cycle through daily → today → hourly → daily via the same setConfig
@@ -1976,13 +1769,8 @@ _onModeToggleClick(ev?: Event) {
   this.setConfig({ ...raw, forecast: { ...rawForecast, type: nextForecastType(current) } });
 }
 
-// Generation key for the two-phase forecast-row render (ADR-0016).
-// Changes when the forecast mode or the column count changes — i.e. on
-// cold mount, mode toggle, or a data-shape change — so each fresh chart
-// re-defers its rows. A routine same-shape data refresh keeps the same
-// key, so the rows are NOT blanked on every hourly update.
 _forecastRowsGenKey(): string {
-  return `${this.config?.forecast?.type ?? 'daily'}|${this.forecasts?.length ?? 0}`;
+  return forecastRowsGenKey(this.config?.forecast?.type, this.forecasts);
 }
 
 // After the chart's first paint, fill in the real condition-icon / wind
@@ -2025,69 +1813,14 @@ _scheduleForecastRowsReveal(): void {
     // values plus a red error banner.
     const hasTemp = !!config.sensors?.temperature;
     const hasWeather = !!config.weather_entity;
-    if (!hasTemp && !hasWeather) {
-      return html`
-        <style>
-          .wsc-empty {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            text-align: center;
-            gap: 8px;
-            padding: 32px 24px;
-          }
-          .wsc-empty ha-icon {
-            --mdc-icon-size: 48px;
-            color: var(--secondary-text-color, #727272);
-            opacity: 0.7;
-          }
-          .wsc-empty-title {
-            font-weight: 600;
-            font-size: 15px;
-            color: var(--primary-text-color, #212121);
-          }
-          .wsc-empty-hint {
-            font-size: 13px;
-            line-height: 1.4;
-            color: var(--secondary-text-color, #727272);
-            max-width: 260px;
-          }
-        </style>
-        <ha-card header="${config.title}">
-          <div class="wsc-empty">
-            <ha-icon icon="mdi:weather-partly-cloudy"></ha-icon>
-            <div class="wsc-empty-title">Weather Station Card</div>
-            <div class="wsc-empty-hint">
-              Open the card editor and choose your weather sensors to
-              get started.
-            </div>
-          </div>
-        </ha-card>
-      `;
-    }
+    if (!hasTemp && !hasWeather) return renderOnboarding(config.title);
 
     // Match the mm-unit sizing rule from precipLabelPlugin so the wind unit
     // ("km/h", "m/s", …) renders at the same compact size as the precip unit
     // alongside its number.
     const labelsBaseSize = parseInt(config?.forecast?.labels_font_size) || 11;
     const labelsSmallSize = Math.max(6, Math.round(labelsBaseSize * 0.5));
-    if (!weather?.attributes) {
-      return html`
-        <style>
-          .card {
-            padding-top: ${config.title? '0px' : '16px'};
-            padding-right: 16px;
-            padding-bottom: 16px;
-            padding-left: 16px;
-          }
-        </style>
-        <ha-card header="${config.title}">
-          <div class="card">
-            Please, check your weather entity
-          </div>
-        </ha-card>
-      `;
-    }
+    if (!weather?.attributes) return renderNoWeather(config.title);
     // forecast.number_of_forecasts is the visible viewport size in bars.
     // setConfig defaults this to 8 across both modes, so the same
     // mechanism handles daily (8 ≥ totalBars=7 → no scroll, fits all)
@@ -2116,7 +1849,7 @@ _scheduleForecastRowsReveal(): void {
     const forecastSection = this._safeSection('forecast', () =>
       this._renderForecastBlock({ config, scrolling, contentWidthPct, visibleBars }),
     );
-    const banner = this._safeSection('error banner', () => this.renderErrorBanner());
+    const banner = this._safeSection('error banner', () => renderErrorBanner(this._bannerCtx()));
     const debugSection = config.debug === true
       ? this._safeSection('debug', () => this.renderDebugPanel())
       : '';
@@ -2140,7 +1873,7 @@ _scheduleForecastRowsReveal(): void {
         <div class="card">
           ${this.renderIconSpriteDefs()}
           ${banner}
-          ${this._safeSection('availability note', () => this.renderAvailabilityNote())}
+          ${this._safeSection('availability note', () => renderAvailabilityNote(this._sources.missingSensors, this._sources.staleSensors))}
           <div class="${(this._sources.staleSensors?.length || this._sources.missingSensors?.length) ? 'wsc-stale' : ''}">
             ${mainSection}
             ${attributesSection}
@@ -2152,119 +1885,28 @@ _scheduleForecastRowsReveal(): void {
     `;
   }
 
-  // Extracted from render() so the data-ready / loading branch can be
-  // wrapped in a single _safeSection catch. Pure presentation — reads
-  // instance state, returns a TemplateResult.
+  // The data-ready / loading branch, wrapped in one _safeSection catch
+  // by render() (render/forecast-block.ts).
   // deno-lint-ignore no-explicit-any
   _renderForecastBlock({ config, scrolling, contentWidthPct, visibleBars }: any) {
-    return this._sources.allExpectedDataReady() ? (() => {
-          // Pick the animation class for this render. Three cases:
-          //   1. Block has never been rendered → 'first-mount' (slide-up + fade-in)
-          //   2. Block was rendered before AND forecast.type just changed → 'view-changing' (opacity dip)
-          //   3. Otherwise (data refresh, same type) → no animation class
-          // Updated() upgrades the tracking state once the rendered
-          // block lands in DOM. Inline `<div>` open below keeps the
-          // existing nested structure unchanged so the rest of the
-          // template is a 1:1 substitution.
-          const fcType = config.forecast?.type;
-          let animClass = '';
-          if (!this._chartMountAnimationPlayed) {
-            animClass = 'first-mount';
-          } else if (this._lastForecastType !== fcType) {
-            animClass = 'view-changing';
-          }
-          const disableClass = config.forecast?.disable_animation === true ? 'no-animation' : '';
-          // Two-phase render (ADR-0016): when the chart scrolls (hourly,
-          // combination daily) the per-column condition-icon / wind rows
-          // are the cold-mount bottleneck — ~140 ms of a ~235 ms hourly
-          // mount, vs ~94 ms for the chart alone. On the first paint of a
-          // new chart generation render placeholder-height rows (so no
-          // layout shift), then `_scheduleForecastRowsReveal` fills the
-          // real rows in a post-paint idle callback. Non-scrolling views
-          // (today, single-block daily) never defer — the rows are cheap
-          // and already on screen.
-          const rowsDeferred = scrolling
-            && this._forecastRowsReadyGen !== this._forecastRowsGenKey();
-          const conditionsEnabled = config.forecast.condition_icons !== false;
-          const windEnabled = config.forecast.show_wind_forecast !== false
-            && (config.forecast.show_wind_arrow !== false
-              || config.forecast.show_wind_speed !== false);
-          return html`
-          <div class="forecast-scroll-block ${animClass} ${disableClass}">
-            <div class="forecast-scroll ${scrolling ? 'scrolling' : ''}">
-              <div class="forecast-content" style="width: ${contentWidthPct}%">
-                <div class="chart-container">
-                  <div id="forecastChart"></div>
-                </div>
-                ${rowsDeferred
-                  ? html`
-                    ${conditionsEnabled ? html`<div class="conditions" style="height: 26px"></div>` : ''}
-                    ${windEnabled ? html`<div class="wind-details" style="height: 26px"></div>` : ''}
-                  `
-                  : html`
-                    ${guard(
-                      [this.forecasts, this.forecastItems, config],
-                      () => this.renderForecastConditionIcons(),
-                    )}
-                    ${guard(
-                      [this.forecasts, this.forecastItems, this.unitSpeed, config],
-                      () => this.renderWind(),
-                    )}
-                  `}
-              </div>
-            </div>
-            ${this.renderModeToggle()}
-            ${config.show_main === false ? this._renderSourcesButton('chart') : ''}
-            ${scrolling ? html`
-              <button type="button" class="scroll-indicator scroll-indicator-left" aria-label="Scroll left" hidden>
-                <ha-icon icon="mdi:chevron-left" aria-hidden="true"></ha-icon>
-              </button>
-              <button type="button" class="scroll-indicator scroll-indicator-right" aria-label="Scroll right" hidden>
-                <ha-icon icon="mdi:chevron-right" aria-hidden="true"></ha-icon>
-              </button>
-              <button type="button" class="jump-to-now" aria-label="Jump to now" title="Jump to now" hidden>
-                <ha-icon icon="mdi:crosshairs-gps" aria-hidden="true"></ha-icon>
-              </button>
-            ` : ''}
-            ${scrolling && (fcType === 'hourly' || fcType === 'today')
-              ? this.renderScrollTimeline()
-              : ''}
-          </div>
-          `;
-          })() : (() => {
-          // Compute which rows the data-ready branch WILL render so
-          // the loading state can reserve the same vertical space.
-          // Otherwise the swap pushes everything below the card down
-          // by ~50 px (conditions row + wind row).
-          const conditionsEnabled = config.forecast.condition_icons !== false;
-          const windEnabled = config.forecast.show_wind_forecast !== false
-            && (config.forecast.show_wind_arrow !== false
-              || config.forecast.show_wind_speed !== false);
-          // Heights match the eventual rendered rows (ha-icon 24 px
-          // + 2 px margin on .forecast-item for conditions; arrow +
-          // single-line speed text + 2 px margin for wind). If the
-          // wind text wraps to a second line on narrow columns the
-          // skeleton under-reserves by ~10 px; over-reserving more
-          // here would cause an upward shift in the common case.
-          const condH = conditionsEnabled ? 26 : 0;
-          const windH = windEnabled ? 26 : 0;
-          return html`
-          <div class="forecast-loading">
-            <div class="chart-container">
-              ${renderChartSkeleton({
-                chartHeight: config.forecast.chart_height,
-                visibleBars: visibleBars,
-              })}
-            </div>
-            ${conditionsEnabled
-              ? html`<div class="conditions" style="height: ${condH}px"></div>`
-              : ''}
-            ${windEnabled
-              ? html`<div class="wind-details" style="height: ${windH}px"></div>`
-              : ''}
-          </div>
-          `;
-          })();
+    return renderForecastBlock({
+      config,
+      ready: this._sources.allExpectedDataReady(),
+      scrolling,
+      contentWidthPct,
+      visibleBars,
+      forecasts: this.forecasts,
+      forecastItems: this.forecastItems,
+      unitSpeed: this.unitSpeed,
+      calendar: this.calendar,
+      language: this._lang,
+      mountAnimationPlayed: this._chartMountAnimationPlayed,
+      lastForecastType: this._lastForecastType,
+      rowsReadyGen: this._forecastRowsReadyGen,
+      onModeToggle: this._onModeToggle,
+      renderWind: () => this.renderWind(),
+      renderSourcesButton: () => this._renderSourcesButton('chart'),
+    });
   }
 
   // Run a render section under a try/catch. On a throw, log with
@@ -2284,204 +1926,29 @@ _scheduleForecastRowsReveal(): void {
     }
   }
 
-// Diagnostic panel — rendered only when `debug: true` is set in YAML.
-// Surfaces the card's detected internal state so a misconfigured
-// dashboard can be troubleshot without a debugger: resolved sensor
-// entity IDs, the chosen render mode, each data source's subscription
-// status, and the reason a chart column may be empty. Off by default;
-// no editor row (YAML-only, deliberate restraint).
+// `debug: true` diagnostics (render/debug-panel.ts).
 renderDebugPanel() {
-  const cfg = this.config || {};
-  const sensors = cfg.sensors || {};
+  return renderDebugView({
+    config: this.config,
+    hasEntity: (eid) => !!this._hass?.states?.[eid],
+    haVersion: this._hass?.config?.version,
+    cardVersion: CARD_VERSION,
+    sources: this._sources,
+    chartBuilt: this._initialChartBuilt,
+  });
+}
 
-  // Render mode — the same gates render() / the chart pipeline use.
-  const wantStation = cfg.show_station !== false;
-  const wantForecast = cfg.show_forecast === true && !!cfg.weather_entity;
-  // True when the past block is backfilled from Open-Meteo rather than
-  // the recorder (no station sensors + weather entity + opt-in, ADR-0015).
-  const stationFromOpenMeteo = pastFromOpenMeteo(cfg);
-  let renderMode = 'none (both blocks disabled)';
-  if (wantStation && wantForecast) renderMode = 'combination (station + forecast)';
-  else if (wantStation) renderMode = 'station-only';
-  else if (wantForecast) renderMode = 'forecast-only';
-  const forecastType = cfg.forecast?.type ?? 'daily';
-
-  // Per-source status string. "subscribed" once a source object exists;
-  // "error" carries the message; "no data yet" before the first event.
-  const sourceStatus = (
-    want: boolean,
-    source: unknown,
-    error: string | null,
-    ready: boolean,
-    count: number,
-  ): string => {
-    if (!want) return 'not requested (block disabled)';
-    if (error) return `error — ${error}`;
-    if (!source) return 'not subscribed';
-    if (!ready) return 'subscribed, no data yet';
-    return `subscribed, ${count} point(s)`;
+_bannerCtx(): BannerCtx {
+  return {
+    haVersion: this._hass?.config?.version,
+    configError: this._configError,
+    stationError: this._sources.stationError,
+    forecastError: this._sources.forecastError,
+    chartError: this._chartError,
+    refreshError: this._refreshError,
+    sectionError: this._sectionError,
+    configWarnings: this._configWarnings ?? [],
   };
-
-  const stationStatus = sourceStatus(
-    wantStation,
-    stationFromOpenMeteo ? this._sources.openMeteo : this._sources.measured,
-    this._sources.stationError,
-    this._sources.stationReady, this._sources.stationData?.length ?? 0,
-  );
-  const forecastStatus = sourceStatus(
-    wantForecast, this._sources.forecastSource, this._sources.forecastError,
-    this._sources.forecastReady, this._sources.forecastData?.length ?? 0,
-  );
-
-  // Why a chart column might be empty — the most common support
-  // question. Walk the known causes in priority order.
-  const emptyReasons: string[] = [];
-  if (wantStation && !stationFromOpenMeteo && !sensors.temperature) {
-    emptyReasons.push('Station block on, but sensors.temperature is unset — past chart has no data.');
-  }
-  if (cfg.show_forecast === true && !cfg.weather_entity) {
-    emptyReasons.push('show_forecast is true, but weather_entity is unset — forecast block cannot load.');
-  }
-  if (wantStation && this._sources.stationReady && (this._sources.stationData?.length ?? 0) === 0 && !this._sources.stationError) {
-    emptyReasons.push(stationFromOpenMeteo
-      ? 'Open-Meteo returned no past data — check the browser network connection and the HA location.'
-      : 'Station source returned 0 points — the recorder has no history for the configured window.');
-  }
-  if (wantForecast && this._sources.forecastReady && (this._sources.forecastData?.length ?? 0) === 0 && !this._sources.forecastError) {
-    emptyReasons.push('Forecast source returned 0 points — the weather entity published an empty forecast.');
-  }
-  if (this._sources.missingSensors?.length) {
-    emptyReasons.push(`Sensors unavailable in HA: ${this._sources.missingSensors.join(', ')}.`);
-  }
-
-  // Resolved sensor entities — only the slots the user actually set.
-  const sensorRows = Object.entries(sensors)
-    .filter(([, eid]) => typeof eid === 'string' && eid)
-    .map(([key, eid]) => {
-      const exists = !!this._hass?.states?.[eid as string];
-      return html`<div>
-        <code>${key}</code>: <code>${eid}</code>
-        ${exists ? '✓ in HA' : '✗ not found in HA'}
-      </div>`;
-    });
-
-  const row = (label: string, value: unknown) => html`
-    <div><strong>${label}:</strong> ${String(value)}</div>
-  `;
-
-  return html`
-    <details class="ws-debug-panel" style="
-      margin: 8px;
-      padding: 6px 10px;
-      border: 1px solid var(--divider-color, #ccc);
-      border-radius: 4px;
-      font-size: 12px;
-      line-height: 1.5;
-      font-family: var(--code-font-family, monospace);
-      color: var(--secondary-text-color, #888);
-    ">
-      <summary style="cursor: pointer; font-weight: bold;">
-        weather-station-card diagnostics (debug: true)
-      </summary>
-      <div style="margin-top: 6px;">
-        ${row('Card version', CARD_VERSION)}
-        ${row('HA version', this._hass?.config?.version ?? 'unknown')}
-        ${row('Render mode', renderMode)}
-        ${row('Forecast type', forecastType)}
-        ${row('Weather entity', cfg.weather_entity || '(unset)')}
-        ${row('Station source', stationStatus)}
-        ${row('Forecast source', forecastStatus)}
-        ${row('All expected data ready', this._sources.allExpectedDataReady())}
-        ${row('Chart built', this._initialChartBuilt)}
-        <div style="margin-top: 4px;"><strong>Resolved sensors:</strong></div>
-        ${sensorRows.length ? sensorRows : html`<div>(none configured)</div>`}
-        <div style="margin-top: 4px;"><strong>Empty-column diagnostics:</strong></div>
-        ${emptyReasons.length
-          ? emptyReasons.map((r) => html`<div>• ${r}</div>`)
-          : html`<div>No empty-column issues detected.</div>`}
-      </div>
-    </details>
-  `;
-}
-
-renderErrorBanner() {
-  const errors = [];
-  // Compatibility warning first: a too-old HA frontend may have changed
-  // the APIs this card relies on, so flag it before the data-fetch
-  // errors (which can be a downstream symptom of that). isHaVersionBelow
-  // never false-fires on a current or unreadable version.
-  if (isHaVersionBelow(this._hass?.config?.version, MIN_HA_VERSION)) {
-    errors.push(`This card expects Home Assistant ${MIN_HA_VERSION} or newer.`);
-  }
-  if (this._configError) {
-    errors.push(this._configError);
-  }
-  if (this._sources.stationError) {
-    errors.push(`Statistics fetch failed: ${this._sources.stationError}`);
-  }
-  if (this._sources.forecastError) {
-    errors.push(`Forecast unavailable: ${this._sources.forecastError}`);
-  }
-  if (this._chartError) {
-    errors.push(`Chart render failed: ${this._chartError}`);
-  }
-  if (this._refreshError) {
-    errors.push(this._refreshError);
-  }
-  if (this._sectionError) {
-    errors.push(this._sectionError);
-  }
-  // NOTE (issue #213): unavailable sensors are deliberately NOT part
-  // of this red banner anymore — a routine HA restart used to paint
-  // one alarming line per sensor. They surface through the subtle
-  // availability hint instead (renderAvailabilityNote), in-grace as a
-  // neutral "waiting" line, overdue as a compact warning line.
-
-  // Advisory config-schema warnings (Slice 2). Rendered in a separate,
-  // amber band below the red error band — they don't stop the card
-  // rendering, they just flag a YAML mistake the user can fix.
-  const configWarnings = this._configWarnings ?? [];
-
-  const errorBanner = errors.length
-    ? html`
-    <div style="background: var(--error-color, #b71c1c); color: var(--text-primary-color, #fff); padding: 8px 12px; margin: 8px; border-radius: 4px; font-size: 13px;">
-      ${errors.map((e) => html`<div>${e}</div>`)}
-    </div>
-  `
-    : html``;
-  const warningBanner = configWarnings.length
-    ? html`
-    <div style="background: var(--warning-color, #ffa600); color: var(--text-primary-color, #fff); padding: 8px 12px; margin: 8px; border-radius: 4px; font-size: 13px;">
-      <div style="font-weight: 600;">Card configuration</div>
-      ${configWarnings.map((w) => html`<div>${w}</div>`)}
-    </div>
-  `
-    : html``;
-  return html`${errorBanner}${warningBanner}`;
-}
-
-// Subtle availability hint (issue #213) — replaces the former red
-// banner line for unavailable sensors. One slim row, icon + short
-// text; the full sensor list lives in the tooltip. In-grace (typical
-// HA restart) renders neutral with a clock icon; overdue renders in
-// the warning colour. Nothing renders when all sensors are live.
-renderAvailabilityNote() {
-  const overdue = this._sources.missingSensors ?? [];
-  const inGrace = this._sources.staleSensors ?? [];
-  if (!overdue.length && !inGrace.length) return html``;
-  const isOverdue = overdue.length > 0;
-  const all = [...overdue, ...inGrace];
-  const text = isOverdue
-    ? `${overdue.length} sensor${overdue.length === 1 ? '' : 's'} unavailable`
-    : 'Waiting for sensor data…';
-  const title = `${isOverdue ? 'Unavailable' : 'Recently unavailable (updating)'}: ${all.join(', ')}`;
-  return html`
-    <div class="wsc-availability ${isOverdue ? 'wsc-availability-overdue' : ''}"
-         title=${title} aria-label=${title}>
-      <ha-icon icon="${isOverdue ? 'mdi:alert-circle-outline' : 'mdi:progress-clock'}"></ha-icon>
-      <span>${text}</span>
-    </div>
-  `;
 }
 
 renderMain({ config, weather, temperature } = this) {
@@ -2719,8 +2186,7 @@ _renderSourcesButton(place: 'main' | 'chart' = 'main'): unknown {
   // Derived at render time from the availability scan's overdue list
   // (`_sources.missingSensors`; the controller requests an update when
   // it changes), so grace expiry re-renders the button.
-  const overdueIds = this._overdueSensorIds();
-  const alert = this._sourceLiveKeys().some((k) => isSensorProblem(this._liveSources[k], overdueIds));
+  const alert = sourcesAlert(cfg, this._liveSources, this._sources.overdueIds);
   const label = this._str(alert ? 'sources_button_problem' : 'sources_button');
   const button = this._activatable(
     (el) => this._openSourcesPopup(el),
@@ -2731,163 +2197,50 @@ _renderSourcesButton(place: 'main' | 'chart' = 'main'): unknown {
   return html`<span class="wsc-sources-info${placeClass}${alert ? ' wsc-sources-alert' : ''}" title=${label}>${button}</span>`;
 }
 
-// Entity ids of sensors that stayed unavailable past the grace period
-// while HA runs. Written by the controller's availability scan next to
-// `missingSensors`, whose change requests the re-render.
-_overdueSensorIds(): Set<string> {
-  return this._sources.overdueIds;
-}
-
-// Popup line label: the editor's sensor-field names double as the
-// live-panel vocabulary and are translated in every locale; sun and
-// moon have no sensor field and carry their own key.
 _sourceLabelFor(key: string): string {
-  if (key === 'sun' || key === 'moon') return this._str(`sources_label_${key}`);
   const ed = (this.ll('editor') || {}) as Record<string, string | undefined>;
   const enEd = ((locale.en as Record<string, unknown>).editor || {}) as Record<string, string | undefined>;
-  return ed[key] || enEd[key] || key;
+  return sourceLabelFor(key, (k) => this._str(k), ed, enEd);
 }
 
-// Live keys the card shows, in the card's order: main temperature,
-// then the attribute layout column by column.
-_sourceLiveKeys(): string[] {
-  const cfg = this.config || {};
-  const keys: string[] = [];
-  if (cfg.show_main !== false && cfg.show_temperature !== false) keys.push('temperature');
-  if (cfg.show_attributes !== false) {
-    for (const token of resolveAttributesLayout(cfg).flat()) {
-      keys.push(...(SOURCE_KEYS_BY_TOKEN[token] ?? []));
-    }
-  }
-  return keys;
-}
-
-// One popup line per value the card shows, in the card's order.
+// One popup line per value the card shows (render/source-lines.ts).
 _sourceLines(): SourceLine[] {
-  const cfg = this.config || {};
-  const ctx = this._liveCtx();
-  const tempUnit = this.getUnit('temperature');
-  const defaults = {
-    station: this._str('source_station'),
-    weather: this._str('source_weather'),
-    computed: this._str('source_computed'),
-  };
-  const lines: SourceLine[] = [];
-  const overdueIds = this._overdueSensorIds();
-  for (const key of this._sourceLiveKeys()) {
-    const src = this._liveSources[key];
-    if (!src) continue;
-    const value = sourceValueText(ctx, key, tempUnit);
-    if (!value) continue;
-    const line: SourceLine = {
-      label: this._sourceLabelFor(key),
-      value,
-      kind: src.kind,
-      sourceText: sourceLabel(src.kind, cfg.source_labels, defaults),
-      ...(src.entityId ? { entityId: src.entityId, entityName: this._entityName(src.entityId) } : {}),
-    };
-    if (isSensorProblem(src, overdueIds)) line.problem = true;
-    const downId = sensorDownId(src);
-    if (downId && !overdueIds.has(downId)) {
-      // Grace period or HA starting: neutral, same as the availability note.
-      line.note = this._str('sources_waiting');
-    } else if (downId) {
-      const since = (this._hass?.states?.[downId] as { last_changed?: string } | undefined)?.last_changed;
-      const t = since ? Date.parse(String(since)) : NaN;
-      const time = Number.isFinite(t)
-        ? getDateTimeFormat(ctx.language, {
-            hour: 'numeric', minute: 'numeric', hour12: cfg.use_12hour_format, timeZone: this.calendar.timeZone,
-          }).format(new Date(t))
-        : '';
-      if (src.kind === 'stale') {
-        line.note = time
-          ? this._str('sources_stale_since').replace('{time}', time)
-          : this._str('sources_stale');
-      } else {
-        // The weather entity is already named; say which configured
-        // sensor it is standing in for.
-        line.note = (time ? this._str('sources_sensor_down_since').replace('{time}', time) : this._str('sources_sensor_down'))
-          .replace('{entity}', this._entityName(downId));
-      }
-    }
-    lines.push(line);
-  }
-  // Next rain names its own source (radar / forecast / station) in the
-  // row tooltip; reuse that. Zero-degree rows have no source text.
-  const showsNextRain = cfg.show_attributes !== false
-    && resolveAttributesLayout(cfg).some((col) => col.includes('next_rain'));
-  if (showsNextRain && this.next_rain_text && this.next_rain_title) {
-    const eid = this._attrEntity('next_rain', false);
-    lines.push({
-      label: this._sourceLabelFor('next_rain'),
-      value: this.next_rain_text,
-      kind: 'info',
-      sourceText: this.next_rain_title,
-      ...(eid ? { entityId: eid, entityName: this._entityName(eid) } : {}),
-    });
-  }
-  return lines;
+  return sourceLines({
+    live: this._liveCtx(),
+    liveSources: this._liveSources,
+    overdueIds: this._sources.overdueIds,
+    tempUnit: this.getUnit('temperature'),
+    labelFor: (key) => this._sourceLabelFor(key),
+    entityName: (eid) => this._entityName(eid),
+  });
 }
 
-// Display name of an entity for the popup, as HA shows it:
-// `hass.formatEntityName(stateObj)` (newer HA, default device + entity
-// composition), then friendly_name, then the id.
 _entityName(entityId: string): string {
-  const hass = this._hass as unknown as {
-    states?: Record<string, { attributes?: { friendly_name?: unknown } } | undefined>;
-    formatEntityName?: (stateObj: unknown) => string;
-  } | undefined;
-  const stateObj = hass?.states?.[entityId];
-  if (stateObj && typeof hass?.formatEntityName === 'function') {
-    try {
-      const formatted = hass.formatEntityName(stateObj);
-      if (typeof formatted === 'string' && formatted.trim()) return formatted.trim();
-    } catch {
-      // fall through to friendly_name
-    }
-  }
-  const name = stateObj?.attributes?.friendly_name;
-  return typeof name === 'string' && name.trim() ? name.trim() : entityId;
+  return entityName(this._hass as unknown as EntityNameHass | null, entityId);
 }
 
-// Chart section of the popup: the encodings and their sources.
+// Chart section of the popup, in the colours chart/orchestrator.ts
+// draws with.
 // deno-lint-ignore no-explicit-any
 _sourceLegend(config: any): LegendItem[] {
-  const showStation = config.show_station !== false;
-  const showForecast = config.show_forecast === true && !!config.weather_entity;
-  if (!showStation && !showForecast) return [];
-  const fc = config.forecast || {};
-  const labels = config.source_labels || {};
-  const plan = planSources(config, this._sources.forecastData, this.calendar);
-  // Same resolved colours as chart/orchestrator.ts draws with.
-  const host: HTMLElement = this.isConnected ? this : document.body;
-  const bg = getThemeTokens(host).backgroundColor;
-  return buildChartLegend({
-    showStation,
-    showForecast,
-    pastFromOpenMeteo: plan.past === 'openmeteo',
-    showSunshine: fc.show_sunshine === true,
-    sunshineParts: plan.sunshine,
-    showTempLow: (fc.type || 'daily') === 'daily',
-    colors: {
-      high: resolveCssVar(fc.temperature1_color, 'rgba(255, 152, 0, 1.0)', host),
-      low: resolveTemp2Color(fc.temperature2_color, bg, host),
-      precip: resolveCssVar(fc.precipitation_color, 'rgba(132, 209, 253, 1.0)', host),
-      sunshine: resolveCssVar(fc.sunshine_color, 'rgba(255, 215, 0, 1.0)', host),
-    },
-    text: {
-      high: this._str('legend_high'),
-      low: this._str('legend_low'),
-      precip: this._str('legend_precip'),
-      sunshine: this._str('sunshine'),
-      measured: this._str('legend_measured'),
-      forecast: this._str('legend_forecast'),
-      measuredNote: this._str('legend_measured_note'),
-      forecastNote: this._str('legend_forecast_note'),
-      stationSource: labelText(labels.station, this._str('source_station')),
-      forecastSource: labelText(labels.weather, this._str('source_weather')),
-      openMeteo: 'Open-Meteo',
-      sunshineTitleOpenMeteo: this._str('legend_sunshine_openmeteo'),
+  return sourceLegend({
+    config,
+    str: (k) => this._str(k),
+    resolve: () => {
+      const fc = config.forecast || {};
+      const plan = planSources(config, this._sources.forecastData, this.calendar);
+      const host: HTMLElement = this.isConnected ? this : document.body;
+      const bg = getThemeTokens(host).backgroundColor;
+      return {
+        pastFromOpenMeteo: plan.past === 'openmeteo',
+        sunshineParts: plan.sunshine,
+        colors: {
+          high: resolveCssVar(fc.temperature1_color, 'rgba(255, 152, 0, 1.0)', host),
+          low: resolveTemp2Color(fc.temperature2_color, bg, host),
+          precip: resolveCssVar(fc.precipitation_color, 'rgba(132, 209, 253, 1.0)', host),
+          sunshine: resolveCssVar(fc.sunshine_color, 'rgba(255, 215, 0, 1.0)', host),
+        },
+      };
     },
   });
 }
@@ -3057,36 +2410,6 @@ _spriteIcon(fullName: string | undefined, cls: string = '') {
   return spriteIcon(fullName, cls);
 }
 
-renderForecastConditionIcons({ config, forecastItems } = this) {
-  if (config.forecast.condition_icons === false) {
-    return html``;
-  }
-
-  // Drop malformed entries (null, missing datetime) before the
-  // per-item map below dereferences `item.datetime`.
-  const forecast = sanitizeForecastEntries(
-    this.forecasts ? this.forecasts.slice(0, forecastItems) : [],
-  );
-
-  // Per-time day/night icon resolution was removed with the move to
-  // the canonical weatherIcons mapping — both variants render the
-  // same glyph, so the per-column sunrise/sunset Date math that used
-  // to live here (≈6 Date allocations + mutations per column, ~1 000
-  // ops at 168 hourly columns) was dead work in the ADR-0016 reveal
-  // frame. If per-time resolution comes back, reintroduce the
-  // computation INSIDE the icon-name decision so it only runs when it
-  // changes the output.
-  return html`
-    <div class="conditions">
-      ${forecast.map((item) => html`
-        <div class="forecast-item">
-          ${this._spriteIcon(this.getWeatherIcon(item.condition))}
-        </div>
-      `)}
-    </div>
-  `;
-}
-
 renderWind({ forecastItems } = this) {
   return renderForecastWind(this._liveCtx(), this.forecasts, forecastItems);
 }
@@ -3140,13 +2463,8 @@ renderWind({ forecastItems } = this) {
     if (this.config?.forecast?.type !== 'today') return;
     const wrapper = safeQuery<HTMLElement>(this.shadowRoot, '.forecast-scroll.scrolling');
     if (!wrapper || wrapper.classList.contains('dragging')) return;
-    const w = wrapper.clientWidth;
-    if (w <= 0 || wrapper.scrollWidth <= w) return;
-    const offset = wrapper.scrollLeft % w;
-    if (offset > 2 && offset < w - 2) {
-      const maxLeft = wrapper.scrollWidth - w;
-      wrapper.scrollLeft = Math.min(maxLeft, Math.max(0, Math.round(wrapper.scrollLeft / w) * w));
-    }
+    const left = dayPagerRealignLeft(wrapper.scrollLeft, wrapper.scrollWidth, wrapper.clientWidth);
+    if (left !== null) wrapper.scrollLeft = left;
   }
 
   _maybeRetriggerViewChangeAnimation() {
@@ -3187,28 +2505,13 @@ renderWind({ forecastItems } = this) {
       this._initialScrollApplied = false;
       return;
     }
-    const cfg = this.config || {};
-    const fcfg = cfg.forecast || {};
-    const stationCount = this._stationCount || 0;
-    const forecastCount = this._forecastCount || 0;
-    const wantsStation = cfg.show_station !== false;
-    const wantsForecast = cfg.show_forecast === true && !!cfg.weather_entity;
-    // Defer the initial scroll until every block we *intend* to render
-    // has data. Otherwise the forecast-loads-before-station case (the
-    // ForecastDataSource WebSocket subscribe usually replies sooner
-    // than the recorder/statistics_during_period roundtrip) hits the
-    // forecast-only branch — scrollLeft 0 — and pins that position via
-    // _initialScrollApplied before station data arrives. The result is
-    // a combination card that opens scrolled to the start of station
-    // history rather than centred on "now".
-    const dataReady =
-      (!wantsStation || stationCount > 0) &&
-      (!wantsForecast || forecastCount > 0);
-    if (!dataReady) {
+    const cfg = this.config;
+    // Wait for every block the card intends to render (render/scroll-position.ts).
+    if (!initialScrollDataReady(cfg, this._stationCount || 0, this._forecastCount || 0)) {
       this._initialScrollApplied = false;
       return;
     }
-    const generationKey = `${fcfg.type || 'daily'}|${fcfg.number_of_forecasts || 0}`;
+    const generationKey = initialScrollGeneration(cfg);
 
     let needsReset = !this._initialScrollApplied;
     if (changedProperties?.has('config') && this._lastScrollGeneration
@@ -3217,59 +2520,22 @@ renderWind({ forecastItems } = this) {
     }
     if (!needsReset) return;
 
-    // Tear down any in-flight observer / frame from a previous call —
-    // e.g. when the user flips forecast.type while a previous settle
-    // wait is still pending.
+    // Drop an in-flight observer / frame from a previous call, e.g. a
+    // forecast.type flip while a settle wait is still pending.
     this._teardownInitialScrollObserver();
 
     const apply = () => {
       if (!wrapper.isConnected) return false;
-      // Lit's updateComplete guarantees DOM commit but NOT that browser
-      // layout has measured the .forecast-content's `width: <ratio>%`
-      // CSS, NOR that Chart.js has finished sizing the canvas inside
-      // it — at the first paint scrollWidth can still equal clientWidth,
-      // which makes computeInitialScrollLeft early-return 0.
-      if (wrapper.scrollWidth <= wrapper.clientWidth) return false;
-      // Cross-check: the wrapper's scrollWidth comes from
-      // .forecast-content's `width: <pct>%` (computed in render() as
-      // totalBars/visibleBars * 100). On a mode toggle, drawChart runs
-      // synchronously from inside updated() — its rAF callback can fire
-      // BEFORE Lit's queued re-render commits the NEW pct, so we'd
-      // measure the PREVIOUS mode's content width with the NEW counts.
-      // Bail when the measured width doesn't match what totalBars
-      // implies; the ResizeObserver fallback below picks up the real
-      // size change once Lit's re-render commits.
-      const totalBars = (this._stationCount || 0) + (this._forecastCount || 0);
-      const visibleBars = effectiveVisibleBars(this.config);
-      if (totalBars > 0 && visibleBars > 0 && totalBars > visibleBars) {
-        const expectedScrollWidth = wrapper.clientWidth * (totalBars / visibleBars);
-        // Tolerance accounts for sub-pixel rounding + browser layout
-        // quantisation — but stays well under the smallest meaningful
-        // mode-to-mode width delta (daily≈583px ↔ hourly≈7689px).
-        if (Math.abs(wrapper.scrollWidth - expectedScrollWidth) > expectedScrollWidth * 0.1) {
-          return false;
-        }
-      }
-      // Day pager: never open on a half-empty page. Station-only
-      // anchors at the series END (rolling last-24-h window),
-      // forecast-only at the START, combination on the current
-      // calendar day's page. Falls back to the boundary-centred
-      // position when no anchor matches (e.g. clock skew).
-      const dayPage = fcfg.type === 'today'
-        ? computeTodayPagerScrollLeft({
-            forecasts: this.forecasts,
-            stationCount: this._stationCount || 0,
-            forecastCount: this._forecastCount || 0,
-            contentWidth: wrapper.scrollWidth,
-            viewportWidth: wrapper.clientWidth,
-          }, this.calendar)
-        : null;
-      const scrollLeft = dayPage ?? computeInitialScrollLeft({
+      const scrollLeft = resolveInitialScrollLeft({
+        config: cfg,
+        forecasts: this.forecasts,
         stationCount: this._stationCount || 0,
         forecastCount: this._forecastCount || 0,
-        contentWidth: wrapper.scrollWidth,
-        viewportWidth: wrapper.clientWidth,
+        scrollWidth: wrapper.scrollWidth,
+        clientWidth: wrapper.clientWidth,
+        calendar: this.calendar,
       });
+      if (scrollLeft === null) return false;
       wrapper.scrollLeft = scrollLeft;
       this._initialScrollApplied = true;
       this._lastScrollGeneration = generationKey;

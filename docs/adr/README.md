@@ -92,3 +92,4 @@ becomes `Superseded by NNNN`.
 - [0031 — Record and show the provenance of live values](./0031-live-value-provenance.md) (Accepted)
 - [0032 — Build dist/ only in the release job](./0032-dist-built-in-release-job.md) (Accepted)
 - [0033 — Data-source lifecycle as a Lit ReactiveController, pure chart builder](./0033-data-source-reactive-controller.md) (Accepted)
+- [0034 — Render path as module functions, precip-rate derivation as a controller](./0034-render-path-modules-and-precip-rate-controller.md) (Accepted)

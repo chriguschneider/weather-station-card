@@ -124,3 +124,11 @@ function per row (`climateRowPressure`, `windRowGust`, ...). Only `this`
 is gone. A dependency-cruiser rule (`live-panel-no-uplevel`) stops the
 rows from importing main.ts. The modules are in the coverage gate.
 Decided by: owner (#449).
+
+## Amendment 2026-11-15 (#472): card sections in `src/render/`
+
+The same shape now covers the card-level sections outside the live
+panel: the forecast block, the banners, the debug panel and the sources
+popup content live in `src/render/` as plain functions over small
+contexts, guarded by `render-no-uplevel`. See
+[0034](0034-render-path-modules-and-precip-rate-controller.md).
