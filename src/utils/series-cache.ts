@@ -14,7 +14,7 @@ const PREFIX = 'wsc_series_';
 // Bump when the stored shape or what an entry means changes: keys carry the
 // time zone (ADR-0030), daily entries are card days (#355), and entries
 // are in canonical units (ADR-0035).
-const VERSION = 5;
+const VERSION = 6;
 
 /** Older payloads would show a visibly wrong window until the live fetch lands. */
 const MAX_AGE_MS = 12 * 60 * 60 * 1000;

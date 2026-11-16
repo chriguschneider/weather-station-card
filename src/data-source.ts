@@ -18,8 +18,8 @@ import {
   type ForecastEntry,
 } from './forecast-utils.js';
 import { resolveLocation } from './location.js';
-import { sunshineFromLuxHistory, type LuxSample } from './sunshine-source.js';
-import { stationUnits, weatherEntityUnits, type UnitSystemLike, type WeatherUnits } from './sensor-readings.js';
+import { sensorSunshineHours, sunshineFromLuxHistory, type LuxSample } from './sunshine-source.js';
+import { stationUnits, unitOf, weatherEntityUnits, type UnitSystemLike, type WeatherUnits } from './sensor-readings.js';
 import { depthUnitId } from './display-units.js';
 import { deltaToCanonical, toCanonical, type Quantity } from './utils/units.js';
 import { parseNumericSafe } from './utils/numeric.js';
@@ -777,6 +777,9 @@ export class MeasuredDataSource {
 
     const units = this._stationUnits(sensors);
     const precipUnit = depthUnitId(units.precipitation);
+    const sunshineUnit = sensors.sunshine_duration
+      ? unitOf(this.hass?.states?.[sensors.sunshine_duration])
+      : undefined;
     const out: ForecastEntry[] = [];
     for (let i = 1; i <= days; i++) {
       const dayStart = this.calendar.addDays(start, i);
@@ -828,8 +831,8 @@ export class MeasuredDataSource {
         )
         : null;
 
-      // Sunshine from a recorder sensor, in seconds or hours (attachSunshine
-      // normalises). TODAY shows the measured running total, even when small
+      // Sunshine from a recorder sensor, in the sensor's unit until it is
+      // converted to hours below the live fold. TODAY shows the measured running total, even when small
       // early in the day, not Open-Meteo's full-day forecast (#37).
       let sunshineRaw = sensors.sunshine_duration
         ? at(sensors.sunshine_duration, 'max')
@@ -856,6 +859,12 @@ export class MeasuredDataSource {
             ? live
             : Math.max(0, (sunshineByDate?.get(this.calendar.dayKey(dayStart)) ?? 0) + live - sunshineServerLast);
         }
+      }
+      // Bucket, hourly total and live fold are sums and differences in the
+      // sensor's unit, so they convert as one value. An unknown unit gives
+      // null and so 0 h below, never the raw number (ADR-0035).
+      if (sensors.sunshine_duration && sunshineRaw != null) {
+        sunshineRaw = sensorSunshineHours(sunshineRaw, sunshineUnit);
       }
       // Lux-derived fallback; a recorder sunshine sensor wins. Keys are
       // `YYYY-MM-DD` in the card's zone (#285).

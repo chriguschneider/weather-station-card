@@ -176,7 +176,7 @@ export function buildOpenMeteoUrl(
 
 /** `time` / `sunshine_duration` as the `{date, value}` array
  *  `attachSunshine` consumes. Values stay in seconds;
- *  `normalizeSunshineValue` converts at lookup. */
+ *  `secondsToHours` converts at lookup. */
 export function parseDailySunshine(response: OpenMeteoResponse | null | undefined, calendar: Calendar): DailySunshineEntry[] {
   if (!response?.daily) return [];
   const t = response.daily.time ?? [];
@@ -190,7 +190,8 @@ export function parseDailySunshine(response: OpenMeteoResponse | null | undefine
 }
 
 /** Hourly counterpart, keyed "YYYY-MM-DDTHH:00" in the card's zone (what
- *  `localHourString` matches). Values are seconds within the hour. */
+ *  `localHourString` matches). Values are seconds within the hour;
+ *  `secondsToHours` converts at lookup. */
 export function parseHourlySunshine(response: OpenMeteoResponse | null | undefined, calendar: Calendar): HourlySunshineEntry[] {
   if (!response?.hourly) return [];
   const t = response.hourly.time ?? [];

@@ -7,14 +7,15 @@ import { clearSkyLuxFactory } from './condition-classifier.js';
 import { resolveLocation } from './location.js';
 import type { Calendar } from './utils/time-zone.js';
 import { declinationDeg } from './utils/solar.js';
+import { toCanonical } from './utils/units.js';
 
 
 /** Date-input shapes the lookup helpers accept. Strings go through `new
  *  Date(...)`; numbers are treated as ms since epoch. */
 export type DateLike = Date | string | number;
 
-/** Per-key value shape: numeric strings, numbers or null (gap marker).
- *  `normalizeSunshineValue` normalises it. */
+/** Per-key value shape: numeric strings, numbers or null (gap marker),
+ *  in seconds; `secondsToHours` converts it. */
 export type SunshineValueLike = number | string | null;
 
 export interface DailySunshineEntry {
@@ -89,6 +90,27 @@ export function normalizeSunshineValue(raw: unknown): number | null {
   return n >= 30 ? n / 3600 : n;
 }
 
+/** A sunshine sensor's value in hours. With a unit it goes through the
+ *  duration table; a unit the table does not know gives null. A sensor
+ *  without a unit keeps the magnitude rule of normalizeSunshineValue
+ *  (30 and above is seconds) as its assumed unit (ADR-0035). */
+export function sensorSunshineHours(value: number | null | undefined, unit: string | undefined): number | null {
+  if (unit == null || unit === '') return normalizeSunshineValue(value);
+  const h = toCanonical('duration', value, unit);
+  if (h == null) return null;
+  return h < 0 ? 0 : h;
+}
+
+/** An Open-Meteo `sunshine_duration` (seconds, https://open-meteo.com/en/docs)
+ *  in hours. Null for non-numeric input, negatives clamp to 0. */
+function secondsToHours(raw: unknown): number | null {
+  if (raw == null) return null;
+  const n = typeof raw === 'number' ? raw : parseFloat(raw as string);
+  if (!Number.isFinite(n)) return null;
+  if (n < 0) return 0;
+  return toCanonical('duration', n, 's');
+}
+
 /** Civil date YYYY-MM-DD in the card's (server) zone. Open-Meteo's daily
  *  series uses the civil dates of the HA location (`timezone=auto`). */
 export function localDateString(date: DateLike, calendar: Calendar): string | null {
@@ -104,8 +126,9 @@ export function localHourString(date: DateLike, calendar: Calendar): string | nu
   return calendar.hourKey(d);
 }
 
-/** Value of the {datetime, value} item in the same hour as `hourKey`.
- *  Compares the first 13 chars ("YYYY-MM-DDTHH"), so minutes are ignored. */
+/** Value of the {datetime, value} item in the same hour as `hourKey`, in
+ *  hours; the item's value is seconds. Compares the first 13 chars
+ *  ("YYYY-MM-DDTHH"), so minutes are ignored. */
 export function findInHourArray(
   arr: HourlySunshineInput | null | undefined,
   hourKey: string | null | undefined,
@@ -115,15 +138,15 @@ export function findInHourArray(
   for (const item of arr) {
     if (!item || typeof item !== 'object') continue;
     const itemKey = item.datetime != null ? String(item.datetime).slice(0, 13) : null;
-    if (itemKey === k) return normalizeSunshineValue(item.value);
+    if (itemKey === k) return secondsToHours(item.value);
   }
   return null;
 }
 
 /** Look up a day's sunshine in a date-keyed input: `{date|datetime, value}`
  *  entries, `[date, value]` tuples, a `{date: value}` map, or a
- *  `{history|forecast: [...]}` envelope. Normalised via
- *  `normalizeSunshineValue`; null if there is no match. */
+ *  `{history|forecast: [...]}` envelope. Values are seconds and come
+ *  back in hours; null if there is no match. */
 export function findInDateArray(
   arr: DailySunshineInput | null | undefined,
   dateString: string | null | undefined,
@@ -136,7 +159,7 @@ export function findInDateArray(
     if (Array.isArray(obj.history)) return findInDateArray(obj.history, dateString);
     if (Array.isArray(obj.forecast)) return findInDateArray(obj.forecast, dateString);
     if (Object.prototype.hasOwnProperty.call(obj, dateString)) {
-      return normalizeSunshineValue(obj[dateString]);
+      return secondsToHours(obj[dateString]);
     }
     return null;
   }
@@ -158,7 +181,7 @@ function matchDailyEntry(item: unknown, dateString: string): number | null | und
   if (Array.isArray(item)) {
     if (item.length < 2) return undefined;
     const k = String(item[0] || '').slice(0, 10);
-    return k === dateString ? normalizeSunshineValue(item[1]) : undefined;
+    return k === dateString ? secondsToHours(item[1]) : undefined;
   }
 
   if (typeof item !== 'object') return undefined;
@@ -168,7 +191,7 @@ function matchDailyEntry(item: unknown, dateString: string): number | null | und
   const k = dateRaw != null ? String(dateRaw).slice(0, 10) : null;
   if (k !== dateString) return undefined;
   const v = entry.value ?? entry.sunshine ?? entry.duration ?? entry.sunshine_duration;
-  return normalizeSunshineValue(v);
+  return secondsToHours(v);
 }
 
 /** Set `sunshine` and `day_length` on each entry; returns a new array.
@@ -291,13 +314,12 @@ export interface EntitySunshineEntry {
 }
 
 /** The entity's sunshine in hours, or null when the entry has none.
- *  Explicit minutes → hours instead of `normalizeSunshineValue`'s
- *  seconds/hours heuristic, which would read 45 min as 45 s. */
+ *  The entity states minutes (ADR-0028). */
 export function entitySunshineHours(entry: EntitySunshineEntry | null | undefined): number | null {
   const raw = entry?.sunshine_duration;
   const n = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : raw;
   if (typeof n !== 'number' || !Number.isFinite(n)) return null;
-  return Math.max(0, n) / 60;
+  return toCanonical('duration', Math.max(0, n), 'min');
 }
 
 /** Set `sunshine` from the entity's `sunshine_duration` (ADR-0028).
