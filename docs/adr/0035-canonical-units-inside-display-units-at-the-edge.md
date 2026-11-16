@@ -201,3 +201,27 @@ the old helpers and the new table. What is true after each slice:
   https://community.home-assistant.io/t/weather-station-card-weather-station-meets-forecast/1011385/24
 - Home Assistant's conversion table:
   https://github.com/home-assistant/core/blob/a55395accc9e041e0a40b7c6e44491d20d98bf09/homeassistant/util/unit_conversion.py
+
+## Amendment 2026-11-16 (#478): a sensor without a unit is read in an assumed unit
+
+Point 5 treats a missing unit like an unknown one. That would change
+dashboards that work today: template sensors often carry no
+`unit_of_measurement`, and the card has always read them in the unit of
+their surroundings. Dropping them from the display label and from the
+condition classifier would be a regression for a setup that has no
+fault.
+
+So the two cases part. A unit that is **present and not in the table**
+(`foo`, `%` on a rain sensor) stays as point 5 says: no conversion, the
+raw value with its own unit, no part in classification. A sensor that
+reports **no unit** is read in the assumed unit for its quantity, the
+first one the table knows of: the weather entity's unit attribute for
+that quantity, then Home Assistant's unit system
+(`hass.config.unit_system`), then the canonical unit. A dew-point sensor
+without a unit takes the temperature sensor's unit first, a wind or gust
+sensor the other wind sensor's. The reading's `unit` carries the assumed
+unit, so everything downstream treats it like any other reading.
+
+`parseUnit` and `toCanonical` are unchanged and still return null for a
+missing unit; the assumption is made once, at the entry, in
+`src/sensor-readings.ts`. Decided by: owner.
