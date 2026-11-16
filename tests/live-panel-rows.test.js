@@ -59,7 +59,6 @@ function makeCtx({ config = {}, hass = {}, values = {}, readings = {}, displayUn
     cardinalDirections: en.cardinalDirections,
     readings: readingsOf(readings),
     displayUnits: { ...DISPLAY, ...displayUnits },
-    stationWindUnit: 'km/h',
     values,
     entityLink: (eid, content) => (eid ? html`<a data-eid=${eid}>${content}</a>` : content),
     zeroDegreeLink: (eid, content) => html`<b data-eid=${eid}>${content}</b>`,
@@ -469,14 +468,30 @@ describe('wind rows', () => {
     expect(windRowSpeed(makeCtx({ readings: { wind_speed: ['unavailable', 'km/h'] } }), true)).toBeNull();
   });
 
-  it('forecast wind converts entries into the display unit', () => {
+  it('forecast wind converts m/s entries into the display unit', () => {
     const ctx = makeCtx();
-    expect(convertWind(ctx, 10, 'm/s')).toBe(36);
-    expect(convertWind({ ...ctx, stationWindUnit: 'm/s' }, 10)).toBe(36);
-    expect(convertWind(ctx, 10)).toBe(10);
-    expect(convertWind(ctx, 10, 'foo')).toBeNull();
+    const ms = (kmh) => kmh * 1000 / 3600;
+    expect(convertWind(ctx, 10)).toBe(36);
+    // 30.5 km/h comes back from m/s as 30.499…; it still shows 31.
+    expect(convertWind(ctx, ms(30.5))).toBe(31);
+    // A 'today' block mean is cut to one decimal before the display rounding.
+    const mean = (ms(12.1) + ms(11.5) + ms(10.8)) / 3;
+    expect(convertWind(ctx, mean)).toBe(11);
+    expect(convertWind(ctx, mean, true)).toBe(12);
+    expect(convertWind(makeCtx({ displayUnits: { speed: 'm/s' } }), 12.5)).toBe(13);
+    expect(convertWind(makeCtx({ displayUnits: { speed: 'Beaufort' } }), 10)).toBe(5);
+    expect(convertWind(makeCtx({ displayUnits: { speed: 'foo' } }), 10)).toBeNull();
     expect(convertWind(ctx, '10')).toBeNull();
     expect(convertWind(ctx, NaN)).toBeNull();
+  });
+
+  it('forecast wind row rounds block means in the today view', () => {
+    const ms = (kmh) => kmh * 1000 / 3600;
+    const items = [{ datetime: '2026-10-01T12:00:00Z', wind_speed: (ms(12.1) + ms(11.5) + ms(10.8)) / 3 }];
+    const cell = (type) =>
+      host(renderForecastWind(makeCtx({ config: { forecast: { type } } }), items, 10)).querySelector('.wind-speed').textContent;
+    expect(cell('today')).toBe('12');
+    expect(cell('hourly')).toBe('11');
   });
 
   it('sprite icon: sprite reference, else ha-icon', () => {
@@ -487,7 +502,7 @@ describe('wind rows', () => {
 
   it('forecast wind row toggles', () => {
     const items = [
-      { datetime: '2026-10-01T12:00:00Z', wind_speed: 10, wind_speed_unit: 'km/h', wind_bearing: 90 },
+      { datetime: '2026-10-01T12:00:00Z', wind_speed: 10, wind_bearing: 90 },
       { datetime: '2026-10-02T12:00:00Z' },
     ];
     const withFc = (forecast) => makeCtx({ config: { forecast } });
@@ -497,8 +512,6 @@ describe('wind rows', () => {
     expect(both.querySelectorAll('.wind-detail')).toHaveLength(2);
     expect(both.querySelectorAll('.wind-speed')).toHaveLength(1);
     expect(both.querySelector('.wind-unit').textContent).toBe(en.units['km/h']);
-    const foo = [{ datetime: '2026-10-01T12:00:00Z', wind_speed: 10, wind_speed_unit: 'foo', wind_bearing: 90 }];
-    expect(host(renderForecastWind(withFc({}), foo, 10)).querySelectorAll('.wind-speed')).toHaveLength(0);
     expect(both.querySelectorAll('.wind-icon')).toHaveLength(1);
     expect(host(renderForecastWind(makeCtx(), null, 10)).querySelectorAll('.wind-detail')).toHaveLength(0);
   });
