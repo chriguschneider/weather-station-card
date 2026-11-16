@@ -56,7 +56,7 @@ import {
   formatPrecipDisplay,
   luxScaleFor,
 } from './utils/unit-converters.js';
-import { fromCanonical, parseUnit, toCanonical, type Quantity } from './utils/units.js';
+import { toCanonical } from './utils/units.js';
 import { buildForecastChart, ChartBuildError, type ChartInputs } from './chart/orchestrator.js';
 import { DataSourceController } from './data-source-controller.js';
 import { sanitizeForecastEntries } from './chart/sanitize.js';
@@ -65,7 +65,10 @@ import { getDateTimeFormat } from './utils/intl-cache.js';
 import { isSunUp } from './moon.js';
 import { classifyNextRain, formatCheckedUntil, formatNextRain, nextRainIcon } from './next-rain.js';
 import { parseZeroDegreeCurve, ZeroDegreePopup, type ZeroDegreePoint } from './zero-degree-popup.js';
-import { attrEntity, type LiveHass, type LivePanelCtx } from './live-panel/context.js';
+import {
+  attrEntity, LIVE_READING_KEYS, shownValue, unitLabel,
+  type LiveHass, type LivePanelCtx, type LiveReading, type LiveReadingKey,
+} from './live-panel/context.js';
 import { renderAttributes as renderLiveAttributes } from './live-panel/attributes.js';
 import { renderSun as renderLiveSun, renderMoonLine } from './live-panel/sun-rows.js';
 import { renderForecastWind, spriteIcon } from './live-panel/wind-rows.js';
@@ -136,16 +139,6 @@ function resolvePrecipRateInput(
   return counterState
     ? toCanonical('precipitation_rate', parseNumericSafe(counterState.state), unitOf(counterState))
     : null;
-}
-
-/** A weather-sourced reading in the station's source unit, which the rows
- *  still expect until they format from canonical (#478). Sensor values
- *  and same-unit weather values pass through. */
-function inSourceUnit(quantity: Quantity, reading: Reading, sourceUnit: string): string | undefined {
-  if (reading.source?.kind !== 'weather' || reading.canonical === null) return reading.value;
-  if (parseUnit(quantity, reading.unit) === parseUnit(quantity, sourceUnit)) return reading.value;
-  const converted = fromCanonical(quantity, reading.canonical, sourceUnit);
-  return converted === null ? reading.value : String(converted);
 }
 
 declare global {
@@ -223,13 +216,11 @@ class WeatherStationCard extends LitElement {
   // Counter → mm/h derivation: buffer, entity and its 30-s tick
   // (precip-rate-controller.ts). Created in the constructor.
   _precipRate: PrecipRateController;
+  // Display units (ADR-0035), reactive so a unit change re-renders.
+  unitTemperature: string | undefined;
   unitSpeed: string | undefined;
   unitPressure: string | undefined;
   unitPrecip: string | undefined;
-  // Source units captured in phase 1 for the synthesised weather stand-in.
-  _sourceWindUnit: string = 'm/s';
-  _sourcePressureUnit: string = 'hPa';
-  _sourceTempUnit: string = '°C';
   // Last extraction (value, unit and source per key); the classifier
   // reads units from it, the popup the sources via _liveSources.
   _readings: SensorReadings | null = null;
@@ -432,6 +423,7 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
       next_rain_text: { attribute: false },
       next_rain_icon: { attribute: false },
       next_rain_title: { attribute: false },
+      unitTemperature: { attribute: false },
       unitSpeed: { attribute: false },
       unitPressure: { attribute: false },
       unitPrecip: { attribute: false },
@@ -586,23 +578,21 @@ _extractSensorReadings(hass: HassMain): void {
   });
   this._readings = r;
 
-  // Target units come from config and default to the source units.
-  // Keeping the two apart is what the display conversions compare.
-  this.unitSpeed = this.config.units.speed || r.units.wind;
-  this.unitPressure = this.config.units.pressure || r.units.pressure;
+  this.unitTemperature = r.displayUnits.temperature;
+  this.unitSpeed = r.displayUnits.speed;
+  this.unitPressure = r.displayUnits.pressure;
   this.unitPrecip = this.config.units.precipitation || r.units.precipBase;
-  this._sourceWindUnit = r.units.wind;
-  this._sourcePressureUnit = r.units.pressure;
-  this._sourceTempUnit = r.units.temperature;
   this._sourcePrecipUnit = r.units.precipBase;
 
-  this.temperature = inSourceUnit('temperature', r.temperature, r.units.temperature);
+  // Raw values: the rows convert through `_readings`; these fields
+  // only make a changed value re-render (ADR-0017).
+  this.temperature = r.temperature.value;
   this.humidity = r.humidity.value;
-  this.pressure = inSourceUnit('pressure', r.pressure, r.units.pressure);
+  this.pressure = r.pressure.value;
   this.uv_index = r.uv_index.value;
-  this.windSpeed = inSourceUnit('speed', r.wind_speed, r.units.wind);
-  this.dew_point = inSourceUnit('temperature', r.dew_point, r.units.temperature);
-  this.wind_gust_speed = inSourceUnit('speed', r.gust_speed, r.units.wind);
+  this.windSpeed = r.wind_speed.value;
+  this.dew_point = r.dew_point.value;
+  this.wind_gust_speed = r.gust_speed.value;
   this.windDirection = r.wind_direction.value;
   this.illuminance = r.illuminance.value;
   this.precipitation = r.precipitation.value;
@@ -816,17 +806,12 @@ _pickLiveCondition(inputs: any): string | undefined {
   return result;
 }
 
-// Synthesized stand-in for the original weather entity. The *_unit
-// fields here represent the SOURCE units (what the data layer actually
-// emits); the conversion code compares them against this.unitSpeed /
-// unitPressure to decide whether to convert.
+// Synthesized stand-in for the original weather entity: the live
+// condition and the raw values. Units live in `_readings`.
 _synthesizeWeatherEntity(currentCondition: string | undefined): any {
   return {
     state: currentCondition,
     attributes: {
-      wind_speed_unit: this._sourceWindUnit,
-      pressure_unit: this._sourcePressureUnit,
-      temperature_unit: this._sourceTempUnit,
       temperature: this.temperature,
       humidity: this.humidity,
       pressure: this.pressure,
@@ -1157,11 +1142,6 @@ get _lang(): string {
     if (this.config?.show_attributes) size += 1;
     if (this.config?.show_station || this.config?.show_forecast) size += 3;
     return Math.max(size, 1);
-  }
-
-  getUnit(unit: string): string {
-    const us = this._hass?.config && (this._hass.config as { unit_system?: Record<string, string> }).unit_system;
-    return us?.[unit] || '';
   }
 
   getWeatherIcon(condition: string): string {
@@ -1563,7 +1543,7 @@ _bannerCtx(): BannerCtx {
   };
 }
 
-renderMain({ config, weather, temperature } = this) {
+renderMain({ config, weather } = this) {
   if (config.show_main === false) {
     // The block is hidden: stop the 1 Hz clock too, or it keeps ticking against
     // missing DOM.
@@ -1579,10 +1559,11 @@ renderMain({ config, weather, temperature } = this) {
   const showCurrentCondition = config.show_current_condition !== false;
   const showTemperature = config.show_temperature !== false;
 
-  let roundedTemperature = parseFloat(temperature);
-  if (!isNaN(roundedTemperature) && roundedTemperature % 1 !== 0) {
-    roundedTemperature = Math.round(roundedTemperature * 10) / 10;
-  }
+  const live = this._liveCtx();
+  const shownTemperature = shownValue(live, 'temperature');
+  const temperatureTpl = shownTemperature
+    ? html`${shownTemperature.value}<span>${shownTemperature.unit}</span>`
+    : html`—<span>${unitLabel(live, live.displayUnits.temperature)}</span>`;
 
   // The condition glyph opens the weather entity's more-info (it carries the
   // forecast panel); station-only setups use the temperature sensor.
@@ -1602,8 +1583,7 @@ renderMain({ config, weather, temperature } = this) {
       ${iconHtml}
       <div>
         <div>
-          ${showTemperature ? this._entityLink(this._attrEntity('temperature'),
-            html`${Number.isFinite(roundedTemperature) ? roundedTemperature : '—'}<span>${this.getUnit('temperature')}</span>`) : ''}
+          ${showTemperature ? this._entityLink(this._attrEntity('temperature'), temperatureTpl) : ''}
           ${showCurrentCondition ? html`
             <div class="current-condition">
               ${this._entityLink(
@@ -1691,7 +1671,14 @@ _handleVisibilityChange(): void {
 _liveCtx(language?: string): LivePanelCtx {
   const units = this.ll('units');
   const directions = this.ll('cardinalDirections');
-  const attrs = this.weather?.attributes ?? {};
+  const r = this._readings;
+  const readings = {} as Record<LiveReadingKey, LiveReading>;
+  for (const key of LIVE_READING_KEYS) {
+    const reading = r?.[key];
+    readings[key] = reading
+      ? { value: reading.value, unit: reading.unit, canonical: reading.canonical }
+      : { value: undefined, unit: undefined, canonical: null };
+  }
   return {
     config: this.config || {},
     hass: this._hass as unknown as LiveHass | null,
@@ -1700,26 +1687,21 @@ _liveCtx(language?: string): LivePanelCtx {
     str: (k: string) => this._str(k),
     units: units && typeof units === 'object' ? units : {},
     cardinalDirections: Array.isArray(directions) ? directions : [],
-    unitPressure: this.unitPressure,
-    unitSpeed: this.unitSpeed,
-    weatherUnits: {
-      temperature: attrs.temperature_unit,
-      windSpeed: attrs.wind_speed_unit,
-      pressure: attrs.pressure_unit,
+    readings,
+    displayUnits: {
+      temperature: this.unitTemperature ?? '°C',
+      pressure: this.unitPressure ?? 'hPa',
+      speed: this.unitSpeed ?? 'm/s',
+      precipitation: r?.displayUnits.precipitation ?? 'mm',
     },
-    sourceTempUnit: this._sourceTempUnit,
+    stationWindUnit: r?.units.wind ?? 'm/s',
     values: {
-      temperature: this.temperature,
       humidity: this.humidity,
-      pressure: this.pressure,
-      dew_point: this.dew_point,
       precipitation: this.precipitation,
       precipitation_unit: this.precipitation_unit,
       uv_index: this.uv_index,
       illuminance: this.illuminance,
-      windSpeed: this.windSpeed,
       windDirection: this.windDirection,
-      wind_gust_speed: this.wind_gust_speed,
       zero_degree_level: this.zero_degree_level,
       zero_degree_unit: this.zero_degree_unit,
       zero_degree_48h_level: this.zero_degree_48h_level,
@@ -1797,7 +1779,6 @@ _sourceLines(): SourceLine[] {
     live: this._liveCtx(),
     liveSources: this._liveSources,
     overdueIds: this._sources.overdueIds,
-    tempUnit: this.getUnit('temperature'),
     labelFor: (key) => this._sourceLabelFor(key),
     entityName: (eid) => this._entityName(eid),
   });

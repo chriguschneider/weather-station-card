@@ -79,7 +79,7 @@ const pl: LocaleEntry = {
   'legend_high': 'Maks.',
   'legend_low': 'Min.',
   'legend_precip': 'Opady',
-  'pressure_tooltip_template': '{trend} · Δ3h {delta} hPa · {influence}',
+  'pressure_tooltip_template': '{trend} · Δ3h {delta} {unit} · {influence}',
   'units': {
     'km/h': 'km/h',
     'm/s': 'm/s',

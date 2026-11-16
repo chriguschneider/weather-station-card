@@ -421,3 +421,39 @@ describe('show_sources: popup', () => {
     expect(card._sourceLegend(card.config)).toEqual([]);
   });
 });
+
+// The main temperature carries the display unit of the temperature
+// sensor, not Home Assistant's unit system (ADR-0035, #505).
+describe('main temperature unit', () => {
+  const mainTemp = (card) => {
+    const link = card.shadowRoot.querySelector('.main > div > div > .wsc-entity-link');
+    const unit = link.querySelector('span').textContent;
+    return { value: link.textContent.slice(0, -unit.length).trim(), unit };
+  };
+
+  it('shows a °F sensor in °F beside a °C unit system', async () => {
+    const card = await mountCard({ ...baseStates(), 'sensor.temp': sensor('68', '°F') });
+    expect(mainTemp(card)).toEqual({ value: '68', unit: '°F' });
+  });
+
+  it('converts the weather entity into the unit of an unavailable °F sensor', async () => {
+    const states = {
+      ...baseStates(),
+      'weather.home': { ...metNo, attributes: { ...metNo.attributes, temperature: 20 } },
+      'sensor.temp': sensor('unavailable', '°F'),
+    };
+    const card = await mountCard(states);
+    expect(mainTemp(card)).toEqual({ value: '68', unit: '°F' });
+  });
+
+  it('drops a trailing .0', async () => {
+    const card = await mountCard({ ...baseStates(), 'sensor.temp': sensor('20.0', '°C') });
+    expect(mainTemp(card)).toEqual({ value: '20', unit: '°C' });
+  });
+
+  it('shows a dash in the display unit without a value', async () => {
+    const states = { ...baseStates(), 'sensor.temp': sensor('n/a', '°C') };
+    const card = await mountCard(states, { weather_entity: undefined });
+    expect(mainTemp(card)).toEqual({ value: '—', unit: '°C' });
+  });
+});

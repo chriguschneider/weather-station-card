@@ -79,7 +79,7 @@ const bg: LocaleEntry = {
   'legend_high': 'Макс.',
   'legend_low': 'Мин.',
   'legend_precip': 'Валежи',
-  'pressure_tooltip_template': '{trend} · Δ3h {delta} hPa · {influence}',
+  'pressure_tooltip_template': '{trend} · Δ3h {delta} {unit} · {influence}',
   'units': {
     'km/h': 'км/ч',
     'm/s': 'м/с',

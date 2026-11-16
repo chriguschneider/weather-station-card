@@ -79,7 +79,7 @@ const ko: LocaleEntry = {
   'legend_high': '최고',
   'legend_low': '최저',
   'legend_precip': '강수',
-  'pressure_tooltip_template': '{trend} · Δ3h {delta} hPa · {influence}',
+  'pressure_tooltip_template': '{trend} · Δ3h {delta} {unit} · {influence}',
   'units': {
     'km/h': 'km/h',
     'm/s': 'm/s',

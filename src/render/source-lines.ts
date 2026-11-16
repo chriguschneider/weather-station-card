@@ -92,8 +92,6 @@ export interface SourceLinesCtx {
   live: LivePanelCtx;
   liveSources: Readonly<Record<string, LiveSource | undefined>>;
   overdueIds: ReadonlySet<string>;
-  /** Unit label of the main temperature (HA unit system). */
-  tempUnit: string;
   labelFor: (key: string) => string;
   entityName: (entityId: string) => string;
 }
@@ -133,7 +131,7 @@ export function sourceLines(ctx: SourceLinesCtx): SourceLine[] {
   for (const key of sourceLiveKeys(cfg)) {
     const src = ctx.liveSources[key];
     if (!src) continue;
-    const value = sourceValueText(live, key, ctx.tempUnit);
+    const value = sourceValueText(live, key);
     if (!value) continue;
     const line: SourceLine = {
       label: ctx.labelFor(key),

@@ -34,7 +34,7 @@ const en: LocaleEntry = {
   'pressure_influence_stable': 'no change',
   'pressure_influence_falling': 'deteriorating',
   'pressure_influence_falling_fast': 'storm likely',
-  'pressure_tooltip_template': '{trend} · Δ3h {delta} hPa · {influence}',
+  'pressure_tooltip_template': '{trend} · Δ3h {delta} {unit} · {influence}',
   'dew_point_band_raureif': 'frost risk',
   'dew_point_band_nebel': 'fog risk',
   'dew_point_band_schwuel': 'muggy',

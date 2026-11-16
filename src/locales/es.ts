@@ -79,7 +79,7 @@ const es: LocaleEntry = {
   'legend_high': 'Máx',
   'legend_low': 'Mín',
   'legend_precip': 'Precipitación',
-  'pressure_tooltip_template': '{trend} · Δ3h {delta} hPa · {influence}',
+  'pressure_tooltip_template': '{trend} · Δ3h {delta} {unit} · {influence}',
   'units': {
     'km/h': 'km/h',
     'm/s': 'm/s',

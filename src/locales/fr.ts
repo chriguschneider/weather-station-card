@@ -79,7 +79,7 @@ const fr: LocaleEntry = {
   'sun_strength_cloudy': 'nuageux',
   'sun_strength_protection_advised': 'protection solaire conseillée',
   'sun_strength_night_reason': 'Soleil sous l’horizon — UV masqué',
-  'pressure_tooltip_template': '{trend} · Δ3h {delta} hPa · {influence}',
+  'pressure_tooltip_template': '{trend} · Δ3h {delta} {unit} · {influence}',
   'units': {
     'km/h': 'km/h',
     'm/s': 'm/s',

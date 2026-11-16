@@ -6,6 +6,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, html } from 'lit';
 import en from '../src/locales/en.js';
 import { Calendar } from '../src/utils/time-zone.js';
+import { LIVE_READING_KEYS } from '../src/live-panel/context.js';
 import {
   bannerErrors, renderAvailabilityNote, renderErrorBanner, renderNoWeather, renderOnboarding,
 } from '../src/render/banners.js';
@@ -374,7 +375,14 @@ describe('scroll position', () => {
 
 // ----------------------------------------------------------- source lines
 
-function liveCtx({ config = {}, states = {}, values = {} } = {}) {
+const NO_READING = { value: undefined, unit: undefined, canonical: null };
+
+// `readings`: key → [value, unit, canonical], as sensor-readings.ts extracts them.
+function liveCtx({ config = {}, states = {}, values = {}, readings = {} } = {}) {
+  const r = Object.fromEntries(LIVE_READING_KEYS.map((k) => {
+    const spec = readings[k];
+    return [k, spec ? { value: spec[0], unit: spec[1], canonical: spec[2] } : NO_READING];
+  }));
   return {
     config,
     hass: { states },
@@ -383,10 +391,9 @@ function liveCtx({ config = {}, states = {}, values = {} } = {}) {
     str: (k) => (typeof en[k] === 'string' ? en[k] : ''),
     units: en.units,
     cardinalDirections: en.cardinalDirections,
-    unitPressure: 'hPa',
-    unitSpeed: 'km/h',
-    weatherUnits: { temperature: '°C', windSpeed: 'km/h', pressure: 'hPa' },
-    sourceTempUnit: '°C',
+    readings: r,
+    displayUnits: { temperature: '°C', pressure: 'hPa', speed: 'km/h', precipitation: 'mm' },
+    stationWindUnit: 'km/h',
     values,
     entityLink: (_eid, content) => content,
     zeroDegreeLink: (_eid, content) => content,
@@ -437,8 +444,9 @@ describe('source lines', () => {
       live: liveCtx({
         config,
         states,
+        readings: { temperature: ['12.5', '°C', 12.5], pressure: ['1013', 'hPa', 1013] },
         values: {
-          temperature: '12.5', humidity: '80', pressure: '1013',
+          humidity: '80',
           next_rain_text: 'in 20 min', next_rain_title: 'Radar',
         },
       }),
@@ -448,13 +456,13 @@ describe('source lines', () => {
         pressure: { kind: 'weather', entityId: 'weather.home', sensorId: 'sensor.p' },
       },
       overdueIds: new Set(['sensor.p']),
-      tempUnit: '°C',
       labelFor: (k) => k,
       entityName: (eid) => `name:${eid}`,
     });
     expect(lines.map((l) => l.label)).toEqual(['temperature', 'humidity', 'pressure', 'next_rain']);
     expect(lines[0]).toMatchObject({ kind: 'station', entityId: 'sensor.t', entityName: 'name:sensor.t' });
     expect(lines[0].note).toBeUndefined();
+    expect(lines.map((l) => l.value).slice(0, 3)).toEqual(['12.5°C', '80 %', `1013 ${en.units.hPa}`]);
     // In grace: neutral waiting note.
     expect(lines[1].note).toBe(en.sources_waiting);
     // Overdue with a timestamp: names the sensor the weather stands in for.
@@ -466,10 +474,9 @@ describe('source lines', () => {
 
   it('stale overdue sensor without a timestamp says so plainly', () => {
     const lines = sourceLines({
-      live: liveCtx({ config: { show_attributes: false }, values: { temperature: '3' } }),
+      live: liveCtx({ config: { show_attributes: false }, readings: { temperature: ['3', '°C', 3] } }),
       liveSources: { temperature: { kind: 'stale', entityId: 'sensor.t' } },
       overdueIds: new Set(['sensor.t']),
-      tempUnit: '°C',
       labelFor: (k) => k,
       entityName: (eid) => eid,
     });

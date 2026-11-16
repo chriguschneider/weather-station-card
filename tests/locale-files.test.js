@@ -28,6 +28,16 @@ describe('locale loaders', () => {
   });
 });
 
+// The 3-hour pressure change is shown in the row's unit (ADR-0035).
+describe('pressure tooltip template', () => {
+  it.each(['en', ...files])('%s takes the unit as {unit}', async (lang) => {
+    await ensureLocaleLoaded(lang);
+    const template = locale[lang].pressure_tooltip_template;
+    expect(template).toContain('{unit}');
+    expect(template).not.toContain('hPa');
+  });
+});
+
 describe('card rendered in French', () => {
   it('the French table has no empty strings', async () => {
     await ensureLocaleLoaded('fr');
