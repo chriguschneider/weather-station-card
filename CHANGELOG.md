@@ -12,6 +12,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Pressure change in your unit.** With the pressure shown in inHg or mmHg, the tooltip still gave the 3-hour change in hPa; it now uses the unit of the row.
 - Live values convert every Home Assistant unit. Before, 20 kn with `units.speed: km/h` read "20 km/h" (now 37 km/h), and a dew-point sensor in °F next to a °C thermometer kept its °F number. A value in a unit the card does not know is shown as the sensor reports it.
 - The main temperature carries the unit of your temperature sensor instead of Home Assistant's unit system; pressure in inHg, mbar or kPa is rounded like hPa (#478).
+- Rain rate: sensors in mm/d, in/d or cm are converted, and the rain symbol follows the measured rate in every unit. A rain sensor with a unit the card does not know shows its own value instead of a made-up mm/h (#478).
 
 ### Under the hood
 

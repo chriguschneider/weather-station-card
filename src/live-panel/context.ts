@@ -42,6 +42,8 @@ export interface LiveValues {
   humidity?: unknown;
   precipitation?: unknown;
   precipitation_unit?: string;
+  /** The live rate in mm/h, unrounded; null when the row shows no rate. */
+  precipitationRate?: number | null;
   uv_index?: unknown;
   illuminance?: unknown;
   windDirection?: unknown;

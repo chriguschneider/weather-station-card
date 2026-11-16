@@ -11,12 +11,7 @@
 import { resolveLiveSource, type LiveSource } from './live-source.js';
 import { resolveDisplayUnits, type DisplayUnits } from './display-units.js';
 import { parseUnit, toCanonical, type Quantity } from './utils/units.js';
-import {
-  isPrecipRateUnit,
-  precipBaseUnit,
-  formatPrecipDisplay,
-  luxScaleFor,
-} from './utils/unit-converters.js';
+import { luxScaleFor } from './utils/unit-converters.js';
 import { parseNumericSafe } from './utils/numeric.js';
 
 export interface StateLike {
@@ -63,9 +58,8 @@ export interface SensorReadings {
   precipitation: Reading;
   zero_degree_level: Reading;
   zero_degree_level_48h: Reading;
-  /** Source units of the station, shared by related quantities: wind
-   *  speed + gust, temperature + (entity) dew point. */
-  units: { wind: string; pressure: string; temperature: string; precipBase: string };
+  /** The station's wind unit, shared by speed and gust. */
+  units: { wind: string };
   /** The card's display units, one per quantity (ADR-0035). */
   displayUnits: DisplayUnits;
   /** The units a sensor without `unit_of_measurement` is read in. */
@@ -275,11 +269,6 @@ function sourceUnits(
 ): SensorReadings['units'] {
   return {
     wind: sensorUnit('wind_speed') || sensorUnit('gust_speed') || wxUnit('wind_speed_unit') || 'm/s',
-    pressure: sensorUnit('pressure') || wxUnit('pressure_unit') || 'hPa',
-    temperature: sensorUnit('temperature') || wxUnit('temperature_unit') || '°C',
-    // Counter first, rate sensor second: a rate-only config must still
-    // default its display unit to the station's own base (in/h stays in).
-    precipBase: precipBaseUnit(sensorUnit('precipitation') || sensorUnit('precipitation_rate')),
   };
 }
 
@@ -313,22 +302,26 @@ function readWindDirection(
 }
 
 /** A dedicated `sensors.precipitation_rate` (#253) as the live
- *  precipitation reading, converted into the display unit. Null when
- *  its state is not numeric, so the counter paths take over. */
+ *  precipitation reading, in the sensor's own unit with its mm/h
+ *  canonical. A sensor without a unit is read in `assumedUnit` per hour
+ *  (ADR-0035, amendment of 2026-11-16). Null when its state is not
+ *  numeric, so the counter paths take over. */
 export function precipRateReading(
   sensorId: string | undefined,
   state: StateLike | undefined,
-  displayUnit: string | undefined,
+  assumedUnit = 'mm',
 ): Reading | null {
   if (!sensorId) return null;
   const num = parseNumericSafe(state?.state);
   if (num == null) return null;
-  const rawUnit = unitOf(state);
+  const ownUnit = unitOf(state);
+  const unit = ownUnit ?? `${assumedUnit}/h`;
   // The slot's contract is a rate, so a bare `mm` from an integration
-  // that forgot the `/h` still gets the rate label.
-  const sourceUnit = isPrecipRateUnit(rawUnit) ? rawUnit : `${precipBaseUnit(rawUnit)}/h`;
-  const { value, unit } = formatPrecipDisplay(num, sourceUnit, displayUnit);
-  return { value, unit, canonical: null, source: { kind: 'station', entityId: sensorId } };
+  // that forgot the `/h` is read per hour (the rate table has no `cm/h`,
+  // so the assumed unit converts as a depth too).
+  const canonical = toCanonical('precipitation_rate', num, unit)
+    ?? toCanonical('precipitation', num, ownUnit ?? assumedUnit);
+  return { value: state?.state, unit, canonical, source: { kind: 'station', entityId: sensorId } };
 }
 
 /** The per-key provenance record the info popup reads, plus the

@@ -1,8 +1,8 @@
-// Live mm/h rate derived from a cumulative rain counter (#472), as a Lit
+// Live rate derived from a cumulative rain counter (#472), as a Lit
 // ReactiveController next to the data sources (ADR-0034).
 //
-// When `sensors.precipitation` reports a total instead of a rate (unit
-// not ending in /h, e.g. an Ecowitt counter in mm), the card keeps a
+// When `sensors.precipitation` reports a total instead of a rate (a depth
+// unit, e.g. an Ecowitt counter in mm), the card keeps a
 // sliding-anchor buffer of recent samples and shows the rate from it.
 // The buffer is persisted per entity in localStorage, so a hard reload
 // doesn't restart the 2–15 min warm-up. A 30-s wall-clock tick re-derives
@@ -22,21 +22,13 @@ import {
   DEFAULT_MAX_AGE_MS,
   type Sample,
 } from './precip-rate.js';
-import { formatPrecipDisplay } from './utils/unit-converters.js';
 import { parseNumericSafe } from './utils/numeric.js';
-
-export interface PrecipDisplay {
-  value: string;
-  unit: string;
-}
 
 /** What the controller needs from the card. */
 export interface PrecipRateHost extends ReactiveControllerHost {
-  /** Source base unit ('mm' | 'in') and the configured display unit,
-   *  read at derive and tick time so a config change follows along. */
-  precipUnits(): { source: string; display: string | undefined };
-  /** Show the derived rate; true when the displayed value changed. */
-  applyDerivedPrecip(display: PrecipDisplay): boolean;
+  /** Show the derived rate, in the counter's own unit per hour; true
+   *  when the shown text changed. */
+  applyDerivedRate(ratePerHour: number): boolean;
   /** The tick changed the shown rate outside a hass pass. */
   onDerivedPrecipTick(): void;
 }
@@ -83,20 +75,18 @@ export class PrecipRateController implements ReactiveController {
     this.buffer = appendSample(this.buffer, { t, v });
     // appendSample returns the SAME array for a duplicate (same t+v);
     // only a new sample needs the synchronous localStorage write.
-    this.host.applyDerivedPrecip(this.recompute(entityId, this.buffer !== beforeAppend));
+    this.host.applyDerivedRate(this.recompute(entityId, this.buffer !== beforeAppend));
     this._scheduleTick();
   }
 
-  /** Prune, persist when the buffer changed, and format the rate for the
-   *  display unit. The buffer holds raw values, so the rate is in the
-   *  source base unit per hour. */
-  recompute(entityId: string, bufferDirty = false): PrecipDisplay {
+  /** Prune, persist when the buffer changed, and return the rate. The
+   *  buffer holds raw values, so the rate is in the counter's own unit
+   *  per hour; the card converts it. */
+  recompute(entityId: string, bufferDirty = false): number {
     const beforePrune = this.buffer;
     this.buffer = pruneOlderThan(this.buffer, DEFAULT_MAX_AGE_MS);
     if (bufferDirty || this.buffer !== beforePrune) saveBuffer(entityId, this.buffer);
-    const { rate } = computeRate(this.buffer, Date.now());
-    const units = this.host.precipUnits();
-    return formatPrecipDisplay(rate, `${units.source}/h`, units.display);
+    return computeRate(this.buffer, Date.now()).rate;
   }
 
   /** Release the tick and the buffer identity. localStorage stays: going
@@ -114,7 +104,7 @@ export class PrecipRateController implements ReactiveController {
       // Read at fire time, so an entity repoint needs no re-arm.
       const eid = this.bufferEntity;
       if (!eid) return;
-      if (this.host.applyDerivedPrecip(this.recompute(eid))) {
+      if (this.host.applyDerivedRate(this.recompute(eid))) {
         this.host.onDerivedPrecipTick();
       }
     }, TICK_MS);

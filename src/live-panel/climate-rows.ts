@@ -7,7 +7,6 @@ import { html } from 'lit';
 import { getPressureTrend, getPressureTrendIcon } from '../pressure-trend.js';
 import { getDewPointComfort, getDewPointComfortIcon } from '../dew-point-comfort.js';
 import { precipIcon } from '../precip-rate.js';
-import { isPrecipRateUnit, toMillimeters } from '../utils/unit-converters.js';
 import { displayDecimals, fromCanonical, parseUnit, toDisplay } from '../utils/units.js';
 import { parseNumericSafe } from '../utils/numeric.js';
 import { attrEntity, shownText, shownValue, unitLabel, type LivePanelCtx, type LiveReading } from './context.js';
@@ -30,6 +29,19 @@ export function dewPointText(ctx: LivePanelCtx): string {
 
 export function precipitationText(precipitation: unknown, unit: string | undefined): string {
   return unit ? `${String(precipitation)} ${unit}` : String(precipitation);
+}
+
+/** The live rate (canonical mm/h) as the row shows it in `displayUnit`
+ *  per hour. `mm` keeps its own rule (ADR-0035, Tradeoffs): one decimal
+ *  below 10, none from 10 on, so `339 mm/h` does not read `339.0`; any
+ *  other unit takes the table's decimals. A unit outside the table
+ *  (never a resolved display unit) shows mm. */
+export function precipRateDisplay(rateMmH: number, displayUnit: string): { value: string; unit: string } {
+  const unit = parseUnit('precipitation', displayUnit) ?? 'mm';
+  const n = fromCanonical('precipitation', rateMmH, unit) ?? rateMmH;
+  let decimals = displayDecimals('precipitation', unit) ?? 1;
+  if (unit === 'mm' && n >= 10) decimals = 0;
+  return { value: n.toFixed(decimals), unit: `${unit}/h` };
 }
 
 export function climateRowPressure(ctx: LivePanelCtx, show: boolean, deltaHpa: number | null) {
@@ -113,13 +125,10 @@ export function climateRowPrecip(
   precipitationUnit: string | undefined,
 ) {
   if (!show || !hasValue) return null;
-  // A rate (native rate sensor or the counter-derived rate, mm/h or in/h)
-  // maps intensity to an icon; precipIcon's thresholds are mm/h. Other
-  // units (probability `%`, raw `mm`) keep the plain rainy icon.
-  const rateMm = isPrecipRateUnit(precipitationUnit)
-    ? toMillimeters(parseFloat(String(precipitation)), precipitationUnit)
-    : null;
-  const icon = rateMm != null && Number.isFinite(rateMm) ? precipIcon(rateMm) : 'hass:weather-rainy';
+  // The unrounded rate in mm/h, whatever the row shows; a value that is
+  // no known rate (`%`, an unknown unit) keeps the plain rainy icon.
+  const rate = ctx.values.precipitationRate;
+  const icon = typeof rate === 'number' ? precipIcon(rate) : 'hass:weather-rainy';
   // Link to the entity that produced the number: the dedicated rate
   // sensor when configured (#253), else the precipitation slot.
   const linkEid = attrEntity(ctx.config, 'precipitation_rate', false)

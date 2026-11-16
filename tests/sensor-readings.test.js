@@ -172,12 +172,12 @@ describe('extractSensorReadings: value, unit and source decided together', () =>
     expect(r.uv_index).toEqual({
       value: '3', unit: undefined, canonical: null, source: { kind: 'weather', entityId: 'weather.home' },
     });
-    expect(r.units).toEqual({ wind: 'km/h', pressure: 'hPa', temperature: '°C', precipBase: 'mm' });
+    expect(r.units).toEqual({ wind: 'km/h' });
   });
 
   it('falls back to the base units without sensor or entity', () => {
     const r = run({}, {}, undefined);
-    expect(r.units).toEqual({ wind: 'm/s', pressure: 'hPa', temperature: '°C', precipBase: 'mm' });
+    expect(r.units).toEqual({ wind: 'm/s' });
     expect(r.temperature).toEqual({ value: undefined, unit: '°C', canonical: null, source: undefined });
     expect(r.wind_direction).toEqual({ value: undefined, unit: '°', canonical: null, source: undefined });
   });
@@ -246,27 +246,47 @@ describe('extractSensorReadings: value, unit and source decided together', () =>
     expect(r.zero_degree_level_48h).toEqual({ value: undefined, unit: undefined, canonical: null, source: undefined });
   });
 
-  it('takes the precip base unit from the rate sensor when there is no counter', () => {
+  it('takes the precipitation display unit from the rate sensor when there is no counter', () => {
     const r = run({ precipitation_rate: 'sensor.rr' }, { 'sensor.rr': sensor('0.1', 'in/h') });
-    expect(r.units.precipBase).toBe('in');
+    expect(r.displayUnits.precipitation).toBe('in');
   });
 });
 
 describe('precipRateReading', () => {
-  it('converts a numeric rate into the display unit, source station', () => {
-    // 25.4 mm/h; mm drops the decimal above 10 (formatPrecipDisplay).
-    expect(precipRateReading('sensor.rr', sensor('1', 'in/h'), 'mm')).toEqual({
-      value: '25', unit: 'mm/h', canonical: null, source: { kind: 'station', entityId: 'sensor.rr' },
+  const station = { kind: 'station', entityId: 'sensor.rr' };
+
+  it('keeps the sensor\'s own value and unit, with the rate in mm/h', () => {
+    expect(precipRateReading('sensor.rr', sensor('1', 'in/h'))).toEqual({
+      value: '1', unit: 'in/h', canonical: 25.4, source: station,
+    });
+    expect(precipRateReading('sensor.rr', sensor('24', 'mm/d')).canonical).toBe(1);
+  });
+
+  it('reads a bare depth unit per hour', () => {
+    expect(precipRateReading('sensor.rr', sensor('2', 'mm'))).toEqual({
+      value: '2', unit: 'mm', canonical: 2, source: station,
     });
   });
 
-  it('labels a bare base unit as a rate', () => {
-    expect(precipRateReading('sensor.rr', sensor('2', 'mm'), 'mm').unit).toBe('mm/h');
+  it('has no canonical for a unit the table does not know', () => {
+    expect(precipRateReading('sensor.rr', sensor('3', 'foo'))).toEqual({
+      value: '3', unit: 'foo', canonical: null, source: station,
+    });
+  });
+
+  it('reads a sensor without a unit in the assumed unit per hour', () => {
+    expect(precipRateReading('sensor.rr', { state: '1.5' })).toEqual({
+      value: '1.5', unit: 'mm/h', canonical: 1.5, source: station,
+    });
+    expect(precipRateReading('sensor.rr', { state: '0.1' }, 'in')).toMatchObject({ unit: 'in/h' });
+    expect(precipRateReading('sensor.rr', { state: '0.1' }, 'in').canonical).toBeCloseTo(2.54, 9);
+    // The rate table has no cm/h; the assumed depth still converts.
+    expect(precipRateReading('sensor.rr', { state: '1' }, 'cm')).toMatchObject({ unit: 'cm/h', canonical: 10 });
   });
 
   it('is null without a sensor or a numeric state', () => {
-    expect(precipRateReading(undefined, undefined, 'mm')).toBeNull();
-    expect(precipRateReading('sensor.rr', sensor('unavailable', 'mm/h'), 'mm')).toBeNull();
+    expect(precipRateReading(undefined, undefined)).toBeNull();
+    expect(precipRateReading('sensor.rr', sensor('unavailable', 'mm/h'))).toBeNull();
   });
 });
 
