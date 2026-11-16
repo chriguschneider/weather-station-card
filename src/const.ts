@@ -1,4 +1,4 @@
-// Static lookups shared across the card. Pure data — no DOM, no Lit.
+// Static lookups shared across the card; no DOM, no Lit.
 
 /** HA's standard weather condition IDs.
  *  https://developers.home-assistant.io/docs/core/entity/weather/ */
@@ -49,32 +49,15 @@ const WeatherEntityFeature = {
   FORECAST_TWICE_DAILY: 4,
 } as const;
 
-/** Minimum Home Assistant version the card is verified against.
- *
- *  Conservative on purpose: this is a known-good floor, not the latest
- *  release. HA uses CalVer (`YYYY.M[.patch]`). 2023.4 shipped in April
- *  2023 — well over two years before this card's v2.0. By then the
- *  custom-card surface this card depends on (`hass.states`,
- *  `hass.config`, the `weather` forecast-feature flags, `ha-card` /
- *  `ha-icon`) had long stabilised. Anyone still on an HA older than
- *  that has skipped 30+ monthly releases and is far outside the
- *  population that installs cards from HACS today. The banner only
- *  fires *below* this floor, so a too-low value simply means the banner
- *  never helps anyone — it can never false-fire on a current install. */
+/** Floor for the old-HA banner (CalVer `YYYY.M[.patch]`). Conservative on
+ *  purpose: the banner only fires below it, so a low value can never
+ *  false-fire on a current install. */
 const MIN_HA_VERSION = '2023.4';
 
-/** True when `current` is an older HA release than `min`.
- *
- *  HA version strings are CalVer: `YYYY.M` or `YYYY.M.patch`, sometimes
- *  with a suffix (`2024.1.0b3`, `2024.1.0.dev0`). We compare only the
- *  numeric `year.month.patch` triple; any trailing suffix is ignored
- *  (a beta of a release is treated as that release — not "below").
- *
- *  Defensive by contract: missing or unparseable input returns `false`
- *  ("don't know → don't warn"). The caller must never show a
- *  compatibility banner on a version it failed to understand, because a
- *  false-fire on a perfectly current install is worse than a missed
- *  warning on a genuinely ancient one. */
+/** True when `current` is an older HA release than `min`. Only the numeric
+ *  `year.month.patch` triple counts, so a beta equals its release. Missing
+ *  or unparseable input returns `false`: never warn on a version we failed
+ *  to understand. */
 function isHaVersionBelow(
   current: string | null | undefined,
   min: string,
@@ -89,13 +72,11 @@ function isHaVersionBelow(
   return false; // equal — not below
 }
 
-/** Parse `YYYY.M[.patch][-suffix]` into a `[year, month, patch]` tuple.
- *  Returns `null` for missing input or anything without a numeric
- *  `year.month` head. Never throws. */
+/** Parse `YYYY.M[.patch][-suffix]` into `[year, month, patch]`; `null` when
+ *  there is no numeric `year.month` head. */
 function parseHaVersion(v: string | null | undefined): [number, number, number] | null {
   if (typeof v !== 'string') return null;
-  // Take the leading numeric dotted run; drop any `b3` / `.dev0` /
-  // `-alpha` suffix. `2024.1.0b3` → `2024.1.0`, `2024.1` → `2024.1`.
+  // Leading numeric run only; drops `b3` / `.dev0` / `-alpha` suffixes.
   const m = /^(\d+)\.(\d+)(?:\.(\d+))?/.exec(v.trim());
   if (!m) return null;
   const year = Number(m[1]);

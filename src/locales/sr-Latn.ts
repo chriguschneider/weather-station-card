@@ -1,6 +1,3 @@
-// Per-language string table for Serbian (Latin script).
-// One file per language so rollup can lazy-load on demand.
-// Shape and fallback resolution rules live in ../locale.ts.
 import type { LocaleEntry } from '../locale-types.js';
 
 const sr_Latn: LocaleEntry = {
@@ -111,10 +108,6 @@ const sr_Latn: LocaleEntry = {
   'sunny': 'Sunčano',
   'windy': 'Vetrovito',
   'windy-variant': 'Vetrovito',
-  // Canonical English strings for the visual editor. Other languages
-  // should add an `editor: {…}` block matching these keys; missing
-  // keys (or whole missing editor blocks) fall back to English at
-  // runtime via the `t()` helper in the editor module.
   'editor': {
     'temperature': 'Temperatura',
     'humidity': 'Vlažnost vazduha',
@@ -154,7 +147,7 @@ const sr_Latn: LocaleEntry = {
     'days': 'Dani (stanica)',
     'forecast_days': 'Dani (prognoza)',
     'weather_entity': 'Vremenski entitet',
-    // Section headings (A–F)
+    // Unused; kept for translations that still define these keys.
     'setup_heading': 'Podešavanje',
     'sensors_heading': 'Senzori',
     'layout_heading': 'Raspored',
@@ -181,12 +174,12 @@ const sr_Latn: LocaleEntry = {
     'card_heading': 'Kartica',
     'display_heading': 'Prikaz',
     'chart_heading': 'Grafikon',
-    // Mode radio
+    // Mode dropdown
     'mode_label': 'Režim',
     'mode_station': 'Samo stanica',
     'mode_forecast': 'Samo prognoza',
     'mode_combination': 'Kombinovano stanica i prognoza',
-    // Chart type radio
+    // Chart type dropdown
     'chart_type_label': 'Tip grafikona',
     'forecast_type_daily': 'Dnevno',
     'forecast_type_today': 'Danas (24h)',
@@ -254,8 +247,6 @@ const sr_Latn: LocaleEntry = {
     'number_of_forecasts': 'Vidljive kolone',
     'number_of_forecasts_hint': 'Koliko je traka vidljivo odjednom (podrazumevano 8 — uklapa se i 7 dana i satni prozor). 0 = uklopi sve bez skrolovanja. Kada broj učitanih traka premaši vidljive, skrolujte horizontalno za ostatak.',
     'locale': 'Prejačavanje lokalizacije',
-    // v2.3 editor redesign (ADR-0023) — panel summaries, past-source
-    // dropdown, clock dropdown, unit labels, helper texts.
     'past_source_label': 'Istorijski podaci',
     'past_source_station': 'Sa moje vremenske stanice (senzori)',
     'past_source_openmeteo': 'Sa Open-Meteo — nemam vremensku stanicu',
