@@ -1,13 +1,6 @@
-// Resolve a CSS `var(--token, fallback)` string against the document's
-// computed style. Pass-through for plain colour strings (rgb/hex/hsl/…)
-// so chart consumers don't need to care whether a default is theme-
-// aware or a literal.
-//
-// Used by chart/orchestrator to expand the theme-aware colour defaults
-// in DEFAULTS_FORECAST (e.g. `var(--info-color, rgba(68, 115, 158, 1.0))`)
-// at draw time. uPlot — like Chart.js before it (ADR-0012) — takes
-// resolved colour strings and does not resolve `var()` natively in
-// series stroke / fill colours.
+// Resolve a CSS `var(--token, fallback)` string against the computed style;
+// plain colour strings pass through. uPlot takes resolved colour strings and
+// does not resolve `var()` in series stroke / fill (ADR-0012).
 
 /** Same as `resolveCssVar`, against an already computed style (or a lazy
  *  getter for one that may throw). */

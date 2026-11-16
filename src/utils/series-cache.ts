@@ -1,40 +1,21 @@
-// Persistent stale-while-revalidate cache for the card's two data
-// series (station statistics, weather forecast). Perf pass 2026-08.
-//
-// Why: the FIRST chart paint is gated on every expected data source
-// having produced a value (`DataSourceController.allExpectedDataReady`). The forecast
-// usually lands in tens of ms (HA serves the weather entity's cached
-// forecast), but the station side is a recorder/statistics_during_period
-// roundtrip — 0.5–3 s on Pi-class hosts. Until then the user sees the
-// skeleton. Persisting the last payload per fetch signature lets the
-// card render REAL data immediately after a reload; the live fetch
-// overwrites it seconds later (and `forecastsEqual` in main.ts skips
-// the re-render entirely when nothing changed).
-//
-// Storage shape is versioned; unknown versions and malformed JSON are
-// treated as a miss. Writes are best-effort — quota errors / private
-// mode fall through silently, the card just keeps its skeleton path.
-
-/** Structural stand-in for the card's ForecastEntry. The cache only
- *  round-trips JSON — it never reads a field — so a minimal record
- *  type keeps this module a true leaf (utils-leaf rule: no imports
- *  from other src/ subtrees, not even type-only). Callers narrow the
- *  loaded array back to their own entry type. */
+// Persistent stale-while-revalidate cache for the card's two data series
+// (station statistics, forecast): the first chart paint waits for every
+// source, so the last payload per fetch signature is shown until the live
+// fetch lands. Unknown versions and malformed JSON are a miss; writes are
+// best-effort.
 import { safeLocalStorage } from './safe-storage.js';
 
+/** Structural stand-in for ForecastEntry: the cache only round-trips JSON,
+ *  and a minimal record type keeps this module a leaf (no imports from other
+ *  src/ subtrees). Callers narrow the loaded array to their own type. */
 export type CachedSeriesEntry = Record<string, unknown>;
 
 const PREFIX = 'wsc_series_';
-// v2: keys carry the card's time zone (ADR-0030).
-// v3: daily entries are card days (#355): station days reduced from
-// hourly statistics, forecast days anchored at the card's midnight.
+// Bump when the stored shape or what an entry means changes: keys carry the
+// time zone (ADR-0030) and daily entries are card days (#355).
 const VERSION = 3;
 
-/** Reject cached payloads older than this. Stale data is *shown* on
- *  purpose (that's the point), but a payload from last week would
- *  render a visibly wrong window for the seconds until the live fetch
- *  lands — 12 h keeps the flash plausible (worst case: yesterday
- *  evening's columns for a moment). */
+/** Older payloads would show a visibly wrong window until the live fetch lands. */
 const MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
 interface StoredSeries {
@@ -67,10 +48,8 @@ export function loadSeriesCache(key: string, now: number = Date.now()): CachedSe
   }
 }
 
-/** `forecast` is typed `object` (not CachedSeriesEntry) so callers can
- *  pass interface-typed entry arrays — interfaces have no index
- *  signature and would not assign to a Record. The entries only get
- *  JSON-serialized here, never field-read. */
+/** `forecast` is typed `object` because interface-typed entries have no
+ *  index signature and would not assign to a Record. */
 export function saveSeriesCache(key: string, forecast: ReadonlyArray<object>, now: number = Date.now()): void {
   const storage = storageOrNull();
   if (!storage) return;
@@ -82,11 +61,8 @@ export function saveSeriesCache(key: string, forecast: ReadonlyArray<object>, no
   pruneExpiredSeries(storage, now);
 }
 
-/** Sweep expired / unreadable `wsc_series_*` entries. Config edits
- *  (entity swaps, window changes) move a card to a new cache key and
- *  orphan the old one — without this sweep those slots would sit in
- *  localStorage forever. Runs on every save; the card has a handful
- *  of keys at most, so the scan is cheap. Best-effort like the write. */
+/** Sweep expired / unreadable `wsc_series_*` entries: a config edit moves a
+ *  card to a new key and orphans the old one. Best-effort like the write. */
 function pruneExpiredSeries(storage: Storage, now: number): void {
   try {
     const stale: string[] = [];

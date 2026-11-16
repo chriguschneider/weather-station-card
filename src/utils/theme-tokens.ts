@@ -1,22 +1,9 @@
-// Caches the four CSS custom properties the chart code re-reads on
-// every redraw: `--card-background-color`, `--primary-text-color`,
-// `--divider-color`, `--secondary-text-color`. HA-Frontend writes
-// these on `document.body` (global theme); a view-level `theme:` lands
-// on `hui-view-container` instead, so callers pass the card element,
-// which inherits both;
-// the values are stable within a theme session, so `getComputedStyle`
-// only has to run once per session per host.
-//
-// Why this exists: scrolling through hourly mode triggers many
-// chart redraws per second. Each redraw used to call
-// `getComputedStyle(document.body).getPropertyValue(...)` four
-// times — a style-resolution roundtrip per call. Cached, that drops
-// to one resolution per theme.
-//
-// Invalidation: HA-Frontend mutates `document.documentElement`'s
-// `class` attribute when the user switches theme (light/dark/custom).
-// A single MutationObserver on `<html>` clears the cache when the
-// class list changes, so the next read sees the new tokens.
+// Memoises the four theme CSS variables the chart re-reads on every redraw
+// (one getComputedStyle per theme per host). HA writes them on
+// `document.body`, a view-level `theme:` on `hui-view-container`, so callers
+// pass the card element, which inherits both.
+// A MutationObserver on <html> (class, style) bumps `generation`, which
+// invalidates every cached host.
 
 export interface ThemeTokens {
   /** `--card-background-color` */
@@ -39,9 +26,7 @@ let observedElement: HTMLElement | null = null;
 
 function ensureInvalidationObserver(): void {
   if (typeof MutationObserver === 'undefined') return;
-  // Use the document's <html> element as the change signal — HA-Frontend
-  // toggles classes there on theme switch. Body's style attribute may
-  // also change inline; observe both via the html-root observer.
+  // <html> is the change signal: HA toggles its class / style on theme switch.
   const root = typeof document !== 'undefined' ? document.documentElement : null;
   if (!root || root === observedElement) return;
   if (observer) observer.disconnect();
@@ -64,12 +49,8 @@ function readTokens(host: HTMLElement): ThemeTokens {
   };
 }
 
-/** Returns the four theme tokens for `host`, computed lazily and
- *  memoised across calls until HA-Frontend swaps the theme.
- *
- *  `host` defaults to `document.body` (where HA-Frontend writes the
- *  card theme). Tests can pass a synthesised element to keep the
- *  read deterministic. */
+/** The four theme tokens for `host` (default `document.body`), memoised
+ *  until the theme changes. */
 export function getThemeTokens(host?: HTMLElement | null): ThemeTokens {
   const el = host ?? (typeof document !== 'undefined' ? document.body : null);
   if (!el) {
@@ -83,9 +64,8 @@ export function getThemeTokens(host?: HTMLElement | null): ThemeTokens {
   return tokens;
 }
 
-/** Force the cache to drop its entry for `host`. Exported for tests
- *  and for the rare case where a caller knows the theme just changed
- *  but the MutationObserver hasn't fired yet. */
+/** Drop the entry for `host`, for a caller that knows the theme just
+ *  changed before the observer fired. */
 export function invalidateThemeTokens(host?: HTMLElement | null): void {
   const el = host ?? (typeof document !== 'undefined' ? document.body : null);
   if (!el) return;

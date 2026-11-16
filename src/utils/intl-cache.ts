@@ -1,26 +1,8 @@
-// Process-wide cache of `Intl.DateTimeFormat` and `Intl.NumberFormat`
-// instances, keyed by `(language, options)`. Construction of these
-// formatters runs an ICU locale lookup and resolves a per-instance
-// options bag — ~0.5-2 ms per call on a desktop, more on a Pi. The
-// formatters themselves are immutable; sharing them across callers
-// is safe and removes the per-frame construction cost.
-//
-// Hot callers covered today:
-//   - `daily-tick-labels.ts` (4 formatters, already cached per
-//     plugin instance — generalising drops the duplication when the
-//     user toggles between render modes and a fresh plugin lands)
-//   - `main.ts` `updateClock` (3 formatters per tick × once per
-//     second from a `setInterval`)
-//   - `main.ts` sun-row render (2 formatters per render — 2-5×/sec
-//     under `set hass` fanout)
-//   - `scroll-ux.ts` per-tick date label
-//
-// Eviction: simple Map with insertion-order eviction once the entry
-// count crosses `MAX_ENTRIES`. The realistic working set is one
-// `language` × ~6 distinct options shapes, so the cap of 32 is
-// effectively unbounded for normal use; the cap exists only to
-// stop a pathological caller (e.g. a fuzzed options bag) from
-// growing the cache without bound.
+// Process-wide cache of `Intl.DateTimeFormat` / `Intl.NumberFormat`, keyed
+// by `(language, options)`. Construction runs an ICU lookup; the instances
+// are immutable, so sharing them is safe.
+// FIFO-capped at MAX_ENTRIES only to bound a pathological caller (a fuzzed
+// options bag); a normal working set is far below it.
 
 const MAX_ENTRIES = 32;
 
@@ -28,16 +10,13 @@ const dateTimeCache = new Map<string, Intl.DateTimeFormat>();
 const numberCache = new Map<string, Intl.NumberFormat>();
 
 function stableKey(language: string, options: object | undefined): string {
-  // JSON.stringify on a small options bag is faster than building a
-  // structured key by hand; the bag has < 10 properties and only
-  // primitive values (Intl options never contain functions or refs).
+  // Intl options bags hold only primitives, so JSON.stringify is a stable key.
   return language + '|' + (options ? JSON.stringify(options) : '');
 }
 
 function bump<T>(cache: Map<string, T>, key: string, value: T): T {
   cache.set(key, value);
   if (cache.size > MAX_ENTRIES) {
-    // Map iteration is insertion-order; the first key is the oldest.
     const oldest = cache.keys().next().value;
     if (oldest !== undefined) cache.delete(oldest);
   }

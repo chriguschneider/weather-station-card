@@ -1096,9 +1096,8 @@ export class ForecastDataSource {
   async unsubscribe(): Promise<void> {
     this._listener = null;
     const pending = this._unsubPromise;
-    // Always clear the slot first so a subsequent unsubscribe() doesn't
-    // await the same (possibly rejected) promise. If subscribeMessage
-    // rejected, awaiting it again would just re-throw without progress.
+    // Clear the slot first so a later unsubscribe() does not await the same
+    // (possibly rejected) promise.
     this._unsubPromise = null;
     if (!pending) return;
     try {
@@ -1154,12 +1153,9 @@ export class ForecastDataSource {
         this._emit({ forecast: [], error: 'hass connection unavailable' });
         return;
       }
-      // Tag each entry with the weather entity's wind_speed_unit so
-      // the renderer can convert correctly even when the station
-      // sensor (which feeds the synthetic weather attributes used as
-      // the default fromUnit) reports a different unit. Without this,
-      // a m/s station + km/h weather entity yields ~3.6× too-high
-      // forecast wind.
+      // Tag entries with the weather entity's wind_speed_unit: the renderer's
+      // default fromUnit comes from the station sensor, which may differ
+      // (m/s station + km/h entity would show forecast wind too high).
       const wxWindUnit = state.attributes?.wind_speed_unit as string | undefined;
       this._unsubPromise = this.hass.connection.subscribeMessage(
         (event) => {

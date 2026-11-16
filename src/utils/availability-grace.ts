@@ -1,15 +1,8 @@
-// Grace-period bookkeeping for temporarily unavailable sensors
-// (issue #213). After a Home Assistant restart every sensor flips to
-// `unavailable` for a minute or two — flagging that instantly (red
-// banner, one line per sensor) read as an error state for a routine
-// event. These pure helpers let the card distinguish "just became
-// unavailable, probably a restart" (in grace → subtle hint, keep last
-// known values) from "has been gone for a while" (overdue → compact
-// warning hint).
-//
-// The functions are pure over an immutable map so the card can keep
-// the state on a reactive field: a changed situation returns a NEW
-// object, an unchanged one returns the SAME reference (no re-render).
+// Grace-period bookkeeping for temporarily unavailable sensors (#213): an
+// HA restart flips every sensor to `unavailable` for a minute or two, so
+// "just went missing" (in grace) differs from "gone for a while" (overdue).
+// Pure over an immutable map: a changed situation returns a NEW object, an
+// unchanged one the SAME reference.
 
 /** entityId → epoch ms of the first scan that saw it unavailable. */
 export type MissingSinceMap = Readonly<Record<string, number>>;
@@ -57,8 +50,8 @@ export function overdueMissing(
 
 /** Milliseconds until the earliest in-grace entry becomes overdue;
  *  null when nothing is pending (map empty or everything overdue
- *  already). The card arms a one-shot re-scan timer with this so the
- *  overdue state surfaces even when HA goes quiet. */
+ *  already). The controller arms a one-shot re-scan timer with it so
+ *  the overdue state surfaces even when HA goes quiet. */
 export function nextExpiryDelay(
   map: MissingSinceMap,
   graceMs: number,
