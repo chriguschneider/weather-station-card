@@ -261,7 +261,7 @@ src/
 ├── forecast-utils.ts          Pure helpers: hourlyTempSeries,
 │                              normalizeForecastMode, startOfTodayMs,
 │                              filterMidnightStaleForecast,
-│                              aggregateThreeHour, the forecast-fetch
+│                              aggregateThreeHourCalendar, the forecast-fetch
 │                              key/equality helpers + the v1.0.2
 │                              midnight-transition guards.
 │
@@ -402,7 +402,7 @@ src/
 │   │                          Sections cluster by user intent rather
 │   │                          than by technical concern — see ADR-0005.
 │   ├── types.ts               Shared types: EditorLike, EditorContext,
-│   │                          TFn, ChangeEvt.
+│   │                          TFn.
 │   ├── expansion-panel.ts     Shared <ha-expansion-panel> wrapper for
 │   │                          the collapsible sections (ADR-0023):
 │   │                          icon + title + state summary + reset

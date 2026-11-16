@@ -15,7 +15,7 @@
 
 import { test, expect } from '@playwright/test';
 import { openHarness } from './_helpers.js';
-import { buildBaseConfig, SENSORS, WEATHER_ENTITY } from './fixtures/generate.js';
+import { buildBaseConfig, WEATHER_ENTITY } from './fixtures/generate.js';
 
 declare global {
   interface Window {
@@ -100,32 +100,6 @@ test.describe('editor', () => {
     const afterForecast = await page.evaluate(() => window.__wsce.lastEvent);
     expect(afterForecast?.config.show_station).toBe(false);
     expect(afterForecast?.config.show_forecast).toBe(true);
-  });
-
-  test('_sensorPickerChanged adds and removes sensor keys', async ({ page }) => {
-    await page.evaluate((cfg) => window.__wsce.mount(cfg), buildBaseConfig());
-
-    // Add a new sensor.
-    await page.evaluate(() => {
-      const ed = window.__wsce.get() as HTMLElement & {
-        _sensorPickerChanged: (key: string, value: string | null | undefined) => void;
-      };
-      ed._sensorPickerChanged('snow_depth', 'sensor.test_snow_depth');
-    });
-    const afterAdd = await page.evaluate(() => window.__wsce.lastEvent);
-    expect((afterAdd?.config.sensors as Record<string, string>).snow_depth).toBe('sensor.test_snow_depth');
-
-    // Remove an existing sensor by passing empty string.
-    await page.evaluate(() => {
-      const ed = window.__wsce.get() as HTMLElement & {
-        _sensorPickerChanged: (key: string, value: string | null | undefined) => void;
-      };
-      ed._sensorPickerChanged('humidity', '');
-    });
-    const afterRemove = await page.evaluate(() => window.__wsce.lastEvent);
-    expect((afterRemove?.config.sensors as Record<string, string>).humidity).toBeUndefined();
-    // Other sensors unchanged.
-    expect((afterRemove?.config.sensors as Record<string, string>).temperature).toBe(SENSORS.temperature);
   });
 
   test('_actionChanged sets and clears action keys', async ({ page }) => {
