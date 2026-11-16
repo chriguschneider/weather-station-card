@@ -6,6 +6,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.1.0-beta.2] — 2026-11-16
+
+**Why this beta:** the card now handles units in one place. Every value, from your station, your weather service or Open-Meteo, is brought into one unit when it enters the card and converted into your display unit when it is shown. A forum report, the pressure change in hPa next to a value in inHg, was the seventh unit bug of this kind since May, so instead of one more patch the unit handling was rewritten. If your setup is not all-metric (°F, inHg, mph, knots, inches, kPa), this beta is for you: please check that every number carries the right unit.
+
+**What may look different:** on an all-metric setup, almost nothing. A pressure sensor in mbar, inHg or kPa is rounded like hPa (`940 hPa`, not `940.2 hPa`), the main temperature carries the unit of your temperature sensor, and in the today view the forecast wind is no longer too high when your station and your weather service report wind in different units.
+
+**Beta.** HACS only offers it if you enabled beta versions for this card: HACS → Weather Station Card → ⋮ → Redownload → pick 3.1.0-beta.2. Refresh the browser cache afterwards (hard reload, or clear the app cache in the Home Assistant companion app). If a number or a unit looks wrong, please [open an issue](https://github.com/chriguschneider/weather-station-card/issues).
+
 ### Fixed
 
 - The weather symbol and the pressure trend now read every unit Home Assistant offers. Before, wind in knots was taken as m/s, a temperature in Kelvin as °C, and a pressure sensor in kPa always showed "Pressure stable". A sensor with a unit the card does not know no longer feeds the symbol; a sensor without any unit is read in Home Assistant's unit for that value (#478).
@@ -25,6 +33,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - One table of units and their conversion factors, taken from Home Assistant's own, as the base for a single units model. Nothing changes on the dashboard (#492).
 - Every value now enters the card through the one units table and leaves it in your display unit; the old converters are gone (#478).
+- Comments brought in line with the code and dead code removed; the built card is byte-identical before and after that part (#478).
 
 ## [3.1.0-beta.1] — 2026-11-15
 
