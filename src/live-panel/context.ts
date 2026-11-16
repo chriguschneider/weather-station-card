@@ -29,6 +29,7 @@ export interface LiveConfig {
   elevation?: unknown;
   show_attributes?: boolean;
   forecast?: {
+    type?: string;
     precipitation_color?: string;
     show_wind_forecast?: boolean;
     show_wind_arrow?: boolean;
@@ -89,8 +90,6 @@ export interface LivePanelCtx {
   readings: Readonly<Record<LiveReadingKey, LiveReading>>;
   /** The card's display units (ADR-0035, point 4). */
   displayUnits: DisplayUnits;
-  /** Unit of forecast entries without their own `wind_speed_unit` (station statistics). */
-  stationWindUnit: string;
   values: LiveValues;
   /** Wraps content in a more-info link for the entity (or returns it). */
   entityLink: LinkFn;

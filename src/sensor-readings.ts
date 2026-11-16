@@ -10,7 +10,7 @@
 
 import { resolveLiveSource, type LiveSource } from './live-source.js';
 import { resolveDisplayUnits, type DisplayUnits } from './display-units.js';
-import { parseUnit, toCanonical, type Quantity } from './utils/units.js';
+import { CANONICAL_UNIT, parseUnit, toCanonical, type Quantity } from './utils/units.js';
 import { luxScaleFor } from './utils/unit-converters.js';
 import { parseNumericSafe } from './utils/numeric.js';
 
@@ -58,8 +58,6 @@ export interface SensorReadings {
   precipitation: Reading;
   zero_degree_level: Reading;
   zero_degree_level_48h: Reading;
-  /** The station's wind unit, shared by speed and gust. */
-  units: { wind: string };
   /** The card's display units, one per quantity (ADR-0035). */
   displayUnits: DisplayUnits;
   /** The units a sensor without `unit_of_measurement` is read in. */
@@ -153,15 +151,7 @@ export function extractSensorReadings(input: {
     lastGood[eid] = s.state;
     return s.state;
   };
-  const sensorUnit = (key: string): string | undefined => unitOf(stateOf(idOf(sensors[key])));
-
-  const wxAttrs = (weatherEntity ? stateOf(weatherEntity)?.attributes : undefined) ?? {};
-  const wxUnit = (attr: string): string | undefined => {
-    const u = wxAttrs[attr];
-    return typeof u === 'string' && u ? u : undefined;
-  };
-
-  const units = sourceUnits(sensorUnit, wxUnit);
+  const { sensorUnit, wxAttrs, wxUnit } = unitLookups(sensors, states, weatherEntity);
   const assumed = assumedUnits(sensorUnit, wxUnit, unitSystem);
   const sided = (key: string, sensorDefault: string, wx: string) => (fromWeather: boolean): string =>
     fromWeather ? wx : sensorUnit(key) ?? sensorDefault;
@@ -215,7 +205,6 @@ export function extractSensorReadings(input: {
     precipitation: read('precipitation', null, () => sensorUnit('precipitation') ?? assumed.precipitation),
     zero_degree_level: zeroDegree('zero_degree_level'),
     zero_degree_level_48h: zeroDegree('zero_degree_level_48h'),
-    units,
     assumed: { pressure: assumed.pressure, precipitation: assumed.precipitation },
     displayUnits: resolveDisplayUnits({
       temperature: [sensorUnit('temperature'), wxUnit('temperature_unit'), unitSystem.temperature],
@@ -232,6 +221,86 @@ export function extractSensorReadings(input: {
   };
 }
 
+// The sensor's own non-empty unit and the weather entity's attributes,
+// shared by the live readings and `stationUnits`.
+function unitLookups(
+  sensors: Partial<Record<string, unknown>>,
+  states: StatesLike,
+  weatherEntity: string | undefined,
+) {
+  const sensorUnit = (key: string): string | undefined => {
+    const eid = idOf(sensors[key]);
+    return eid ? unitOf(states?.[eid]) : undefined;
+  };
+  const wxAttrs = (weatherEntity ? states?.[weatherEntity]?.attributes : undefined) ?? {};
+  const wxUnit = (attr: string): string | undefined => {
+    const u = wxAttrs[attr];
+    return typeof u === 'string' && u ? u : undefined;
+  };
+  return { sensorUnit, wxAttrs, wxUnit };
+}
+
+/** The unit each station sensor's statistics and states are in. */
+export interface StationUnits {
+  temperature: string;
+  dew_point: string;
+  pressure: string;
+  wind_speed: string;
+  gust_speed: string;
+  precipitation: string;
+}
+
+/** Per key the sensor's own unit as written (an unknown one too, which
+ *  then converts to null), else the unit a sensor without one is read in
+ *  (ADR-0035, amendment of 2026-11-16). */
+export function stationUnits(input: {
+  sensors: Partial<Record<keyof StationUnits, unknown>>;
+  states: StatesLike;
+  weatherEntity: string | undefined;
+  unitSystem?: UnitSystemLike;
+}): StationUnits {
+  const { sensorUnit, wxUnit } = unitLookups(input.sensors, input.states, input.weatherEntity || undefined);
+  const assumed = assumedUnits(sensorUnit, wxUnit, input.unitSystem ?? {});
+  return {
+    temperature: sensorUnit('temperature') ?? assumed.temperature,
+    dew_point: sensorUnit('dew_point') ?? assumed.dewPoint,
+    pressure: sensorUnit('pressure') ?? assumed.pressure,
+    wind_speed: sensorUnit('wind_speed') ?? assumed.wind,
+    gust_speed: sensorUnit('gust_speed') ?? assumed.gust,
+    precipitation: sensorUnit('precipitation') ?? assumed.precipitation,
+  };
+}
+
+/** The units of a weather entity's attributes and forecast. */
+export interface WeatherUnits {
+  temperature: string;
+  pressure: string;
+  wind_speed: string;
+  precipitation: string;
+}
+
+/** Per quantity the entity's own unit attribute as written, else Home
+ *  Assistant's unit system when the table knows it, else canonical. An
+ *  entity states its units in these attributes and delivers its forecast
+ *  in them (Home Assistant, homeassistant/components/weather/__init__.py). */
+export function weatherEntityUnits(
+  attributes: Record<string, unknown> | undefined,
+  unitSystem: UnitSystemLike = {},
+): WeatherUnits {
+  const attr = (key: string): string | undefined => {
+    const u = attributes?.[key];
+    return typeof u === 'string' && u ? u : undefined;
+  };
+  return {
+    temperature: attr('temperature_unit')
+      ?? knownUnit('temperature', unitSystem.temperature) ?? CANONICAL_UNIT.temperature,
+    pressure: attr('pressure_unit') ?? knownUnit('pressure', unitSystem.pressure) ?? CANONICAL_UNIT.pressure,
+    wind_speed: attr('wind_speed_unit') ?? knownUnit('speed', unitSystem.wind_speed) ?? CANONICAL_UNIT.speed,
+    precipitation: attr('precipitation_unit')
+      ?? knownUnit('precipitation', unitSystem.accumulated_precipitation) ?? CANONICAL_UNIT.precipitation,
+  };
+}
+
 // A sensor without a unit is read in the unit Home Assistant would give
 // its quantity, not as an unknown unit (ADR-0035, amendment of
 // 2026-11-16): template sensors often carry none. A weather entity
@@ -245,6 +314,11 @@ function assumedUnits(
   const pressure = knownUnit('pressure', wxUnit('pressure_unit'), unitSystem.pressure) ?? 'hPa';
   const wind = (otherKey: string): string =>
     knownUnit('speed', sensorUnit(otherKey), wxUnit('wind_speed_unit'), unitSystem.wind_speed) ?? 'm/s';
+  const wx = weatherEntityUnits({
+    temperature_unit: wxUnit('temperature_unit'),
+    pressure_unit: wxUnit('pressure_unit'),
+    wind_speed_unit: wxUnit('wind_speed_unit'),
+  }, unitSystem);
   return {
     temperature,
     dewPoint: knownUnit('temperature', sensorUnit('temperature')) ?? temperature,
@@ -254,21 +328,9 @@ function assumedUnits(
     precipitation: knownUnit(
       'precipitation', wxUnit('precipitation_unit'), unitSystem.accumulated_precipitation,
     ) ?? 'mm',
-    wxTemperature: wxUnit('temperature_unit') ?? temperature,
-    wxPressure: wxUnit('pressure_unit') ?? pressure,
-    wxWind: wxUnit('wind_speed_unit') ?? knownUnit('speed', unitSystem.wind_speed) ?? 'm/s',
-  };
-}
-
-// Source units come from the sensors; a quantity with no sensor unit
-// takes the weather entity's own unit (#253: PirateWeather mph read as
-// m/s), then the card's base unit.
-function sourceUnits(
-  sensorUnit: (key: string) => string | undefined,
-  wxUnit: (attr: string) => string | undefined,
-): SensorReadings['units'] {
-  return {
-    wind: sensorUnit('wind_speed') || sensorUnit('gust_speed') || wxUnit('wind_speed_unit') || 'm/s',
+    wxTemperature: wx.temperature,
+    wxPressure: wx.pressure,
+    wxWind: wx.wind_speed,
   };
 }
 

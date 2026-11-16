@@ -15,14 +15,11 @@ export interface ForecastEntry {
    *  single mean temperature instead). */
   templow?: number | null;
   precipitation: number | null;
+  /** Mean wind in m/s, the canonical unit (ADR-0035), from every source. */
   wind_speed: number | null;
+  /** Gust in m/s, like `wind_speed`. */
   wind_gust_speed: number | null;
   wind_bearing: number | null;
-  /** Unit of `wind_speed` / `wind_gust_speed` for this entry: forecast
-   *  entries carry the weather entity's unit, measured ones the sensor's.
-   *  Without the tag the station unit is assumed and forecast wind would
-   *  be mis-converted. Missing falls back to the station unit. */
-  wind_speed_unit?: string;
   pressure: number | null;
   humidity: number | null;
   uv_index: number | null;
@@ -544,10 +541,15 @@ function collectNumeric<T>(slice: ReadonlyArray<T>, key: keyof ForecastEntry): n
   return values;
 }
 
-function meanOf<T>(slice: ReadonlyArray<T>, key: keyof ForecastEntry): number | null {
+function exactMeanOf<T>(slice: ReadonlyArray<T>, key: keyof ForecastEntry): number | null {
   const values = collectNumeric(slice, key);
   if (!values.length) return null;
-  return Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10;
+  return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+function meanOf<T>(slice: ReadonlyArray<T>, key: keyof ForecastEntry): number | null {
+  const mean = exactMeanOf(slice, key);
+  return mean === null ? null : Math.round(mean * 10) / 10;
 }
 
 function sumOf<T>(slice: ReadonlyArray<T>, key: keyof ForecastEntry): number | null {
@@ -584,8 +586,8 @@ function modeOf<T>(slice: ReadonlyArray<T>, key: keyof ForecastEntry): string {
 
 /** One block from a slice of hourly entries: temperature = max and
  *  templow = min of the pooled real hourly values, precipitation and
- *  sunshine summed, probability maxed, other numerics averaged (1
- *  decimal), condition = most frequent. An empty slice gives an
+ *  sunshine summed, probability maxed, wind and gust averaged
+ *  unrounded, other numerics averaged (1 decimal), condition = most frequent. An empty slice gives an
  *  all-null block. */
 function aggregateBlock<T extends Partial<ForecastEntry>>(
   slice: ReadonlyArray<T>,
@@ -608,8 +610,10 @@ function aggregateBlock<T extends Partial<ForecastEntry>>(
     // 0..3 h per block; the caller sets day_length = 3 for the bar fraction.
     sunshine: sumOf(slice, 'sunshine'),
     precipitation_probability: maxOf(slice, 'precipitation_probability'),
-    wind_speed: meanOf(slice, 'wind_speed'),
-    wind_gust_speed: meanOf(slice, 'wind_gust_speed'),
+    // Unrounded: one decimal of m/s would be a step of 0.36 km/h. The
+    // wind row rounds the mean in the display unit instead.
+    wind_speed: exactMeanOf(slice, 'wind_speed'),
+    wind_gust_speed: exactMeanOf(slice, 'wind_gust_speed'),
     wind_bearing: meanOf(slice, 'wind_bearing'),
     pressure: meanOf(slice, 'pressure'),
     humidity: meanOf(slice, 'humidity'),

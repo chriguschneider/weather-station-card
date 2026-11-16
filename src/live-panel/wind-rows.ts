@@ -5,7 +5,7 @@ import { html } from 'lit';
 import { cardinalDirectionsIcon } from '../const.js';
 import { MDI_PATHS } from '../icons/mdi-paths.js';
 import { sanitizeForecastEntries } from '../chart/sanitize.js';
-import { displayNumber } from '../display-units.js';
+import { CANONICAL_UNIT, fromCanonical, parseUnit, roundForDisplay } from '../utils/units.js';
 import { attrEntity, shownText, shownValue, unitLabel, type LivePanelCtx } from './context.js';
 
 const ICON_INDEX_BY_DIR: Record<string, number> = {
@@ -26,12 +26,29 @@ export function windDirText(directions: readonly string[], deg: number | string)
   return deg;
 }
 
-/** A forecast entry's own unit (set by ForecastDataSource from the weather
- *  entity) wins over the station's, so forecast wind is not mis-converted
- *  when the two disagree. Null for an unknown unit. */
-export function convertWind(ctx: LivePanelCtx, raw: unknown, sourceUnit?: string): number | null {
-  if (typeof raw !== 'number' || !Number.isFinite(raw)) return null;
-  return displayNumber('speed', raw, sourceUnit ?? ctx.stationWindUnit, ctx.displayUnits.speed);
+/** A forecast entry's wind (m/s, ADR-0035) in the display unit, rounded.
+ *  `blockMean` marks a 3-hour mean of the 'today' view, which is cut to
+ *  one decimal in the display unit before the display rounding. */
+export function convertWind(
+  ctx: Pick<LivePanelCtx, 'displayUnits'>,
+  ms: unknown,
+  blockMean = false,
+): number | null {
+  if (typeof ms !== 'number' || !Number.isFinite(ms)) return null;
+  const unit = ctx.displayUnits.speed;
+  let shown: number;
+  // No round trip for m/s itself, as in `displayNumber`.
+  if (parseUnit('speed', unit) === CANONICAL_UNIT.speed) {
+    shown = ms;
+  } else {
+    const converted = fromCanonical('speed', ms, unit);
+    if (converted === null) return null;
+    // Twelve digits drop the float noise of the way through m/s: 30.5 km/h
+    // comes back as 30.499999999999996 and would show 30.
+    shown = Number(converted.toPrecision(12));
+  }
+  if (blockMean) shown = Math.round(shown * 10) / 10;
+  return roundForDisplay('speed', shown, unit);
 }
 
 export function windSpeedText(ctx: LivePanelCtx, key: 'wind_speed' | 'gust_speed'): string {
@@ -75,7 +92,6 @@ export function spriteIcon(fullName: string | undefined, cls = '') {
 interface ForecastWindEntry {
   wind_speed?: unknown;
   wind_gust_speed?: unknown;
-  wind_speed_unit?: string;
   wind_bearing?: number | string | null;
 }
 
@@ -98,7 +114,7 @@ export function renderForecastWind(
   // Every speed gets the width of the longest one, so all cells wrap
   // (speed below the arrow) or none does, whatever the screen width.
   const speeds = forecast.map((item) =>
-    convertWind(ctx, item.wind_gust_speed ?? item.wind_speed, item.wind_speed_unit));
+    convertWind(ctx, item.wind_gust_speed ?? item.wind_speed, fc.type === 'today'));
   const maxChars = Math.max(0, ...speeds.map((v) => (v === null ? 0 : String(v).length)));
   const speedStyle = maxChars > 0 ? `min-width: ${maxChars}ch` : '';
 
