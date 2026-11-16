@@ -31,7 +31,7 @@ const EXTRA_TOP_LEVEL_KEYS = [
   'visibility',
 ] as const;
 
-// Options the card no longer reads, still accepted silently so existing
+// Retired options: not read, still accepted silently so existing
 // dashboards don't start warning.
 const RETIRED_TOP_LEVEL_KEYS = [
   'show_sunshine_duration',

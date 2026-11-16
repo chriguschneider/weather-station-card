@@ -93,7 +93,7 @@ export class ChartBuildError extends Error {
 
 /** True when the station/forecast boundary represents the SAME calendar
  *  day, i.e. station's last entry and forecast's first entry are both
- *  "today". Used to gate the daily-doubled-today framing — see the
+ *  "today". Gates the daily-doubled-today framing — see the
  *  `doubledToday` site in `buildForecastChart`. Exported for unit testing
  *  the post-midnight regression (#162 follow-up). */
 export function boundaryIsSameDay(
@@ -163,6 +163,7 @@ export function toDisplayData<T extends ForecastChartData>(
  *  keep a 1 in floor in both modes. buildChart derives the actual ceiling
  *  from it and the data. */
 export function precipAxisFloor(isHourlyish: boolean, precipUnit: string): number {
+  // eslint-disable-next-line no-restricted-syntax -- the 1 in axis floor is a rule for inches alone
   if (precipUnit === 'in') return 1;
   const mm = isHourlyish ? 4 : 20;
   return fromCanonical('precipitation', mm, precipUnit) ?? mm;

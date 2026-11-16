@@ -214,6 +214,59 @@ export default tseslint.config(
     },
   },
 
+  // ADR-0035, point 6: units are named and read in the units table and
+  // the entry modules. Everywhere else a unit comes from CANONICAL_UNIT,
+  // the resolved display units or a reading.
+  {
+    files: ['src/**/*.ts'],
+    ignores: [
+      'src/utils/units.ts',
+      'src/locales/**',
+      'src/sensor-readings.ts',
+      'src/data-source.ts',
+      'src/openmeteo-source.ts',
+      'src/sensor-match.ts',
+      'src/editor/render-units.ts',
+      'src/defaults.ts',
+    ],
+    rules: {
+      'no-restricted-syntax': ['error',
+        {
+          selector: 'Literal[value=/^(?:°C|°F|hPa|mbar|kPa|inHg|mmHg|m\\x2Fs|km\\x2Fh|mph|kn|Bft|mm|cm|in|mm\\x2Fh|in\\x2Fh|lx|W\\x2Fm²)$/]',
+          message: 'Unit literal outside the units modules (ADR-0035): use CANONICAL_UNIT, the display units or the reading\'s unit.',
+        },
+        {
+          selector: 'TemplateElement[value.cooked=/(?:^|[^A-Za-z:])(?:°C|°F|hPa|mbar|kPa|inHg|mmHg|m\\x2Fs|km\\x2Fh|mph|kn|Bft|mm|cm|mm\\x2Fh|in\\x2Fh|lx|W\\x2Fm²)(?![A-Za-z])/]',
+          message: 'Unit text in a template outside the units modules (ADR-0035): take the label from unitLabel() or the reading.',
+        },
+        {
+          selector: 'MemberExpression[property.name="unit_of_measurement"], ObjectPattern > Property[key.name="unit_of_measurement"], Literal[value="unit_of_measurement"]',
+          message: 'unit_of_measurement is read in the entry modules only (ADR-0035): use unitOf() from sensor-readings.ts.',
+        },
+        {
+          selector: 'MemberExpression[property.name=/^(?:temperature|pressure|wind_speed)_unit$/], MemberExpression[object.property.name="attributes"][property.name="precipitation_unit"], ObjectPattern > Property[key.name=/^(?:temperature|pressure|wind_speed)_unit$/], Literal[value=/^(?:temperature|pressure|wind_speed|precipitation)_unit$/]',
+          message: 'The weather entity\'s unit attributes are read in the entry modules only (ADR-0035): use weatherEntityUnits() from sensor-readings.ts.',
+        },
+      ],
+    },
+  },
+
+  // Comment rules of #478: a comment states what holds now, not what the
+  // code was. Terms match case-insensitively at word boundaries.
+  {
+    files: ['src/**/*.ts'],
+    rules: {
+      'no-warning-comments': ['error', {
+        terms: [
+          'used to', 'previously', 'formerly', 'no longer', 'replaces the former',
+          'moved out of', 'split out of', 'was removed', 'earlier code', 'perf pass',
+          'deno-lint-ignore',
+        ],
+        location: 'anywhere',
+      }],
+    },
+  },
+
   // Build / config files — node CJS or ESM at root.
   {
     files: ['*.js', '*.cjs', '*.mjs', 'rollup.config*.js'],

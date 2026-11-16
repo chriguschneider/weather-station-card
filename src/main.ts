@@ -40,6 +40,7 @@ import {
   type StateLike,
   type StatesLike,
   type UnitSystemLike,
+  unitOf,
 } from './sensor-readings.js';
 import { AUTO_PICK_KEYS, autoPickSensor } from './sensor-match.js';
 import type { LegendItem } from './chart-legend.js';
@@ -52,7 +53,7 @@ import { setupScrollUx } from './scroll-ux.js';
 import { setupActionHandler } from './action-handler.js';
 import { TeardownRegistry } from './teardown-registry.js';
 import { PrecipRateController, type CounterState } from './precip-rate-controller.js';
-import { deltaToCanonical, parseUnit, toCanonical } from './utils/units.js';
+import { CANONICAL_UNIT, deltaToCanonical, parseUnit, toCanonical } from './utils/units.js';
 import { buildForecastChart, ChartBuildError, toDisplayData } from './chart/orchestrator.js';
 import type { DisplayUnits } from './display-units.js';
 import { DataSourceController } from './data-source-controller.js';
@@ -128,14 +129,14 @@ function resolvePrecipRateInput(
   counterState: HassEntityState | null | undefined,
   assumedUnit: string,
 ): number | null {
-  const unitOf = (s: HassEntityState): unknown => s.attributes?.unit_of_measurement || assumedUnit;
+  const unitFor = (s: HassEntityState): string => unitOf(s) ?? assumedUnit;
   if (rateState) {
     const n = parseNumericSafe(rateState.state);
-    const unit = unitOf(rateState);
+    const unit = unitFor(rateState);
     return toCanonical('precipitation_rate', n, unit) ?? toCanonical('precipitation', n, unit);
   }
   return counterState
-    ? toCanonical('precipitation_rate', parseNumericSafe(counterState.state), unitOf(counterState))
+    ? toCanonical('precipitation_rate', parseNumericSafe(counterState.state), unitFor(counterState))
     : null;
 }
 
@@ -673,7 +674,7 @@ _applyLivePrecipRateSensor(hass: HassMain): Reading | null {
 
 /** Show a rate (mm/h) in the display unit; true when the text changed. */
 _showPrecipRate(mmH: number): boolean {
-  const { value, unit } = precipRateDisplay(mmH, this.unitPrecip ?? 'mm');
+  const { value, unit } = precipRateDisplay(mmH, this.unitPrecip ?? CANONICAL_UNIT.precipitation);
   const changed = this.precipitation !== value || this.precipitation_unit !== unit;
   this.precipitation = value;
   this.precipitation_unit = unit;
@@ -732,7 +733,7 @@ _resolveLiveClassifierInputs(hass: HassMain): any {
   const precipRateMmH = resolvePrecipRateInput(
     sensors.precipitation_rate ? hass.states?.[sensors.precipitation_rate] : null,
     sensors.precipitation ? hass.states?.[sensors.precipitation] : null,
-    this._readings?.assumed.precipitation ?? 'mm',
+    this._readings?.assumed.precipitation ?? CANONICAL_UNIT.precipitation,
   );
   const r = this._readings;
 
@@ -1270,7 +1271,12 @@ drawChart(): void {
 // Canonical until the first sensor extraction.
 _displayUnits(): DisplayUnits {
   return this._readings?.displayUnits
-    ?? { temperature: '°C', pressure: 'hPa', speed: 'm/s', precipitation: 'mm' };
+    ?? {
+      temperature: CANONICAL_UNIT.temperature,
+      pressure: CANONICAL_UNIT.pressure,
+      speed: CANONICAL_UNIT.speed,
+      precipitation: CANONICAL_UNIT.precipitation,
+    };
 }
 
 // Throws ChartBuildError (chart/orchestrator.ts).
@@ -1708,10 +1714,10 @@ _liveCtx(language?: string): LivePanelCtx {
     cardinalDirections: Array.isArray(directions) ? directions : [],
     readings,
     displayUnits: {
-      temperature: this.unitTemperature ?? '°C',
-      pressure: this.unitPressure ?? 'hPa',
-      speed: this.unitSpeed ?? 'm/s',
-      precipitation: r?.displayUnits.precipitation ?? 'mm',
+      temperature: this.unitTemperature ?? CANONICAL_UNIT.temperature,
+      pressure: this.unitPressure ?? CANONICAL_UNIT.pressure,
+      speed: this.unitSpeed ?? CANONICAL_UNIT.speed,
+      precipitation: r?.displayUnits.precipitation ?? CANONICAL_UNIT.precipitation,
     },
     values: {
       humidity: this.humidity,

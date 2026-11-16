@@ -10,7 +10,7 @@
 // (8 columns, ~45 px); this one is not.
 
 import type { ChartBarLike, ChartLike, ChartPlugin, PluginCardConfig, PluginRenderData } from './_shared.js';
-import { displayDecimals } from '../../utils/units.js';
+import { CANONICAL_UNIT, displayDecimals } from '../../utils/units.js';
 
 /** A dry column (no amount) still gets a chance-only box from this
  *  percentage up. Below it a "5 / %" box on a sunny day is noise;
@@ -65,7 +65,7 @@ function columnCentre(chart: ChartLike, bar: ChartBarLike, i: number): number | 
 /** The amount is already in `unitId`. mm rounds to a whole number above
  *  9; other units print their units-table decimals (two for in and cm). */
 function formatAmount(value: number, unitId: string): string {
-  if (unitId === 'mm') return value > 9 ? `${Math.round(value)}` : value.toFixed(1);
+  if (unitId === CANONICAL_UNIT.precipitation) return value > 9 ? `${Math.round(value)}` : value.toFixed(1);
   return value.toFixed(displayDecimals('precipitation', unitId) ?? 1);
 }
 
@@ -156,7 +156,7 @@ export function createPrecipLabelPlugin({
   config,
   data,
   precipUnit,
-  precipUnitId = 'mm',
+  precipUnitId = CANONICAL_UNIT.precipitation,
   precipPerBarColor,
   precipColor,
   textColor,

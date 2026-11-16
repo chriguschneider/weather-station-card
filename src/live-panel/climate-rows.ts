@@ -7,7 +7,7 @@ import { html } from 'lit';
 import { getPressureTrend, getPressureTrendIcon } from '../pressure-trend.js';
 import { getDewPointComfort, getDewPointComfortIcon } from '../dew-point-comfort.js';
 import { precipIcon } from '../precip-rate.js';
-import { displayDecimals, fromCanonical, parseUnit, toDisplay } from '../utils/units.js';
+import { CANONICAL_UNIT, displayDecimals, fromCanonical, parseUnit, toDisplay } from '../utils/units.js';
 import { parseNumericSafe } from '../utils/numeric.js';
 import { attrEntity, shownText, shownValue, unitLabel, type LivePanelCtx, type LiveReading } from './context.js';
 
@@ -37,10 +37,10 @@ export function precipitationText(precipitation: unknown, unit: string | undefin
  *  other unit takes the table's decimals. A unit outside the table
  *  (never a resolved display unit) shows mm. */
 export function precipRateDisplay(rateMmH: number, displayUnit: string): { value: string; unit: string } {
-  const unit = parseUnit('precipitation', displayUnit) ?? 'mm';
+  const unit = parseUnit('precipitation', displayUnit) ?? CANONICAL_UNIT.precipitation;
   const n = fromCanonical('precipitation', rateMmH, unit) ?? rateMmH;
   let decimals = displayDecimals('precipitation', unit) ?? 1;
-  if (unit === 'mm' && n >= 10) decimals = 0;
+  if (unit === CANONICAL_UNIT.precipitation && n >= 10) decimals = 0;
   return { value: n.toFixed(decimals), unit: `${unit}/h` };
 }
 

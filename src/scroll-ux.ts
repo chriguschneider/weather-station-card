@@ -50,7 +50,7 @@ export function setupScrollUx(card: ScrollUxCard): void {
   const wrapper = safeQuery<BoundWrapper>(card.shadowRoot, '.forecast-scroll.scrolling');
   if (!wrapper) {
     // Non-scrolling render (daily default fits all). Detach any
-    // previously bound handlers so a daily↔hourly toggle doesn't leak.
+    // already bound so a daily↔hourly toggle doesn't leak.
     if (card._scrollUxTeardown) {
       card._scrollUxTeardown();
       card._scrollUxTeardown = null;
