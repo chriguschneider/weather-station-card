@@ -50,7 +50,6 @@ export default {
         'src/utils/safe-query.ts',
         'src/utils/numeric.ts',
         'src/utils/theme-tokens.ts',
-        'src/utils/unit-converters.ts',
         'src/utils/units.ts',
         'src/display-units.ts',
         'src/utils/series-cache.ts',
