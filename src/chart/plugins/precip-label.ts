@@ -10,7 +10,7 @@
 // (8 columns, ~45 px); this one is not.
 
 import type { ChartBarLike, ChartLike, ChartPlugin, PluginCardConfig, PluginRenderData } from './_shared.js';
-import { convertPrecipLength } from '../../utils/unit-converters.js';
+import { displayDecimals } from '../../utils/units.js';
 
 /** A dry column (no amount) still gets a chance-only box from this
  *  percentage up. Below it a "5 / %" box on a sunny day is noise;
@@ -24,11 +24,10 @@ export const PROBABILITY_EXTRA_BOTTOM_PAD = 4;
 export interface PrecipLabelPluginOpts {
   config: PluginCardConfig;
   data: PluginRenderData;
+  /** Label text of the unit. */
   precipUnit: string;
-  /** Length base the chart's precip VALUES are in ('mm' | 'in'). */
-  precipSourceBase: string;
-  /** Length base to DISPLAY values in ('mm' | 'in'). */
-  precipTargetBase: string;
+  /** Units-table id the precip values are in; picks the number format. */
+  precipUnitId?: string;
   precipPerBarColor: ReadonlyArray<string>;
   precipColor: string;
   textColor: string;
@@ -63,14 +62,11 @@ function columnCentre(chart: ChartLike, bar: ChartBarLike, i: number): number | 
   return cx;
 }
 
-/** Convert the per-bar amount into the display unit. Bar heights stay
- *  in the source unit (handled by the axis); only this label text is
- *  converted. Inches need two decimals; mm rounds to a whole number
- *  above 9. */
-function formatAmount(rawValue: number, sourceBase: string, targetBase: string): string {
-  const value = convertPrecipLength(rawValue, sourceBase, targetBase);
-  if (targetBase === 'in') return value.toFixed(2);
-  return value > 9 ? `${Math.round(value)}` : value.toFixed(1);
+/** The amount is already in `unitId`. mm rounds to a whole number above
+ *  9; other units print their units-table decimals (two for in and cm). */
+function formatAmount(value: number, unitId: string): string {
+  if (unitId === 'mm') return value > 9 ? `${Math.round(value)}` : value.toFixed(1);
+  return value.toFixed(displayDecimals('precipitation', unitId) ?? 1);
 }
 
 /** Integer 0..100 or null — the plugin never prints "NaN" or "120". */
@@ -160,8 +156,7 @@ export function createPrecipLabelPlugin({
   config,
   data,
   precipUnit,
-  precipSourceBase,
-  precipTargetBase,
+  precipUnitId = 'mm',
   precipPerBarColor,
   precipColor,
   textColor,
@@ -202,7 +197,7 @@ export function createPrecipLabelPlugin({
         const cx = columnCentre(chart, bar, i);
         if (cx == null) return;
 
-        const number = hasAmount ? formatAmount(rawValue, precipSourceBase, precipTargetBase) : null;
+        const number = hasAmount ? formatAmount(rawValue, precipUnitId) : null;
         const st: BoxStyle = {
           ...style,
           strokeColor: bar.options?.borderColor

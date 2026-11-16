@@ -95,11 +95,6 @@ export function pickHourlyTickIndices(
   return sorted;
 }
 
-interface HourlyTempSeriesOpts {
-  /** Round every value to integer °C / °F. */
-  roundTemp?: boolean;
-}
-
 interface HourlyTempSeriesResult {
   /** One entry per input; nullish values pass through so uPlot draws a gap. */
   tempHigh: ReadonlyArray<number | null | undefined>;
@@ -113,17 +108,14 @@ interface HourlyTempSeriesResult {
  *  second line. */
 export function hourlyTempSeries(
   entries: ReadonlyArray<Partial<ForecastEntry>>,
-  opts: HourlyTempSeriesOpts = {},
 ): HourlyTempSeriesResult {
   if (!Array.isArray(entries) || entries.length === 0) {
     return { tempHigh: [], tempLow: null };
   }
-  const round = opts.roundTemp === true;
-  // Math.round(null) is 0, which would turn "no data" into a fake 0°.
   const r = (v: unknown): number | null | undefined => {
     if (v === null || v === undefined) return v;
     if (typeof v !== 'number' || !Number.isFinite(v)) return null;
-    return round ? Math.round(v) : v;
+    return v;
   };
 
   const rawTemp: (number | null | undefined)[] = new Array(entries.length);

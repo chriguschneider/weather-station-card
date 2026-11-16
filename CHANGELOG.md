@@ -16,6 +16,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Zero-degree level from a sensor in feet: the snow-line estimate in the tooltip is now in metres as labelled (it showed the feet figure), and the 48 h arrow treats a change within ±100 m as steady, not ±100 ft (#478).
 - Forecast wind is converted from every unit Home Assistant offers, knots included. In the today view the forecast wind was read in your station's unit and could be off by a factor of 3.6; a gust sensor in another unit than the wind sensor no longer distorts the weather symbol of past days (#478).
 - Past days and hours read every unit Home Assistant offers for temperature, rain and pressure. Before, only °F and inches were converted for the weather symbol: a station in Kelvin or with rain in cm got the wrong symbol. A sensor with a unit the card does not know leaves a gap instead of a number in the wrong unit; a sensor without any unit is read in Home Assistant's unit for that value (#478).
+- **The chart draws everything in one unit.** A station in °F or inches next to a forecast in metric units (or next to Open-Meteo's past days, which are always metric) gave a temperature line and rain bars made of mixed numbers. The chart now converts every value into the unit the live panel shows.
+- The chart's rain unit follows your rain sensor (or `units.precipitation`) instead of Home Assistant's unit system. With `units.precipitation` set, the bars and their scale are in that unit too, not only the label (#478).
 
 ### Under the hood
 

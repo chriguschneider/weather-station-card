@@ -18,7 +18,7 @@ vi.mock('../src/chart/draw.js', async (importOriginal) => {
   };
 });
 
-import { buildForecastChart, ChartBuildError } from '../src/chart/orchestrator.js';
+import { buildForecastChart, ChartBuildError, toDisplayData } from '../src/chart/orchestrator.js';
 import { normalizeConfig } from '../src/card-config.js';
 import { calendarFor } from '../src/utils/time-zone.js';
 
@@ -44,7 +44,7 @@ function inputs(overrides = {}, forecast = {}) {
     },
     stationCount: 1,
     forecastCount: 2,
-    unitSystem: { temperature: '°C', length: 'km' },
+    displayUnits: { temperature: '°C', pressure: 'hPa', speed: 'km/h', precipitation: 'mm' },
     ll: (key) => (key === 'units' ? { mm: 'mm', in: 'in' } : key),
     themeHost: document.body,
     inPreview: true,
@@ -73,6 +73,8 @@ describe('buildForecastChart', () => {
     // temp high, temp low, precip, sunshine
     expect(opts.datasets).toHaveLength(4);
     expect(opts.datasets[2].data).toEqual([0, 1.2, null]);
+    expect(opts.precipFloor).toBe(20);
+    expect(opts.datasets[0].data).toEqual([20, 21, 22]);
   });
 
   it('hides the low line and the separator in hourly mode', () => {
@@ -85,14 +87,46 @@ describe('buildForecastChart', () => {
     expect(opts.isHourly).toBe(true);
   });
 
-  it('labels the precipitation in the configured unit', () => {
-    const args = inputs({ config: normalizeConfig({ units: { precipitation: 'in' } }) });
+  const units = (temperature, precipitation) => ({ temperature, pressure: 'hPa', speed: 'km/h', precipitation });
+
+  it('draws the temperatures in °F, rounded after the conversion', () => {
+    buildForecastChart(inputs({ displayUnits: units('°F', 'mm') }));
+    const { opts } = built.calls[0];
+    expect(opts.datasets[0].data).toEqual([68, 70, 72]);
+    expect(opts.datasets[1].data).toEqual([50, 52, 54]);
+    // The render data the label plugins read.
+    expect(opts.data.tempHigh).toEqual([68, 70, 72]);
+    expect(opts.tempUnit).toBe('°F');
+  });
+
+  it('keeps fractional °F without round_temp', () => {
+    buildForecastChart(inputs({ displayUnits: units('°F', 'mm') }, { round_temp: false }));
+    const got = built.calls[0].opts.datasets[0].data;
+    expect(got).toHaveLength(3);
+    [68, 69.8, 71.6].forEach((v, i) => expect(got[i]).toBeCloseTo(v));
+  });
+
+  it('draws the rain bars, axis floor and label in inches', () => {
+    const args = inputs({ displayUnits: units('°C', 'in') });
+    args.data = { ...args.data, precip: [0, 25.4, 'x'] };
     buildForecastChart(args);
-    expect(built.calls[0].opts.precipUnit).toBe('in');
+    const { opts } = built.calls[0];
+    expect(opts.datasets[2].data).toEqual([0, 1, null]);
+    expect(opts.precipUnit).toBe('in');
+    expect(opts.precipFloor).toBe(1);
+  });
+
+  it('converts the rain axis floor into centimetres', () => {
+    buildForecastChart(inputs({ displayUnits: units('°C', 'cm') }));
+    expect(built.calls[0].opts.precipFloor).toBe(2);
+    expect(built.calls[0].opts.precipUnit).toBe('cm');
+    buildForecastChart(inputs({ displayUnits: units('°C', 'cm') }, { type: 'hourly' }));
+    expect(built.calls[1].opts.precipFloor).toBe(0.4);
+    expect(built.calls[1].opts.precipUnit).toBe('cm');
   });
 
   it('tags a failure while shaping the data as compute', () => {
-    const args = inputs({ unitSystem: undefined });
+    const args = inputs({ displayUnits: undefined });
     let caught;
     try { buildForecastChart(args); } catch (e) { caught = e; }
     expect(caught).toBeInstanceOf(ChartBuildError);
@@ -108,5 +142,27 @@ describe('buildForecastChart', () => {
     expect(caught).toBeInstanceOf(ChartBuildError);
     expect(caught.phase).toBe('init');
     expect(caught.message).toBe('canvas gone');
+  });
+});
+
+describe('toDisplayData', () => {
+  it('leaves a metric setup untouched', () => {
+    const precip = [0, 1.2];
+    const out = toDisplayData(
+      { tempHigh: [21.4, null], tempLow: [], precip },
+      { temperature: '°C', precipitation: 'mm' },
+      false,
+    );
+    expect(out.precip).toBe(precip);
+    expect(out.tempHigh).toEqual([21.4, null]);
+  });
+
+  it('converts, then rounds, and keeps gaps as gaps', () => {
+    const out = toDisplayData(
+      { tempHigh: [21.4, null, undefined, NaN], tempLow: [], precip: [] },
+      { temperature: '°F', precipitation: 'mm' },
+      true,
+    );
+    expect(out.tempHigh).toEqual([71, null, undefined, null]);
   });
 });

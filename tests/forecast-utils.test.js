@@ -183,18 +183,7 @@ describe('hourlyTempSeries', () => {
     expect(hourlyTempSeries(entries).tempLow).toBeNull();
   });
 
-  it('rounds temperatures when roundTemp is true', () => {
-    const entries = [
-      { temperature: 21.4, templow: 10.6 },
-      { temperature: 22.5, templow: 11.4 },
-    ];
-    expect(hourlyTempSeries(entries, { roundTemp: true })).toEqual({
-      tempHigh: [21, 23],
-      tempLow: [11, 11],
-    });
-  });
-
-  it('keeps fractional temperatures when roundTemp is false', () => {
+  it('keeps fractional temperatures (rounding happens in toDisplayData)', () => {
     const entries = [{ temperature: 21.4, templow: 10.6 }];
     expect(hourlyTempSeries(entries)).toEqual({
       tempHigh: [21.4],
@@ -211,7 +200,7 @@ describe('hourlyTempSeries', () => {
       { temperature: 22, templow: 11 },
       { temperature: null }, // current hour, partial bucket
     ];
-    const out = hourlyTempSeries(entries, { roundTemp: true });
+    const out = hourlyTempSeries(entries);
     expect(out.tempHigh[0]).toBe(22);
     expect(out.tempHigh[1]).toBeNull();
   });
@@ -221,7 +210,7 @@ describe('hourlyTempSeries', () => {
       { temperature: undefined },
       { temperature: NaN },
     ];
-    const out = hourlyTempSeries(entries, { roundTemp: true });
+    const out = hourlyTempSeries(entries);
     expect(out.tempHigh[0]).toBeUndefined();
     expect(out.tempHigh[1]).toBeNull(); // NaN normalised to null
   });
