@@ -127,3 +127,24 @@ Adopt **Approach C**, behind an opt-in.
   lands in `DEFAULTS_FORECAST`).
 - ADR-0009 — lookup-table pattern (followed by `weather-code-map.ts`).
 - `.workflow/weather-entity-fallback/` — brainstorm, alignment, plan.
+
+## Amendment 2026-11-16 (#522): metric is the canonical unit, the chart converts
+
+The decision pins the Open-Meteo request to °C, mm and m/s "because
+there is no source unit to derive from" and tags each entry
+`wind_speed_unit: 'm/s'`. Since
+[ADR-0035](0035-canonical-units-inside-display-units-at-the-edge.md)
+these three are the card's canonical units. The request stays pinned
+for that reason: Open-Meteo values enter the card as they arrive, the
+way every other producer's values do after their conversion. The
+per-entry tag is gone, because every forecast entry is canonical now.
+
+The limitation recorded under Tradeoffs ("a non-metric HA install sees
+the past block in °C") is gone as well. The chart converts temperature
+and precipitation into the card's display units at its edge, and the
+wind row does the same for wind, so a past block from Open-Meteo is
+drawn in the same unit as the forecast and the live panel, °F and
+inches included.
+
+The Open-Meteo cache keeps its key (`wsc_sunshine_v3_`): the stored
+values are metric before and after. Decided by: owner.
