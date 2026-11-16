@@ -40,3 +40,7 @@ Adopt the standard (type `lovelace-card`, mode `opt-in`: label, `@claude`, indep
 
 - ADR-0001 (dist committed), ADR-0003 (E2E baselines on GHA), ADR-0014 (perf gate)
 - [`docs/agent-automation.md`](../agent-automation.md)
+
+## Amendment 2026-11-17 (#533): two lint guards added in 3.1
+
+Two rules joined the lint gate as errors, both at zero violations. `no-restricted-syntax` keeps unit literals and reads of `unit_of_measurement` and of the weather entity's unit attributes inside the units table and the entry modules ([ADR-0035](0035-canonical-units-inside-display-units-at-the-edge.md), point 6). `no-warning-comments` rejects history phrases in `src/` comments (the comment rules of #478). The allow-list and the term list are in `eslint.config.mjs`; `docs/QUALITY-GATES.md` describes both. Decided by: owner.
