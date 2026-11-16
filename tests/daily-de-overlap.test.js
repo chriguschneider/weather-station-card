@@ -4,7 +4,7 @@
 // station's last datetime and must survive the de-overlap — that is
 // the doubled-today column of combination mode.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import '../src/main.js';
 
 function makeCard(type) {
@@ -25,6 +25,16 @@ function makeCard(type) {
 const entry = (d, temperature) => ({ datetime: d.toISOString(), temperature, condition: 'sunny' });
 
 describe('daily de-overlap', () => {
+  // The hourly view keeps whole days only, so the fixture must not depend
+  // on the wall clock: near midnight the next hour is a lone-hour day.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-16T11:30:00Z'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('keeps the forecast today next to the station today', () => {
     const card = makeCard('daily');
     const cal = card.calendar;
@@ -44,5 +54,18 @@ describe('daily de-overlap', () => {
     card._sources.forecastData = [entry(hour, 20), entry(next, 21)];
     card._refreshForecastsUnsafe();
     expect(card.forecasts.map((e) => e.temperature)).toEqual([11, 21]);
+  });
+
+  it('keeps whole days only: station hour plus the next day at 23:30 Zurich', () => {
+    vi.setSystemTime(new Date('2026-11-16T22:30:00Z'));
+    const card = makeCard('hourly');
+    const cal = card.calendar;
+    const hour = cal.startOfHour(Date.now());
+    card._sources.stationData = [entry(hour, 11)];
+    card._sources.forecastData = Array.from({ length: 31 }, (_, i) =>
+      entry(new Date(hour.getTime() + i * 3600_000), 20 + i),
+    );
+    card._refreshForecastsUnsafe();
+    expect(card.forecasts).toHaveLength(25);
   });
 });
