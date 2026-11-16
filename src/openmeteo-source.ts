@@ -1,24 +1,8 @@
-// Open-Meteo daily / hourly fetcher.
-//
-// The card calls Open-Meteo's Forecast endpoint with `past_days`
-// covering the visible station window plus `forecast_days` for the
-// upcoming columns — one HTTP round-trip per refresh, no Archive call
-// needed (Forecast supports up to past_days=92, well beyond the card's
-// typical days=7..14 window).
-//
-// The source backs two features off the same fetch:
-//   - the in-chart sunshine overlay (`forecast.show_sunshine`);
-//   - the past/station chart block itself when the card has a weather
-//     entity but no station sensors (`forecast.openmeteo_history` —
-//     see ADR-0015). `buildDailyForecast` reshapes the response into
-//     the exact `ForecastEntry[]` shape `MeasuredDataSource` emits, so
-//     it drops into the station slot with no special-casing downstream.
-//
-// All fetch logic lives behind a class so the lifecycle (lazy load on
-// first use, in-flight de-dup, abortable on disconnect, opaque retry)
-// stays out of the render path.
-//
-// Unit-tested against a mocked fetch — see tests/openmeteo-source.test.js.
+// Open-Meteo daily / hourly fetcher: one Forecast-endpoint call per
+// refresh (`past_days` + `forecast_days`), feeding the sunshine overlay,
+// the chance-of-rain overlay and the no-station past block (ADR-0015,
+// ADR-0027, ADR-0028). The class owns lazy load, in-flight dedup, abort
+// and the localStorage cache (ADR-0020).
 
 import type { DailySunshineEntry, HourlySunshineEntry } from './sunshine-source.js';
 import type { DailyProbabilityEntry, HourlyProbabilityEntry } from './precip-probability.js';
@@ -34,9 +18,7 @@ const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 // Daily variables requested in one call. `sunshine_duration` feeds the
 // sunshine overlay, `precipitation_probability_max` the chance-of-rain
 // pill (ADR-0027); the rest feed the no-station past block (ADR-0015).
-// Always requested together — Open-Meteo does not charge per field and
-// keeping the request shape constant keeps one cache entry valid for
-// all three features.
+// Always requested together, so one cache entry serves all three features.
 const DAILY_FIELDS = [
   'sunshine_duration',
   'precipitation_probability_max',
@@ -64,24 +46,18 @@ const HOURLY_FIELDS = [
   'wind_direction_10m',
 ].join(',');
 
-// Refresh once per hour. Open-Meteo's free tier is 10 000 calls/day per
-// IP — at most 24 calls/day per active dashboard tab, which is far
-// below the threshold even for a household with several screens. The
-// Forecast endpoint updates a few times per day, so an hourly poll
-// catches new model runs without hammering the API.
+// The Forecast endpoint updates a few times per day; hourly polling is
+// enough and stays far below the free tier's 10 000 calls/day per IP.
 const REFRESH_TTL_MS = 60 * 60 * 1000;
 
-// LocalStorage key prefix. Keyed by lat/lon-rounded-to-2 plus the
-// card's time zone: the cached hour keys and daily midnights are already
-// cut in that zone (ADR-0030), so two cards at the same place in
-// different zones must not share an entry. The `v3` segment is the
-// schema version (ADR-0020): v1 read civil times in the wrong zone, v2
-// lacked the zone; neither is read again and v2 entries are swept.
+// localStorage key prefix, keyed by lat/lon (2 decimals) and the card's
+// time zone: cached hour keys and midnights are cut in that zone
+// (ADR-0030), so cards in different zones must not share an entry. `v3`
+// is the schema version (ADR-0020); `v2` entries are swept, never read.
 const STORAGE_PREFIX = 'wsc_sunshine_v3_';
 const LEGACY_PREFIX = 'wsc_sunshine_v2_';
 
-/** Subset of the Web Storage API the source uses. Allows tests /
- *  unsupported environments to inject their own. */
+/** Subset of the Web Storage API the source uses. */
 export interface StorageLike {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
@@ -91,17 +67,14 @@ export interface StorageLike {
   removeItem?(key: string): void;
 }
 
-/** Subset of the Fetch API the source uses. Allows tests to inject a
- *  mock without polluting the global. */
+/** Subset of the Fetch API the source uses. */
 export type FetchLike = (url: string, init?: { signal?: AbortSignal }) => Promise<Response>;
 
 /** Listener payload — `ok: false` carries an error string. */
 export type SunshineListener = (event: { ok: boolean; error?: string }) => void;
 
-/** Open-Meteo Forecast API JSON response. Daily carries the sunshine
- *  overlay value plus the fields that feed the no-station past block;
- *  hourly carries the per-hour sunshine value. All arrays are parallel
- *  to `time`. */
+/** Open-Meteo Forecast API JSON response (`DAILY_FIELDS` / `HOURLY_FIELDS`).
+ *  All arrays are parallel to `time`. */
 export interface OpenMeteoResponse {
   /** IANA zone Open-Meteo resolved `timezone=auto` to (the location's). */
   timezone?: string;
@@ -135,34 +108,30 @@ export interface OpenMeteoResponse {
 interface CachedPayload {
   daily?: DailySunshineEntry[];
   hourly?: HourlySunshineEntry[];
-  /** Daily / hourly station-block entries (ADR-0015). Absent in caches
-   *  written by versions before the no-station past block landed — a
-   *  missing field just forces one refetch via `isStale`. */
+  /** Daily / hourly station-block entries (ADR-0015). A cache without
+   *  them forces one refetch via `isStale`. */
   dailyForecast?: ForecastEntry[];
   hourlyForecast?: ForecastEntry[];
-  /** Chance-of-rain arrays (ADR-0027). Absent in caches written before
-   *  the feature landed — `isStale` then forces one refetch. */
+  /** Chance-of-rain arrays (ADR-0027); absent forces one refetch. */
   dailyProbability?: DailyProbabilityEntry[];
   hourlyProbability?: HourlyProbabilityEntry[];
-  /** Set by every save since the chance-of-rain fields joined the
-   *  request; its absence marks a pre-ADR-0027 cache. */
+  /** Set by every save; absent marks a cache from before the
+   *  chance-of-rain fields were requested (ADR-0027). */
   probabilityFetched?: boolean;
-  /** Window the cached response was fetched for. Absent in older caches,
-   *  which `isStale` then treats as covering nothing. */
+  /** Window the cached response was fetched for; absent counts as
+   *  covering nothing in `isStale`. */
   pastDays?: number;
   forecastDays?: number;
   lastFetchMs?: number;
 }
 
-/** Result of `readCachedAvailability`. `lastFetchMs` is 0 when no fetch
- *  has happened yet (e.g. cache restored without a timestamp). */
+/** Result of `readCachedAvailability`; `lastFetchMs` 0 = no timestamp cached. */
 export interface CachedAvailability {
   pastDays: number;
   forecastDays: number;
   lastFetchMs: number;
 }
 
-/** Constructor options for `OpenMeteoSource`. */
 export interface OpenMeteoSourceOpts {
   latitude?: number | null;
   longitude?: number | null;
@@ -176,18 +145,10 @@ export interface OpenMeteoSourceOpts {
   calendar: Calendar;
 }
 
-// ── Pure helpers (testable without instantiating the source class) ──
-
-/** Builds the Forecast-endpoint URL. `includeHourly` adds the
- *  `hourly=sunshine_duration` parameter alongside `daily=…`, so a
- *  single call returns both granularities — used in hourly chart mode
- *  where the card renders one bar per hour.
- *
- *  Units are pinned explicitly (°C / mm / m·s⁻¹): with no station
- *  sensor the card has no source unit to derive from, so the response
- *  is locked to the card's canonical metric units. `buildDailyForecast`
- *  tags each entry's `wind_speed_unit` so the renderer still converts
- *  wind to the user's display unit. */
+/** Forecast-endpoint URL; `includeHourly` adds `hourly=HOURLY_FIELDS`.
+ *  Units are pinned (°C / mm / m·s⁻¹) because with no station sensor
+ *  there is no source unit to derive; entries carry `wind_speed_unit`
+ *  so the renderer converts wind. */
 export function buildOpenMeteoUrl(
   latitude: number,
   longitude: number,
@@ -214,13 +175,9 @@ export function buildOpenMeteoUrl(
   return `${FORECAST_URL}?${p.toString()}`;
 }
 
-/** Reshape Open-Meteo's parallel `time`/`sunshine_duration` arrays
- *  into the `{date, value}` array `attachSunshine` consumes — same
- *  shape we'd accept from a user-built REST sensor, so the data layer
- *  downstream doesn't know or care which way the values arrived.
- *
- *  Values come back in seconds; `normalizeSunshineValue` (in
- *  sunshine-source) does the sec→hours conversion at lookup time. */
+/** `time` / `sunshine_duration` as the `{date, value}` array
+ *  `attachSunshine` consumes. Values stay in seconds;
+ *  `normalizeSunshineValue` converts at lookup. */
 export function parseDailySunshine(response: OpenMeteoResponse | null | undefined, calendar: Calendar): DailySunshineEntry[] {
   if (!response?.daily) return [];
   const t = response.daily.time ?? [];
@@ -233,12 +190,8 @@ export function parseDailySunshine(response: OpenMeteoResponse | null | undefine
   return out;
 }
 
-/** Hourly counterpart. Open-Meteo's hourly times are epoch seconds
- *  (`timeformat=unixtime`); each becomes the "YYYY-MM-DDTHH:00" key of
- *  that instant in the card's zone, which `attachSunshine` matches via
- *  `localHourString`.
- *
- *  Values are seconds of sunshine within that hour, capped at 3600. */
+/** Hourly counterpart, keyed "YYYY-MM-DDTHH:00" in the card's zone (what
+ *  `localHourString` matches). Values are seconds within the hour. */
 export function parseHourlySunshine(response: OpenMeteoResponse | null | undefined, calendar: Calendar): HourlySunshineEntry[] {
   if (!response?.hourly) return [];
   const t = response.hourly.time ?? [];
@@ -282,11 +235,10 @@ export function parseHourlyProbability(response: OpenMeteoResponse | null | unde
   return out;
 }
 
-/** "YYYY-MM-DD" of a daily `time` entry in the response's zone.
- *  `daily.time` is the local midnight instant, but the response carries
- *  a single UTC offset, so across a DST change the instant can sit an
- *  hour off midnight; reading the zone's date at noon of that day is
- *  immune to a ±1 h error. Civil strings (legacy payloads) pass through. */
+/** "YYYY-MM-DD" of a daily `time` entry in the response's zone. The
+ *  response has one UTC offset, so across a DST change the midnight
+ *  instant can be an hour off; reading the date at noon is immune.
+ *  Civil strings pass through. */
 function responseDayKey(
   t: number | string | undefined,
   response: OpenMeteoResponse | null | undefined,
@@ -299,9 +251,8 @@ function responseDayKey(
   return (tz ? calendarFor(tz) : calendar).dayKey(noon);
 }
 
-/** Midnight (card zone) of the response's calendar day — the daily
- *  `datetime` convention of `MeasuredDataSource`, so the Open-Meteo past
- *  block's columns align with recorder-backed ones. */
+/** Card-zone midnight of the response's day, the daily `datetime`
+ *  convention of `MeasuredDataSource`. */
 function localMidnightIso(
   t: number | string | undefined,
   response: OpenMeteoResponse | null | undefined,
@@ -319,11 +270,9 @@ function civilMidnight(civilDate: string | undefined, calendar: Calendar): Date 
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** Start of the card-zone hour holding an hourly epoch-seconds `time`,
- *  as ISO — `MeasuredDataSource`'s hourly convention. Floored with the
- *  card calendar, not to the UTC hour: in a half-hour zone (Asia/Kolkata,
- *  Australia/Adelaide, America/St_Johns) Open-Meteo's local hours sit on
- *  :30 UTC, and a UTC floor would key them to the previous local hour. */
+/** Start of the card-zone hour holding an hourly `time`, as ISO. Floored
+ *  with the card calendar, not to the UTC hour: in a half-hour zone
+ *  (e.g. Asia/Kolkata) local hours sit on :30 UTC. */
 function hourIso(t: number | string | undefined, calendar: Calendar): string | null {
   if (typeof t !== 'number' || !Number.isFinite(t)) return null;
   return calendar.startOfHour(t * 1000).toISOString();
@@ -335,30 +284,14 @@ function cardHourString(t: number | string | undefined, calendar: Calendar): str
   return calendar.hourKey(t * 1000);
 }
 
-/** Coerce a possibly-null Open-Meteo array cell to `number | null`. */
 function numOrNull(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
 
-/** Reshape Open-Meteo's daily parallel arrays into the card's
- *  `ForecastEntry[]` — one entry per civil date, in the exact shape
- *  `MeasuredDataSource` emits for recorder-backed station columns. That
- *  shape match is what lets the Open-Meteo past block drop into the
- *  station slot with no special-casing downstream (ADR-0015).
- *
- *  Conventions, matching `MeasuredDataSource._buildForecast`:
- *    - `datetime` is the local-midnight ISO of each civil date.
- *    - `temperature` is the daily HIGH, `templow` the daily LOW.
- *    - `wind_speed` is the daily MAX (Open-Meteo daily has no mean).
- *    - `humidity` / `pressure` / `uv_index` have no Open-Meteo daily
- *      field and stay null — the chart renders those rows as gaps.
- *    - `sunshine` is left undefined on purpose: the existing sunshine
- *      overlay fills it from the same response, keeping one code path.
- *    - `condition` comes from the WMO `weather_code` via `wmoToCondition`.
- *
- *  Emits every dated row (past, today, and future). Callers slice the
- *  window they need — the no-station station block takes only past +
- *  today; the future rows are the weather entity's job. */
+/** Daily arrays as `ForecastEntry[]` in `MeasuredDataSource`'s shape
+ *  (ADR-0015). temperature = daily high, wind_speed = daily max (no mean
+ *  exists), humidity / pressure / uv_index stay null, sunshine is left
+ *  to the overlay. Emits past, today and future rows; callers slice. */
 export function buildDailyForecast(
   response: OpenMeteoResponse | null | undefined,
   calendar: Calendar,
@@ -386,9 +319,7 @@ export function buildDailyForecast(
       wind_speed: numOrNull(windMax[i]),
       wind_gust_speed: numOrNull(gustMax[i]),
       wind_bearing: numOrNull(windDir[i]),
-      // The request pins wind_speed_unit=ms — tag each entry so the
-      // renderer converts to the user's display unit (no station
-      // sensor exists to derive the source unit from).
+      // The request pins wind_speed_unit=ms.
       wind_speed_unit: 'm/s',
       pressure: null,
       humidity: null,
@@ -399,15 +330,9 @@ export function buildDailyForecast(
   return out;
 }
 
-/** Hourly counterpart to `buildDailyForecast`. One `ForecastEntry` per
- *  hour, shaped like `MeasuredDataSource`'s hourly output: a single
- *  mean `temperature` (no `templow` — hourly is a single-line series),
- *  precipitation, wind, and a WMO-derived condition. Feeds the
- *  no-station past block in hourly / today chart modes.
- *
- *  `datetime` is the on-the-hour ISO of each timestamp. Emits every
- *  hour Open-Meteo returned — past, current, and future; the card
- *  slices the past window it needs. */
+/** Hourly counterpart of `buildDailyForecast`: one entry per hour, no
+ *  `templow`, `datetime` on the hour. Emits past, current and future
+ *  hours; callers slice. */
 export function buildHourlyForecast(
   response: OpenMeteoResponse | null | undefined,
   calendar: Calendar,
@@ -449,8 +374,8 @@ function storageKey(lat: number, lon: number, timeZone: string): string {
   return `${STORAGE_PREFIX}${lat.toFixed(2)}_${lon.toFixed(2)}_${zone}`;
 }
 
-/** Remove zone-less `v2` entries: they were cut in whichever zone wrote
- *  them last, so no card can trust them. */
+/** Remove zone-less `v2` entries: their zone is unknown, so no card can
+ *  trust them. */
 function sweepLegacyEntries(storage: StorageLike | null): void {
   if (!storage?.key || !storage.removeItem || typeof storage.length !== 'number') return;
   try {
@@ -502,8 +427,7 @@ function validPayload(parsed: unknown): CachedPayload | null {
   };
 }
 
-/** Best-effort persistence so a page reload doesn't always re-fetch.
- *  Returns null on any error (private mode, quota, JSON corruption, …). */
+/** Cache read; null on any error (blocked storage, corrupt JSON). */
 function loadFromStorage(storage: StorageLike | null, lat: number, lon: number, timeZone: string): CachedPayload | null {
   if (!storage) return null;
   try {
@@ -511,8 +435,7 @@ function loadFromStorage(storage: StorageLike | null, lat: number, lon: number, 
     if (!raw) return null;
     return validPayload(JSON.parse(raw));
   } catch (err) {
-    // Storage access blocked or JSON corrupted — fall through to a
-    // fresh fetch instead of letting the read failure propagate.
+    // Fall through to a fresh fetch.
     void err;
     return null;
   }
@@ -523,19 +446,14 @@ function saveToStorage(storage: StorageLike | null, lat: number, lon: number, ti
   try {
     storage.setItem(storageKey(lat, lon, timeZone), JSON.stringify(payload));
   } catch (err) {
-    // Quota exceeded or private-mode storage rejection — the cache
-    // write is best-effort; silent failure is correct here.
+    // Best-effort write (quota, private mode).
     void err;
   }
 }
 
-/** Read the cached daily array and count past vs forecast days. Used
- *  by the editor to surface "Open-Meteo currently has N forecast days
- *  for your location" so the user knows when their `forecast_days`
- *  setting outruns the available data (Open-Meteo's free Forecast
- *  endpoint returns 5–16 days depending on model and location).
- *
- *  Returns null when nothing is cached for that location yet. */
+/** Past vs forecast day counts in the cached daily array, so the editor
+ *  can show when `forecast_days` outruns what Open-Meteo returns. Null
+ *  when nothing is cached for the location. */
 export function readCachedAvailability(
   latitude: number,
   longitude: number,
@@ -568,23 +486,14 @@ export function readCachedAvailability(
   };
 }
 
-/** Resolve the constructor's `fetchImpl` option to a concrete fetch
- *  function or `null`. An explicit `null` is an opt-out — no network at
- *  all. `undefined` (the default) falls back to the global `fetch` when
- *  the runtime provides one. Kept separate from the constructor so the
- *  three-way resolution stays one simple, branch-isolated unit — and so
- *  the load-bearing null-vs-undefined distinction has a single home.
- *
- *  Why it matters: on modern Node a global `fetch` exists, so a plain
- *  `fetchImpl ?? globalFetch` coalesces an intended `null` ("no fetch")
- *  into a real network call. */
+/** `null` = no network, `undefined` = the global `fetch` if present. A
+ *  plain `fetchImpl ?? fetch` would turn an intended `null` into a real
+ *  network call where a global `fetch` exists. */
 function resolveFetchImpl(fetchImpl: FetchLike | null | undefined): FetchLike | null {
   if (fetchImpl === null) return null;
   if (fetchImpl) return fetchImpl;
   return typeof fetch === 'function' ? (fetch as FetchLike).bind(globalThis) : null;
 }
-
-// ── Source class ────────────────────────────────────────────────────
 
 export class OpenMeteoSource {
   latitude: number | null;
@@ -594,9 +503,8 @@ export class OpenMeteoSource {
   includeHourly: boolean;
 
   private readonly _fetch: FetchLike | null;
-  /** True when the constructor received an injected fetchImpl (tests).
-   *  The module-level request dedup is bypassed then — it would leak
-   *  responses across test cases that reuse the same URL. */
+  /** An injected fetchImpl bypasses the request dedup, which would leak
+   *  responses across tests reusing a URL. */
   private readonly _fetchIsCustom: boolean;
   private readonly _storage: StorageLike | null;
   private readonly _now: () => number;
@@ -608,10 +516,8 @@ export class OpenMeteoSource {
   private _hourlyForecast: ForecastEntry[] = [];
   private _dailyProbability: DailyProbabilityEntry[] = [];
   private _hourlyProbability: HourlyProbabilityEntry[] = [];
-  /** True once a fetch that REQUESTED the chance-of-rain fields has
-   *  completed (or a cache written by one was rehydrated). Tracked as
-   *  a flag, not via array length, so a response without the fields
-   *  does not trigger a refetch on every tick. */
+  /** A flag, not array length: a response without the fields must not
+   *  refetch on every tick. */
   private _probabilityFetched = false;
   private _lastFetchMs = 0;
   /** Window the held data was fetched for; 0 until a fetch (or a cache
@@ -638,10 +544,6 @@ export class OpenMeteoSource {
     this.pastDays = pastDays;
     this.forecastDays = forecastDays;
     this.includeHourly = includeHourly === true;
-    // Allow overriding the fetch and storage implementations so the
-    // tests can run in a Node environment without polluting globals.
-    // See resolveFetchImpl for the load-bearing null-vs-undefined
-    // contract (`null` = no network, `undefined` = global fetch).
     this._fetch = resolveFetchImpl(fetchImpl);
     this._fetchIsCustom = fetchImpl != null;
     this._storage = storage !== undefined ? storage : safeLocalStorage();
@@ -668,9 +570,7 @@ export class OpenMeteoSource {
     this._fetchedForecastDays = cached.forecastDays ?? 0;
   }
 
-  /** Synchronous accessors — return whatever's in cache (may be empty
-   *  until `ensureFresh` resolves). `attachSunshine` picks the right
-   *  one based on the chart's granularity (daily vs hourly). */
+  /** Synchronous accessors; empty until `ensureFresh` resolves. */
   getDailyValues(): DailySunshineEntry[] {
     return this._daily;
   }
@@ -678,22 +578,17 @@ export class OpenMeteoSource {
     return this._hourly;
   }
 
-  /** Daily station-block entries (ADR-0015). One `ForecastEntry` per
-   *  civil date Open-Meteo returned — past, today, and future. The card
-   *  slices the past + today window it needs for the station block. */
+  /** Daily station-block entries (ADR-0015): past, today and future. */
   getDailyStationForecast(): ForecastEntry[] {
     return this._dailyForecast;
   }
 
-  /** Hourly station-block entries (ADR-0015) — one `ForecastEntry` per
-   *  hour Open-Meteo returned. Empty unless `includeHourly` was set. */
+  /** Hourly station-block entries (ADR-0015); empty without `includeHourly`. */
   getHourlyStationForecast(): ForecastEntry[] {
     return this._hourlyForecast;
   }
 
-  /** Chance-of-rain arrays for `attachPrecipProbability` (ADR-0027):
-   *  one `{date, value}` per civil date, and — with `includeHourly` —
-   *  one `{datetime, value}` per hour. */
+  /** Chance-of-rain arrays (ADR-0027); the hourly one needs `includeHourly`. */
   getDailyProbability(): DailyProbabilityEntry[] {
     return this._dailyProbability;
   }
@@ -701,15 +596,12 @@ export class OpenMeteoSource {
     return this._hourlyProbability;
   }
 
-  /** True when we should kick off a refresh (cache empty for the
-   *  currently-requested granularity, or stale). */
+  /** True when the cache lacks the requested granularity or is stale. */
   isStale(now: number = this._now()): boolean {
     if (!this._daily.length) return true;
-    // A cache written before the no-station past block landed (ADR-0015)
-    // has no dailyForecast — refetch once so the station block can fill.
+    // A cache without station-block entries (ADR-0015) or the
+    // chance-of-rain fields (ADR-0027) is refetched once.
     if (!this._dailyForecast.length) return true;
-    // Same one-time refetch for caches written before the chance-of-
-    // rain fields were requested (ADR-0027).
     if (!this._probabilityFetched) return true;
     if (this.includeHourly && !this._hourly.length) return true;
     if (this.includeHourly && !this._hourlyForecast.length) return true;
@@ -719,29 +611,25 @@ export class OpenMeteoSource {
     return now - this._lastFetchMs >= REFRESH_TTL_MS;
   }
 
-  /** Subscribe a one-shot callback for refresh completion. Lets the
-   *  caller request an update / re-measure once the data lands. */
+  /** Callback for refresh completion. */
   setListener(cb: SunshineListener | null): void {
     this._listener = cb;
   }
 
-  /** Abort any in-flight fetch — call this on `disconnectedCallback`. */
+  /** Abort any in-flight fetch (on disconnect). */
   abort(): void {
     if (this._abort) {
       try {
         this._abort.abort();
       } catch (err) {
-        // AbortController.abort() is idempotent in modern browsers but
-        // older polyfills may throw on a second call — safe to swallow.
+        // Older polyfills may throw on a second abort().
         void err;
       }
       this._abort = null;
     }
   }
 
-  /** Trigger a refresh if stale and none is already running. Returns
-   *  the in-flight promise so callers can await it (most don't — the
-   *  listener handles "data arrived" notifications). */
+  /** Refresh if stale and none is running; returns the in-flight promise. */
   async ensureFresh(): Promise<void> {
     if (this._inFlight) return this._inFlight;
     if (!this.isStale()) return;
@@ -776,10 +664,8 @@ export class OpenMeteoSource {
           }
           return body;
         };
-        // Cross-card dedup (perf pass 2026-08): several cards at the
-        // same location build the same URL — share one HTTP roundtrip
-        // per minute instead of hitting Open-Meteo once per card.
-        // Bypassed for injected fetch impls (test isolation).
+        // Cross-card dedup: cards at one location share one request per
+        // minute (ADR-0020); bypassed for injected fetch impls.
         // The shared request carries only its timeout, never this card's
         // signal: a card torn down mid-fetch abandons its own await and
         // must not abort the request the other cards are waiting on.
@@ -813,9 +699,8 @@ export class OpenMeteoSource {
         });
         if (this._listener) this._listener({ ok: true });
       } catch (err) {
-        // AbortError (disconnect) is expected — don't surface as a
-        // problem. Anything else, log and notify the listener so the
-        // chart can stay rendering with whatever stale cache it has.
+        // AbortError (disconnect) is expected; anything else is logged and
+        // reported so the chart keeps rendering the stale cache.
         const e = err as { name?: string; code?: number } | null;
         const isAbort = e != null && (e.name === 'AbortError' || e.code === 20);
         if (!isAbort) {
