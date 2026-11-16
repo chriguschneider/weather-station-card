@@ -13,7 +13,9 @@ import { resolveCssVar } from '../utils/resolve-css-var.js';
 import { getThemeTokens } from '../utils/theme-tokens.js';
 import { sunshineFractions } from '../sunshine-source.js';
 import { buildChart, precipCeiling, type UplotChart } from './draw.js';
-import { coerceNumericSeries } from './sanitize.js';
+import { coerceNumeric, coerceNumericSeries } from './sanitize.js';
+import { CANONICAL_UNIT, fromCanonical } from '../utils/units.js';
+import type { DisplayUnits } from '../display-units.js';
 import { PROBABILITY_EXTRA_BOTTOM_PAD } from './plugins/precip-label.js';
 import {
   createSeparatorPlugin,
@@ -56,7 +58,6 @@ interface OrchestratorConfig extends PluginCardConfig {
     temperature2_color?: string;
     disable_animation?: boolean;
   };
-  units?: { precipitation?: string };
   use_12hour_format?: boolean;
 }
 
@@ -70,8 +71,9 @@ export interface ChartInputs {
   data: ForecastChartData;
   stationCount: number;
   forecastCount: number;
-  /** HA's unit system (`hass.config.unit_system`). */
-  unitSystem: { temperature: string; length: string };
+  /** The card's display units (ADR-0035, point 4); `data` arrives in
+   *  canonical units and is drawn in these. */
+  displayUnits: DisplayUnits;
   ll(key: string): string | Record<string, string>;
   /** Element whose computed style supplies the theme tokens. */
   themeHost: HTMLElement;
@@ -122,23 +124,57 @@ function pickPerBarColor(
   return normal;
 }
 
+/** The chart's series in the display units: the one place the chart
+ *  converts. Entries are canonical (°C, mm). Rounding follows the
+ *  conversion, so 21.4 °C is 71 °F, not 70. The same-unit branches skip
+ *  every conversion, so a metric setup draws its values untouched. */
+export function toDisplayData<T extends ForecastChartData>(
+  data: T,
+  displayUnits: Pick<DisplayUnits, 'temperature' | 'precipitation'>,
+  roundTemp: boolean,
+): T {
+  const tempUnit = displayUnits.temperature;
+  // Math.round(null) is 0, which would turn "no data" into a fake 0°.
+  const temp = (cell: number | null | undefined): number | null | undefined => {
+    if (cell === null || cell === undefined) return cell;
+    if (typeof cell !== 'number' || !Number.isFinite(cell)) return null;
+    const v = tempUnit === CANONICAL_UNIT.temperature ? cell : fromCanonical('temperature', cell, tempUnit);
+    if (v === null) return null;
+    return roundTemp ? Math.round(v) : v;
+  };
+  const precipUnit = displayUnits.precipitation;
+  const precip = precipUnit === CANONICAL_UNIT.precipitation
+    ? data.precip
+    : (data.precip || []).map((cell) => {
+      const n = coerceNumeric(cell);
+      return n === null ? null : fromCanonical('precipitation', n, precipUnit);
+    });
+  return {
+    ...data,
+    tempHigh: (data.tempHigh || []).map(temp),
+    tempLow: (data.tempLow || []).map(temp),
+    precip,
+  };
+}
+
 /** Mode/unit-static floor for the precipitation y-axis ceiling: hourly
- *  and today 4 mm (metric) / 1 in, daily 20 mm / 1 in. buildChart derives
- *  the actual ceiling from it and the data. */
-export function precipAxisFloor(isHourlyish: boolean, lengthUnit: string): number {
-  return isHourlyish
-    ? (lengthUnit === 'km' ? 4 : 1)
-    : (lengthUnit === 'km' ? 20 : 1);
+ *  and today 4 mm, daily 20 mm, converted into the display unit; inches
+ *  keep a 1 in floor in both modes. buildChart derives the actual ceiling
+ *  from it and the data. */
+export function precipAxisFloor(isHourlyish: boolean, precipUnit: string): number {
+  if (precipUnit === 'in') return 1;
+  const mm = isHourlyish ? 4 : 20;
+  return fromCanonical('precipitation', mm, precipUnit) ?? mm;
 }
 
 /** Test surface for the ceiling rule: max(per-mode floor, tallest bucket).
  *  The live chart derives the same value via precipCeiling in draw.ts. */
 export function computePrecipMax(
   isHourlyish: boolean,
-  lengthUnit: string,
+  precipUnit: string,
   precip: ReadonlyArray<number | null | undefined> = [],
 ): number {
-  return precipCeiling(precipAxisFloor(isHourlyish, lengthUnit), precip);
+  return precipCeiling(precipAxisFloor(isHourlyish, precipUnit), precip);
 }
 
 interface BuildDatasetsArgs {
@@ -232,8 +268,7 @@ interface BuildPluginsArgs {
   doubledToday: boolean;
   sunshineLabelBand: number;
   precipUnit: string;
-  precipSourceBase: string;
-  precipTargetBase: string;
+  precipUnitId: string;
   precipPerBarColor: string[];
   precipColor: string;
   showSunshineLabels: boolean;
@@ -253,7 +288,7 @@ function buildPlugins(args: BuildPluginsArgs): ChartPlugin[] {
     stationCount, forecastCount, style, dividerColor,
     textColor, backgroundColor, chartTextColor,
     isHourly, doubledToday, sunshineLabelBand,
-    precipUnit, precipSourceBase, precipTargetBase, precipPerBarColor, precipColor,
+    precipUnit, precipUnitId, precipPerBarColor, precipColor,
     showSunshineLabels, sunshineColor, sunshinePerBarColor,
     temp1Color, temp2Color,
   } = args;
@@ -263,7 +298,7 @@ function buildPlugins(args: BuildPluginsArgs): ChartPlugin[] {
     sunshineLabelBand,
   });
   const precipLabelPlugin = createPrecipLabelPlugin({
-    config, data, precipUnit, precipSourceBase, precipTargetBase,
+    config, data, precipUnit, precipUnitId,
     precipPerBarColor, precipColor, textColor, backgroundColor,
     chartTextColor,
   });
@@ -316,19 +351,15 @@ export function buildForecastChart(inputs: ChartInputs): UplotChart {
 }
 
 function composeChart(inputs: ChartInputs, phase: { current: 'compute' | 'init' }): UplotChart {
-  const { target: chartTarget, language, calendar, data, ll, themeHost } = inputs;
+  const { target: chartTarget, language, calendar, ll, themeHost, displayUnits } = inputs;
   // Normalized config: forecast.type falls back to 'daily' for typo'd YAML.
   const { config } = normalizeForecastMode(inputs.config);
-  const tempUnit = inputs.unitSystem.temperature;
-  const lengthUnit = inputs.unitSystem.length;
+  // Everything below draws this data: line, bars, axes and labels share
+  // one unit.
+  const data = toDisplayData(inputs.data, displayUnits, config.forecast.round_temp === true);
+  const tempUnit = displayUnits.temperature;
   const llUnits = ll('units') as Record<string, string>;
-  // Precip values arrive in HA's system length unit. `units.precipitation`
-  // overrides only the displayed label text (converted in the precip-label
-  // plugin); bar heights stay in the source unit.
-  const precipSourceBase = lengthUnit === 'km' ? 'mm' : 'in';
-  const cfgPrecip = config.units?.precipitation;
-  const precipTargetBase = (cfgPrecip === 'mm' || cfgPrecip === 'in') ? cfgPrecip : precipSourceBase;
-  const precipUnit = llUnits[precipTargetBase] ?? precipTargetBase;
+  const precipUnit = llUnits[displayUnits.precipitation] ?? displayUnits.precipitation;
 
   // The `style` proxy serves the four known theme tokens from the cache;
   // any other CSS var falls back to a live read.
@@ -354,7 +385,7 @@ function composeChart(inputs: ChartInputs, phase: { current: 'compute' | 'init' 
 
   // 'today' shares the hourly precip scale; 'daily' needs a wider one.
   const isHourlyish = config.forecast.type === 'hourly' || config.forecast.type === 'today';
-  const precipFloor = precipAxisFloor(isHourlyish, lengthUnit);
+  const precipFloor = precipAxisFloor(isHourlyish, displayUnits.precipitation);
 
   const stationCountForGap = inputs.stationCount;
   const forecastCountForGap = inputs.forecastCount;
@@ -428,7 +459,7 @@ function composeChart(inputs: ChartInputs, phase: { current: 'compute' | 'init' 
     stationCount, forecastCount, style, dividerColor,
     textColor, backgroundColor, chartTextColor: chart_text_color,
     isHourly, doubledToday, sunshineLabelBand,
-    precipUnit, precipSourceBase, precipTargetBase, precipPerBarColor, precipColor,
+    precipUnit, precipUnitId: displayUnits.precipitation, precipPerBarColor, precipColor,
     showSunshineLabels, sunshineColor, sunshinePerBarColor,
     temp1Color, temp2Color,
   });

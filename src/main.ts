@@ -53,7 +53,8 @@ import { TeardownRegistry } from './teardown-registry.js';
 import { PrecipRateController, type CounterState } from './precip-rate-controller.js';
 import { luxScaleFor } from './utils/unit-converters.js';
 import { deltaToCanonical, parseUnit, toCanonical } from './utils/units.js';
-import { buildForecastChart, ChartBuildError, type ChartInputs } from './chart/orchestrator.js';
+import { buildForecastChart, ChartBuildError, toDisplayData } from './chart/orchestrator.js';
+import type { DisplayUnits } from './display-units.js';
 import { DataSourceController } from './data-source-controller.js';
 import { sanitizeForecastEntries } from './chart/sanitize.js';
 import { cardStyles } from './chart/styles.js';
@@ -221,6 +222,9 @@ class WeatherStationCard extends LitElement {
   // Last extraction (value, unit and source per key); the classifier
   // reads units from it, the popup the sources via _liveSources.
   _readings: SensorReadings | null = null;
+  // Display units the live chart was built with. Axis floor, label unit
+  // and decimals are fixed at build, so a change needs a rebuild.
+  _chartDisplayUnits: DisplayUnits | null = null;
   // The live rate behind `precipitation` in mm/h, unrounded; null while
   // the row shows no rate. Not reactive: the strings re-render.
   _precipRateMmH: number | null = null;
@@ -1265,6 +1269,12 @@ drawChart(): void {
   }
 }
 
+// Canonical until the first sensor extraction.
+_displayUnits(): DisplayUnits {
+  return this._readings?.displayUnits
+    ?? { temperature: '°C', pressure: 'hPa', speed: 'm/s', precipitation: 'mm' };
+}
+
 // Throws ChartBuildError (chart/orchestrator.ts).
 _buildChart(): void {
   if (!this.forecasts?.length) return;
@@ -1287,6 +1297,8 @@ _buildChart(): void {
   } catch (err) {
     throw new ChartBuildError('compute', err);
   }
+  const displayUnits = this._displayUnits();
+  this._chartDisplayUnits = displayUnits;
   this.forecastChart = buildForecastChart({
     target,
     config: this.config,
@@ -1295,8 +1307,7 @@ _buildChart(): void {
     data,
     stationCount: this._stationCount || 0,
     forecastCount: this._forecastCount || 0,
-    unitSystem: (this._hass?.config as { unit_system?: ChartInputs['unitSystem'] } | undefined)
-      ?.unit_system as ChartInputs['unitSystem'],
+    displayUnits,
     ll: (key: string) => this.ll(key),
     // The card inherits the global AND the view-level theme; detached,
     // it falls back to the body.
@@ -1313,9 +1324,8 @@ computeForecastData({ config, forecastItems } = this) {
   const forecast = sanitizeForecastEntries(sliced);
   const dateTime = forecast.map((d) => d.datetime);
   const fcType = config.forecast?.type;
-  const { tempHigh, tempLow: rawTempLow } = hourlyTempSeries(forecast, {
-    roundTemp: config.forecast.round_temp === true,
-  });
+  // Canonical °C / mm; the chart converts and rounds (toDisplayData).
+  const { tempHigh, tempLow: rawTempLow } = hourlyTempSeries(forecast);
   // Hourly entries have a single temperature; some providers emit an identical
   // per-hour `templow` that would draw a dashed line on top of the high, so
   // drop it. Daily and 3h-aggregated 'today' keep their pairs.
@@ -1351,7 +1361,13 @@ updateChart({ forecasts, forecastChart } = this) {
     return;
   }
 
-  const data = this.computeForecastData();
+  const units = this._displayUnits();
+  const built = this._chartDisplayUnits;
+  if (built && (built.temperature !== units.temperature || built.precipitation !== units.precipitation)) {
+    this.drawChart();
+    return;
+  }
+  const data = toDisplayData(this.computeForecastData(), units, this.config.forecast.round_temp === true);
 
   if (forecastChart) {
     forecastChart.data.labels = data.dateTime;

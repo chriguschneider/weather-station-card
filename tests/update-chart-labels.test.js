@@ -89,3 +89,52 @@ describe('updateChart — in-place refresh of the plugins shared render-data', (
     expect(chart.update).toHaveBeenCalled();
   });
 });
+
+describe('updateChart — display units', () => {
+  const imperial = { temperature: '°F', pressure: 'hPa', speed: 'km/h', precipitation: 'in' };
+  const metric = { temperature: '°C', pressure: 'hPa', speed: 'km/h', precipitation: 'mm' };
+
+  function cardWithReadings() {
+    const card = document.createElement('weather-station-card');
+    card.setConfig({ show_station: true, sensors: { temperature: 'sensor.t' } });
+    card._readings = { displayUnits: imperial };
+    card.forecasts = [{}];
+    card.computeForecastData = () => ({
+      dateTime: ['d0', 'd1'],
+      tempHigh: [20, 21.4],
+      tempLow: [10, null],
+      precip: [0, 25.4],
+      sunshine: [0, 0],
+      dayLength: [13, 13],
+    });
+    return card;
+  }
+
+  it('writes the series in the display units', () => {
+    const card = cardWithReadings();
+    const chart = mockChart();
+    card.forecastChart = chart;
+
+    card.updateChart();
+
+    expect(chart.data.datasets[0].data).toEqual([68, 71]);
+    expect(chart.data.datasets[1].data).toEqual([50, null]);
+    expect(chart.data.datasets[2].data).toEqual([0, 1]);
+    expect(chart.renderData.tempHigh).toEqual([68, 71]);
+    expect(chart.renderData.precip).toEqual([0, 1]);
+    expect(chart.update).toHaveBeenCalled();
+  });
+
+  it('rebuilds instead of updating when the display units changed', () => {
+    const card = cardWithReadings();
+    const chart = mockChart();
+    card.forecastChart = chart;
+    card._chartDisplayUnits = metric;
+    card.drawChart = vi.fn();
+
+    card.updateChart();
+
+    expect(card.drawChart).toHaveBeenCalledTimes(1);
+    expect(chart.update).not.toHaveBeenCalled();
+  });
+});
