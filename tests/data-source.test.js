@@ -817,7 +817,7 @@ describe('MeasuredDataSource hourly mode', () => {
 
   it('omits templow on hourly entries (chart layer derives via 3h block aggregation)', () => {
     // Hourly station data-source emits only `temperature`. The
-    // dual-line look for 'today' mode comes from aggregateThreeHour(...)
+    // dual-line look for 'today' mode comes from aggregateThreeHourCalendar(...)
     // pooling 3 consecutive hours' temperature values into a real
     // max/min pair per block — keeps the data-source layer focused on
     // per-bucket extraction and lets the chart layer handle the visual

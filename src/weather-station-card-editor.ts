@@ -305,20 +305,6 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     this.requestUpdate();
   };
 
-  // Sets one `sensors` key; an empty value removes it so unset sensors
-  // don't appear as empty strings.
-  _sensorPickerChanged = (key: string, value: unknown): void => {
-    if (!this._config) return;
-    const newSensors: Record<string, string> = { ...((this._config.sensors as Record<string, string>) || {}) };
-    if (value === '' || value === null || value === undefined) {
-      delete newSensors[key];
-    } else {
-      newSensors[key] = value as string;
-    }
-    this.configChanged({ ...this._config, sensors: newSensors });
-    this.requestUpdate();
-  };
-
   _unitsChanged = (event: Event): void => {
     if (!this._config) return;
     const target = event.target as HTMLElement | null;

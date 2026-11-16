@@ -20,9 +20,6 @@ export interface HomeAssistant {
 /** Translation lookup; falls back to English, then to the key. */
 export type TFn = (key: string) => string;
 
-/** Event shape for input change handlers that bind to `_valueChanged`. */
-export type ChangeEvt = Event & { target: HTMLInputElement };
-
 /** What `_valueChanged` reads from `event.target`: `value` or `checked`. */
 interface ValueChangedTarget {
   value?: string | number;
@@ -79,7 +76,6 @@ export interface EditorLike {
   _setPanelExpanded(sectionKey: string, expanded: boolean): void;
   _valueChanged(event: { target: ValueChangedTarget }, key: string): void;
   _sensorsChanged(event: Event): void;
-  _sensorPickerChanged(key: string, value: unknown): void;
   _unitsChanged(event: Event): void;
   _chartTopChanged(event: Event): void;
   _chartForecastChanged(event: Event): void;

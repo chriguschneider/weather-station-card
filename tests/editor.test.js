@@ -7,7 +7,6 @@
 //   - _valueChanged: simple key, dotted key (forecast.foo, units.bar),
 //     deeper dotted key, checkbox event-shape (target.checked),
 //     missing-config early return.
-//   - _sensorPickerChanged: add, replace, delete on empty/null/undefined.
 //
 // We instantiate the editor class with a minimal mock for the Lit-side
 // surface (configChanged + requestUpdate) — the methods themselves are
@@ -97,69 +96,6 @@ describe('editor._valueChanged', () => {
 
   it('triggers a Lit re-render via requestUpdate', () => {
     editor._valueChanged(event('Living Room'), 'title');
-    expect(editor.requestUpdate).toHaveBeenCalledOnce();
-  });
-});
-
-describe('editor._sensorPickerChanged', () => {
-  let editor;
-  beforeEach(() => {
-    editor = makeEditor({
-      sensors: { temperature: 'sensor.temp', humidity: 'sensor.hum' },
-    });
-  });
-
-  it('is a no-op when _config is missing', () => {
-    editor._config = null;
-    editor._sensorPickerChanged('temperature', 'sensor.new');
-    expect(editor.configChanged).not.toHaveBeenCalled();
-  });
-
-  it('adds a new sensor key', () => {
-    editor._sensorPickerChanged('illuminance', 'sensor.lux');
-    const newCfg = editor.configChanged.mock.calls[0][0];
-    expect(newCfg.sensors.illuminance).toBe('sensor.lux');
-    expect(newCfg.sensors.temperature).toBe('sensor.temp'); // existing kept
-  });
-
-  it('replaces an existing sensor key', () => {
-    editor._sensorPickerChanged('temperature', 'sensor.kitchen_temp');
-    const newCfg = editor.configChanged.mock.calls[0][0];
-    expect(newCfg.sensors.temperature).toBe('sensor.kitchen_temp');
-  });
-
-  it('deletes the key on empty-string value (the picker-clear path)', () => {
-    editor._sensorPickerChanged('temperature', '');
-    const newCfg = editor.configChanged.mock.calls[0][0];
-    expect('temperature' in newCfg.sensors).toBe(false);
-    expect(newCfg.sensors.humidity).toBe('sensor.hum'); // sibling kept
-  });
-
-  it('deletes the key on null value', () => {
-    editor._sensorPickerChanged('temperature', null);
-    expect('temperature' in editor.configChanged.mock.calls[0][0].sensors).toBe(false);
-  });
-
-  it('deletes the key on undefined value', () => {
-    editor._sensorPickerChanged('temperature', undefined);
-    expect('temperature' in editor.configChanged.mock.calls[0][0].sensors).toBe(false);
-  });
-
-  it('starts with an empty sensors object when none was configured', () => {
-    editor._config = {};
-    editor._sensorPickerChanged('temperature', 'sensor.new');
-    const newCfg = editor.configChanged.mock.calls[0][0];
-    expect(newCfg.sensors).toEqual({ temperature: 'sensor.new' });
-  });
-
-  it('does not mutate the original sensors object', () => {
-    const before = { ...editor._config.sensors };
-    editor._sensorPickerChanged('illuminance', 'sensor.lux');
-    expect(editor._config.sensors).toEqual(before);
-  });
-
-  it('triggers a Lit re-render', () => {
-    editor._sensorPickerChanged('temperature', 'sensor.new');
     expect(editor.requestUpdate).toHaveBeenCalledOnce();
   });
 });

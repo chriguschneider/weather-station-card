@@ -35,7 +35,6 @@ function makeEditor(overrides = {}) {
     _setPanelExpanded: vi.fn(),
     _valueChanged: vi.fn(),
     _sensorsChanged: vi.fn(),
-    _sensorPickerChanged: vi.fn(),
     _unitsChanged: vi.fn(),
     _chartTopChanged: vi.fn(),
     _chartForecastChanged: vi.fn(),
