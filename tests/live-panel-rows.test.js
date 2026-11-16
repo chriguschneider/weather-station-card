@@ -12,7 +12,7 @@ import {
 } from '../src/live-panel/context.js';
 import {
   climateRowDewPoint, climateRowNextRain, climateRowPrecip, climateRowPressure,
-  dewPointText, precipitationText, pressureText,
+  dewPointText, precipitationText, precipRateDisplay, pressureText,
 } from '../src/live-panel/climate-rows.js';
 import {
   climateRowZeroDegree, climateRowZeroDegree48h, formatMetres, zeroDegreeElevation,
@@ -222,11 +222,34 @@ describe('climate rows', () => {
     expect(climateRowPrecip(ctx, true, false, '', 'mm/h')).toBeNull();
     const rate = climateRowPrecip(ctx, true, true, '1.4', 'mm/h');
     expect(text(rate)).toBe('1.4 mm/h');
+    expect(attr(rate, 'ha-icon', 'icon')).toBe('hass:weather-rainy');
     expect(attr(rate, 'a', 'data-eid')).toBe('sensor.rate');
     const plain = climateRowPrecip(makeCtx({ config: { sensors: { precipitation: 'sensor.rain' } } }), true, true, '3', 'mm');
     expect(attr(plain, 'ha-icon', 'icon')).toBe('hass:weather-rainy');
     expect(attr(plain, 'a', 'data-eid')).toBe('sensor.rain');
     expect(precipitationText(3, undefined)).toBe('3');
+  });
+
+  it('precipitation: the icon follows the unrounded rate in mm/h', () => {
+    const icon = (precipitationRate) => attr(
+      climateRowPrecip(makeCtx({ values: { precipitationRate } }), true, true, '0.0', 'mm/h'), 'ha-icon', 'icon');
+    expect(icon(0)).toBe('hass:water-off');
+    expect(icon(1.4)).toBe('hass:weather-rainy');
+    expect(icon(2.5)).toBe('hass:weather-pouring');
+    expect(icon(null)).toBe('hass:weather-rainy');
+  });
+
+  it('precipRateDisplay: mm keeps its own decimals, other units the table\'s', () => {
+    expect(precipRateDisplay(1.44, 'mm')).toEqual({ value: '1.4', unit: 'mm/h' });
+    expect(precipRateDisplay(0, 'mm')).toEqual({ value: '0.0', unit: 'mm/h' });
+    // Decided on the unrounded value: 9.96 is below 10.
+    expect(precipRateDisplay(9.96, 'mm')).toEqual({ value: '10.0', unit: 'mm/h' });
+    expect(precipRateDisplay(12, 'mm')).toEqual({ value: '12', unit: 'mm/h' });
+    expect(precipRateDisplay(2.54, 'in')).toEqual({ value: '0.10', unit: 'in/h' });
+    expect(precipRateDisplay(25.4, 'in')).toEqual({ value: '1.00', unit: 'in/h' });
+    expect(precipRateDisplay(2.5, 'cm')).toEqual({ value: '0.25', unit: 'cm/h' });
+    // Not a resolved display unit; falls back to mm.
+    expect(precipRateDisplay(2.5, 'parsec')).toEqual({ value: '2.5', unit: 'mm/h' });
   });
 
   it('next rain: hidden without text, tooltip otherwise', () => {

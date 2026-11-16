@@ -50,13 +50,9 @@ import { parseNumericSafe } from './utils/numeric.js';
 import { setupScrollUx } from './scroll-ux.js';
 import { setupActionHandler } from './action-handler.js';
 import { TeardownRegistry } from './teardown-registry.js';
-import { PrecipRateController, type CounterState, type PrecipDisplay } from './precip-rate-controller.js';
-import {
-  isPrecipRateUnit,
-  formatPrecipDisplay,
-  luxScaleFor,
-} from './utils/unit-converters.js';
-import { toCanonical } from './utils/units.js';
+import { PrecipRateController, type CounterState } from './precip-rate-controller.js';
+import { luxScaleFor } from './utils/unit-converters.js';
+import { deltaToCanonical, parseUnit, toCanonical } from './utils/units.js';
 import { buildForecastChart, ChartBuildError, type ChartInputs } from './chart/orchestrator.js';
 import { DataSourceController } from './data-source-controller.js';
 import { sanitizeForecastEntries } from './chart/sanitize.js';
@@ -72,6 +68,7 @@ import {
 import { renderAttributes as renderLiveAttributes } from './live-panel/attributes.js';
 import { renderSun as renderLiveSun, renderMoonLine } from './live-panel/sun-rows.js';
 import { renderForecastWind, spriteIcon } from './live-panel/wind-rows.js';
+import { precipRateDisplay } from './live-panel/climate-rows.js';
 import { zeroDegreeElevation, zeroDegreeFormat, zeroDegreePlace } from './live-panel/zero-degree-rows.js';
 import {
   renderAvailabilityNote,
@@ -224,8 +221,9 @@ class WeatherStationCard extends LitElement {
   // Last extraction (value, unit and source per key); the classifier
   // reads units from it, the popup the sources via _liveSources.
   _readings: SensorReadings | null = null;
-  // Precip source base unit ('mm' | 'in'), without any /h suffix.
-  _sourcePrecipUnit: string = 'mm';
+  // The live rate behind `precipitation` in mm/h, unrounded; null while
+  // the row shows no rate. Not reactive: the strings re-render.
+  _precipRateMmH: number | null = null;
 
   _liveConditionKey: string | undefined;
   _liveCondition: string | undefined;
@@ -581,8 +579,7 @@ _extractSensorReadings(hass: HassMain): void {
   this.unitTemperature = r.displayUnits.temperature;
   this.unitSpeed = r.displayUnits.speed;
   this.unitPressure = r.displayUnits.pressure;
-  this.unitPrecip = this.config.units.precipitation || r.units.precipBase;
-  this._sourcePrecipUnit = r.units.precipBase;
+  this.unitPrecip = r.displayUnits.precipitation;
 
   // Raw values: the rows convert through `_readings`; these fields
   // only make a changed value re-render (ADR-0017).
@@ -595,8 +592,10 @@ _extractSensorReadings(hass: HassMain): void {
   this.wind_gust_speed = r.gust_speed.value;
   this.windDirection = r.wind_direction.value;
   this.illuminance = r.illuminance.value;
+  // A hidden row keeps the raw reading and no rate.
   this.precipitation = r.precipitation.value;
   this.precipitation_unit = r.precipitation.unit;
+  this._precipRateMmH = null;
   this.zero_degree_level = r.zero_degree_level.value;
   this.zero_degree_unit = r.zero_degree_level.unit;
   this.zero_degree_48h_level = r.zero_degree_level_48h.value;
@@ -617,29 +616,31 @@ _extractSensorReadings(hass: HassMain): void {
 
   // Gated on show_precipitation: a hidden row would still pay for a buffer
   // prune, a localStorage write and a 30 s interval per hass set. Re-enabling
-  // hot-loads from the stored buffer. Three shapes:
-  //   - `sensors.precipitation_rate` (#253): measured mm/h; wins and replaces
-  //     the precipitation reading, source included.
-  //   - Native rate sensor (unit ends in /h): convert to the display unit.
-  //   - Cumulative counter (everything else): derive a rate from the
-  //     sliding-anchor buffer.
-  if (this.config.show_precipitation !== false) {
-    const rate = this._applyLivePrecipRateSensor(hass);
-    if (rate) {
-      r.precipitation = rate;
-    } else if (isPrecipRateUnit(r.precipitation.unit)) {
-      const num = parseNumericSafe(this.precipitation);
-      if (num != null) {
-        const { value, unit } = formatPrecipDisplay(num, r.precipitation.unit, this.unitPrecip);
-        this.precipitation = value;
-        this.precipitation_unit = unit;
-      }
-    } else {
-      this._maybeDerivePrecipRate(hass);
-    }
-  }
+  // hot-loads from the stored buffer. Every rate goes through canonical
+  // mm/h (ADR-0035); the row shows it in the display unit per hour.
+  //   - `sensors.precipitation_rate` (#253): wins and replaces the
+  //     precipitation reading, source included.
+  //   - A rate unit in the precipitation slot: converted.
+  //   - A depth unit or none (the assumed unit): a cumulative counter,
+  //     whose rate comes from the sliding-anchor buffer.
+  //   - Any other unit (`%`): the raw value with its own unit.
+  if (this.config.show_precipitation !== false) this._applyLivePrecip(hass, r);
 
   this._liveSources = liveSourcesOf(r);
+}
+
+_applyLivePrecip(hass: HassMain, r: SensorReadings): void {
+  const rate = this._applyLivePrecipRateSensor(hass);
+  const { unit, canonical } = r.precipitation;
+  if (rate) {
+    r.precipitation = rate;
+  } else if (parseUnit('precipitation_rate', unit) !== null && canonical !== null) {
+    this._showPrecipRate(canonical);
+  } else if (parseUnit('precipitation', unit) !== null) {
+    // A sensor without a unit carries the assumed one here.
+    const eid: string | undefined = this.config.sensors?.precipitation;
+    this._precipRate.derive(eid, eid ? hass.states?.[eid] as CounterState | undefined : undefined);
+  }
 }
 
 // A dedicated `sensors.precipitation_rate` entity (#253) already is a rate,
@@ -647,36 +648,40 @@ _extractSensorReadings(hass: HassMain): void {
 // none is configured or its state isn't numeric.
 _applyLivePrecipRateSensor(hass: HassMain): Reading | null {
   const eid = this.config.sensors?.precipitation_rate;
-  const reading = precipRateReading(eid, eid ? hass.states?.[eid] as StateLike | undefined : undefined, this.unitPrecip);
+  const reading = precipRateReading(
+    eid,
+    eid ? hass.states?.[eid] as StateLike | undefined : undefined,
+    this._readings?.assumed.precipitation,
+  );
   if (!reading) return null;
 
   // The cumulative derivation may already be running; its 30 s tick would keep
   // overwriting `precipitation` from the orphaned buffer, so release it here.
   this._precipRate.stop();
-  this.precipitation = reading.value;
-  this.precipitation_unit = reading.unit;
+  if (reading.canonical !== null) {
+    this._showPrecipRate(reading.canonical);
+  } else {
+    this.precipitation = reading.value;
+    this.precipitation_unit = reading.unit;
+  }
   return reading;
 }
 
-// A cumulative counter (unit not ending in /h) shows a live mm/h rate
-// derived from recent samples (precip-rate-controller.ts) instead of its
-// meaningless total. Rate units pass through untouched.
-_maybeDerivePrecipRate(hass: HassMain): void {
-  if (/\/(h|hr|hour)$/i.test(this.precipitation_unit ?? '')) return;
-  const eid: string | undefined = this.config.sensors?.precipitation;
-  this._precipRate.derive(eid, eid ? hass.states?.[eid] as CounterState | undefined : undefined);
-}
-
-// PrecipRateHost (precip-rate-controller.ts).
-precipUnits(): { source: string; display: string | undefined } {
-  return { source: this._sourcePrecipUnit, display: this.unitPrecip };
-}
-
-applyDerivedPrecip(display: PrecipDisplay): boolean {
-  const changed = this.precipitation !== display.value || this.precipitation_unit !== display.unit;
-  this.precipitation = display.value;
-  this.precipitation_unit = display.unit;
+/** Show a rate (mm/h) in the display unit; true when the text changed. */
+_showPrecipRate(mmH: number): boolean {
+  const { value, unit } = precipRateDisplay(mmH, this.unitPrecip ?? 'mm');
+  const changed = this.precipitation !== value || this.precipitation_unit !== unit;
+  this.precipitation = value;
+  this.precipitation_unit = unit;
+  this._precipRateMmH = mmH;
   return changed;
+}
+
+// PrecipRateHost (precip-rate-controller.ts). The rate is in the
+// counter's unit per hour; a depth difference converts without a zero.
+applyDerivedRate(ratePerHour: number): boolean {
+  const mmH = deltaToCanonical('precipitation', ratePerHour, this._readings?.precipitation.unit);
+  return mmH === null ? false : this._showPrecipRate(mmH);
 }
 
 onDerivedPrecipTick(): void {
@@ -1699,6 +1704,7 @@ _liveCtx(language?: string): LivePanelCtx {
       humidity: this.humidity,
       precipitation: this.precipitation,
       precipitation_unit: this.precipitation_unit,
+      precipitationRate: this._precipRateMmH,
       uv_index: this.uv_index,
       illuminance: this.illuminance,
       windDirection: this.windDirection,
@@ -1920,15 +1926,12 @@ _refreshNextRain(): void {
   else this._stopNextRainTick();
 }
 
-/** True while the live precipitation row shows a rate above zero —
- *  from a dedicated rate sensor or the counter-derived rate, both of
- *  which land in `precipitation` with a per-hour unit. A cumulative
- *  counter without a derived rate (no `/h` unit) says nothing about
- *  right now, so it never claims rain. */
+/** True while the live precipitation row shows a rate above zero, from
+ *  a rate sensor or the counter-derived rate. The unrounded rate counts,
+ *  so 0.03 mm/h is rain even where the row reads `0.0 mm/h`. A value
+ *  that is no rate says nothing about right now and never claims rain. */
 _isRainingNow(): boolean {
-  if (!/\/(h|hr|hour)$/i.test(this.precipitation_unit ?? '')) return false;
-  const rate = parseNumericSafe(this.precipitation);
-  return rate != null && rate > 0;
+  return this._precipRateMmH !== null && this._precipRateMmH > 0;
 }
 
 // The integration refreshes every five minutes; between updates the

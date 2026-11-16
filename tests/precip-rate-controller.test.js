@@ -5,19 +5,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PrecipRateController } from '../src/precip-rate-controller.js';
 
-function makeHost({ source = 'mm', display = 'mm' } = {}) {
+function makeHost({ changed = true } = {}) {
   const host = {
     controllers: [],
     shown: null,
+    applied: 0,
     ticks: 0,
     addController(c) { this.controllers.push(c); },
     removeController() {},
     requestUpdate() {},
     updateComplete: Promise.resolve(true),
-    precipUnits: () => ({ source, display }),
-    applyDerivedPrecip(d) {
-      const changed = !this.shown || this.shown.value !== d.value || this.shown.unit !== d.unit;
-      this.shown = d;
+    applyDerivedRate(rate) {
+      this.shown = rate;
+      this.applied++;
       return changed;
     },
     onDerivedPrecipTick() { this.ticks++; },
@@ -50,7 +50,7 @@ describe('PrecipRateController', () => {
     ctrl.derive('sensor.rain', at('2026-11-15T09:50:00Z', 1));
     expect(ctrl.timer).not.toBeNull();
     expect(ctrl.bufferEntity).toBe('sensor.rain');
-    expect(host.shown).toMatchObject({ unit: 'mm/h' });
+    expect(host.shown).toBe(0);
   });
 
   it('derives a rate from two samples and persists the buffer per entity', () => {
@@ -59,7 +59,7 @@ describe('PrecipRateController', () => {
     ctrl.derive('sensor.rain', at('2026-11-15T09:50:00Z', 1));
     ctrl.derive('sensor.rain', at('2026-11-15T10:00:00Z', 2));
     // 1 mm in the 10 min up to now.
-    expect(host.shown).toEqual({ value: '6.0', unit: 'mm/h' });
+    expect(host.shown).toBeCloseTo(6, 9);
 
     // A second controller (reload) hydrates from localStorage.
     const reloaded = new PrecipRateController(makeHost());
@@ -76,14 +76,14 @@ describe('PrecipRateController', () => {
     spy.mockRestore();
   });
 
-  it('converts to the display unit', () => {
-    const host = makeHost({ source: 'mm', display: 'in' });
+  it('returns the rate in the counter\'s own unit, unconverted', () => {
+    const host = makeHost();
     const ctrl = new PrecipRateController(host);
-    // 25.4 mm (1 in) in the 10 min up to now: 6 in/h.
-    ctrl.derive('sensor.rain', at('2026-11-15T09:50:00Z', 0));
-    ctrl.derive('sensor.rain', at('2026-11-15T10:00:00Z', 25.4));
-    expect(host.shown.unit).toBe('in/h');
-    expect(Number(host.shown.value)).toBeCloseTo(6, 2);
+    // A counter in inches: 1 in in the 10 min up to now is 6 (in/h); the
+    // card, not the controller, converts it.
+    ctrl.derive('sensor.rain_in', at('2026-11-15T09:50:00Z', 0));
+    ctrl.derive('sensor.rain_in', at('2026-11-15T10:00:00Z', 1));
+    expect(host.shown).toBeCloseTo(6, 9);
   });
 
   it('the tick decays the rate in dry spells and tells the host', () => {
@@ -91,10 +91,20 @@ describe('PrecipRateController', () => {
     const ctrl = new PrecipRateController(host);
     ctrl.derive('sensor.rain', at('2026-11-15T09:59:00Z', 1));
     ctrl.derive('sensor.rain', at('2026-11-15T10:00:00Z', 2));
-    const before = Number(host.shown.value);
+    const before = host.shown;
     vi.advanceTimersByTime(30 * 60_000);
-    expect(Number(host.shown.value)).toBeLessThan(before);
-    expect(host.ticks).toBeGreaterThan(0);
+    expect(host.shown).toBeLessThan(before);
+    expect(host.ticks).toBe(60);
+  });
+
+  it('the tick tells the host only when the shown text changed', () => {
+    const host = makeHost({ changed: false });
+    const ctrl = new PrecipRateController(host);
+    ctrl.derive('sensor.rain', at('2026-11-15T09:59:00Z', 1));
+    const applied = host.applied;
+    vi.advanceTimersByTime(90_000);
+    expect(host.applied).toBe(applied + 3);
+    expect(host.ticks).toBe(0);
   });
 
   it('stop() releases tick and buffer; disconnect clears only the tick', () => {

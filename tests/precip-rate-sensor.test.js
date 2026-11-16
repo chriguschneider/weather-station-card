@@ -15,7 +15,7 @@
 //   - an unavailable rate sensor degrades to the counter rather than
 //     blanking the cell.
 
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import '../src/main.js';
 
 const makeHass = (states) => ({
@@ -99,6 +99,100 @@ describe('sensors.precipitation_rate — display value', () => {
     }));
     expect(card.precipitation).toBe('0.25');
     expect(card.precipitation_unit).toBe('in/h');
+  });
+});
+
+describe('live precipitation rate on the units model (#478)', () => {
+  const counterOnly = (extra = {}) => makeCard({
+    sensors: { temperature: 'sensor.t', precipitation: 'sensor.rain_total' },
+    ...extra,
+  });
+
+  // Earlier tests leave a stored buffer for the same counter entity.
+  beforeEach(() => localStorage.clear());
+
+  it('converts a rate sensor in mm/d', () => {
+    const card = makeCard();
+    card.hass = makeHass(states({
+      'sensor.rain_rate': { state: '24', attributes: { unit_of_measurement: 'mm/d' } },
+    }));
+    expect(card.precipitation).toBe('1.0');
+    expect(card.precipitation_unit).toBe('mm/h');
+    expect(card._precipRateMmH).toBe(1);
+    expect(card._isRainingNow()).toBe(true);
+  });
+
+  it('shows a rate sensor with an unknown unit as it is, without a rate', () => {
+    const card = makeCard();
+    card.hass = makeHass(states({
+      'sensor.rain_rate': { state: '3', attributes: { unit_of_measurement: 'foo' } },
+    }));
+    expect(card.precipitation).toBe('3');
+    expect(card.precipitation_unit).toBe('foo');
+    expect(card._precipRateMmH).toBeNull();
+    expect(card._isRainingNow()).toBe(false);
+  });
+
+  it('converts a rate unit in the precipitation slot', () => {
+    const card = counterOnly({ units: { precipitation: 'mm' } });
+    card.hass = makeHass(states({
+      'sensor.rain_total': { state: '0.1', attributes: { unit_of_measurement: 'in/h' } },
+    }));
+    expect(card.precipitation).toBe('2.5');
+    expect(card.precipitation_unit).toBe('mm/h');
+    expect(card._precipRate.bufferEntity).toBeUndefined();
+  });
+
+  it('runs no buffer for a counter with a unit that is no depth', () => {
+    const card = counterOnly();
+    card.hass = makeHass(states({
+      'sensor.rain_total': { state: '40', attributes: { unit_of_measurement: '%' }, last_updated: recent() },
+    }));
+    expect(card._precipRate.bufferEntity).toBeUndefined();
+    expect(card.precipitation).toBe('40');
+    expect(card.precipitation_unit).toBe('%');
+    expect(card._isRainingNow()).toBe(false);
+  });
+
+  it('derives the rate of a counter without a unit in the assumed unit', () => {
+    const card = counterOnly();
+    card.hass = makeHass(states({
+      'sensor.rain_total': { state: '5.2', attributes: {}, last_updated: recent() },
+    }));
+    expect(card._precipRate.bufferEntity).toBe('sensor.rain_total');
+    // One fresh sample gives the rate floor, 0.1 per hour.
+    expect(card.precipitation).toBe('0.1');
+    expect(card.precipitation_unit).toBe('mm/h');
+    expect(card._precipRateMmH).toBeCloseTo(0.1, 9);
+  });
+
+  it('converts the rate of an inch counter into the display unit', () => {
+    const card = counterOnly({ units: { precipitation: 'mm' } });
+    card.hass = makeHass(states({
+      'sensor.rain_total': { state: '0.2', attributes: { unit_of_measurement: 'in' }, last_updated: recent() },
+    }));
+    // The floor of one fresh sample is 0.1 in/h, shown as 2.54 mm/h.
+    expect(card.precipitation).toBe('2.5');
+    expect(card.precipitation_unit).toBe('mm/h');
+    expect(card._precipRateMmH).toBeCloseTo(2.54, 9);
+    expect(card.applyDerivedRate(0.1)).toBe(false);
+    expect(card.applyDerivedRate(0.2)).toBe(true);
+    expect(card.precipitation).toBe('5.1');
+  });
+
+  it('shows nothing derived for a counter whose unit cannot convert', () => {
+    const card = counterOnly();
+    card.hass = makeHass(states());
+    card._readings.precipitation.unit = 'foo';
+    expect(card.applyDerivedRate(1)).toBe(false);
+  });
+
+  it('keeps the raw reading and no rate while the row is hidden', () => {
+    const card = makeCard({ show_precipitation: false });
+    card.hass = makeHass(states());
+    expect(card.precipitation).toBe('5.2');
+    expect(card.precipitation_unit).toBe('mm');
+    expect(card._precipRateMmH).toBeNull();
   });
 });
 
