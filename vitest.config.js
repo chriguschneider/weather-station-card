@@ -51,6 +51,7 @@ export default {
         'src/utils/numeric.ts',
         'src/utils/theme-tokens.ts',
         'src/utils/unit-converters.ts',
+        'src/utils/units.ts',
         'src/utils/series-cache.ts',
         'src/utils/shared-requests.ts',
         'src/utils/availability-grace.ts',
@@ -114,6 +115,8 @@ export default {
         'src/editor/toggle-pills.ts': { statements: 100, branches: 100, functions: 100, lines: 100 },
         'src/editor/section-keys.ts': { statements: 100, branches: 100, functions: 100, lines: 100 },
         'src/utils/resolve-css-var.ts': { statements: 100, branches: 100, functions: 100, lines: 100 },
+        // The units table (ADR-0035): every row is exercised by tests/units.test.js.
+        'src/utils/units.ts': { statements: 100, branches: 100, functions: 100, lines: 100 },
         // Live-panel rows (#449), each file at or near 100 %.
         'src/live-panel/*.ts': { statements: 98, branches: 90, functions: 98, lines: 98 },
         // Low floors just under what is reached; they stop a slide, they
