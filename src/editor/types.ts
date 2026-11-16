@@ -1,19 +1,9 @@
-// Shared types for the editor render partials.
-//
-// Each `editor/render-<section>.ts` exports a `renderSection(editor, ctx)`
-// function. They all share the same shape — `editor` is the
-// LitElement host with the per-input event handlers, `ctx` is a per-render
-// bag of computed view-state assembled in the host's `render()` method.
-//
-// The editor is loose-typed by design: contributors who add a new
-// section don't need to touch this file unless their handler isn't
-// covered by the union of `EditorLike`'s existing fields.
+// Shared types for the editor render partials: `editor` is the host with the
+// event handlers, `ctx` the per-render view-state from the host's render().
 
 import type { PlaceHit } from './location-lookup.js';
 
-/** Subset of Home Assistant's frontend `hass` object the editor
- *  reads. The full type lives in custom-card-helpers — keeping a
- *  loose subset here avoids an extra dev-dep purely for typing. */
+/** The subset of HA's frontend `hass` object the editor reads. */
 export interface HomeAssistant {
   language?: string;
   locale?: { language?: string };
@@ -27,43 +17,28 @@ export interface HomeAssistant {
   states?: Record<string, { state: string } | undefined>;
 }
 
-/** Translation lookup. Returns the English fallback (and ultimately
- *  the key itself) when no localization is configured. */
+/** Translation lookup; falls back to English, then to the key. */
 export type TFn = (key: string) => string;
 
-/** Event shape for `<ha-switch>` / `<ha-textfield>` change handlers
- *  that bind directly to `_valueChanged`. Shared by the partials that
- *  use raw `<ha-switch>` rows (render-chart, render-live-panel); the
- *  ha-form / ha-selector based partials see CustomEvents with a
- *  different shape and don't need this. */
+/** Event shape for input change handlers that bind to `_valueChanged`. */
 export type ChangeEvt = Event & { target: HTMLInputElement };
 
-/** Anything `_valueChanged` accepts on `event.target` — covers both
- *  `<ha-textfield>` (value) and `<ha-switch>` / `<ha-checkbox>`
- *  (checked). */
+/** What `_valueChanged` reads from `event.target`: `value` or `checked`. */
 interface ValueChangedTarget {
   value?: string | number;
   checked?: boolean;
 }
 
-/** Editor host surface. Each render partial receives the LitElement
- *  instance so it can bind handler closures (`@change="${(e) =>
- *  editor._valueChanged(e, 'days')}"`). Method signatures are kept
- *  loose because the host is JS-style with `static get properties`
- *  rather than decorator-typed. */
-/** Top-level mode the card runs in. Defines which inputs the editor
- *  shows and which sources the data layer subscribes to. */
+/** Top-level mode the card runs in. */
 export type EditorMode = 'station' | 'forecast' | 'combination';
 
 /** Where the past half of the chart gets its data (ADR-0015): station
  *  sensors via the recorder, or the Open-Meteo history opt-in. */
 export type PastSource = 'station' | 'openmeteo';
 
-/** Toggle-path descriptor for the multi-select (chips) fields. `def`
- *  is the *editor-visible* default for the key — the same truthiness
- *  the data bags use (`!== false` → def true, `=== true` → def false).
- *  Writing deletes keys that land back on their default so the YAML
- *  stays terse. */
+/** Toggle-path descriptor for the pill rows. `def` is the editor-visible
+ *  default (`!== false` → true, `=== true` → false); keys that land on it
+ *  are deleted on write. */
 export interface TogglePath {
   path: string;
   def: boolean;
@@ -81,6 +56,7 @@ export interface LocationUiState {
   anchor?: { latitude: number; longitude: number } | null;
 }
 
+/** Editor host surface that the render partials bind their handlers to. */
 export interface EditorLike {
   hass: HomeAssistant | null;
   _config: Record<string, unknown> | null;
@@ -124,9 +100,7 @@ export interface EditorLike {
   requestUpdate(): void;
 }
 
-/** Per-render context bag. Computed once at the top of the host's
- *  `render()` and passed to each partial — saves every partial from
- *  recomputing the same `mode`, `cfg.forecast`, etc. */
+/** Per-render context, computed once in the host's `render()`. */
 export interface EditorContext {
   t: TFn;
   cfg: Record<string, unknown> & {
@@ -143,9 +117,7 @@ export interface EditorContext {
   showsForecast: boolean;
   hasSensor: (key: string) => boolean;
   hasLiveValue: (key: string) => boolean;
-  /** True when the card can show a past chart block — either a station
-   *  sensor is configured, or the Open-Meteo past opt-in is on
-   *  (ADR-0015). When false, station / combination modes are disabled
-   *  in the editor and the card is forced to forecast-only. */
+  /** True when the card can show a past chart block (ADR-0015); when
+   *  false, station / combination modes are disabled. */
   pastDataAvailable: boolean;
 }

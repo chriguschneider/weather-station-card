@@ -1,13 +1,7 @@
-// Shared wrapper for the editor's collapsible sections. Every section
-// except the always-visible basics renders as an <ha-expansion-panel>
-// whose header carries an icon, the section title, a one-line state
-// summary (readable while collapsed — the user sees the configuration
-// without opening anything), and the per-section reset button.
-//
-// The body is always rendered into the default slot — ha-expansion-
-// panel handles show/hide itself. That keeps the schema-coverage drift
-// guard (tests/defaults.test.js) able to see every field without
-// simulating expand clicks.
+// Wrapper for the editor's collapsible sections (ADR-0023): icon, title,
+// one-line summary and reset button in the header.
+// The body is always rendered, so tests/defaults.test.js sees every field
+// without simulating expand clicks.
 
 import { html, type TemplateResult } from 'lit';
 import type { EditorLike } from './types.js';

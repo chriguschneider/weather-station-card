@@ -1,22 +1,9 @@
-// Per-section config-key inventories for the reset-to-defaults
-// buttons. Each entry lists the FULL possible set of keys the section
-// owns — including conditionally-rendered ones. _resetSection
-// iterates the list and deletes each key from this._config (lets DEFAULTS
-// take over on the next render).
-//
-// Keys use dot-notation for nested paths (e.g. `forecast.show_sunshine`
-// addresses cfg.forecast.show_sunshine). The reset implementation walks
-// the dot-path and prunes empty parent objects after deletion.
-//
-// Drift guard: tests/defaults.test.js asserts every schema field
-// returned by each section's render is present in this map (or in the
-// per-section SCHEMA_KEY_SKIPLIST) — adding a new field to a schema
-// without updating SECTION_KEYS will fail CI.
-//
-// `basics` has no reset button in the UI (the section carries the
-// card's identity — mode, entity, title — where "reset" would be
-// surprising), but its key inventory stays here so the drift guards
-// cover its schema fields.
+// Per-section key inventories for the reset buttons: every key a section
+// owns, including conditionally rendered ones, as dot-paths.
+// Drift guard: tests/defaults.test.js fails when a schema field is missing
+// here or in the per-section SCHEMA_KEY_SKIPLIST.
+// `basics` has no reset button (it holds the card's identity), but stays
+// listed so the drift guards cover it.
 
 export type SectionKey =
   | 'basics'
@@ -29,7 +16,7 @@ export type SectionKey =
 
 export const SECTION_KEYS: Record<SectionKey, ReadonlyArray<string>> = {
   basics: [
-    // mode is a UI-only abstraction backed by show_station + show_forecast.
+    // mode is backed by show_station + show_forecast.
     'show_station',
     'show_forecast',
     'forecast.type',

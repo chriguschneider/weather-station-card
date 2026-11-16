@@ -1,5 +1,4 @@
-// Editor render partial — "Aktionen" (Actions) panel.
-// Tap / hold / double-tap action selectors.
+// Editor partial: tap / hold / double-tap action selectors.
 
 import { html, type TemplateResult } from 'lit';
 import type { EditorLike, EditorContext } from './types.js';
