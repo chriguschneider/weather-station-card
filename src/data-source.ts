@@ -19,8 +19,8 @@ import {
 } from './forecast-utils.js';
 import { resolveLocation } from './location.js';
 import { sunshineFromLuxHistory, type LuxSample } from './sunshine-source.js';
+import { deltaToCanonical } from './utils/units.js';
 import {
-  PRESSURE_CONVERSION,
   toMetersPerSecond,
   luxScaleFor,
   toCelsius,
@@ -319,19 +319,11 @@ export interface PressureDeltaCache {
   value: number | null;
 }
 
-/** Convert a pressure value from `sourceUnit` to hPa without rounding.
- *  Falls through unchanged when the unit is missing or unknown. */
-function toHpa(value: number, sourceUnit: string | undefined): number {
-  if (!sourceUnit || sourceUnit === 'hPa') return value;
-  const factor = PRESSURE_CONVERSION[`hPa->${sourceUnit}`];
-  return factor !== undefined ? value * factor : value;
-}
-
 /** Fetch the 3-hour pressure delta in hPa for the configured pressure
  *  sensor. Returns `null` when the recorder has fewer than the two
  *  buckets required (newest hour and 3 h earlier), when either mean is
- *  null, or on fetch error. A `cache` hit for the current hour skips the
- *  WS call. */
+ *  null, when the sensor's unit is not a known pressure unit, or on fetch
+ *  error. A `cache` hit for the current hour skips the WS call. */
 export async function fetchPressure3hDelta(
   hass: HassLike | null,
   entityId: string | undefined,
@@ -387,7 +379,7 @@ export async function fetchPressure3hDelta(
           | string
           | undefined;
         const rawDelta = newest.mean - older.mean;
-        delta = toHpa(rawDelta, sourceUnit);
+        delta = deltaToCanonical('pressure', rawDelta, sourceUnit);
       }
     }
   }
