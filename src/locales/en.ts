@@ -1,6 +1,3 @@
-// Per-language string table for en.
-// One file per language so rollup can lazy-load on demand.
-// Shape and fallback resolution rules live in ../locale.ts.
 import type { LocaleEntry } from '../locale-types.js';
 
 const en: LocaleEntry = {
@@ -111,10 +108,7 @@ const en: LocaleEntry = {
   'sunny': 'Sunny',
   'windy': 'Windy',
   'windy-variant': 'Windy',
-  // Canonical English strings for the visual editor. Other languages
-  // should add an `editor: {…}` block matching these keys; missing
-  // keys (or whole missing editor blocks) fall back to English at
-  // runtime via the `t()` helper in the editor module.
+  // Canonical editor strings: the key set other languages follow.
   'editor': {
     'temperature': 'Temperature',
     'humidity': 'Humidity',
@@ -158,7 +152,7 @@ const en: LocaleEntry = {
     'days': 'Days (station)',
     'forecast_days': 'Days (forecast)',
     'weather_entity': 'Weather entity',
-    // Section headings (A–F)
+    // Unused; kept for translations that still define these keys.
     'setup_heading': 'Setup',
     'sensors_heading': 'Sensors',
     'layout_heading': 'Layout',
@@ -185,12 +179,12 @@ const en: LocaleEntry = {
     'card_heading': 'Card',
     'display_heading': 'Display',
     'chart_heading': 'Chart',
-    // Mode radio
+    // Mode dropdown
     'mode_label': 'Mode',
     'mode_station': 'Station only',
     'mode_forecast': 'Forecast only',
     'mode_combination': 'Station and Forecast Combined',
-    // Chart type radio
+    // Chart type dropdown
     'chart_type_label': 'Chart type',
     'forecast_type_daily': 'Daily',
     'forecast_type_today': 'Today (24h)',
@@ -258,8 +252,6 @@ const en: LocaleEntry = {
     'number_of_forecasts': 'Visible columns',
     'number_of_forecasts_hint': 'How many bars are visible at once (default 8 — fits both 7-day daily and an hour-window at hourly). 0 = fit all without scrolling. When loaded bars exceed visible, scroll horizontally for the rest.',
     'locale': 'Locale override',
-    // v2.3 editor redesign (ADR-0023) — panel summaries, past-source
-    // dropdown, clock dropdown, unit labels, helper texts.
     'past_source_label': 'Past data',
     'past_source_station': 'From my weather station (sensors)',
     'past_source_openmeteo': 'From Open-Meteo — I have no weather station',

@@ -1,19 +1,8 @@
-// Advisory config validator. Takes the raw user YAML object and returns
-// a list of human-readable problem strings — unknown keys, wrong-typed
-// values, and "did you mean X?" suggestions for near-miss typos.
-//
-// This is ADVISORY ONLY. It never throws and the card always renders
-// with defaults (ADR-0008 — DEFAULTS is the merge floor). The hard
-// structural throws stay in `assertConfig` / `setConfig`; this module
-// only catches the silent-ignore class of mistake (a misspelled key
-// merged onto DEFAULTS just sits there doing nothing).
-//
-// The allowed key set is DERIVED from DEFAULTS / DEFAULTS_FORECAST /
-// DEFAULTS_UNITS so it cannot drift from the real config surface
-// (ADR-0008). A handful of keys are valid YAML but have no DEFAULTS
-// entry (free-text `title`, runtime-merged `units.speed`, the
-// classifier-override `condition_mapping`, the `locale` override) —
-// those are listed explicitly below.
+// Advisory config validator (ADR-0008): returns problem strings (unknown
+// keys with "did you mean", wrong types). It never throws and the card
+// renders with defaults regardless; the hard throws stay in
+// `assertConfig` / `setConfig`. The allowed keys derive from the DEFAULTS
+// objects; valid keys without a DEFAULTS entry are listed explicitly below.
 
 import { DEFAULTS, DEFAULTS_FORECAST, DEFAULTS_UNITS } from './defaults.js';
 import {
@@ -24,40 +13,32 @@ import {
 } from './attributes-layout.js';
 import { parseLocation, resolveCardTimeZone } from './location.js';
 
-// Top-level keys that are valid YAML but intentionally have no DEFAULTS
-// entry — see the drift-guard test's DELETE_ONLY_PATHS and main.ts.
+// Valid top-level keys without a DEFAULTS entry (see the drift-guard
+// test's DELETE_ONLY_PATHS).
 const EXTRA_TOP_LEVEL_KEYS = [
   'type', // custom:weather-station-card — HA's own card-type discriminator
   'title', // free-text card header, runtime fallback `cfg.title || ''`
   'locale', // language override, read in `set hass`
-  'speed', // legacy top-level speed unit, merged into units.speed in setConfig
+  'speed', // legacy top-level speed unit, merged into units.speed by normalizeConfig
   'condition_mapping', // classifier threshold overrides — free-form object
   'location', // {latitude, longitude, elevation, time_zone} of the card's place, checked by parseLocation / resolveCardTimeZone
   'elevation', // site metres for the zero-degree rows; unset falls back to the sensor / HA (#333)
   'source_labels', // {station, weather, computed} text overrides for the show_sources popup; unset uses the localized defaults
-  // Standard Home Assistant card-level keys, written by HA itself (the
-  // grid/layout editor, conditional visibility) and never read by this
-  // card. Flagging them is a false positive — every card in a
-  // sections-view dashboard carries `grid_options`.
+  // HA writes these itself (grid/layout editor, conditional visibility);
+  // flagging them is a false positive.
   'grid_options',
   'view_layout',
   'visibility',
 ] as const;
 
-// Retired keys: options the card no longer reads. They are still
-// ACCEPTED silently so an existing dashboard doesn't start warning
-// about YAML that used to be valid — the key just does nothing now.
+// Options the card no longer reads, still accepted silently so existing
+// dashboards don't start warning.
 const RETIRED_TOP_LEVEL_KEYS = [
-  // v2.4.1 — the live-panel sunshine-duration row was removed; the
-  // daily total is already legible in the chart's sunshine bars.
   'show_sunshine_duration',
 ] as const;
 
-// Keys whose VALUES are free-form objects we deliberately do not
-// descend into. `sensors` slots are entity ids (open-ended set);
-// `condition_mapping` is a documented threshold table; the action
-// objects carry HA's standard action selector shape. Validating their
-// interiors risks false rejections, so we only type-check the container.
+// Free-form objects (entity ids, threshold table, HA action shapes): only
+// the container is type-checked, since descending risks false rejections.
 const OPAQUE_OBJECT_KEYS = new Set([
   'sensors',
   'condition_mapping',
@@ -67,10 +48,8 @@ const OPAQUE_OBJECT_KEYS = new Set([
   'double_tap_action',
 ]);
 
-// Nested units keys that are valid but absent from DEFAULTS_UNITS
-// (`speed` is merged in at runtime from the legacy top-level `speed`;
-// `precipitation` defaults to the sensor's own unit, so it has no
-// static DEFAULTS_UNITS entry either).
+// Valid units keys absent from DEFAULTS_UNITS: `speed` comes from the legacy
+// top-level `speed`, `precipitation` defaults to the sensor's own unit.
 const EXTRA_UNITS_KEYS = ['speed', 'precipitation'] as const;
 
 // Forecast colour overrides read by the chart but deliberately absent
@@ -95,13 +74,10 @@ const UNITS_KEYS = new Set<string>([
   ...EXTRA_UNITS_KEYS,
 ]);
 
-// Maximum edit distance for a "did you mean" suggestion. 2 catches the
-// common single-typo and transposition cases (`forcast_days`,
-// `show_humdiity`) without suggesting an unrelated key for a genuinely
-// unknown option.
+// 2 catches single typos and transpositions (`forcast_days`) without
+// suggesting an unrelated key for a genuinely unknown option.
 const SUGGESTION_MAX_DISTANCE = 2;
 
-// Levenshtein edit distance — small two-row implementation, no deps.
 function editDistance(a: string, b: string): number {
   if (a === b) return 0;
   const aLen = a.length;
@@ -126,8 +102,6 @@ function editDistance(a: string, b: string): number {
   return prev[bLen];
 }
 
-// Return the closest allowed key within SUGGESTION_MAX_DISTANCE, or
-// undefined when nothing is close enough to be worth suggesting.
 function suggest(key: string, allowed: Iterable<string>): string | undefined {
   let best: string | undefined;
   let bestDist = SUGGESTION_MAX_DISTANCE + 1;
@@ -153,20 +127,14 @@ function unknownKeyMessage(
   return `Unknown option: \`${label}\`${suffix}`;
 }
 
-// Human-readable name for a JS runtime type, treating arrays distinctly
-// from plain objects (YAML lists vs. maps are a common mix-up).
+// Arrays are named apart from objects: lists vs. maps is a common YAML mix-up.
 function typeName(value: unknown): string {
   if (value === null) return 'null';
   if (Array.isArray(value)) return 'list';
   return typeof value;
 }
 
-// Type-check one leaf value against the type implied by its default.
-// Only flags a genuine mismatch; `null`/`undefined` are left alone
-// (an empty YAML value is the user's way of clearing a key). A numeric
-// string ("8") where a number is expected is accepted — this card
-// coerces every numeric field (parseInt / CSS interpolation) and HA's
-// visual editor commonly stores number inputs as strings.
+// `null`/`undefined` are left alone (an empty YAML value clears a key).
 function checkValueType(
   label: string,
   value: unknown,
@@ -175,7 +143,6 @@ function checkValueType(
 ): void {
   if (value === null || value === undefined) return;
   const expectedType = typeof expected;
-  // Only the three scalar types carry a meaningful type contract here.
   if (
     expectedType !== 'boolean' &&
     expectedType !== 'number' &&
@@ -185,10 +152,9 @@ function checkValueType(
   }
   const actualType = typeof value;
   if (actualType === expectedType) return;
-  // A numeric string passed where a number is expected is valid input:
-  // the renderer coerces it, and HA's visual editor stores number
-  // fields as strings. An empty string clears the field (default
-  // applies). Only a non-numeric string is a genuine mismatch.
+  // Numeric strings are valid: the card coerces every numeric field and
+  // HA's visual editor may store number inputs as strings. An empty
+  // string clears the field.
   if (expectedType === 'number' && actualType === 'string') {
     const trimmed = (value as string).trim();
     if (trimmed === '' || Number.isFinite(Number(trimmed))) return;
@@ -204,8 +170,6 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   );
 }
 
-// Validate one nested config section (`forecast` / `units`) against its
-// allowed-key set and the default-implied value types.
 function validateNestedSection(
   scope: string,
   section: unknown,
@@ -231,14 +195,8 @@ function validateNestedSection(
   }
 }
 
-/**
- * Pure validator. Returns an array of human-readable problem strings
- * for the given raw config object — empty when the config is clean.
- *
- * Never throws. A non-object input yields a single descriptive message
- * rather than an exception, so the caller can surface it like any other
- * advisory warning.
- */
+/** Problem strings for a raw config, empty when clean. Never throws; a
+ *  non-object input yields one message. */
 export function validateConfig(rawConfig: unknown): string[] {
   const problems: string[] = [];
 
@@ -262,11 +220,10 @@ export function validateConfig(rawConfig: unknown): string[] {
   return problems;
 }
 
-// Deprecated options: still honoured, so they are not problems and stay
-// out of `validateConfig` (the card's warning band). The editor shows
-// them as one hint line.
+// Still honoured, so not problems: kept out of `validateConfig` and shown
+// by the editor as one hint line.
 const DEPRECATED_TOP_LEVEL_KEYS: Readonly<Record<string, string>> = {
-  elevation: 'location.elevation', // deprecated since 3.0, removal announced for 4.0
+  elevation: 'location.elevation', // removal announced for 4.0
 };
 
 export interface DeprecatedOption {
@@ -281,10 +238,8 @@ export function deprecatedOptions(rawConfig: unknown): DeprecatedOption[] {
     .map(([key, replacement]) => ({ key, replacement }));
 }
 
-// `attributes_layout` (ADR-0025): a list of columns, each a list of row
-// tokens. A bare token in place of a column is accepted by the renderer
-// (one-row column) so it is not flagged; unknown tokens get the same
-// "did you mean" treatment as unknown keys.
+// `attributes_layout` (ADR-0025): a list of columns of row tokens. A bare
+// token in place of a column is accepted by the renderer, so not flagged.
 function validateAttributesLayout(value: unknown, problems: string[]): void {
   if (value === undefined || value === null) return;
   if (!Array.isArray(value)) {
@@ -314,10 +269,8 @@ function validateAttributesLayout(value: unknown, problems: string[]): void {
   });
 }
 
-// An explicit layout decides row visibility by itself; a `show_*` row
-// toggle sitting next to it does nothing. One combined hint keeps a
-// UI-created card (which writes every toggle explicitly) from raising
-// a dozen lines the moment a layout is added.
+// An explicit layout decides row visibility, so `show_*` toggles beside it do
+// nothing. One combined hint, since a UI-created card writes every toggle.
 function validateLayoutOverridesToggles(
   rawConfig: Record<string, unknown>,
   problems: string[],
@@ -334,8 +287,6 @@ function validateLayoutOverridesToggles(
   );
 }
 
-// Validate a single top-level config entry. Split out of validateConfig
-// to keep the per-key branching out of the iteration loop.
 function validateTopLevelEntry(
   key: string,
   value: unknown,
@@ -372,9 +323,6 @@ function validateTopLevelEntry(
     checkValueType(key, value, 0, problems);
     return;
   }
-  // Opaque object containers: type-check the container only, never
-  // descend (entity-id slots / threshold tables / action shapes are
-  // open-ended — descending risks false rejections).
   if (OPAQUE_OBJECT_KEYS.has(key)) {
     if (value !== undefined && value !== null && !isPlainObject(value)) {
       problems.push(
@@ -392,7 +340,6 @@ function validateTopLevelEntry(
     }
     return;
   }
-  // Plain scalar leaf with a DEFAULTS-implied type.
   if (key in DEFAULTS) {
     checkValueType(
       key,

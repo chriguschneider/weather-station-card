@@ -1,6 +1,3 @@
-// Per-language string table for de.
-// One file per language so rollup can lazy-load on demand.
-// Shape and fallback resolution rules live in ../locale.ts.
 import type { LocaleEntry } from '../locale-types.js';
 
 const de: LocaleEntry = {
@@ -249,8 +246,6 @@ const de: LocaleEntry = {
     'number_of_forecasts': 'Sichtbare Spalten',
     'number_of_forecasts_hint': 'Wie viele Balken auf einmal sichtbar sind (Default 8 — passt sowohl für 7 Tage täglich als auch für eine Stunden-Auswahl bei stündlich). 0 = alles zeigen ohne Scrollen. Wenn weniger Spalten sichtbar als Daten geladen sind, kann man horizontal scrollen.',
     'locale': 'Sprache (Override)',
-    // v2.3 Editor-Redesign (ADR-0023) — Panel-Zusammenfassungen,
-    // Quellen-Dropdown, Uhr-Dropdown, Einheiten-Labels, Helper-Texte.
     'past_source_label': 'Vergangenheits-Daten',
     'past_source_station': 'Von meiner Wetterstation (Sensoren)',
     'past_source_openmeteo': 'Von Open-Meteo — ich habe keine Wetterstation',

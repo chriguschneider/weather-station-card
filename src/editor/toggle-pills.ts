@@ -1,23 +1,7 @@
-// Shared multi-select control: a row of toggle pills.
-//
-// Replaces `ha-form`'s `selector.select` with `multiple: true`, which
-// renders only the SELECTED options as removable chips and hides the
-// rest behind an add-dropdown. That costs discoverability — you cannot
-// see what a panel offers without opening the dropdown — and makes the
-// interaction asymmetric (one click to remove, two to add).
-//
-// Pills show every option at all times: filled = on, outlined = off,
-// one click either way. The row never reflows as you toggle, so nothing
-// jumps under the pointer.
-//
-// This is the editor's only hand-built control; everything else is
-// schema-driven `ha-form` (ADR-0023). The deviation buys the always-
-// visible option set, which no HA selector provides. Config semantics
-// are unchanged: callers hand the selected leaves to
-// `editor._applyTogglePaths`, exactly as the multi-select did.
-//
-// Styles live in the editor's global <style> block (`.pill-field`,
-// `.pills`, `.pill`) next to the other cross-partial rules.
+// Row of toggle pills: every option always visible (filled = on), one click
+// either way. ha-form's multi-select hides unselected options (ADR-0024).
+// The editor's only hand-built control; styles live in the editor's global
+// <style> block.
 
 import { html, type TemplateResult } from 'lit';
 
@@ -28,9 +12,7 @@ export interface PillOption {
 }
 
 export interface TogglePillsArgs {
-  /** Field label, rendered above the row like `ha-form` labels. Omit
-   *  where an `h4.subsection` heading already names the row — a label
-   *  there would just repeat the heading one line below it. */
+  /** Field label above the row; omit where an `h4.subsection` already names it. */
   label?: string;
   options: ReadonlyArray<PillOption>;
   /** Leaves currently on. */

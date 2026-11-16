@@ -1,34 +1,18 @@
-// Locale registry + on-demand loader. Each language ships in its
-// own chunk under `src/locales/<lang>.ts`; only English is eager so
-// the card has a guaranteed fallback string for any key before the
-// user's language has finished loading.
-//
-// Shape stays the loose dictionary we had before: keys are scalar
-// strings, an inner `units` map, the 17-element `cardinalDirections`
-// array, and an optional `editor` block with visual-editor labels.
-// Loose-on-purpose — a tight type would force every contributor
-// adding a language to fill in every editor key, and the fallback
-// resolvers in `ll()` / `tEditor()` already tolerate missing keys
-// at runtime.
-// Types live in `./locale-types.ts` so per-language tables can
-// import them without creating a cycle. Re-exported here so
-// existing `import { LocaleEntry } from '../locale.js'` callers
-// keep working.
+// Locale registry + on-demand loader (ADR-0013). Each file in
+// `src/locales/` is one language and one lazy chunk; only English is eager,
+// as the fallback for any missing key or not-yet-loaded language.
+// The shape is a loose dictionary on purpose: a tight type would force every
+// new language to fill in every editor key, and `ll()` / `tEditor()` already
+// tolerate missing keys. Types live in `./locale-types.ts` so the language
+// files can import them without a cycle.
 export type { LocaleEntry, Locale } from './locale-types.js';
 import type { LocaleEntry, Locale } from './locale-types.js';
 
-// English is the eager fallback every other language falls back to.
-// Imported statically so the registry always has a usable entry
-// before any dynamic import has resolved.
+// Imported statically so the registry has an entry before any chunk loads.
 import en from './locales/en.js';
 
-// One static dynamic-import per language. Rollup expands each
-// `import(...)` into its own content-hashed chunk at build time —
-// a template-literal import (e.g. `./locales/${lang}.js`) would
-// stay literal in the output without `@rollup/plugin-dynamic-
-// import-vars`, so the explicit dictionary is the lowest-friction
-// shape that still produces one-chunk-per-language. Keep the keys
-// here in sync with the files under `src/locales/`.
+// One static `import()` per language: Rollup turns each into a chunk, which a
+// template-literal import would not. Keep in sync with `src/locales/`.
 const loaders: Record<string, () => Promise<{ default: LocaleEntry }>> = {
   bg: () => import('./locales/bg.js'),
   ca: () => import('./locales/ca.js'),
@@ -58,8 +42,7 @@ const loaders: Record<string, () => Promise<{ default: LocaleEntry }>> = {
 
 const registry: Locale = { en };
 
-// Inflight promises so concurrent `ensureLocaleLoaded` calls for the
-// same lang share one fetch. Keyed by the resolved loader tag.
+// Concurrent `ensureLocaleLoaded` calls for one language share one fetch.
 const inflight = new Map<string, Promise<void>>();
 
 // Registry key for a BCP 47 tag: the most specific table we ship
@@ -71,15 +54,8 @@ export function resolveLocaleKey(lang: string): string {
   return loaders[lang] ? lang : loaders[withScript] ? withScript : base;
 }
 
-// Trigger the chunk for `lang` to load and populate the registry.
-// Idempotent: returns the existing promise (or a resolved one) if
-// the language is already loaded or in flight.
-//
-// `lang` is accepted as either a base tag (`de`) or a regional
-// variant (`de-CH`); both resolve to the same chunk via the base
-// tag. Unknown languages resolve silently — the caller's `ll()`
-// lookup will fall through to English via the same mechanism that
-// covers missing keys.
+// Loads the chunk for `lang` (`de` or `de-CH`) into the registry.
+// Idempotent; unknown languages resolve silently and fall through to English.
 export async function ensureLocaleLoaded(lang: string): Promise<void> {
   if (!lang) return;
   const key = resolveLocaleKey(lang);
@@ -96,8 +72,6 @@ export async function ensureLocaleLoaded(lang: string): Promise<void> {
   return p;
 }
 
-// Synchronous registry access for `ll()` / `tEditor()`. Reads
-// return `undefined` for languages whose chunk hasn't loaded yet;
-// the resolvers already cover that fallback path.
+// Synchronous registry access; `undefined` until a chunk has loaded.
 const locale: Locale = registry;
 export default locale;

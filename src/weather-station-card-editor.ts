@@ -68,12 +68,8 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
       throw new Error('Invalid configuration');
     }
     this._config = config;
-    // Per-language locale strings ship in their own rollup chunks
-    // (only English is eager). HA typically wires `hass` onto the
-    // editor before setConfig, so language is already known here;
-    // trigger the chunk fetch and re-render once it lands. The
-    // card itself triggers the same load from set hass — both
-    // sites are idempotent via the shared inflight map.
+    // Only English is eager; fetch the language chunk (idempotent, shared
+    // with the card) and re-render once it lands.
     const lang = this.hass?.language || 'en';
     if (lang !== 'en' && lang.split('-')[0] !== 'en') {
       void ensureLocaleLoaded(lang).then(() => this.requestUpdate());
@@ -85,10 +81,8 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     return this._config;
   }
 
-  // ── Mode (UI-only abstraction over show_station / show_forecast) ──────
-  // The YAML schema keeps the two booleans for backwards compatibility;
-  // the editor projects them onto a single radio so users pick a mode
-  // up-front instead of inferring it from two unrelated toggles.
+  // The YAML keeps show_station / show_forecast; the editor projects them
+  // onto one mode dropdown.
   get _mode(): EditorMode {
     if (!this._config) return 'station';
     const wantStation = this._config.show_station !== false;
@@ -119,11 +113,9 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     this.requestUpdate();
   }
 
-  // ── Past-data source (UI-only abstraction, ADR-0015 / ADR-0023) ──────
-  // The card's past-source rule (past-source.ts) shown as one exclusive
-  // dropdown: any configured sensor wins, otherwise the opt-in.
-  // Writing "openmeteo" drops the sensors block so the editor and the
-  // card agree (reversible until the user saves).
+  // Past-source dropdown over the card's past-source rule: any configured
+  // sensor wins, otherwise the Open-Meteo opt-in; picking openmeteo drops
+  // the sensors block (ADR-0015).
   get _pastSource(): PastSource {
     return pastSource(this._config) === 'openmeteo' ? 'openmeteo' : 'station';
   }
@@ -148,10 +140,8 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     this.requestUpdate();
   };
 
-  // ── Clock mode (UI-only abstraction over two booleans) ───────────────
-  // show_time / show_time_seconds project onto one dropdown:
-  // off | on | on_seconds. The 12h/24h choice lives in the separate
-  // time-format selector (use_12hour_format), shared by every time value.
+  // show_time / show_time_seconds projected onto one dropdown:
+  // off | on | on_seconds. 12h/24h is separate (use_12hour_format).
   get _clockMode(): string {
     const c = this._config ?? {};
     if (c.show_time !== true) return 'off';
@@ -182,10 +172,8 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     );
   };
 
-  // ── Multi-select (chips) plumbing ────────────────────────────────────
-  // Maps a multi-select value array back onto individual boolean config
-  // keys. Each item carries its editor-visible default; keys that land
-  // back on their default are deleted so the YAML stays terse.
+  // Maps the selected toggle pills back onto boolean config keys; keys
+  // that land on their default are deleted so the YAML stays terse.
   _applyTogglePaths = (
     items: ReadonlyArray<TogglePath>,
     selectedLeaves: ReadonlyArray<string>,
@@ -206,14 +194,9 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     this.requestUpdate();
   };
 
-  // Attribute pills edit `attributes_layout` (ADR-0025), never the
-  // show_* keys: switching a pill on inserts its row next to its
-  // nearest default sibling, switching it off removes the row. The
-  // first toggle on a card that still runs on show_* keys starts from
-  // the arrangement those keys resolve to, so nothing moves — and the
-  // keys go, because the layout decides now and a stale key only
-  // misleads. (Only the layout can express a pair as two separate
-  // lines; the show_* keys always fold both singles into one.)
+  // Attribute pills edit `attributes_layout`, never show_* (ADR-0025); the
+  // first toggle starts from the resolved arrangement and deletes the
+  // show_* keys.
   _applyAttributeToggles = (
     items: ReadonlyArray<TogglePath>,
     selectedLeaves: ReadonlyArray<string>,
@@ -233,12 +216,9 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     this._setAttributesLayout(layout, newConfig);
   };
 
-  // Layout board (ADR-0025). A drop or an arrow-key move writes the
-  // whole arrangement; the show_* row keys go, the layout decides now.
-  // `null` returns to automatic mode without losing which rows are on:
-  // the current membership is projected back onto the show_* keys
-  // (deleting the ones that land on their default, as _applyTogglePaths
-  // does) and the layout key is removed.
+  // Layout board writes (ADR-0025): a layout replaces the show_* row keys.
+  // `null` returns to automatic mode, projecting the current membership
+  // back onto the show_* keys.
   _setAttributesLayout = (
     layout: ReadonlyArray<ReadonlyArray<string>> | null,
     base?: Record<string, unknown>,
@@ -276,7 +256,7 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     cursor[parts[parts.length - 1]] = value;
   }
 
-  // ── Expansion-panel state (UI-only, not persisted to config) ─────────
+  // UI-only, not persisted to config.
   _expandedPanels: Record<string, boolean> = {};
 
   _isPanelExpanded(sectionKey: string): boolean {
@@ -290,18 +270,14 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
   }
 
   // True when the card can render a past chart block (ADR-0015). The
-  // weather entity the card also needs for the Open-Meteo past is left
-  // out: picking it after the past source must not force forecast mode.
+  // weather entity is not checked: picking it after the past source must
+  // not force forecast mode.
   _pastDataAvailable(): boolean {
     if (!this._config) return true;
     return pastSource(this._config) !== null;
   }
 
-  // When the card has no way to show past data (no station sensors AND
-  // the Open-Meteo past opt-in off), force forecast-only mode — the
-  // station / combination views would only render an empty past block
-  // (ADR-0015). One-directional: turning the opt-in on or wiring a
-  // sensor re-enables the mode options but does NOT auto-switch back,
+  // No way to show past data: force forecast-only mode (ADR-0015). One-way,
   // so the editor never fights a user who deliberately picked a mode.
   updated(changedProperties: Map<PropertyKey, unknown>): void {
     if (
@@ -314,7 +290,6 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     }
   }
 
-  // ── Event plumbing ────────────────────────────────────────────────────
   configChanged(newConfig: Record<string, unknown>): void {
     const event = new Event('config-changed', { bubbles: true, composed: true }) as Event & { detail?: unknown };
     event.detail = { config: newConfig };
@@ -330,10 +305,8 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     this.requestUpdate();
   };
 
-  // Per-picker handler used now that the sensors block uses explicit
-  // ha-entity-picker elements (instead of one ha-form). Empty value
-  // removes the key from the YAML so unset sensors don't appear as
-  // empty strings.
+  // Sets one `sensors` key; an empty value removes it so unset sensors
+  // don't appear as empty strings.
   _sensorPickerChanged = (key: string, value: unknown): void => {
     if (!this._config) return;
     const newSensors: Record<string, string> = { ...((this._config.sensors as Record<string, string>) || {}) };
@@ -355,11 +328,10 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     this.requestUpdate();
   };
 
-  // Chart-section ha-form handlers. The chart section spans two
-  // config levels — top-level (title, days,
-  // forecast_days) and forecast.* (number_of_forecasts, condition_icons,
-  // show_*, style, round_temp, disable_animation). Each form replaces
-  // the keys it owns and merges with the rest of config / forecast.
+  // Chart-section ha-form handlers. The section spans two config levels:
+  // top-level keys (_chartTopChanged, also used by the basics section) and
+  // forecast.* keys (_chartForecastChanged). Each handler replaces only the
+  // keys its form owns.
   _chartTopChanged = (event: Event): void => {
     if (!this._config) return;
     const target = event.target as HTMLElement | null;
@@ -395,10 +367,8 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     this.requestUpdate();
   };
 
-  // Live-panel ha-form handler. Both forms (main panel toggles +
-  // attributes toggles) feed top-level cfg.show_*
-  // keys, so a single handler can merge whichever bag arrives. Same
-  // diff/delete pattern as _chartTopChanged.
+  // Live-panel ha-form handler for the show_main / show_attributes /
+  // show_sources gate switches; same diff/delete pattern as _chartTopChanged.
   _livePanelChanged = (event: Event): void => {
     if (!this._config) return;
     const target = event.target as HTMLElement | null;
@@ -647,12 +617,8 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     }
   };
 
-  // Per-section reset-to-defaults. Walks the SECTION_KEYS list for
-  // the given section and removes each key from
-  // this._config — letting DEFAULTS take over on the next render.
-  // Dot-paths address nested keys (e.g. `forecast.show_sunshine`).
-  // No confirm dialog: reset is reversible by closing the editor
-  // without saving (HA shows an unsaved-changes indicator).
+  // Removes every SECTION_KEYS path of the section so DEFAULTS take over.
+  // No confirm dialog: closing the editor without saving undoes it.
   _resetSection = (sectionKey: string): void => {
     if (!this._config) return;
     const keys = SECTION_KEYS[sectionKey as SectionKey];
@@ -665,9 +631,8 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     this.requestUpdate();
   };
 
-  // Walk a dot-path and delete the leaf. Cleans up empty parent objects
-  // so the YAML stays terse (e.g. resetting every forecast.* key removes
-  // the empty `forecast: {}` block too).
+  // Deletes the leaf of a dot-path and drops parents left empty, so no
+  // `forecast: {}` stays behind.
   _deleteByPath(obj: Record<string, unknown>, path: string): void {
     const parts = path.split('.');
     const stack: Array<Record<string, unknown>> = [obj];
@@ -679,7 +644,6 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
       stack.push(cursor);
     }
     delete cursor![parts[parts.length - 1]];
-    // Walk back up; drop empty intermediate objects.
     for (let i = stack.length - 1; i > 0; i--) {
       const node = stack[i];
       if (node && Object.keys(node).length === 0) {
@@ -711,11 +675,8 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     this.requestUpdate();
   };
 
-  // Render an inline hint under the forecast_days field showing what
-  // Open-Meteo currently has cached for this location — and a warning
-  // when the configured forecast_days exceeds what's actually
-  // available. Only relevant when the sunshine row is enabled (no other
-  // editor field depends on this cache).
+  // Hint under forecast_days: what Open-Meteo has cached for this location,
+  // with a warning when forecast_days exceeds it. Sunshine row only.
   _renderSunshineAvailabilityHint(cfg: Record<string, unknown>, t: TFn): unknown {
     const fc = cfg && cfg.forecast as { show_sunshine?: boolean } | undefined;
     if (fc?.show_sunshine !== true) return '';
@@ -746,10 +707,8 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     `;
   }
 
-  // ha-selector with the ui_action selector returns either an action
-  // config object or undefined (when the picker is reset). Persist the
-  // value as-is so HA's standard handle-action helper can read it back
-  // unchanged — same shape Bubble / Mushroom / built-in cards consume.
+  // The ui_action selector yields an action object or undefined (reset);
+  // stored as-is so HA's handle-action helper reads it back unchanged.
   _actionChanged = (key: string, value: unknown): void => {
     if (!this._config) return;
     const newConfig: Record<string, unknown> = { ...this._config };
@@ -762,13 +721,8 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     this.requestUpdate();
   };
 
-  // ── Render ────────────────────────────────────────────────────────────
-  // Thin orchestrator. Each section A–F lives in its own partial under
-  // src/editor/. The styles below are global to the whole editor surface
-  // (every partial expects to find them in scope) — keeping them here
-  // means the partials don't carry their own scoped CSS, which would
-  // duplicate the same .switch-container / .flex-container / .radio-group
-  // rules across files.
+  // Thin orchestrator: one partial per section under src/editor/. The
+  // styles below are shared by every partial, so they live here once.
   render(): TemplateResult {
     const t: TFn = (k) => tEditor(this.hass, k);
     const cfg = (this._config ?? {}) as EditorContext['cfg'];
@@ -783,11 +737,9 @@ class WeatherStationCardEditor extends LitElement implements EditorLike {
     const showsStation = isStation || isCombo;
     const hasSensor = (key: string): boolean => !!sensorsConfig[key];
 
-    // Forecast-only mode typically has no station sensors, but the
-    // configured weather.* entity already exposes standard current
-    // attributes (humidity, pressure, wind_*, sometimes uv_index /
-    // dew_point). The runtime falls back to those — the editor needs
-    // to mirror that so the corresponding toggle stays visible.
+    // Forecast-only mode has no station sensors, but the runtime falls back
+    // to the weather entity's current attributes; mirror that so the
+    // matching toggle stays visible.
     const SENSOR_TO_WEATHER_ATTR: Record<string, string> = {
       humidity: 'humidity',
       pressure: 'pressure',

@@ -1,15 +1,6 @@
-// Editor render partial — "Basics". The only section without an
-// expansion panel: mode, chart type, title, and the weather entity are
-// what every user touches when creating the card, so they stay
-// directly visible at the top. Replaces the former render-mode.ts +
-// render-forecast.ts pair (v2.3 editor redesign, ADR-0023).
-//
-//   • Mode — UI-only abstraction over show_station / show_forecast
-//     (the YAML keeps the two booleans for backwards compatibility);
-//     value-changed routes through _setMode.
-//   • Chart type + title — side by side in a 2-column row.
-//   • Weather entity — only while a forecast is shown (station-only
-//     cards don't consume it).
+// Editor partial "Basics" (ADR-0023): mode, chart type, title and weather
+// entity. The only section without an expansion panel, so it stays visible.
+// The weather entity shows only while a forecast is shown.
 
 import { html, type TemplateResult } from 'lit';
 import type { EditorLike, EditorContext } from './types.js';
@@ -25,8 +16,7 @@ const WEATHER_SCHEMA = [{
 export function renderBasicsSection(editor: EditorLike, ctx: EditorContext): TemplateResult {
   const { t, cfg, fcfg, mode, showsForecast, pastDataAvailable } = ctx;
 
-  // Build schemas at render time so option labels reflect the current
-  // locale (same pattern as before the redesign).
+  // Built at render time so option labels follow the current locale.
   const modeSchema = [{
     name: 'mode',
     selector: {

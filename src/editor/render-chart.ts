@@ -1,23 +1,14 @@
-// Editor render partial — "Diagramm" (Chart) panel.
-//
-// v2.3 redesign (ADR-0023): number fields and dropdowns pair up in
-// 2-column ha-form grids, the six chart-row toggles collapse into one
-// multi-select field, and the long visible hints became one-line
-// helper texts. `title` moved to the basics section; `chart_height`
-// (previously YAML-only) joins the editor here.
-//
-// Two config levels feed the panel — top-level (days, forecast_days)
-// via _chartTopChanged and forecast.* via _chartForecastChanged /
-// _applyTogglePaths. Each ha-form owns exactly one level.
+// Editor partial "Chart" (ADR-0023). Two config levels feed it: top-level
+// (days, forecast_days) via _chartTopChanged and forecast.* via
+// _chartForecastChanged / _applyTogglePaths; each ha-form owns one level.
 
 import { html, type TemplateResult } from 'lit';
 import type { EditorLike, EditorContext, TogglePath } from './types.js';
 import { renderEditorPanel } from './expansion-panel.js';
 import { renderTogglePills } from './toggle-pills.js';
 
-// The seven auxiliary chart rows, as multi-select entries. `def` mirrors
-// DEFAULTS_FORECAST (opt-out rows are true, sunshine and the chance of
-// rain are opt-in).
+// The seven auxiliary chart rows, as pill entries. `def` mirrors
+// DEFAULTS_FORECAST (sunshine and the chance of rain are opt-in).
 export const CHART_ROW_PATHS: ReadonlyArray<TogglePath & { labelKey: string }> = [
   { path: 'forecast.condition_icons',          def: true,  labelKey: 'show_chart_icons' },
   { path: 'forecast.show_wind_arrow',          def: true,  labelKey: 'show_chart_wind_direction' },
@@ -44,7 +35,6 @@ export function activeChartRows(fcfg: Record<string, unknown>): string[] {
 export function renderChartSection(editor: EditorLike, ctx: EditorContext): TemplateResult {
   const { t, cfg, fcfg, showsStation, showsForecast } = ctx;
 
-  // ── Time range: top-level pair + forecast.* pair, each 2-col ──────
   const daysSchema = [{
     name: '',
     type: 'grid',
@@ -62,7 +52,6 @@ export function renderChartSection(editor: EditorLike, ctx: EditorContext): Temp
     ],
   }];
 
-  // ── Appearance: style dropdown + two booleans ─────────────────────
   const appearanceSchema = [
     { name: 'style', selector: {
       select: {
@@ -124,9 +113,7 @@ export function renderChartSection(editor: EditorLike, ctx: EditorContext): Temp
     <h4 class="subsection">${t('chart_rows_heading')}</h4>
     <div class="textfield-container">
       ${renderTogglePills({
-        // No label — the `h4.subsection` right above already says
-        // "Chart rows"; the old ha-form buried its duplicate inside the
-        // dropdown control, the pill row would print it in plain text.
+        // No label: the h4 right above already says "Chart rows".
         group: 'chart_rows',
         options: CHART_ROW_PATHS.map(({ path, labelKey }) => ({
           value: leafOf(path),

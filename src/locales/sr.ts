@@ -1,6 +1,3 @@
-// Per-language string table for Serbian (Cyrillic script).
-// One file per language so rollup can lazy-load on demand.
-// Shape and fallback resolution rules live in ../locale.ts.
 import type { LocaleEntry } from '../locale-types.js';
 
 const sr: LocaleEntry = {
@@ -111,10 +108,6 @@ const sr: LocaleEntry = {
   'sunny': 'Сунчано',
   'windy': 'Ветровито',
   'windy-variant': 'Ветровито',
-  // Canonical English strings for the visual editor. Other languages
-  // should add an `editor: {…}` block matching these keys; missing
-  // keys (or whole missing editor blocks) fall back to English at
-  // runtime via the `t()` helper in the editor module.
   'editor': {
     'temperature': 'Температура',
     'humidity': 'Влажност ваздуха',
@@ -154,7 +147,7 @@ const sr: LocaleEntry = {
     'days': 'Дани (станица)',
     'forecast_days': 'Дани (прогноза)',
     'weather_entity': 'Временски ентитет',
-    // Section headings (A–F)
+    // Unused; kept for translations that still define these keys.
     'setup_heading': 'Подешавање',
     'sensors_heading': 'Сензори',
     'layout_heading': 'Распоред',
@@ -181,12 +174,12 @@ const sr: LocaleEntry = {
     'card_heading': 'Картица',
     'display_heading': 'Приказ',
     'chart_heading': 'Графикон',
-    // Mode radio
+    // Mode dropdown
     'mode_label': 'Режим',
     'mode_station': 'Само станица',
     'mode_forecast': 'Само прогноза',
     'mode_combination': 'Комбиновано станица и прогноза',
-    // Chart type radio
+    // Chart type dropdown
     'chart_type_label': 'Тип графикона',
     'forecast_type_daily': 'Дневно',
     'forecast_type_today': 'Данас (24h)',
@@ -254,8 +247,6 @@ const sr: LocaleEntry = {
     'number_of_forecasts': 'Видљиве колоне',
     'number_of_forecasts_hint': 'Колико је трака видљиво одједном (подразумевано 8 — уклапа се и 7 дана и сатни прозор). 0 = уклопи све без скроловања. Када број учитаних трака премаши видљиве, скролујте хоризонтално за остатак.',
     'locale': 'Прејачавање локализације',
-    // v2.3 editor redesign (ADR-0023) — panel summaries, past-source
-    // dropdown, clock dropdown, unit labels, helper texts.
     'past_source_label': 'Историјски подаци',
     'past_source_station': 'Са моје временске станице (сензори)',
     'past_source_openmeteo': 'Са Open-Meteo — немам временску станицу',

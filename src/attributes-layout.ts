@@ -1,20 +1,12 @@
-// Attribute-row layout (ADR-0025). The live panel's attribute row is a
-// set of columns, each holding rows top-to-bottom. `attributes_layout`
-// lets the user pick which rows appear and where; without it the card
-// falls back to the built-in default filtered by the `show_*` toggles.
-//
-// Pure — no Lit, no hass. main.ts maps the resolved tokens onto its
-// row renderers; the editor uses the add/remove helpers to keep the
-// attribute pills in sync with an explicit layout.
+// Attribute-row layout (ADR-0025): columns of rows, top to bottom.
+// `attributes_layout` picks which rows appear and where; without it the
+// built-in default is filtered by the `show_*` toggles. Pure: no Lit, no hass.
 
 import { DEFAULTS } from './defaults.js';
 
-// Every attribute the row can show, named after its `show_*` toggle so
-// the YAML vocabulary is one list, not two. Two pairs also exist as a
-// combined line — dew point + humidity, UV + illuminance — because the
-// card has always drawn those on one line when both are on; the combined
-// token makes that line an explicit, movable row, the singles let the
-// user split it.
+// Every attribute the row can show, named after its `show_*` toggle. Two
+// pairs also exist as a combined line (dew point + humidity, UV +
+// illuminance): the combined token is a movable row, the singles split it.
 export const ATTRIBUTE_TOKENS = [
   'pressure',
   'dew_point_humidity',
@@ -37,19 +29,16 @@ export const ATTRIBUTE_TOKENS = [
 export type AttributeToken = (typeof ATTRIBUTE_TOKENS)[number];
 export type AttributesLayout = AttributeToken[][];
 
-// Built-in arrangement — the three columns the card has always drawn.
-// Also the anchor for the editor's insert position: a pill switched on
-// lands next to its nearest sibling from its default column, ordered as
-// here.
+// Built-in arrangement, and the anchor for the editor's insert position
+// (see addTokenToLayout).
 export const DEFAULT_ATTRIBUTES_LAYOUT: ReadonlyArray<ReadonlyArray<AttributeToken>> = [
   ['pressure', 'dew_point_humidity', 'dew_point', 'humidity', 'precipitation', 'next_rain', 'zero_degree_level', 'zero_degree_level_48h'],
   ['uv_illuminance', 'uv_index', 'illuminance', 'sun', 'moon'],
   ['wind_direction', 'wind_speed', 'wind_gust_speed'],
 ];
 
-// A combined line and the two singles it stands for. In automatic mode
-// both singles on → the combined line (the pre-ADR-0025 behaviour); the
-// combined show_* key forces it regardless.
+// A combined line and the two singles it stands for. In automatic mode both
+// singles on give the combined line; the combined show_* key forces it.
 export const LINE_FAMILIES: ReadonlyArray<{
   combined: AttributeToken;
   parts: readonly [AttributeToken, AttributeToken];
@@ -111,12 +100,10 @@ function toggledOn(cfg: Record<string, unknown>, token: AttributeToken): boolean
   return def ? cfg[key] !== false : cfg[key] === true;
 }
 
-// Automatic-mode visibility of one token, with the two rules that keep
-// old configs rendering as before: a family's singles fold into the
-// combined line when both are on, and the moon (default on) only shows
-// together with the sun — it used to live inside the sun cell, and
-// every card with the attribute row would otherwise grow a moon line it
-// never asked for. An explicit layout is free of both rules.
+// Automatic-mode visibility of one token. Two rules keep existing configs
+// rendering unchanged: a family's singles fold into the combined line, and
+// the moon (default on) only shows together with the sun, so cards that
+// never asked for a moon line don't grow one. An explicit layout ignores both.
 function automaticOn(c: Record<string, unknown>, token: AttributeToken): boolean {
   for (const family of LINE_FAMILIES) {
     if (token === family.combined) {
@@ -158,15 +145,10 @@ function defaultPosition(token: AttributeToken): { column: number; rank: number 
   return { column: DEFAULT_ATTRIBUTES_LAYOUT.length - 1, rank };
 }
 
-/** Editor helper: insert a token into an explicit layout next to its
- *  nearest default sibling — right after the closest earlier row of its
- *  default column that is placed somewhere, else right before the
- *  closest later one. A user who moved the zero-degree level into the
- *  wind column therefore gets humidity next to it, not into a column
- *  index that stopped meaning "climate" the moment a column was
- *  removed. With no sibling placed at all the token opens a new column,
- *  slotted so the columns keep the default left-to-right order.
- *  Returns a new layout. */
+/** Editor helper: insert a token next to its nearest default sibling (after
+ *  the closest earlier row of its default column, else before the closest
+ *  later one), so a moved row keeps its neighbours. With no sibling placed
+ *  it opens a new column in default order. Returns a new layout. */
 export function addTokenToLayout(layout: AttributesLayout, token: AttributeToken): AttributesLayout {
   const next = layout.map((column) => [...column]);
   if (next.some((column) => column.includes(token))) return next;

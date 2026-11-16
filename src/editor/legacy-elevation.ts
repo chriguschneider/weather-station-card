@@ -1,4 +1,4 @@
-// The top-level `elevation` option is deprecated since 3.0 in favour of
+// The top-level `elevation` option is deprecated in favour of
 // `location.elevation` (removal announced for 4.0, MIGRATION.md).
 
 import { parseLocation } from '../location.js';

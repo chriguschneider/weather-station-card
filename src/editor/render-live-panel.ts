@@ -1,16 +1,8 @@
-// Editor render partial — "Live-Anzeige" (Live panel).
-// The now-panel that sits above the chart: current temperature,
-// condition, clock, and the attributes row.
-//
-// v2.3 redesign (ADR-0023): the former walls of toggles (8 main-panel
-// + 13 attribute switches) collapse into two multi-select fields under
-// their on/off gates, and the two clock booleans (show_time,
-// show_time_seconds) project onto a single "clock"
-// dropdown — the same UI-only-abstraction pattern the mode dropdown
-// uses for show_station / show_forecast.
-//
-// Font-size knobs (current_temp_size, icons_size, time_size,
-// day_date_size) stay in DEFAULTS + YAML only.
+// Editor partial "Live panel" (ADR-0023): the now-panel above the chart.
+// Main-panel and attribute toggles are pill rows under their on/off gates;
+// show_time / show_time_seconds are one clock dropdown.
+// Font-size knobs (current_temp_size, icons_size, time_size, day_date_size)
+// stay in DEFAULTS + YAML only.
 
 import { html, type TemplateResult } from 'lit';
 import type { EditorLike, EditorContext, TogglePath } from './types.js';
@@ -25,8 +17,8 @@ import {
   type AttributeToken,
 } from '../attributes-layout.js';
 
-// Main-panel elements. `def` mirrors the editor-visible defaults the
-// old toggle bags used (`!== false` → true, `=== true` → false).
+// Main-panel elements. `def` is the editor-visible default
+// (`!== false` → true, `=== true` → false).
 export const MAIN_ELEMENT_PATHS: ReadonlyArray<TogglePath> = [
   { path: 'show_temperature',       def: true },
   { path: 'show_current_condition', def: false },
@@ -34,14 +26,11 @@ export const MAIN_ELEMENT_PATHS: ReadonlyArray<TogglePath> = [
   { path: 'show_date',              def: false },
 ];
 
-// Attribute cells, in display order (humidity right after dew_point —
-// it renders on the dew-point line, opt-in since v2.3). `gate` names
-// which availability predicate controls whether the option is offered.
-// `gateKey` takes a list when more than one sensor slot can satisfy the
-// row — precipitation is offered for a cumulative counter OR a dedicated
-// rate sensor (#253), either of which produces a live value.
-// `requireAll` flips the gate from "any of the keys" to "all of them" —
-// a combined line needs both of its values.
+// Attribute cells, in display order (humidity right after dew_point, on
+// whose line it renders). `gate` names the availability predicate that
+// decides whether the option is offered. `gateKey` is a list when several
+// sensor slots can satisfy the row (precipitation: counter or rate, #253);
+// `requireAll` demands all of them (a combined line needs both values).
 export const ATTRIBUTE_PATHS: ReadonlyArray<
   TogglePath & { gate?: 'live' | 'sensor'; gateKey?: string | readonly string[]; requireAll?: boolean }
 > = [
@@ -81,10 +70,8 @@ function selectedLeaves(
     .map(({ path }) => path);
 }
 
-// Attribute pills mirror the resolved layout (ADR-0025): a pill is on
-// when its row token is in the columns the card renders — the explicit
-// `attributes_layout` when set, else the show_* keys folded into the
-// automatic arrangement (both singles of a pair on → the combined pill).
+// Attribute pills mirror the resolved layout (ADR-0025): a pill is on when
+// its row token is in the columns the card renders.
 function selectedAttributeLeaves(
   cfg: Record<string, unknown>,
   paths: ReadonlyArray<TogglePath>,
@@ -121,10 +108,9 @@ export function availableAttributePaths(
   });
 }
 
-// The layout board under the attribute pills (ADR-0025). Its input is
-// the resolved columns narrowed to the rows the pill row offers AND has
-// on — a default-on row with no sensor behind it is not rendered by the
-// card, so it has no place to be arranged either.
+// The layout board under the attribute pills (ADR-0025): the resolved
+// columns narrowed to rows the pill row offers and has on, since a row
+// without a sensor behind it is not rendered either.
 function renderAttributesBoard(
   editor: EditorLike,
   ctx: EditorContext,

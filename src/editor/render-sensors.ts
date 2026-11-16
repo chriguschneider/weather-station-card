@@ -1,21 +1,7 @@
-// Editor render partial — "Sensoren deiner Wetterstation" panel.
-//
-// v2.3 redesign (ADR-0023): a source dropdown at the top decides where
-// the past half of the chart comes from — the user's station sensors,
-// or Open-Meteo history (ADR-0015). The runtime always prefers station
-// sensors when any are configured, so the two sources are mutually
-// exclusive in practice; the dropdown makes that explicit instead of
-// the former buried opt-in toggle. Choosing Open-Meteo hides the
-// picker grid entirely (and _setPastSource drops configured sensors so
-// the editor and the card agree).
-//
-// The 12 pickers render in a 2-column ha-form grid — each full-width
-// row was half empty anyway, and entity names elide gracefully.
-//
-// Per-metric selector filtering comes from src/sensor-match.ts (#451),
-// the matcher the card also auto-picks a new card's sensors with. Each
-// entry's `key` is the YAML key under `sensors:` and doubles as the
-// i18n key.
+// Editor partial "Sensors" (ADR-0023). A source dropdown picks the past
+// data source (ADR-0015); Open-Meteo hides the picker grid. Per-metric
+// filtering comes from sensor-match.ts (#451); each key is the YAML key
+// under `sensors:` and doubles as the i18n key.
 
 import { html, type TemplateResult } from 'lit';
 import type { EditorLike, EditorContext, HomeAssistant } from './types.js';
@@ -46,24 +32,10 @@ function buildSensorFields(hass: HassWithStates | null): Array<{ key: string; ca
   const candidates = (key: string): string[] =>
     sensorCandidates(key, ids, hass);
 
-  // Ordered as logical 2-column rows (the grid flows row-wise):
-  //   temperature    | pressure           — base climate
-  //   humidity       | dew_point          — moisture in the air
-  //   precipitation  | precipitation_rate — moisture coming down (#253)
-  //   wind_speed     | gust_speed         ┐ wind
-  //   wind_direction | illuminance        ┘ the one mixed row
-  //   uv_index       | sunshine_duration  — light; rarest slot last
-  //   zero_degree_level | zero_degree_level_48h — forecast-derived
-  //   next_rain                           — nowcast
-  //
-  // Twelve station slots in two columns is six rows, but the themes are
-  // 2+2+2+3+3 — wind and light have three members each, so ONE row has
-  // to straddle two themes. Placing the two odd groups next to each
-  // other keeps it at exactly one (wind_direction | illuminance) and
-  // leaves every even group intact. `temperature` stays top-left as the
-  // only required slot. The zero-degree level and next rain are not
-  // station readings (they come from forecast / nowcast models) and
-  // share a seventh row.
+  // 2-column rows (the grid flows row-wise): climate, moisture,
+  // precipitation (#253), wind, wind + light (the one mixed row), light,
+  // then the forecast-derived zero-degree pair, then next_rain alone.
+  // `temperature` stays top-left as the only required slot.
   return [
     'temperature', 'pressure',
     'humidity', 'dew_point',
@@ -79,10 +51,8 @@ function buildSensorFields(hass: HassWithStates | null): Array<{ key: string; ca
   ].map((key) => ({ key, candidates: candidates(key) }));
 }
 
-// One 2-column grid container wrapping every per-metric entity
-// selector. ha-form grids are transparent for data — the value bag
-// keeps the flat { temperature: ..., humidity: ... } shape that
-// _sensorsChanged already consumes.
+// ha-form grids are transparent for data, so the value bag stays the flat
+// { temperature: ..., humidity: ... } shape _sensorsChanged consumes.
 function buildSensorsSchema(hass: HassWithStates | null): Array<Record<string, unknown>> {
   return [{
     name: '',
@@ -102,10 +72,8 @@ function buildSensorsSchema(hass: HassWithStates | null): Array<Record<string, u
 export function renderSensorsSection(editor: EditorLike, ctx: EditorContext): TemplateResult {
   const { t, sensorsConfig, pastDataAvailable, showsStation } = ctx;
 
-  // The panel shows whenever a past block is — or should become —
-  // configurable: in station / combination mode, or (regardless of
-  // mode) when there is no past data yet, so the recovery controls
-  // stay reachable.
+  // Also shown without past data, whatever the mode, so the recovery
+  // controls stay reachable.
   if (!showsStation && pastDataAvailable) return html``;
 
   const source = editor._pastSource;
@@ -128,10 +96,7 @@ export function renderSensorsSection(editor: EditorLike, ctx: EditorContext): Te
     if (next && next !== source) editor._setPastSource(next);
   };
 
-  // Append "(required)" to required-field labels. ha-form also draws a
-  // Material asterisk via the schema's `required: true` flag; the
-  // text marker just makes the convention explicit for users who don't
-  // pattern-match on Material asterisks.
+  // Spell out "(required)" next to ha-form's asterisk.
   const computeLabel = (schema: { name: string; required?: boolean }): string => {
     const base = t(schema.name);
     return schema.required ? `${base} (${t('required_marker')})` : base;
