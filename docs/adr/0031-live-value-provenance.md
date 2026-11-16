@@ -169,3 +169,20 @@ the record instead of a separate `_dewPointFromEntity` flag. The
 availability scan (#213) uses the same `isUnavailableState()` test as
 the stale fallback, and keeps the overdue entity ids as a set instead of
 parsing them back out of the warning text. Decided by: owner (#451).
+
+## Amendment 2026-11-16 (#507): the reading carries a canonical value
+
+The #451 amendment has the weather entity's value rescaled into the
+sensor's unit. That rescale is gone (ADR-0035). A reading is
+`{ value, unit, canonical, source }`: `value` and `unit` are what the
+picked side reported (the sensor's state and `unit_of_measurement`, or
+the entity's attribute and its unit attribute), and `canonical` is that
+value in the quantity's canonical unit. A sensor that reports no unit
+carries the assumed unit for its quantity (ADR-0035, amendment of
+2026-11-16); a unit that is present and not in the units table gives
+`canonical` null. The live classifier and the row classifications read
+`canonical`. The rows and the sources popup convert into the card's
+display units, resolved once per extraction in `src/display-units.ts`,
+and show `value` with `unit` when `canonical` is null. The dedicated
+precipitation-rate sensor returns the same record. Decided by: owner
+(#478).

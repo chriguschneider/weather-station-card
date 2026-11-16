@@ -1,6 +1,6 @@
 # 0009: Lookup-table pattern for unit conversions
 
-**Status:** Accepted
+**Status:** Superseded by [0035](0035-canonical-units-inside-display-units-at-the-edge.md)
 
 **Date:** 2026-05-09
 
@@ -108,3 +108,4 @@ non-numeric speed, so callers hide the row instead of printing "NaN".
 - ADR-0007 (`set hass` three-phase) — same flavour of "extract pure
   function from over-grown method".
 - v1.10.1 commit a8e5d35 (extraction itself).
+- ADR-0035 supersedes this ADR. `WIND_CONVERSION` remains until step C3, read only by `toMetersPerSecond` for the past data.
