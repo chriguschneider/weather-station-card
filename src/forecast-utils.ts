@@ -535,21 +535,6 @@ export function filterMidnightStaleForecast<T extends { datetime?: string }>(
   });
 }
 
-/** Index-anchored 3-hour blocks (consecutive runs of 3 entries; a short
- *  tail becomes a partial block). See `aggregateBlock`. */
-export function aggregateThreeHour<T extends Partial<ForecastEntry>>(
-  entries: ReadonlyArray<T>,
-): ForecastEntry[] {
-  if (!Array.isArray(entries) || entries.length === 0) return [];
-  const blocks: ForecastEntry[] = [];
-  for (let i = 0; i < entries.length; i += 3) {
-    const slice = entries.slice(i, i + 3);
-    if (!slice.length) continue;
-    blocks.push(aggregateBlock(slice, (slice[0] as ForecastEntry).datetime));
-  }
-  return blocks;
-}
-
 function collectNumeric<T>(slice: ReadonlyArray<T>, key: keyof ForecastEntry): number[] {
   const values: number[] = [];
   for (const e of slice) {

@@ -2,7 +2,7 @@
 // buckets scale proportionally instead of clipping flat at the top.
 //
 // Repro context: in 'today' mode precip is summed into 3-hour buckets
-// (aggregateThreeHour). A wet afternoon produced buckets of 2.7 / 10 /
+// (aggregateThreeHourCalendar). A wet afternoon produced buckets of 2.7 / 10 /
 // 4.7 mm, but the ceiling was a fixed 4 mm — so the 10 mm and 4.7 mm
 // bars both pinned to full height and read as equally tall while
 // 2.7 mm sat just below. The bars no longer encoded their values.

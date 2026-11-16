@@ -282,7 +282,6 @@ function renderLoadingBlock(ctx: ForecastBlockCtx): TemplateResult {
             <div class="chart-container">
               ${renderChartSkeleton({
                 chartHeight: config.forecast.chart_height as number,
-                visibleBars: ctx.visibleBars,
               })}
             </div>
             ${enabled.conditions
