@@ -40,6 +40,24 @@ typecheck depended on; the build broke. Fix targeted lints by hand
 or `--fix --rule <id>` for one rule at a time, and re-run typecheck
 after.
 
+**Two domain guards** are `error` from the start; the code had no
+violation left when they were added (ADR-0029 amendment):
+
+- **Units stay in the units modules** (`no-restricted-syntax`, ADR-0035
+  point 6). Outside the allow-list in `eslint.config.mjs` (units table,
+  locales, entry modules, sensor matcher, the editor's unit options,
+  defaults) code names no unit as a string or in a template and reads
+  neither `unit_of_measurement` nor the weather entity's `*_unit`
+  attributes. A unit comes from `CANONICAL_UNIT`, the display units or a
+  reading. Single letters (`m`, `h`, `s`, `K`) and `bar` are not on the
+  list: they are everyday tokens. A deliberate exception is one
+  `eslint-disable-next-line no-restricted-syntax -- <reason>` above the
+  line.
+- **Comments state the present** (`no-warning-comments`): history
+  phrases such as "used to", "previously" or "no longer" fail in `src/`.
+  `TODO` and `FIXME` already fail through `sonarjs/todo-tag` and
+  `sonarjs/fixme-tag`.
+
 ## npm audit
 
 `npm audit --omit=dev --audit-level=high` runs in CI and blocks the

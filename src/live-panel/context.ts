@@ -112,7 +112,8 @@ export function attrEntity(
 
 // The locale tables are keyed by the config's spelling: the units-table
 // id `Beaufort` is `Bft` there.
-const LABEL_KEY: Readonly<Record<string, string>> = { Beaufort: 'Bft' };
+// eslint-disable-next-line no-restricted-syntax -- a locale key, the config's spelling of Beaufort
+const LABEL_KEY:Readonly<Record<string, string>> = { Beaufort: 'Bft' };
 
 /** Locale label of a unit key ('' when no unit is set). */
 export function unitLabel(ctx: Pick<LivePanelCtx, 'units'>, unit: string | undefined): string {

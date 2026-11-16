@@ -50,8 +50,8 @@ export function previewLayout(
   return next;
 }
 
-// Distance from a point to a rect (0 when inside), used to pick the
-// nearest column when the pointer is in a gap or off the board.
+// Distance from a point to a rect (0 when inside); picks the nearest
+// column when the pointer is in a gap or off the board.
 function axisGap(v: number, lo: number, hi: number): number {
   if (v < lo) return lo - v;
   if (v > hi) return v - hi;
