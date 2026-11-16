@@ -56,8 +56,8 @@ describe('attachEntitySunshine', () => {
     ]);
     const out = attachSunshine(entries, cal, {
       dailyValues: [
-        { date: '2026-10-20', value: 9 },
-        { date: '2026-10-21', value: 5 },
+        { date: '2026-10-20', value: 32400 },
+        { date: '2026-10-21', value: 18000 },
       ],
       latitude: 46.9,
     });

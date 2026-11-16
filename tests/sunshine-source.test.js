@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   dayLengthHours,
   normalizeSunshineValue,
+  sensorSunshineHours,
   localDateString,
   localHourString,
   findInDateArray,
@@ -99,6 +100,32 @@ describe('normalizeSunshineValue', () => {
   });
 });
 
+describe('sensorSunshineHours', () => {
+  it('converts a sensor with a unit through the duration table', () => {
+    expect(sensorSunshineHours(330, 'min')).toBe(5.5);
+    expect(sensorSunshineHours(1440, 's')).toBeCloseTo(0.4, 9);
+    expect(sensorSunshineHours(20, 's')).toBeCloseTo(20 / 3600, 9);
+    expect(sensorSunshineHours(7.5, 'h')).toBe(7.5);
+    expect(sensorSunshineHours(0.25, 'd')).toBe(6);
+    expect(sensorSunshineHours(45, 'Min')).toBe(0.75);
+  });
+
+  it('gives null for a unit the table does not know, and for no value', () => {
+    expect(sensorSunshineHours(5, 'foo')).toBe(null);
+    expect(sensorSunshineHours(null, 'h')).toBe(null);
+  });
+
+  it('clamps a negative reading to 0', () => {
+    expect(sensorSunshineHours(-3, 'min')).toBe(0);
+  });
+
+  it('keeps the magnitude rule for a sensor without a unit', () => {
+    expect(sensorSunshineHours(1440, undefined)).toBeCloseTo(0.4, 9);
+    expect(sensorSunshineHours(7.5, undefined)).toBe(7.5);
+    expect(sensorSunshineHours(29, '')).toBe(29);
+  });
+});
+
 describe('localDateString', () => {
   it('returns YYYY-MM-DD for a Date', () => {
     expect(localDateString(new Date(2026, 4, 5), cal)).toBe('2026-05-05');
@@ -155,65 +182,85 @@ describe('findInHourArray', () => {
     const arr = [null, 'string', { /* no datetime */ }, { datetime: '2026-05-05T12:00', value: 1800 }];
     expect(findInHourArray(arr, '2026-05-05T12:00')).toBe(0.5);
   });
+
+  it('reads every value as seconds, small ones included', () => {
+    const at = (value) => findInHourArray([{ datetime: '2026-05-05T12:00', value }], '2026-05-05T12:00');
+    expect(at(20)).toBeCloseTo(20 / 3600, 9);
+    expect(at('3600')).toBe(1);
+    expect(at(-5)).toBe(0);
+    expect(at('x')).toBe(null);
+  });
 });
 
 describe('findInDateArray', () => {
   it('returns null for missing array / date', () => {
     expect(findInDateArray(null, '2026-05-05')).toBe(null);
-    expect(findInDateArray([{ date: '2026-05-05', value: 7 }], null)).toBe(null);
+    expect(findInDateArray([{ date: '2026-05-05', value: 25200 }], null)).toBe(null);
   });
 
   it('matches the canonical {date, value} shape', () => {
     const arr = [
-      { date: '2026-05-04', value: 6 },
-      { date: '2026-05-05', value: 7.2 },
-      { date: '2026-05-06', value: 5 },
+      { date: '2026-05-04', value: 21600 },
+      { date: '2026-05-05', value: 25920 },
+      { date: '2026-05-06', value: 18000 },
     ];
-    expect(findInDateArray(arr, '2026-05-05')).toBe(7.2);
+    expect(findInDateArray(arr, '2026-05-05')).toBeCloseTo(7.2, 9);
     expect(findInDateArray(arr, '2026-05-99')).toBe(null);
   });
 
   it('matches {datetime, value} (ISO timestamp prefix)', () => {
     const arr = [
-      { datetime: '2026-05-05T00:00:00+02:00', value: 8.1 },
-      { datetime: '2026-05-06T00:00:00+02:00', value: 4.0 },
+      { datetime: '2026-05-05T00:00:00+02:00', value: 29160 },
+      { datetime: '2026-05-06T00:00:00+02:00', value: 14400 },
     ];
-    expect(findInDateArray(arr, '2026-05-05')).toBe(8.1);
+    expect(findInDateArray(arr, '2026-05-05')).toBeCloseTo(8.1, 9);
   });
 
   it('matches the [date, value] tuple form', () => {
     const arr = [
-      ['2026-05-05', 9],
-      ['2026-05-06', 3],
+      ['2026-05-05', 32400],
+      ['2026-05-06', 10800],
     ];
     expect(findInDateArray(arr, '2026-05-05')).toBe(9);
   });
 
   it('matches an object-map {YYYY-MM-DD: value}', () => {
-    const obj = { '2026-05-05': 7, '2026-05-06': 4 };
+    const obj = { '2026-05-05': 25200, '2026-05-06': 14400 };
     expect(findInDateArray(obj, '2026-05-05')).toBe(7);
     expect(findInDateArray(obj, '2026-05-07')).toBe(null);
   });
 
   it('unwraps a {history: [...]} envelope', () => {
-    const arr = { history: [{ date: '2026-05-05', value: 6 }] };
+    const arr = { history: [{ date: '2026-05-05', value: 21600 }] };
     expect(findInDateArray(arr, '2026-05-05')).toBe(6);
   });
 
   it('unwraps a {forecast: [...]} envelope (HA weather-shape symmetry)', () => {
-    const arr = { forecast: [{ date: '2026-05-05', value: 6 }] };
+    const arr = { forecast: [{ date: '2026-05-05', value: 21600 }] };
     expect(findInDateArray(arr, '2026-05-05')).toBe(6);
   });
 
   it('honours alternate value-key names (sunshine, duration, sunshine_duration)', () => {
-    expect(findInDateArray([{ date: '2026-05-05', sunshine: 7 }], '2026-05-05')).toBe(7);
-    expect(findInDateArray([{ date: '2026-05-05', duration: 7 }], '2026-05-05')).toBe(7);
-    expect(findInDateArray([{ date: '2026-05-05', sunshine_duration: 7 }], '2026-05-05')).toBe(7);
+    expect(findInDateArray([{ date: '2026-05-05', sunshine: 25200 }], '2026-05-05')).toBe(7);
+    expect(findInDateArray([{ date: '2026-05-05', duration: 25200 }], '2026-05-05')).toBe(7);
+    expect(findInDateArray([{ date: '2026-05-05', sunshine_duration: 25200 }], '2026-05-05')).toBe(7);
   });
 
-  it('normalizes seconds → hours via normalizeSunshineValue when matched', () => {
+  it('converts seconds → hours when matched', () => {
     // 28800 s = 8 h
     expect(findInDateArray([{ date: '2026-05-05', value: 28800 }], '2026-05-05')).toBe(8);
+  });
+
+  it('reads a value below 30 as seconds, not as hours', () => {
+    expect(findInDateArray([{ date: '2026-05-05', value: 20 }], '2026-05-05')).toBeCloseTo(20 / 3600, 9);
+    expect(findInDateArray({ '2026-05-05': 20 }, '2026-05-05')).toBeCloseTo(20 / 3600, 9);
+    expect(findInDateArray([['2026-05-05', 20]], '2026-05-05')).toBeCloseTo(20 / 3600, 9);
+  });
+
+  it('parses numeric strings, clamps negatives and rejects non-numbers', () => {
+    expect(findInDateArray([{ date: '2026-05-05', value: '3600' }], '2026-05-05')).toBe(1);
+    expect(findInDateArray([{ date: '2026-05-05', value: -5 }], '2026-05-05')).toBe(0);
+    expect(findInDateArray([{ date: '2026-05-05', value: 'x' }], '2026-05-05')).toBe(null);
   });
 
   it('skips malformed entries without throwing', () => {
@@ -221,7 +268,7 @@ describe('findInDateArray', () => {
       null,
       undefined,
       'string',
-      { date: '2026-05-05', value: 7 },
+      { date: '2026-05-05', value: 25200 },
       { /* no date */ value: 99 },
     ];
     expect(findInDateArray(arr, '2026-05-05')).toBe(7);
@@ -283,14 +330,14 @@ describe('attachSunshine', () => {
       { datetime: iso(dayMs(2)) },  // forecast
     ];
     const dailyValues = [
-      { date: localDateString(dayMs(-2), cal), value: 3.1 },
-      { date: localDateString(dayMs(-1), cal), value: 5.9 },
-      { date: localDateString(dayMs(0), cal), value: 7.0 },
-      { date: localDateString(dayMs(1), cal), value: 8.1 },
-      { date: localDateString(dayMs(2), cal), value: 4.0 },
+      { date: localDateString(dayMs(-2), cal), value: 11160 },
+      { date: localDateString(dayMs(-1), cal), value: 21240 },
+      { date: localDateString(dayMs(0), cal), value: 25200 },
+      { date: localDateString(dayMs(1), cal), value: 29160 },
+      { date: localDateString(dayMs(2), cal), value: 14400 },
     ];
     const result = attachSunshine(fc, cal, { dailyValues, latitude: 47 });
-    expect(result.map((r) => r.sunshine)).toEqual([3.1, 5.9, 7.0, 8.1, 4.0]);
+    [3.1, 5.9, 7.0, 8.1, 4.0].forEach((h, i) => expect(result[i].sunshine).toBeCloseTo(h, 9));
   });
 
   it('omits columns silently when no dailyValues given (sunshine stays null)', () => {
@@ -303,7 +350,7 @@ describe('attachSunshine', () => {
   it('caps each value at the day length (no 26-hour days)', () => {
     const fc = [{ datetime: iso(dayMs(-1)) }];
     // 99 hours of sun in a single day — clearly bogus.
-    const dailyValues = [{ date: localDateString(dayMs(-1), cal), value: 99 }];
+    const dailyValues = [{ date: localDateString(dayMs(-1), cal), value: 356400 }];
     const result = attachSunshine(fc, cal, { dailyValues, latitude: 47 });
     expect(result[0].sunshine).toBeLessThanOrEqual(result[0].day_length);
   });
@@ -323,7 +370,7 @@ describe('attachSunshine', () => {
     expect(original[0].sunshine).toBeUndefined();
   });
 
-  it('normalizes seconds → hours via the same auto-detect as scalar sensors', () => {
+  it('converts Open-Meteo seconds → hours', () => {
     // 28800 s = 8 h. Open-Meteo emits sunshine_duration in seconds.
     const fc = [{ datetime: iso(dayMs(0)) }];
     const dailyValues = [{ date: localDateString(dayMs(0), cal), value: 28800 }];
@@ -411,6 +458,15 @@ describe('attachSunshine', () => {
       expect(result[2].sunshine).toBe(null);
     });
 
+    it('reads an hour with 20 s of sun as 20 s, not capped to a full hour', () => {
+      const fc = [{ datetime: hourIso(12) }];
+      const hourlyValues = [{ datetime: hourKey(12), value: 20 }];
+      const result = attachSunshine(fc, cal, {
+        hourlyValues, latitude: 47, granularity: 'hourly',
+      });
+      expect(result[0].sunshine).toBeCloseTo(20 / 3600, 9);
+    });
+
     it('sets day_length to 1h for every hourly entry', () => {
       const fc = [{ datetime: hourIso(12) }, { datetime: hourIso(0) }];
       const hourlyValues = [];
@@ -470,13 +526,13 @@ describe('overlayFromOpenMeteo', () => {
       { datetime: iso(dayMs(1)) },
     ];
     const source = makeSource([
-      { date: localDateString(dayMs(-1), cal), value: 5.5 },
-      { date: localDateString(dayMs(0), cal), value: 7.2 },
-      { date: localDateString(dayMs(1), cal), value: 9.1 },
+      { date: localDateString(dayMs(-1), cal), value: 19800 },
+      { date: localDateString(dayMs(0), cal), value: 25920 },
+      { date: localDateString(dayMs(1), cal), value: 32760 },
     ]);
     const hass = { config: { latitude: 46.91 } };
     const out = overlayFromOpenMeteo(forecasts, hass, source, cal);
-    expect(out.map((r) => r.sunshine)).toEqual([5.5, 7.2, 9.1]);
+    [5.5, 7.2, 9.1].forEach((h, i) => expect(out[i].sunshine).toBeCloseTo(h, 9));
   });
 
   it('returns sunshine=null for entries the source has no value for', () => {
@@ -485,7 +541,7 @@ describe('overlayFromOpenMeteo', () => {
       { datetime: iso(dayMs(7)) },
     ];
     const source = makeSource([
-      { date: localDateString(dayMs(0), cal), value: 7 },
+      { date: localDateString(dayMs(0), cal), value: 25200 },
       // Day +7 not in source.
     ]);
     const out = overlayFromOpenMeteo(forecasts, { config: { latitude: 47 } }, source, cal);
@@ -495,7 +551,7 @@ describe('overlayFromOpenMeteo', () => {
 
   it('handles a hass object with no config gracefully', () => {
     const forecasts = [{ datetime: iso(dayMs(0)) }];
-    const source = makeSource([{ date: localDateString(dayMs(0), cal), value: 5 }]);
+    const source = makeSource([{ date: localDateString(dayMs(0), cal), value: 18000 }]);
     const out = overlayFromOpenMeteo(forecasts, {}, source, cal);
     expect(out[0].sunshine).toBe(5);
     // day_length falls back to 12h equinox default when no latitude.
@@ -509,8 +565,8 @@ describe('overlayFromOpenMeteo', () => {
     expect(out[0].day_length).toBeGreaterThan(0);
   });
 
-  it('normalizes Open-Meteo seconds → hours through the source', () => {
-    // Open-Meteo emits seconds; parseDailySunshine doesn't normalize,
+  it('converts Open-Meteo seconds → hours through the source', () => {
+    // Open-Meteo emits seconds; parseDailySunshine doesn't convert,
     // attachSunshine does at lookup time.
     const forecasts = [{ datetime: iso(dayMs(0)) }];
     const source = makeSource([{ date: localDateString(dayMs(0), cal), value: 28800 }]);

@@ -64,7 +64,7 @@ describe('overlayFromOpenMeteo — day length', () => {
   day.setHours(0, 0, 0, 0);
   const forecasts = [{ datetime: day.toISOString() }];
   const source = {
-    getDailyValues: () => [{ date: localDateString(day, cal), value: 5 }],
+    getDailyValues: () => [{ date: localDateString(day, cal), value: 18000 }],
     getHourlyValues: () => null,
   };
 
