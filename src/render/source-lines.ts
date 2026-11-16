@@ -1,7 +1,6 @@
-// Content of the sources popup (show_sources, ADR-0031), split out of
-// main.ts (#472): which live keys the card shows, one line per value
-// with its origin, and the chart legend section. The popup itself
-// (sources-popup.ts) and its open / close wiring stay in main.ts.
+// Content of the sources popup (show_sources, ADR-0031): which live keys
+// the card shows, one line per value with its origin, and the chart
+// legend section.
 
 import { attrEntity, type LivePanelCtx } from '../live-panel/context.js';
 import { sourceValueText } from '../live-panel/source-values.js';
@@ -116,8 +115,7 @@ function downNote(ctx: SourceLinesCtx, src: LiveSource, downId: string): string 
       ? live.str('sources_stale_since').replace('{time}', time)
       : live.str('sources_stale');
   }
-  // The weather entity is already named; say which configured sensor it
-  // stands in for.
+  // The weather entity is already named; name the sensor it stands in for.
   return (time ? live.str('sources_sensor_down_since').replace('{time}', time) : live.str('sources_sensor_down'))
     .replace('{entity}', ctx.entityName(downId));
 }

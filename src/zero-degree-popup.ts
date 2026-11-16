@@ -1,19 +1,10 @@
-// Zero-degree popup (#330): tapping a zero-degree row opens an overlay
-// with the forecast curve of the 0 °C isotherm, so the user sees where
-// the snow line goes after its 48-h minimum.
-//
-// Data: the `forecast` attribute of `sensors.zero_degree_level_48h` —
-// a list of `{ datetime: ISO 8601, level: number }`, ascending, in the
-// sensor's unit (contract from
+// Zero-degree popup (#330): an overlay with the 0 °C isotherm curve.
+// Data: the `forecast` attribute of `sensors.zero_degree_level_48h`, a
+// list of `{ datetime: ISO 8601, level: number }`, ascending, in the
+// sensor's unit (contract:
 // https://github.com/chriguschneider/hass-meteoswiss-weather/issues/225).
-// Any sensor with that attribute works; fewer than two valid points
-// means no popup and the row keeps opening more-info.
-//
-// The overlay is plain DOM appended to the card's shadow root, outside
-// ha-card: `.card` carries `container-type: inline-size`, and that
-// containment would turn `position: fixed` into card-relative. No
-// `ha-dialog` either — it is HA-internal, lazy-loaded and changes shape
-// between HA versions.
+// Under two valid points there is no popup and the row opens more-info.
+// Overlay mechanics: popup-shell.ts.
 
 import uPlot from 'uplot';
 import { getDateTimeFormat, getNumberFormat } from './utils/intl-cache.js';
@@ -133,7 +124,6 @@ export function findWindowMinimum(curve: readonly ZeroDegreePoint[], hours: numb
   return findCurveMinimum(curve.filter((p) => p.t <= end));
 }
 
-/** Weekday + clock, the next-rain tooltip's style ("Thu 05:00"). */
 export function formatWeekdayTime(t: number, { language, hour12, calendar }: ZeroDegreeFormatOpts): string {
   return getDateTimeFormat(language, {
     weekday: 'short', hour: 'numeric', minute: 'numeric', hour12, timeZone: calendar.timeZone,
@@ -181,7 +171,7 @@ export interface ZeroDegreeChartOpts extends ZeroDegreeFormatOpts {
   width: number;
   height: number;
   colors: ZeroDegreeChartColors;
-  /** Cursor readout; idx null when the cursor leaves the plot. */
+  /** Cursor readout; null when the cursor leaves the plot. */
   onCursor?(point: ZeroDegreePoint | null): void;
 }
 
@@ -198,8 +188,8 @@ export type ZeroDegreeChartFactory = (
 
 const CHART_HEIGHT = 220;
 
-/** Day separators, the "now" line at the first point and the minimum
- *  marker, painted after uPlot drew the series. Canvas pixels. */
+/** Day separators, the "now" line, the site line and the extreme
+ *  markers, painted after uPlot drew the series. Canvas pixels. */
 function overlayPlugin(
   curve: readonly ZeroDegreePoint[],
   min: ZeroDegreePoint | null,
@@ -345,7 +335,6 @@ export const buildZeroDegreeChart: ZeroDegreeChartFactory = (target, curve, opts
   };
 };
 
-// Shell rules (backdrop, panel, header, close) live in popup-shell.ts.
 const STYLES = `
   .wsc-zd-heading { display: block; font-size: 18px; }
   .wsc-zd-range {

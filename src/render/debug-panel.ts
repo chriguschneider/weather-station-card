@@ -1,7 +1,6 @@
-// Diagnostic panel (#472), rendered only with `debug: true` in YAML. It
-// shows the resolved sensor entities, the render mode, each data
-// source's status and why a chart column may be empty, so a dashboard
-// can be troubleshot without a debugger. No editor row on purpose.
+// Diagnostic panel (ADR-0034), rendered only with `debug: true` in YAML:
+// resolved sensor entities, render mode, data-source status and why a
+// chart column may be empty. No editor row on purpose.
 
 import { html, type TemplateResult } from 'lit';
 import { pastFromOpenMeteo } from '../past-source.js';
@@ -53,8 +52,6 @@ function renderModeOf(wantStation: boolean, wantForecast: boolean): string {
   return 'none (both blocks disabled)';
 }
 
-/** Why a chart column might be empty, the most common support question,
- *  in priority order. */
 type Cfg = Partial<CardConfig>;
 
 function stationConfigReason(cfg: Cfg): string | null {

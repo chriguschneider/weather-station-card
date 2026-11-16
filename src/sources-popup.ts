@@ -1,9 +1,6 @@
 // Data-sources popup (`show_sources`, #431, ADR-0031): one info button
 // opens an overlay that names the source of every live value and
-// explains the chart's encodings. The card itself stays untagged.
-//
-// The overlay shell (backdrop, close, Escape, Tab trap, focus return) is
-// shared with the zero-degree popup: src/popup-shell.ts.
+// explains the chart's encodings. Overlay mechanics: popup-shell.ts.
 
 import { PopupShell, el } from './popup-shell.js';
 import type { LiveSourceKind } from './live-source.js';
@@ -33,7 +30,6 @@ export function formatSourceLine(line: SourceLine): string {
   return [head, line.sourceText, line.entityName || line.entityId, line.note].filter(Boolean).join(' · ');
 }
 
-// Shell rules (backdrop, panel, header, close) live in popup-shell.ts.
 const STYLES = `
   .wsc-src-panel { overflow-x: hidden; }
   .wsc-src-header { margin-bottom: 4px; }

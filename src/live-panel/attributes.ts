@@ -73,8 +73,7 @@ export function renderAttributeLine(ctx: LivePanelCtx, token: AttributeToken, d:
 
 // One layout column → one <div> of line <div>s, or null when every row
 // in it is off or unwired (the ADR-0010 "any visible" gate, data-driven).
-// A line per <div> rather than inline + <br>: the last row of a column
-// used to have no break, so a row appended after it shared its line.
+// Each row gets its own <div> line rather than inline + <br>.
 export function renderAttributeColumn(ctx: LivePanelCtx, column: ReadonlyArray<AttributeToken>, d: Derived) {
   const lines = column
     .map((token) => renderAttributeLine(ctx, token, d))
