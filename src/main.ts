@@ -936,14 +936,9 @@ _synthesizeWeatherEntity(currentCondition: string | undefined): any {
     }
   }
 
-  // Public entry point: a try/catch wrapper around the merge pipeline.
-  // _refreshForecasts is called from setHass, the station/forecast
-  // subscription callbacks, the ResizeObserver and the mode toggle.
-  // Malformed source data (a forecast entry of the wrong shape, a NaN
-  // datetime) must degrade to the error banner — never throw uncaught
-  // (the setHass call site at line ~866 has no catch of its own) and
-  // never leave `this.forecasts` undefined (which would blank the
-  // chart block). Mirrors the drawChart try/catch.
+  // Malformed source data (a wrong-shaped forecast entry, a NaN datetime) must
+  // degrade to the error banner, never throw out of a hass or subscription
+  // callback, and never leave `forecasts` undefined (which blanks the chart).
   _refreshForecasts() {
     try {
       this._refreshForecastsUnsafe();
@@ -980,10 +975,8 @@ _synthesizeWeatherEntity(currentCondition: string | undefined): any {
     // synchronously here, so the build below sees it on the same render.
     const plan = this._sources.ensureOpenMeteo();
     const built = buildForecastEntries(this._sources.stationData, this._pipelineCtx(plan));
-    // Earlier code dropped the trailing station-today entry while it
-    // carried no recorded data yet, which removed the column from ~00:00
-    // to ~00:15 every day. It is kept: partial values show at once and
-    // missing fields render as gaps.
+    // The trailing station-today entry is kept even without recorded data:
+    // partial values show at once and missing fields render as gaps.
     this._stationCount = built.stationCount;
     this._forecastCount = built.forecastCount;
     this.forecasts = built.entries;
@@ -991,27 +984,16 @@ _synthesizeWeatherEntity(currentCondition: string | undefined): any {
     // skip-path pushes the fresh arrays into the live chart in place.
     this._forecastsDirty = true;
     this.requestUpdate();
-    // measureCard() recomputes forecastItems from the new this.forecasts
-    // length and then redraws. Going through it (instead of calling
-    // drawChart() directly) prevents a stale forecastItems set by an
-    // earlier ResizeObserver tick from cropping the merged array.
-    //
-    // Data callbacks can fire before Lit's first render has built the
-    // shadow root. Skip the redraw in that window — firstUpdated() will
-    // call measureCard() once the DOM is in place. The
-    // wait-for-all-data-sources gate lives in drawChart so every
-    // caller (firstUpdated, ResizeObserver, here) goes through it
-    // uniformly.
+    // measureCard() recomputes forecastItems from the new length; calling
+    // drawChart() directly could crop the merged array with a stale value.
+    // Data callbacks can fire before the first render built the shadow root;
+    // firstUpdated() calls measureCard() then.
     if (this.shadowRoot) this.measureCard();
   }
 
-  // Async sunshine-arrival path. Updates this.forecasts in place with
-  // the freshly-fetched sunshine values and pushes them through the
-  // existing chart via updateChart (no destroy + rebuild). Falls back to
-  // _refreshForecasts when the chart hasn't been built yet or when the
-  // forecast type is 'today' (whose 3-hour aggregation rebuilds the
-  // whole forecasts array, not just the sunshine column). The chance-
-  // of-rain overlay (#288) rides the same path.
+  // Async sunshine / chance-of-rain (#288) arrival: patch forecasts in place
+  // and updateChart. Falls back to _refreshForecasts without a chart or at
+  // type 'today', whose 3-hour aggregation rebuilds the whole array.
   _overlaySunshineOnExisting(): void {
     const plan = this._sources.plan();
     if (!this.forecasts || !this.forecastChart || plan.type === 'today') {
@@ -1023,11 +1005,9 @@ _synthesizeWeatherEntity(currentCondition: string | undefined): any {
   }
 
   attachResizeObserver() {
-    // Section-grid resizes fire many ResizeObserver ticks per frame.
-    // measureCard → drawChart destroys + recreates the Chart.js instance,
-    // and doing that synchronously dozens of times confuses both Chart.js
-    // and HA's grid layout — the card briefly drops out of the render tree
-    // and only reappears after a hard reload. Coalesce into one rAF tick.
+    // Section-grid resizes fire many ResizeObserver ticks per frame; a
+    // synchronous measureCard → drawChart per tick confuses HA's grid layout (the
+    // card drops out of the render tree until reload). Coalesce into one rAF.
     // Drop any prior instance (fast reconnects can schedule two
     // delayed attaches) so we never leak a connected observer.
     if (this.resizeObserver) this.resizeObserver.disconnect();
@@ -1041,18 +1021,10 @@ _synthesizeWeatherEntity(currentCondition: string | undefined): any {
     this._observeResizeTarget();
   }
 
-  // (Re-)point the ResizeObserver at the CURRENT <ha-card>. Two ways
-  // the naive observe-once-at-attach approach goes silently dead:
-  //   1. attachResizeObserver runs from a setTimeout(0) after
-  //      connectedCallback — ha-card may not be rendered yet, so the
-  //      observer ends up observing nothing, forever. No resize ever
-  //      reaches measureCard, and the canvas gets CSS-stretched on a
-  //      later width change (pixelated temperature line).
-  //   2. Lit swaps the <ha-card> element when the render branch
-  //      changes; the observer keeps watching the detached old one.
-  // Called from attachResizeObserver AND from updated() after every
-  // render — idempotent (no-op while the observed element is still the
-  // live one), one querySelector per render.
+  // (Re-)point the ResizeObserver at the current <ha-card>. Observing once
+  // goes dead (1) when the delayed attach runs before ha-card renders, so no
+  // resize ever reaches measureCard, and (2) when Lit swaps <ha-card> on a
+  // render-branch change. Called after every render; idempotent.
   _observeResizeTarget() {
     if (!this.resizeObserver) return;
     const card = this.shadowRoot?.querySelector('ha-card');
@@ -1070,10 +1042,7 @@ _synthesizeWeatherEntity(currentCondition: string | undefined): any {
       this.resizeObserver = null;
     }
     this._resizeObservedCard = null;
-    // Allow connectedCallback to re-attach on a reconnect. Without the
-    // reset, the first disconnect (teardown drain) killed the observer
-    // for the rest of the element's life — after an HA view switch the
-    // card never saw width changes again.
+    // Lets connectedCallback re-attach on a reconnect.
     this.resizeInitialized = false;
     if (this._resizeRaf) {
       cancelAnimationFrame(this._resizeRaf);
@@ -1082,18 +1051,14 @@ _synthesizeWeatherEntity(currentCondition: string | undefined): any {
   }
 
 measureCard() {
-  // Callers (firstUpdated, ResizeObserver, _refreshForecasts) all gate on
-  // shadowRoot existence — the only thing left to guard is the ha-card
-  // element itself, which can briefly be missing during teardown.
+  // Callers gate on shadowRoot; ha-card itself can be missing briefly during
+  // teardown.
   const card = safeQuery(this.shadowRoot,'ha-card');
   if (!card) return;
 
-  // forecastItems is the count of bars actually rendered. The card
-  // treats forecast.number_of_forecasts as a *viewport size* (handled
-  // in render via overflow-x scroll), not as a data-cropping cap — so
-  // this always renders the full series. Width-based auto-fit only
-  // kicks in when no data is loaded yet (initial render before the
-  // data sources fire).
+  // forecastItems is the count of bars rendered: the full series, since
+  // number_of_forecasts is a viewport size (overflow-x scroll), not a cap.
+  // Width-based auto-fit only applies before any data is loaded.
   const prevForecastItems = this.forecastItems;
   if (this.forecasts?.length) {
     this.forecastItems = this.forecasts.length;
@@ -1101,48 +1066,24 @@ measureCard() {
     const fontSize = this.config.forecast.labels_font_size;
     this.forecastItems = Math.round((card as HTMLElement).offsetWidth / (fontSize * 6));
   }
-  // Skip the destroy-and-rebuild dance when the chart is already live
-  // and the visible-bar count hasn't changed. ResizeObserver fires
-  // repeatedly as HA's section-grid settles its layout; each tick
-  // used to rebuild the chart instance with a slightly different
-  // canvas size, and the bar ruler re-allocated per-column slot
-  // widths each time — visible to the user as bars starting wide
-  // then narrowing once HA's layout settled. The only reason to
-  // drawChart() here is when forecastItems changed (different dataset
-  // length needs a fresh chart) or no chart exists yet.
-  //
-  // BUT only skip when the existing chart is still LIVE in the DOM. On
-  // an HA view switch the card is detached and re-attached; the forecast
-  // block then re-renders through its loading→ready cycle, which Lit
-  // rebuilds as a FRESH `#forecastChart` div. The old uPlot instance
-  // survives on `this.forecastChart` but its canvas is now detached, so
-  // skipping here would leave the new div empty (chart blank while the
-  // condition-icon row still renders). Gate the skip on the chart root
-  // still being connected; otherwise fall through and rebuild into the
-  // fresh div.
+  // Skip the rebuild when the chart is live and forecastItems is unchanged:
+  // ResizeObserver ticks while HA's grid settles would otherwise rebuild it at
+  // slightly different widths (bars start wide, then narrow). "Live" means the
+  // root is still connected: after an HA view switch Lit builds a fresh
+  // #forecastChart div and the old canvas is detached.
   const chartAlive = this.forecastChart?.uplot?.root?.isConnected === true;
   if (chartAlive && this.forecastItems === prevForecastItems) {
-    // Same-shape data refresh (hourly poll, forecast push): push the
-    // new values into the existing chart in place. Only runs when
-    // _refreshForecastsUnsafe actually rebuilt `forecasts` — a
-    // ResizeObserver tick or sensor tick never sets the flag, so the
-    // steady-state cost of those is zero canvas work (perf pass
-    // 2026-08; replaces the removed updated()-on-`weather` redraw).
+    // Same-shape data refresh (hourly poll, forecast push): push the new values
+    // into the live chart. Only _refreshForecastsUnsafe sets the flag, so resize
+    // and sensor ticks cost no canvas work.
     if (this._forecastsDirty) {
       this._forecastsDirty = false;
       this.updateChart();
     }
-    // uPlot does NOT auto-resize: Chart.js's responsive:true observer
-    // (which this skip path used to rely on) died with the library swap
-    // (ADR-0012). buildChart measures the container once; afterwards
-    // `#forecastChart canvas { width:100% }` CSS-stretches the fixed
-    // pixel buffer to whatever the container's CURRENT width is. So a
-    // later width change (sidebar toggle, window resize, section-grid
-    // settling) leaves a stretched bitmap — the user-visible symptom is
-    // a pixelated/blurry temperature line, worst at hourly where the
-    // canvas is widest. Snap the buffer to the new width without the
-    // full destroy+rebuild; resize() re-measures the container and
-    // calls uplot.setSize(), which redraws sharp.
+    // uPlot does not auto-resize (ADR-0012): buildChart measures the container
+    // once and CSS then stretches the fixed pixel buffer, so a later width change
+    // (sidebar, window, grid settling) leaves a blurry line. resize() re-measures
+    // and calls uplot.setSize() without a rebuild.
     this._resizeChartIfWidthChanged();
     return;
   }
@@ -1188,10 +1129,8 @@ get _lang(): string {
   return this.language || 'en';
 }
 
-  // HA masonry-view layout uses getCardSize() to reserve space.
-  // Each unit ≈ 50 px. The chart row is the dominant block; the
-  // optional main panel adds 1–2 (with/without time); the attributes
-  // row adds 1. Floor at 1 to keep the picker preview from collapsing.
+  // Masonry layout reserves space from this (≈50 px per unit); the floor of 1
+  // keeps the picker preview from collapsing.
   getCardSize() {
     let size = 0;
     if (this.config?.show_main) size += this.config.show_time ? 2 : 1;
@@ -1225,56 +1164,36 @@ async firstUpdated(changedProperties: Map<PropertyKey, unknown>) {
 
 
 async updated(changedProperties: Map<PropertyKey, unknown>) {
-  // Apply initial scroll BEFORE the `await this.updateComplete` below.
-  // Lit commits the rendered HTML to the DOM synchronously inside the
-  // update() call that triggers this `updated()`, so by this line the
-  // wrapper is in the DOM with its new class set. Running the scroll
-  // positioning here means we set wrapper.scrollLeft in the same task
-  // as the DOM commit, before the browser's next paint — eliminating
-  // the one-frame window in which the chart was visible at scrollLeft=0
-  // before the centered position was applied. The post-await call
-  // below stays for cases where the chart hadn't been built yet on
-  // this render (data still loading); a later render once data lands
-  // will hit this line synchronously.
+  // Apply the initial scroll before the await below: Lit has already committed
+  // the DOM, so scrollLeft is set in the same task, before the next paint (no
+  // frame visible at scrollLeft=0).
   this._maybeApplyInitialScroll(changedProperties);
   this._maybeRealignDayPager();
   this._maybeRetriggerViewChangeAnimation();
   await this.updateComplete;
 
-  // Re-attempt action-handler binding after every render. Lit can swap
-  // the <ha-card> element when the render branch changes (the
-  // weather-undefined fallback uses a different template than the
-  // populated branch); the per-element _wsActionHandlerBound flag
-  // makes this idempotent on stable elements.
-  // The card class has all the fields these helpers need; the
-  // structural-mismatch errors come from the helpers' tighter
-  // `forecasts: ForecastEntry[]` and config shapes. Cast through
-  // `unknown` to keep tsc happy while preserving the runtime assumption.
+  // Re-bind after every render: Lit can swap <ha-card> when the render branch
+  // changes (the weather-undefined fallback uses a different template); the
+  // per-element _wsActionHandlerBound flag keeps it idempotent.
+  // The helpers take tighter types than the card class; cast through
+  // `unknown` to keep tsc happy.
   setupActionHandler(this as unknown as Parameters<typeof setupActionHandler>[0]);
   setupScrollUx(this as unknown as Parameters<typeof setupScrollUx>[0]);
-  // Keep the ResizeObserver pinned to the live <ha-card> — same
-  // element-swap reasoning as the action-handler re-bind above, plus
-  // the first-render race (ha-card not yet rendered when the delayed
-  // attach fires). See _observeResizeTarget.
+  // Same element-swap reasoning (see _observeResizeTarget).
   this._observeResizeTarget();
 
   if (changedProperties.has('config')) {
     const oldConfig = changedProperties.get('config');
     if (oldConfig) {
-      // A source with a changed config dependency was torn down (cached
-      // data for the new mode restored). Re-enter `set hass` right away
-      // to resubscribe instead of waiting for HA's next state push
-      // (1-3 s on a Pi).
+      // A source with a changed config dependency was torn down; re-enter
+      // `set hass` now to resubscribe instead of waiting for HA's next state push.
       if (this._sources.invalidate(oldConfig)) {
         if (this._hass) this.hass = this._hass;
         this._refreshForecasts();
       }
 
-      // Pure render-only config changes (round_temp, colours, labels, …)
-      // re-merge against existing forecasts; teardowns above will refill
-      // anyway via the next `set hass` tick. forecast_days alone only
-      // crops what we already have, so trigger refresh even with no data
-      // currently merged.
+      // Render-only config changes re-merge against the existing forecasts;
+      // forecast_days alone only crops what we have, so refresh even with no data.
       const forecastDaysChanged = this.config.forecast_days !== (oldConfig as { forecast_days?: unknown })?.forecast_days;
       if ((this.forecasts?.length) || forecastDaysChanged) {
         try { this._refreshForecasts(); } catch (e) { console.error('[weather-station-card] redraw failed', e); }
@@ -1282,27 +1201,12 @@ async updated(changedProperties: Map<PropertyKey, unknown>) {
     }
   }
 
-  // NOTE (perf pass 2026-08): the former `changedProperties.has('weather')
-  // → updateChart()` hook is gone. The chart reads only `this.forecasts`
-  // — the synthesized weather object changes on every live sensor tick,
-  // so the hook forced a full uPlot setData + canvas repaint per tick
-  // without ever changing a pixel. Genuine data refreshes now reach the
-  // chart via the `_forecastsDirty` flag in measureCard.
 }
 
 drawChart(): void {
-  // Hold off the FIRST chart render until every expected data source
-  // has produced at least one value. Forecast (HA's cached weather
-  // entity) typically lands in tens of ms; station (recorder query)
-  // can take a few hundred. Rendering between them produces a chart
-  // with the forecast block only — e.g. 5 columns starting at today
-  // — and the next render after station lands prepends the past-day
-  // station columns, ending at e.g. 7-8 columns. Each existing column
-  // narrows in proportion. The user reads this as bars / day sections
-  // "starting twice as wide and snapping narrower". Once the initial
-  // chart is built, the gate is permanently lifted; subsequent updates
-  // proceed normally (in-place data updates via updateChart, full
-  // rebuilds via drawChart for shape changes).
+  // Hold off the first render until every expected data source has produced a
+  // value; building from the forecast alone and then prepending station columns
+  // would visibly narrow every column. Lifted for good after the first build.
   if (!this._initialChartBuilt && !this._sources.allExpectedDataReady()) {
     return;
   }
@@ -1313,65 +1217,23 @@ drawChart(): void {
       // A full rebuild consumed the freshest `forecasts` — no in-place
       // update needed on the next measureCard pass.
       this._forecastsDirty = false;
-      // Two-phase render (ADR-0016): the chart just painted with
-      // placeholder rows (when scrolling). Fill the real condition-icon /
-      // wind rows in a post-paint idle callback so their per-column DOM
-      // cost stays off the cold-mount critical path. No-op for
-      // non-scrolling views (rows weren't deferred there).
+      // Two-phase render (ADR-0016): fill the deferred condition-icon / wind rows
+      // post-paint. No-op for non-scrolling views.
       this._scheduleForecastRowsReveal();
-      // Re-arm initial-scroll application on every fresh chart build.
-      // _maybeApplyInitialScroll sets _initialScrollApplied=true once
-      // the scroll has been applied; a subsequent rebuild (e.g.
-      // daily↔hourly toggle) needs to re-apply because the new layout
-      // moves the boundary pixel. Clearing the flag here makes the
-      // next updated() cycle re-evaluate. Skip on no-op rebuilds
-      // (forecastItems unchanged inside measureCard's gate) — those
-      // never reach drawChart so this path runs only on real builds.
+      // A fresh build moves the boundary pixel (e.g. daily↔hourly), so re-arm the
+      // initial scroll for the next updated() cycle. No-op rebuilds never reach
+      // drawChart.
       this._initialScrollApplied = false;
-      // Force the grow-from-below animation to be visible on every chart
-      // build — initial mount AND mode-toggle rebuilds. Chart.js's
-      // constructor-time animation runs through resize→attach→resize
-      // lifecycle steps that, with the loading-placeholder flow
-      // (drawChart fires from an rAF-after-Lit-commit), end up with the
-      // first paint catching the bars already near their final height —
-      // the animation IS running but completes before the user can
-      // perceive it. Calling reset() + update() right after construction
-      // snaps every bar back to its baseline and animates back over the
-      // configured 800 ms. Running it on every rebuild keeps the grow
-      // animation consistent across the daily/today/hourly cycle — the
-      // lazy-cache otherwise makes only some transitions perceptible.
-      // disable_animation and the editor live-preview still suppress it.
-      // uPlot has no animation system, so the chart.js "reset+update
-      // to replay the grow-from-baseline animation" path is a no-op.
-      // The chart simply paints once at its final state. Per
-      // alignment.md the animation is an accepted casualty of the
-      // chart-library swap.
+      // uPlot has no animation system: reset() is a no-op and update() repaints at
+      // the final state.
       if (this.config?.forecast?.disable_animation !== true && !this._isInPreview) {
         this.forecastChart.reset();
         this.forecastChart.update();
       }
-      // Re-apply initial scroll after Lit has fully settled AND
-      // Chart.js has resized its canvas to the new container width.
-      //
-      // drawChart runs inside _refreshForecasts during the current
-      // updated() cycle. Setting this.forecasts there enqueues another
-      // Lit update — the NEW .forecast-content width% (totalBars /
-      // visibleBars × 100) only commits once that second performUpdate
-      // runs. We loop on updateComplete to drain every pending Lit
-      // update before measuring.
-      //
-      // BUT a fully-committed .forecast-content isn't enough: Chart.js
-      // sized its canvas to fill the parent at construction time, and
-      // its responsive ResizeObserver only fires AFTER paint when the
-      // parent's new size is measured. So between Lit's commit and
-      // Chart.js's resize, the canvas overflows the shrunken parent
-      // and inflates wrapper.scrollWidth (e.g. daily after hourly
-      // cycle: parent=583px, canvas=7689px → scrollWidth=7689px). The
-      // browser then auto-clamps the old scrollLeft to that inflated
-      // max, producing the brief "rechtsbündig" flash. Calling
-      // chart.resize() synchronously snaps the canvas to the parent's
-      // current size, so the subsequent apply() reads a consistent
-      // wrapper.scrollWidth that matches totalBars/visibleBars.
+      // drawChart runs inside _refreshForecasts, whose forecasts assignment
+      // enqueues a second Lit update that commits the new .forecast-content width.
+      // Drain it, then resize() so the canvas matches its parent; a stale canvas
+      // width inflates scrollWidth and the browser clamps scrollLeft to it.
       (async () => {
         let settled = await this.updateComplete;
         while (!settled) settled = await this.updateComplete;
@@ -1384,10 +1246,8 @@ drawChart(): void {
       this.requestUpdate();
     }
   } catch (thrown) {
-    // The phase tag (ChartBuildError from chart/orchestrator) tells us
-    // where we crashed — without it, the banner just says "render
-    // failed" and we have to repro to find the spot. Falls back to "draw"
-    // for failures that happen outside any tagged step.
+    // The phase tag (ChartBuildError) says where the build crashed; untagged
+    // failures fall back to 'draw'.
     const phase = thrown instanceof ChartBuildError ? thrown.phase : 'draw';
     const e = thrown instanceof ChartBuildError ? thrown.original : thrown;
     console.error(`[weather-station-card] chart ${phase} failed`, e);
@@ -1402,8 +1262,7 @@ drawChart(): void {
   }
 }
 
-// Destroy the previous chart and build a fresh one from the current
-// forecasts (chart/orchestrator.ts). Throws ChartBuildError.
+// Throws ChartBuildError (chart/orchestrator.ts).
 _buildChart(): void {
   if (!this.forecasts?.length) return;
   const target = this.renderRoot?.querySelector<HTMLElement>('#forecastChart');
@@ -1454,23 +1313,16 @@ computeForecastData({ config, forecastItems } = this) {
   const { tempHigh, tempLow: rawTempLow } = hourlyTempSeries(forecast, {
     roundTemp: config.forecast.round_temp === true,
   });
-  // Pure 'hourly' mode shows raw hourly entries — each hour has a single
-  // temperature value, so a second low-temp line makes no semantic sense.
-  // Some providers (openmeteo-hourly) emit a per-hour `templow` anyway
-  // (often identical to `temperature`), which would draw a dashed line
-  // directly on top of the high — visual noise. Force single-line by
-  // discarding tempLow at the hourly mode boundary. Daily and 3h-aggregated
-  // 'today' mode keep their real high/low pairs.
+  // Hourly entries have a single temperature; some providers emit an identical
+  // per-hour `templow` that would draw a dashed line on top of the high, so
+  // drop it. Daily and 3h-aggregated 'today' keep their pairs.
   const tempLow = fcType === 'hourly' ? null : rawTempLow;
   const precip = forecast.map((d) => d.precipitation);
-  // Sunshine columns. Each entry has a normalized hours value (or null
-  // when no source resolved) and a day_length the bar is scaled against.
   const sunshine = forecast.map((d) => d.sunshine ?? null);
   const dayLength = forecast.map((d) => d.day_length ?? null);
-  // Chance of rain for the precip pill (#288). Gated on the row toggle
-  // HERE so the label plugin can treat "array present" as "draw the
-  // two-line box"; measured station entries never carry the field, so
-  // past columns stay one-line either way.
+  // Chance of rain for the precip pill (#288), gated on the row toggle here so
+  // the label plugin can read "array present" as "draw the two-line box";
+  // station entries never carry the field.
   const precipProb = config.forecast?.show_precip_probability === true
     ? forecast.map((d) => d.precipitation_probability ?? null)
     : null;
@@ -1479,14 +1331,10 @@ computeForecastData({ config, forecastItems } = this) {
     forecast,
     dateTime,
     tempHigh,
-    // tempLow is null when no entry has `templow` (hourly forecast). Coerce
-    // to [] so the dataset builder downstream — which indexes by position —
-    // doesn't choke. The single-line decision (hide dataset[1]) lives in
-    // chart/orchestrator, gated on `tempLow === null` from hourlyTempSeries.
+    // Coerced to [] because the dataset builder indexes by position; the
+    // orchestrator hides the second line from tempLowAvailable, below.
     tempLow: tempLow ?? [],
-    // Track the high/low intent separately so the chart layer can decide
-    // whether to render a second temperature line; null means hourly /
-    // single-line, otherwise daily / two-line.
+    // False at hourly: the chart then draws a single temperature line.
     tempLowAvailable: tempLow !== null,
     precip,
     sunshine,
@@ -1507,21 +1355,14 @@ updateChart({ forecasts, forecastChart } = this) {
     forecastChart.data.datasets[0].data = data.tempHigh;
     forecastChart.data.datasets[1].data = data.tempLow;
     forecastChart.data.datasets[2].data = data.precip;
-    // Sunshine dataset is appended at index 3 only when the toggle is
-    // on — gate the update so we don't write into a non-existent slot
-    // for users who haven't enabled it.
+    // The sunshine dataset (index 3) exists only when its toggle is on.
     if (forecastChart.data.datasets[3]) {
       forecastChart.data.datasets[3].data = sunshineFractions(data.sunshine, data.dayLength);
     }
-    // The value-printing label plugins (precip / temp / sunshine /
-    // daily-tick) read their numbers from a render-data object captured
-    // by reference at chart-build time, NOT from the datasets above.
-    // Updating only the datasets redraws the bar heights and line
-    // positions but leaves the printed numbers frozen — on always-on
-    // tablets that only ever hit this in-place path (never a full
-    // rebuild) the rain bar grows while the mm label stays stuck.
-    // Refresh that shared object's fields in place so the plugins
-    // re-print fresh values on the redraw triggered below.
+    // The value-printing label plugins read from a render-data object captured by
+    // reference at chart-build time, not from the datasets above. Refresh its
+    // fields in place, or the bars move while the printed numbers stay frozen
+    // (always-on tablets only ever take this path).
     const rd = forecastChart.renderData;
     if (rd) {
       rd.dateTime = data.dateTime;
@@ -1540,12 +1381,8 @@ renderScrollTimeline() {
   return renderTimeline(this.forecasts, this.calendar, this._lang, effectiveVisibleBars(this.config));
 }
 
-// Cycle through daily → today → hourly → daily via the same setConfig
-// path the editor radio uses. _sources.invalidate picks up the
-// forecast.type change and rebuilds both station and forecast data
-// sources, so the new mode's data loads on demand. The mutation does
-// NOT persist to the user's saved YAML — refresh resets to whatever
-// they configured. For permanent changes, the editor's radio.
+// Cycle daily → today → hourly → daily through setConfig, like the editor
+// radio. Not persisted: a reload resets to the saved YAML.
 _onModeToggleClick(ev?: Event) {
   if (ev) ev.stopPropagation();
   // Cycle from the merged type (the raw config may leave it to the
@@ -1561,20 +1398,10 @@ _forecastRowsGenKey(): string {
   return forecastRowsGenKey(this.config?.forecast?.type, this.forecasts);
 }
 
-// After the chart's first paint, fill in the real condition-icon / wind
-// rows that were deferred. Double requestAnimationFrame: the FIRST frame
-// paints the chart with placeholder rows (so the chart is on screen with
-// the heavy per-column DOM excluded), and the reveal runs before the
-// SECOND frame's paint — building the real rows once the chart is
-// already visible. Setting _forecastRowsReadyGen to the current key
-// flips the render branch from placeholder to real rows on that update.
-//
-// Why double-rAF and not requestIdleCallback: a single rAF callback runs
-// BEFORE the next paint, which would build the rows before the chart is
-// ever shown (no deferral). rIC defers correctly but its fire time is
-// unbounded, which would let the e2e settle (two rAFs) screenshot empty
-// rows. Double-rAF defers past exactly one paint and lands within the
-// next frame — deterministic and inside the e2e settle window.
+// Fill the deferred condition-icon / wind rows after the chart's first paint
+// (ADR-0016). Double rAF: a single rAF runs before the paint (no deferral);
+// rIC has an unbounded fire time, so the e2e settle could screenshot empty
+// rows. Double rAF defers past exactly one paint.
 _scheduleForecastRowsReveal(): void {
   if (this._forecastRowsRevealHandle !== null) return;
   this._forecastRowsRevealHandle = requestAnimationFrame(() => {
@@ -1590,15 +1417,10 @@ _scheduleForecastRowsReveal(): void {
     if (!config || !_hass) {
       return html``;
     }
-    // Render-pass-scoped: cleared here so a section that recovered on
-    // this pass stops reporting; _safeSection re-sets it below only if
-    // a section still throws.
     this._sectionError = null;
 
-    // A freshly-added / unconfigured card has neither a temperature
-    // sensor nor a weather entity — nothing real to draw. Render a calm
-    // onboarding placeholder instead of the full layout full of NaN
-    // values plus a red error banner.
+    // Nothing real to draw yet: show a calm onboarding placeholder instead of NaN
+    // values and a red banner.
     const hasTemp = !!config.sensors?.temperature;
     const hasWeather = !!config.weather_entity;
     if (!hasTemp && !hasWeather) return renderOnboarding(config.title);
@@ -1609,29 +1431,17 @@ _scheduleForecastRowsReveal(): void {
     const labelsBaseSize = parseInt(config?.forecast?.labels_font_size) || 11;
     const labelsSmallSize = Math.max(6, Math.round(labelsBaseSize * 0.5));
     if (!weather?.attributes) return renderNoWeather(config.title);
-    // forecast.number_of_forecasts is the visible viewport size in bars.
-    // setConfig defaults this to 8 across both modes, so the same
-    // mechanism handles daily (8 ≥ totalBars=7 → no scroll, fits all)
-    // and hourly (8 < totalBars=168 → scrollable, viewport caps at
-    // ~8 hours). 0 disables the viewport entirely (legacy "fit-all"
-    // for users who explicitly set it).
-    //
-    // 'today' is a DAY PAGER (2026-08): the viewport always frames
-    // exactly one calendar day (8 × 3-h blocks) and scrolls day-wise
-    // through the whole aggregated span — effectiveVisibleBars pins
-    // it to 8 regardless of number_of_forecasts.
+    // number_of_forecasts is the viewport size in bars (default 8): daily fits
+    // without scrolling, hourly scrolls. 0 disables the viewport. 'today' is a
+    // day pager: effectiveVisibleBars pins it to 8 (one day of 3-h blocks).
     const visibleBars = effectiveVisibleBars(config);
     const totalBars = (this.forecasts ?? []).length;
     const scrolling = visibleBars > 0 && totalBars > visibleBars;
     const contentWidthPct = scrolling ? (totalBars / visibleBars) * 100 : 100;
 
-    // Render every card section through _safeSection FIRST so that a
-    // throw on malformed data (e.g. a partial sun entity, an
-    // unexpected attribute shape) degrades that one section to empty
-    // and records the cause — instead of Lit aborting the whole
-    // render() and leaving a blank/white card. renderErrorBanner() is
-    // computed LAST, after the section catches have had a chance to
-    // set this._renderError, so the banner reflects this same pass.
+    // Sections render through _safeSection first, so a throw on malformed data
+    // collapses only that section and records the cause; renderErrorBanner() is
+    // computed last, so the banner reflects this same pass.
     const mainSection = this._safeSection('live panel', () => this.renderMain());
     const attributesSection = this._safeSection('attributes', () => this.renderAttributes());
     const forecastSection = this._safeSection('forecast', () =>
@@ -1696,12 +1506,9 @@ _scheduleForecastRowsReveal(): void {
     });
   }
 
-  // Run a render section under a try/catch. On a throw, log with
-  // context, record the cause into _sectionError (so renderErrorBanner
-  // surfaces it on the SAME pass — the three section calls are
-  // evaluated before the banner) and return an empty fragment. This is
-  // graceful degradation, not masking: the failure is visible in the
-  // banner and the console, only the one broken section collapses.
+  // Run a render section under try/catch: log, record the cause in
+  // _sectionError (the banner is evaluated after the sections, so it shows on
+  // the same pass) and return an empty fragment. Only that section collapses.
   _safeSection(label: string, fn: () => unknown): unknown {
     try {
       return fn();
@@ -1740,17 +1547,14 @@ _bannerCtx(): BannerCtx {
 
 renderMain({ config, weather, temperature } = this) {
   if (config.show_main === false) {
-    // The live block is gone — stop the 1 Hz clock too. Without this a
-    // config edit that hides the block would leave the timer ticking
-    // against DOM that no longer exists.
+    // The block is hidden: stop the 1 Hz clock too, or it keeps ticking against
+    // missing DOM.
     this._syncClockTimer(false);
     return html``;
   }
 
-  // Live-block sub-toggles default to ON (opt-out): if the parent
-  // show_main is enabled, every sub-cell appears unless the user has
-  // explicitly turned it off in YAML / editor. The clock's own options
-  // (12h format, seconds) are read inside _updateClock at tick time.
+  // Sub-toggles default to on (opt-out) under show_main. The clock's own
+  // options are read in _updateClock at tick time.
   const showTime = config.show_time !== false;
   const showDay = config.show_day !== false;
   const showDate = config.show_date !== false;
@@ -1762,22 +1566,16 @@ renderMain({ config, weather, temperature } = this) {
     roundedTemperature = Math.round(roundedTemperature * 10) / 10;
   }
 
-  // The big condition glyph links to the weather entity — its
-  // more-info dialog carries the forecast panel, the natural "tell me
-  // more" for the current condition. Falls back to the temperature
-  // sensor in station-only setups (same rule as the condition text).
+  // The condition glyph opens the weather entity's more-info (it carries the
+  // forecast panel); station-only setups use the temperature sensor.
   const iconHtml = this._entityLink(
     this.config?.weather_entity || this.config?.sensors?.temperature,
     html`<ha-icon icon="${this._mainIcon(weather.state)}"></ha-icon>`,
   );
 
-  // Clock lifecycle moved out of the render pass (perf pass 2026-08):
-  // the old code re-created the closure and tore down + re-armed the
-  // 1 Hz interval on EVERY render. _syncClockTimer is idempotent —
-  // it only touches the timer when the desired state actually changed
-  // — and _updateClock reads its options from `this.config` at tick
-  // time so a config edit needs no re-arm. Immediate update keeps the
-  // clock text fresh on the render that mounts it.
+  // _syncClockTimer is idempotent; _updateClock reads config at tick time, so a
+  // config edit needs no re-arm. The immediate update keeps the text fresh on
+  // the render that mounts it.
   this._syncClockTimer(showTime);
   if (showTime) this._updateClock();
 
@@ -1811,11 +1609,8 @@ renderMain({ config, weather, temperature } = this) {
   `;
 }
 
-// 1 Hz clock tick. Reads config at tick time (12h format, seconds,
-// day/date visibility, language) so config edits apply on the next
-// second with no timer re-arm. All three Intl formatters come from the
-// process-wide cache — the tick is three .format calls + three
-// textContent writes.
+// 1 Hz clock tick. Reads config at tick time, so edits apply on the next
+// second without re-arming the timer.
 _updateClock(): void {
   const cfg = this.config || {};
   const currentDate = new Date();
