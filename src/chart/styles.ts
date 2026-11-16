@@ -1,11 +1,5 @@
-// Returns the CSS string for the card's <style> block. Pulled out of the
-// main render() template so render() stays readable. The handful of
-// values that depend on config (icon sizes, font sizes, chart height) are
-// passed in explicitly — the function is otherwise pure.
-//
-// Adding a new style rule that *only* references CSS variables (no
-// JS-side values) is fine to add inline here. Adding one that needs a new
-// runtime value means adding it to the parameter list.
+// CSS string for the card's <style> block. Pure: config-dependent values
+// (icon / font sizes, chart height) arrive through CardStylesOpts.
 export interface CardStylesOpts {
   iconsSize: number;
   currentTempSize: number;
@@ -20,11 +14,9 @@ export interface CardStylesOpts {
   extraBottomPad?: number;
 }
 
-// The generated sheet is ~10 KB of string concatenation and render()
-// calls this on every pass, while the eight inputs only change on a
-// config edit. Memoize per input-combination; the map stays tiny (one
-// entry per distinct card config on the dashboard) but is capped as a
-// leak guard for pathological editor sessions.
+// render() calls this on every pass while the nine inputs only change on a
+// config edit, so memoize per input combination. The cap is a leak guard
+// for long editor sessions.
 const styleCache = new Map<string, string>();
 const STYLE_CACHE_MAX = 8;
 
@@ -57,28 +49,18 @@ function buildCardStyles({
 }: CardStylesOpts): string {
   return `
     ha-icon {
-      /* Icons follow the card's primary text colour. The legacy
-       * --paper-item-icon-color / --state-icon-color tokens resolve to a
-       * muted blue (#44739e) on HA's default theme — chaining through
-       * them (as v2.0.0 did) painted every icon blue. --primary-text-color
-       * keeps the icons consistent with the card text and the rest of
-       * the HA UI, and still follows a custom theme. */
+      /* Not --paper-item-icon-color / --state-icon-color: they resolve to
+       * a muted blue on HA's default theme. */
       color: var(--primary-text-color, #212121);
     }
     img {
       width: ${iconsSize}px;
       height: ${iconsSize}px;
     }
-    /* container-type: inline-size makes .card itself the query
-     * container for the @container rules at the end of this sheet.
-     * The card lives inside HA's grid — in a Companion-app column or
-     * the 2026.1 mobile summary-card slot its host can be ~280-360px
-     * wide while the viewport is a wide desktop, so the responsive
-     * rules must key off the card's OWN width, not the viewport.
-     * inline-size containment only contains the inline (width) axis;
-     * height is untouched, and a block-level element filling its
-     * parent already takes its width from that parent — so this has
-     * no standalone visual effect on the wide layout. */
+    /* .card is the query container for the @container rules at the end
+     * of this sheet: a narrow HA grid slot (Companion app, mobile
+     * summary card) sits in a wide viewport, so the responsive rules
+     * must key off the card's own width. */
     .card {
       container-type: inline-size;
       container-name: wsc-card;
@@ -122,17 +104,8 @@ function buildCardStyles({
       font-weight: 300;
       direction: ltr;
     }
-    /* Clickable entity values (live panel + attribute rows): each
-     * opens the backing sensor's more-info dialog. Cursor + hover tint
-     * mirror the affordance of HA's entities card; icons follow the
-     * hover colour via color:inherit (the base ha-icon rule above pins
-     * them to --primary-text-color otherwise). role="button" on these
-     * spans also excludes them from the card-level tap_action — see
-     * isCardControl in action-handler.ts. */
-    /* Availability hint (issue #213): one slim neutral row instead of
-     * the former red banner when sensors are unavailable. The overdue
-     * variant tints the icon with the warning colour; the in-grace
-     * variant stays secondary-text neutral. .wsc-stale dims the live
+    /* Availability hint (#213): one slim neutral row; the overdue variant
+     * tints the icon with the warning colour. .wsc-stale dims the live
      * panel while values come from the last-known-good fallback. */
     .wsc-availability {
       display: flex;
@@ -153,6 +126,10 @@ function buildCardStyles({
       opacity: 0.65;
       transition: opacity 0.3s ease;
     }
+    /* Clickable entity values open the sensor's more-info dialog.
+     * color:inherit lets icons follow the hover colour (the base ha-icon
+     * rule pins them otherwise). role="button" keeps these spans out of
+     * the card-level tap_action (isCardControl in action-handler.ts). */
     .wsc-entity-link {
       cursor: pointer;
     }
@@ -167,10 +144,9 @@ function buildCardStyles({
       outline-offset: 2px;
       border-radius: 4px;
     }
-    /* Info button (show_sources, ADR-0031): muted while all is well,
-     * warning colour (and a different icon) when a configured sensor is
-     * down. The .main selectors outrank the
-     * 50 px condition-glyph rule above. */
+    /* Info button (show_sources, ADR-0031): warning colour when a
+     * configured sensor is down. The .main selectors outrank the 50 px
+     * condition-glyph rule above. */
     .wsc-sources-info {
       display: inline-flex;
       vertical-align: middle;
@@ -223,21 +199,16 @@ function buildCardStyles({
       z-index: 3;
     }
     .wsc-sources-chart-alone { left: -10px; }
-    /* Scroll block — .forecast-scroll-block is the relative parent that
-     * positions the side indicators; .forecast-scroll inside it is the
-     * actual overflow:auto viewport. Native scrollbars are hidden across
-     * desktop and mobile; navigation happens via the indicator buttons,
-     * mouse drag on the graph (desktop), or native touch swipe (mobile). */
+    /* .forecast-scroll-block positions the side indicators;
+     * .forecast-scroll inside it is the overflow:auto viewport with its
+     * native scrollbar hidden. */
     .forecast-scroll-block {
       position: relative;
       width: 100%;
     }
-    /* Start animation — fires once on the very first time the chart
-     * block reaches the DOM in this session. Class is added by the
-     * render() template based on _chartMountAnimationPlayed. Without
-     * this guard, a view-change that triggers a data refetch
-     * (daily↔hourly cache miss) would unmount and remount the block,
-     * replaying the start animation every time the user toggles. */
+    /* Start animation: plays once per session, guarded by
+     * _chartMountAnimationPlayed so a remount after a data refetch does
+     * not replay it. */
     .forecast-scroll-block.first-mount {
       animation: ws-chart-fadein 420ms ease-out both;
     }
@@ -245,14 +216,8 @@ function buildCardStyles({
       from { opacity: 0; transform: translateY(16px); }
       to   { opacity: 1; transform: translateY(0); }
     }
-    /* View-change cross-fade: applied when the user toggles
-     * forecast.type (daily ↔ today ↔ hourly). For the cached case
-     * (no refetch, block stays in DOM) main.ts.updated() restarts
-     * this via a classList remove → reflow → add. For the remount
-     * case (cache miss, block tore down) the template applies it on
-     * the fresh mount via the animation-class field, so the new chart
-     * fades in instead of replaying the start animation. Opacity dips
-     * to 0 at 50% so the chart redraws during the invisible window. */
+    /* Cross-fade on a forecast.type toggle. Opacity hits 0 at 50% so
+     * the chart redraws while invisible. */
     .forecast-scroll-block.view-changing {
       animation: ws-view-change 360ms ease-in-out both;
     }
@@ -309,12 +274,8 @@ function buildCardStyles({
     .scroll-indicator:hover {
       opacity: 1;
     }
-    /* Touch-target expansion. The visible control stays a 30 px circle
-     * (unchanged design language), but a transparent ::before stretches
-     * the clickable area to ~44 px square — the platform-recommended
-     * minimum for a comfortable finger tap. Centred on the button,
-     * non-painting, so it adds hit area without shifting any pixel of
-     * the rendered card. */
+    /* Touch target: a transparent ::before grows the 30 px circle's hit
+     * area to 44 px without changing what is painted. */
     .scroll-indicator::before,
     .mode-toggle::before,
     .jump-to-now::before {
@@ -329,22 +290,13 @@ function buildCardStyles({
     .scroll-indicator[hidden] {
       display: none;
     }
-    /* Negative inset shifts the indicator about half its diameter past
-     * the chart edge, into the .card's horizontal padding. That keeps
-     * the temperature / date labels at the leftmost/rightmost bars
-     * uncovered while still having the indicator sit visually on the
-     * card. -16px would land flush with the ha-card outer edge. */
+    /* The negative inset pushes the indicator into the .card padding so
+     * it does not cover the labels at the outermost bars. */
     .scroll-indicator-left { left: -14px; }
     .scroll-indicator-right { right: -14px; }
-    /* Mode-toggle (daily↔hourly) and jump-to-now — overlaid on the
-     * forecast-scroll-block at the precipitation-baseline level (near
-     * the chart's bottom edge). Out of the way of the chart's own
-     * date labels at the top, and visually aligned with the
-     * precip labels. Vertical centring uses chartHeight - 15 so the
-     * 30 px button sits centred on Chart.js's precip-axis 0-line
-     * (chartArea.bottom ≈ chartHeight - 10 due to layout.padding.bottom).
-     * The two-line precip box pushes that baseline up by extraBottomPad
-     * (draw.ts); the buttons follow so they stay centred on it. */
+    /* Mode-toggle and jump-to-now sit on the precip baseline, centred on
+     * it: the plot's bottom padding is 14 px (draw.ts), and the
+     * two-line precip box raises the baseline by extraBottomPad. */
     .mode-toggle, .jump-to-now {
       position: absolute;
       top: ${chartHeight - 30 - extraBottomPad}px;
@@ -371,24 +323,14 @@ function buildCardStyles({
       transform: translateX(-50%);
     }
     .jump-to-now[hidden] { display: none; }
-    /* NOTE (2026-08): the former .scroll-date edge stamps were removed
-     * — the scroll timeline below the chart carries the day context
-     * now, and the stamps collided visually with the canvas's own
-     * midnight boundary dates. */
-    /* Scroll timeline / minimap (2026-08): slim track below the chart
-     * in the scrolling hourly-ish modes. One segment per calendar day,
-     * a translucent thumb marks the visible section (positioned
-     * imperatively from scroll-ux on every scroll frame). Click /
-     * scrub navigates; touch-action:none so a drag on the track never
-     * turns into a page scroll on mobile. */
+    /* Scroll timeline: one segment per calendar day, a translucent thumb
+     * marks the visible section (positioned from scroll-ux).
+     * touch-action:none so a drag never becomes a page scroll. */
     .scroll-timeline {
       position: relative;
       height: 18px;
       margin: 6px 2px 0 2px;
       border-radius: 4px;
-      /* Transparent track — the day labels float on the card
-       * background; only the thin day separators and the thumb give
-       * the axis its shape. */
       background: transparent;
       overflow: hidden;
       cursor: pointer;
@@ -424,8 +366,6 @@ function buildCardStyles({
       top: 0;
       bottom: 0;
       border-radius: 4px;
-      /* Borderless highlight — just a soft primary-tinted lens over
-       * the visible section. */
       background: color-mix(in srgb, var(--primary-color, #03a9f4) 22%, transparent);
       box-sizing: border-box;
       pointer-events: none;
@@ -439,16 +379,10 @@ function buildCardStyles({
       width: 100%;
       direction: ltr;
     }
-    /* The uPlot chart target (per ADR-0012) — uPlot reads the
-     * target's getBoundingClientRect() at construction time to size
-     * its canvas, so a bare <div> with no dimensions would render at
-     * 0×0. Pin it to fill its .chart-container parent. uPlot then
-     * sizes its own canvas to the constructor-passed width/height,
-     * which we feed from measureContainer(target). The bare layout
-     * rules below let uPlot's absolute-positioned axis/over/under
-     * layers stack correctly without pulling in uPlot's full
-     * uPlot.min.css (which sets the .uplot root to width:min-content —
-     * that collapses our flex container). */
+    /* uPlot chart target (ADR-0012): uPlot measures it at construction,
+     * so it must fill .chart-container. The bare layout rules below stack
+     * uPlot's layers; uPlot.min.css is deliberately not imported because
+     * its .uplot min-content width collapses our flex container. */
     #forecastChart {
       width: 100%;
       height: 100%;
@@ -467,31 +401,15 @@ function buildCardStyles({
     #forecastChart .u-axis {
       position: absolute;
     }
-    /* uPlot writes the high-DPR pixel buffer size onto the canvas's
-     * width/height ATTRIBUTES (e.g. 2769x540 on a DPR=3 device for a
-     * logical 923x180 chart) but does not set CSS dimensions. Without
-     * an explicit CSS size, the canvas displays at its attribute size
-     * (pxRatio times the intended size) so the data area renders far
-     * below the chart container's 180 px bound.
-     * The official uPlot.min.css carries this rule; we deliberately
-     * don't import that file (its .uplot width:min-content collapses
-     * our flex container) and were missing the canvas rule until now.
-     * Symptom this fixes: on the Android Companion App (Chromium
-     * WebView, DPR usually 2-3) the temperature lines and precip /
-     * sunshine bars rendered below the wind row instead of inside
-     * the chart area. */
+    /* uPlot sets the canvas width/height attributes (pxRatio x size) but
+     * no CSS size, so pin it to the container. */
     #forecastChart canvas {
       display: block;
       width: 100%;
       height: 100%;
     }
-    /* Placeholder rendered while the data sources are still firing
-     * their first callbacks. Keeps the chart-row height stable so the
-     * page doesn't reflow when data lands. Inner <svg> draws a static
-     * axis-frame (top baseline + N evenly-spaced vertical gridlines)
-     * so the user reads "chart on the way" rather than "card broken".
-     * The grid is non-interactive and disappears the moment the real
-     * chart commits — single swap, no fade. */
+    /* Placeholder until the first data arrives; keeps the chart row at
+     * its final height so the page does not reflow. */
     .forecast-loading {
       width: 100%;
     }
@@ -500,18 +418,10 @@ function buildCardStyles({
       width: 100%;
       overflow: hidden;
     }
-    /* Soft highlight sweeps bottom-to-top across the loading area —
-     * subtle "something is happening" cue without redrawing anything.
-     * Compositor-only (animates only background-position) so it stays
-     * smooth on Pi-class GPUs. Honors the system reduced-motion
-     * setting so users with the OS preference don't see the sweep.
-     *
-     * The 50%-stop colour is a deliberately theme-AGNOSTIC mid-grey at
-     * 0.04 alpha: it reads as a barely-there lighten on dark themes and
-     * a barely-there darken on light themes, so a single literal works
-     * for every theme. No HA token expresses "near-invisible neutral
-     * tint" — --divider-color is far too opaque — so this stays a
-     * literal on purpose rather than a var() (Slice 6 theme audit). */
+    /* Shimmer sweep; animates only background-position so it stays
+     * compositor-only. The 50% stop is a theme-agnostic mid-grey at 0.04
+     * alpha (a faint lighten on dark, darken on light); no HA token is
+     * that faint (--divider-color is far too opaque), hence the literal. */
     .forecast-skeleton-wrapper::after {
       content: '';
       position: absolute;
@@ -535,12 +445,8 @@ function buildCardStyles({
     @media (prefers-reduced-motion: reduce) {
       .forecast-skeleton-wrapper::after { animation: none; }
     }
-    /* In-bundle icon sprite (ADR-0018). The hidden <svg> holds one
-     * <symbol> per icon the per-column rows can emit; each column
-     * renders a cheap <use> reference instead of an <ha-icon>
-     * custom-element upgrade. .wsc-icon mirrors ha-icon's box
-     * (--mdc-icon-size driven, 24px default) and colour rule so the
-     * sprite icons sit pixel-compatible next to remaining ha-icons. */
+    /* In-bundle icon sprite (ADR-0018). .wsc-icon mirrors ha-icon's box
+     * and colour rule so sprite icons match the remaining ha-icons. */
     .wsc-sprite {
       position: absolute;
       width: 0;
@@ -555,11 +461,9 @@ function buildCardStyles({
       fill: currentColor;
       color: var(--primary-text-color, #212121);
     }
-    /* Computed moon disc (ADR-0022) — same box contract as .wsc-icon
-     * so it sits pixel-compatible beside the ha-icons of the sun cell.
-     * The disc paints true-to-nature in BOTH themes (lit = white,
-     * shadow = black); only the thin outline reads currentColor via
-     * the color below, keeping the edge visible on any background. */
+    /* Computed moon disc (ADR-0022), same box as .wsc-icon. The disc is
+     * white/black in both themes; only the outline follows the colour
+     * below, so the edge stays visible on any background. */
     .wsc-moon {
       display: inline-flex;
       width: var(--mdc-icon-size, 24px);
@@ -588,9 +492,7 @@ function buildCardStyles({
       align-items: flex-start;
       font-weight: 300;
     }
-    /* Each per-day wind cell. flex-wrap lets the speed (.wind-value) drop
-     * onto a second line when the column is too narrow to fit it next to
-     * the arrow — keeps narrow charts readable without truncating. */
+    /* flex-wrap lets .wind-value drop below the arrow on a narrow column. */
     .wind-detail {
       display: flex;
       flex: 1 1 0;
@@ -609,8 +511,7 @@ function buildCardStyles({
       position: relative;
       bottom: 1px;
     }
-    /* Speed + unit travel together as one wrap unit so the unit doesn't
-     * split off from its number on narrow columns. */
+    /* Speed and unit wrap as one unit. */
     .wind-value {
       display: inline-flex;
       align-items: center;
@@ -637,38 +538,20 @@ function buildCardStyles({
       color: var(--secondary-text-color, #727272);
     }
 
-    /* ----------------------------------------------------------------
-     * Narrow-width reflow (Slice 7).
-     *
-     * Everything below is ADDITIVE: it only takes effect when the
-     * card's own container (.card, established above via
-     * container-type) is narrower than the breakpoint. The wide-view
-     * layout — the dominant case on a desktop dashboard — is left
-     * exactly as the rules above define it.
-     *
-     * Two tiers:
-     *   <=360px — a phone-width Companion-app column or the HA 2026.1
-     *             mobile-first summary-card slot. Pull in the card
-     *             padding, shrink the heavy live-panel icon + clock,
-     *             and let the attribute groups wrap instead of being
-     *             crushed by justify-content:space-between.
-     *   <=280px — a very tight slot (two cards side-by-side on a
-     *             phone). Same direction, more aggressive: the live
-     *             panel stacks the clock under the temperature so the
-     *             absolutely-positioned clock can never overlap it.
-     * ---------------------------------------------------------------- */
+    /* Narrow-width reflow. Additive: it applies only when .card is
+     * narrower than the breakpoint, so the wide layout is unchanged.
+     *   <=360px: phone-width slot; tighter padding, smaller live panel,
+     *            attribute groups wrap.
+     *   <=280px: very tight slot; the clock stacks under the temperature. */
     @container wsc-card (max-width: 360px) {
-      /* Reclaim ~16px of width by halving the side padding. The
-       * scroll-indicator / mode-toggle negative insets are -14px, so
-       * 8px of padding still leaves them inside the card edge. */
+      /* Halved side padding; the -14px indicator insets still land
+       * inside the card edge. */
       .card {
         padding-right: 8px;
         padding-left: 8px;
       }
-      /* The 50px weather glyph + 14px margin eats a third of a 320px
-       * row. Scale icon + temperature down ~15% so the temperature
-       * keeps its space; fixed values (not fluid clamp) so the
-       * layout stays predictable and easy to baseline-review. */
+      /* Scale the glyph and temperature down ~15% so the temperature
+       * keeps its space. */
       .main {
         font-size: ${Math.round(currentTempSize * 0.85)}px;
       }
@@ -684,20 +567,15 @@ function buildCardStyles({
       .main span:not(.wsc-entity-link) {
         font-size: 15px;
       }
-      /* Clock is position:absolute inside .main, whose right edge sits
-       * 8px inside the card at this width (halved padding), so the base
-       * right:0 already lines up with the content edge — only shrink it
-       * so it clears the condition text. The full stacking happens in
-       * the <=280px tier. */
+      /* Only shrink the clock so it clears the condition text; the base
+       * right:0 already lines up with the content edge. */
       .current-time {
         font-size: ${Math.round(timeSize * 0.8)}px;
       }
       .date-text {
         font-size: ${Math.max(10, Math.round(dayDateSize * 0.85))}px;
       }
-      /* Let the three attribute groups wrap onto a second line rather
-       * than being squeezed past readability. space-between still
-       * spreads whatever fits on each line. */
+      /* Wrap the attribute groups instead of squeezing them. */
       .attributes {
         flex-wrap: wrap;
         gap: 4px 12px;
@@ -708,8 +586,7 @@ function buildCardStyles({
       .wsc-zd-day {
         display: none;
       }
-      /* Tighten the chart-chrome typography so timeline labels and
-       * wind units don't overflow their narrow columns. */
+      /* Smaller timeline labels and wind units fit narrow columns. */
       .scroll-timeline .tl-seg-label {
         font-size: ${Math.max(8, (labelsBaseSize || 11) - 3)}px;
       }
@@ -719,20 +596,15 @@ function buildCardStyles({
     }
 
     @container wsc-card (max-width: 280px) {
-      /* Stack the clock under the temperature. Below ~280px the
-       * absolutely-positioned clock cannot share the top row with
-       * the temperature + condition without overlapping, so drop it
-       * into normal flow beneath them. .current-time is a block
-       * inside .main's inner text <div>, so static positioning lets
-       * it flow directly under the temperature/condition. */
+      /* The absolute clock would overlap the temperature here, so put it
+       * in normal flow beneath it. */
       .current-time {
         position: static;
         margin-top: 4px;
         text-align: left;
       }
       .attributes {
-        /* One group per line keeps each icon+value pair on its own
-         * row — no mid-value wrap, no horizontal overflow. */
+        /* Start-aligned so wrapped groups do not spread across the row. */
         justify-content: flex-start;
       }
     }
