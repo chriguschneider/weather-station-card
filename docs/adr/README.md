@@ -67,7 +67,7 @@ becomes `Superseded by NNNN`.
 - [0006 — Build-time `__CARD_VERSION__` injection via Rollup](./0006-build-time-version-injection.md) (Accepted)
 - [0007 — `set hass` decomposed into three phase methods](./0007-set-hass-three-phase.md) (Accepted)
 - [0008 — DEFAULTS as the single source of truth (`src/defaults.ts`)](./0008-defaults-single-source-of-truth.md) (Accepted)
-- [0009 — Lookup-table pattern for unit conversions](./0009-lookup-table-pattern-for-unit-conversions.md) (Accepted)
+- [0009 — Lookup-table pattern for unit conversions](./0009-lookup-table-pattern-for-unit-conversions.md) (Superseded by 0035)
 - [0010 — Group-renderer pattern for conditional template blocks](./0010-group-renderer-pattern.md) (Accepted)
 - [0011 — Track `package-lock.json` for reproducible builds](./0011-track-package-lock.md) (Accepted)
 - [0012 — Chart library: uPlot](./0012-chart-library-uplot.md) (Accepted)
