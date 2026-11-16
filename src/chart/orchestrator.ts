@@ -2,21 +2,10 @@
 // ADR-0012). The card finds the container, destroys the previous chart
 // and stores the returned handle; nothing here reads or writes the card.
 //
-// Responsibilities:
-//   - normalize the config (forecast.type fallback for typo'd YAML)
-//   - read live theme tokens from the theme host
-//   - resolve the precip-axis floor, station/forecast gap framing, sunshine
-//     fraction data, dataset segment-options (transparent boundary
-//     at daily combination, dashed at hourly combination), per-bar
-//     colour palettes
-//   - assemble dataset[]: tempHigh, tempLow (hidden when hourly),
-//     precip, optional sunshine
-//   - assemble plugins[]: separator, dailyTickLabels, precipLabel,
-//     optional sunshineLabel (gated on daily + show_sunshine)
-//   - call buildChart() in chart/draw.ts for the actual instance
-//
-// A failure is rethrown as ChartBuildError tagged with the phase it
-// happened in ('compute' or 'init') for the card's error banner.
+// It normalizes the config, reads the theme tokens, resolves the
+// precip floor, sunshine fractions and per-bar colours, assembles
+// datasets[] and plugins[], and calls buildChart() in chart/draw.ts. A
+// failure is rethrown as ChartBuildError tagged 'compute' or 'init'.
 
 import { effectiveVisibleBars, normalizeForecastMode } from '../forecast-utils.js';
 import { isDarkColor, lightenColor, resolveTemp2Color } from '../format-utils.js';
@@ -124,10 +113,8 @@ export function boundaryIsSameDay(
   return calendar.isSameDay(da, db);
 }
 
-/** Picks the lightened bar colour for forecast columns (or for forecast-only
- *  mode where every column is a forecast). The two ternary arms used to be
- *  inlined per dataset; extracting kills the nested-ternary smell and shares
- *  the rule between precip and sunshine. */
+/** Picks the lightened bar colour for forecast columns (every column in
+ *  forecast-only mode); shared by precip and sunshine. */
 function pickPerBarColor(
   i: number,
   hasBothBlocks: boolean,
@@ -154,36 +141,17 @@ interface SegmentHelpers {
   };
 }
 
-/** Mode/unit-static floor for the precipitation y-axis ceiling.
- *  Hourly/today 4 mm (metric) / 1 in; daily 20 mm / 1 in. Resolved
- *  here (the wiring layer interprets config/units) and handed to
- *  buildChart, which derives the actual ceiling from the data — at
- *  build time AND on every in-place update(), so intensifying rain
- *  rescales the bars without waiting for a full rebuild. */
+/** Mode/unit-static floor for the precipitation y-axis ceiling: hourly
+ *  and today 4 mm (metric) / 1 in, daily 20 mm / 1 in. buildChart derives
+ *  the actual ceiling from it and the data. */
 export function precipAxisFloor(isHourlyish: boolean, lengthUnit: string): number {
   return isHourlyish
     ? (lengthUnit === 'km' ? 4 : 1)
     : (lengthUnit === 'km' ? 20 : 1);
 }
 
-/** Precipitation y-axis ceiling.
- *
- *  The fixed per-mode value acts as a FLOOR, not a hard cap: it keeps a
- *  light-drizzle day from blowing the axis up so a 0.3 mm bar looks like
- *  a downpour. But the ceiling rises to the tallest actual bucket when
- *  that exceeds the floor, so heavy precipitation scales proportionally
- *  instead of clipping flat at the top.
- *
- *  Why a floor at all: 'today' sums precip into 3-hour buckets
- *  (aggregateThreeHour), so a wet afternoon easily clears the old fixed
- *  4 mm cap — two heavy buckets (e.g. 10 mm and 4.7 mm) both pinned to
- *  full height and read as equally tall, which is exactly the bug this
- *  fixes. Daily totals likewise overrun the 20 mm floor on a stormy day.
- *
- *  The live chart derives this same ceiling itself via precipCeiling
- *  in chart/draw.ts (fed with precipAxisFloor above) so the update()
- *  path can rescale without the orchestrator. This composite stays as
- *  the canonical statement of the rule and the unit-test surface. */
+/** Test surface for the ceiling rule: max(per-mode floor, tallest bucket).
+ *  The live chart derives the same value via precipCeiling in draw.ts. */
 export function computePrecipMax(
   isHourlyish: boolean,
   lengthUnit: string,
@@ -235,7 +203,6 @@ function buildSegmentHelpers(args: SegmentHelpersArgs): SegmentHelpers {
   return { tempSegmentOpts: { borderColor: segmentSkip, borderDash: segmentDash } };
 }
 
-// deno-lint-ignore no-explicit-any
 interface BuildDatasetsArgs {
   ll: ChartInputs['ll'];
   config: any;
@@ -259,12 +226,9 @@ function buildDatasets(args: BuildDatasetsArgs): Array<Record<string, unknown>> 
     showSunshine, sunshineFractionData, sunshinePerBarColor,
   } = args;
 
-  // Coerce every plotted series to (number | null)[] before it reaches
-  // the chart. A malformed cell — a temperature that arrived as the
-  // string "unavailable", a NaN from an upstream divide-by-zero —
-  // would otherwise poison the whole axis scale (uPlot derives min/max
-  // across the array) or draw a phantom point at a coerced 0. coerce →
-  // null makes Chart/uPlot draw a clean gap instead.
+  // Coerce to (number | null)[]: a malformed cell ("unavailable", NaN)
+  // would poison the axis scale or draw a phantom point at 0; null gives
+  // a clean gap.
   const tempHighSeries = coerceNumericSeries(data.tempHigh);
   const tempLowSeries = coerceNumericSeries(data.tempLow);
   const precipSeries = coerceNumericSeries(data.precip);
@@ -317,7 +281,6 @@ function buildDatasets(args: BuildDatasetsArgs): Array<Record<string, unknown>> 
   return datasets;
 }
 
-// deno-lint-ignore no-explicit-any
 interface BuildPluginsArgs {
   config: any;
   language: string;
@@ -392,16 +355,13 @@ function buildPlugins(args: BuildPluginsArgs): ChartPlugin[] {
     }));
   }
 
-  // Per-point temperature value labels (style2 only). Plugin no-ops
-  // when forecast.style isn't 'style2'.
   plugins.push(createTempLabelsPlugin({
     config, data, calendar,
     tempHighColor: temp1Color,
     tempLowColor: temp2Color,
     chartTextColor,
-    // 3-px background-colour halo behind every value — keeps labels
-    // readable on top of the full-strength sunshine bars (community
-    // post 15 "purple"; variant decision N1 + halo).
+    // Background-coloured halo keeps labels readable over full-strength
+    // sunshine bars.
     haloColor: backgroundColor,
     roundTemp: config.forecast.round_temp === true,
   }));
@@ -422,32 +382,21 @@ export function buildForecastChart(inputs: ChartInputs): UplotChart {
 
 function composeChart(inputs: ChartInputs, phase: { current: 'compute' | 'init' }): UplotChart {
   const { target: chartTarget, language, calendar, data, ll, themeHost } = inputs;
-  // All downstream references read `config` — by binding it to the
-  // normalized result we get one consistent view of the mode (and
-  // forecast.type fallback to 'daily' for typo'd YAML) across the
-  // chart code path.
+  // Normalized config: forecast.type falls back to 'daily' for typo'd YAML.
   const { config } = normalizeForecastMode(inputs.config);
   const tempUnit = inputs.unitSystem.temperature;
   const lengthUnit = inputs.unitSystem.length;
   const llUnits = ll('units') as Record<string, string>;
-  // Chart precip values arrive in HA's system length unit (mm for
-  // metric, in for imperial). An explicit `units.precipitation` overrides
-  // the DISPLAY unit (label + per-bar value); without it the chart keeps
-  // the system unit so existing dashboards are unchanged. The bar HEIGHTS
-  // stay in the source unit (a relative visual) — only the label text is
-  // converted, in the precip-label plugin.
+  // Precip values arrive in HA's system length unit. `units.precipitation`
+  // overrides only the displayed label text (converted in the precip-label
+  // plugin); bar heights stay in the source unit.
   const precipSourceBase = lengthUnit === 'km' ? 'mm' : 'in';
   const cfgPrecip = config.units?.precipitation;
   const precipTargetBase = (cfgPrecip === 'mm' || cfgPrecip === 'in') ? cfgPrecip : precipSourceBase;
   const precipUnit = llUnits[precipTargetBase] ?? precipTargetBase;
 
-  // Theme tokens (background / primary-text / divider / secondary-text)
-  // are stable within a theme session. The cache memoises them across
-  // calls and invalidates on theme switch via a MutationObserver on
-  // <html>. The plugin `style` proxy serves the four known tokens
-  // from the cache; any other CSS var falls back to a live read
-  // (no plugin currently needs that path, but it keeps the
-  // `CssStyleLike` contract honest).
+  // The `style` proxy serves the four known theme tokens from the cache;
+  // any other CSS var falls back to a live read.
   const tokens = getThemeTokens(themeHost);
   const backgroundColor = tokens.backgroundColor;
   const textColor = tokens.textColor;
@@ -468,8 +417,7 @@ function composeChart(inputs: ChartInputs, phase: { current: 'compute' | 'init' 
     },
   };
 
-  // 'today' is hourly granularity (per-hour bars), same precip scale
-  // as 'hourly'. 'daily' aggregates over the full day, scale is wider.
+  // 'today' shares the hourly precip scale; 'daily' needs a wider one.
   const isHourlyish = config.forecast.type === 'hourly' || config.forecast.type === 'today';
   const precipFloor = precipAxisFloor(isHourlyish, lengthUnit);
 
@@ -482,15 +430,10 @@ function composeChart(inputs: ChartInputs, phase: { current: 'compute' | 'init' 
     stationCountForGap, forecastCountForGap, hasBothBlocks, isHourlyish,
   });
 
-  // Resolve any CSS-var-wrapped colour defaults against the live theme
-  // tokens; pass-through for plain rgb/hex/hsl strings users set in YAML.
   const temp1Color = resolveCssVar(config.forecast.temperature1_color, 'rgba(255, 152, 0, 1.0)', themeHost);
-  // Low-temp line: the single steel-blue default read washed-out on
-  // white and fell to ~2.5:1 contrast on dark backgrounds (community
-  // post 15, "blue"). Only the DEFAULT is theme-aware — a user-set
-  // colour (anything other than the legacy default literal) passes
-  // through unchanged. Dark detection via the resolved card
-  // background's luma (HA exposes no dark-mode flag to cards).
+  // Only the DEFAULT low-temp colour is theme-aware; a user-set colour
+  // passes through. Dark detection uses the card background's luma (HA
+  // exposes no dark-mode flag to cards).
   const isDarkTheme = isDarkColor(backgroundColor);
   const temp2Color = resolveTemp2Color(config.forecast.temperature2_color, backgroundColor, themeHost);
   const precipColor = resolveCssVar(config.forecast.precipitation_color, 'rgba(132, 209, 253, 1.0)', themeHost);
@@ -499,29 +442,16 @@ function composeChart(inputs: ChartInputs, phase: { current: 'compute' | 'init' 
     (_v, i) => pickPerBarColor(i, hasBothBlocks, stationCountForGap, precipColor, precipColorLight),
   );
 
-  // Sunshine row toggle. Works in both daily and hourly modes — the
-  // OpenMeteoSource fetches `daily=…` and (when in hourly mode)
-  // also `hourly=…` from Open-Meteo in a single call, and
-  // attachSunshine matches each entry's datetime against the right
-  // array. The chart adds a second bar dataset; Chart.js auto-groups
-  // precip + sunshine side-by-side per column (precip left half,
-  // sunshine right half).
   const showSunshine = config.forecast.show_sunshine === true;
-  // Per-column "Xh" / "0.5h" labels: shown for daily and 'today'
-  // (8 wide columns), suppressed for 'hourly' where 168 narrow
-  // columns over a 7-day window would crowd labels (the bar height
-  // alone encodes the value at that density).
+  // Hourly has too many narrow columns for labels; the bar height alone
+  // carries the value there.
   const showSunshineLabels = showSunshine && config.forecast.type !== 'hourly';
   const SUNSHINE_LEGACY_DEFAULT = 'rgba(255, 215, 0, 1.0)';
   const sunshineConfigured = config.forecast.sunshine_color;
   const sunshineColor = resolveCssVar(sunshineConfigured, SUNSHINE_LEGACY_DEFAULT, themeHost);
-  // Forecast-side sunshine in DARK themes: the default gold at
-  // lightenColor's 0.45 alpha blends with the near-black card into a
-  // murky olive. Variant decision "W58": warmer honey gold
-  // rgba(255,193,7) at 0.58 — the tone shift cancels the green cast,
-  // the strength keeps the bars present without matching the measured
-  // side. Light themes and user-set colours keep the classic
-  // lightenColor treatment.
+  // Dark themes: the default gold at lightenColor's alpha blends into a
+  // murky olive, so use a warmer honey gold. Light themes and user-set
+  // colours use lightenColor.
   const sunshineColorLight = (isDarkTheme
     && (!sunshineConfigured || sunshineConfigured === SUNSHINE_LEGACY_DEFAULT))
     ? 'rgba(255, 193, 7, 0.58)'
@@ -529,8 +459,6 @@ function composeChart(inputs: ChartInputs, phase: { current: 'compute' | 'init' 
   const sunshinePerBarColor: string[] = (data.sunshine ?? []).map(
     (_v, i) => pickPerBarColor(i, hasBothBlocks, stationCountForGap, sunshineColor, sunshineColorLight),
   );
-  // Convert raw hours into 0..1 fractions of day length. Null values
-  // pass through so the bar slot stays empty for missing data.
   const sunshineFractionData = sunshineFractions(
     data.sunshine ?? [],
     data.dayLength,
@@ -550,25 +478,18 @@ function composeChart(inputs: ChartInputs, phase: { current: 'compute' | 'init' 
   const stationCount = inputs.stationCount;
   const forecastCount = inputs.forecastCount;
   const isHourly = isHourlyish;
-  // doubled-today only makes sense at daily — at hourly / today station
-  // and forecast meet at "now" with a single separator line.
-  //
-  // Just past midnight the station block can end at YESTERDAY (the
-  // recorder hasn't aggregated today yet → `dropEmptyStationToday`
-  // removes the empty trailing bucket) while the forecast block leads
-  // with today. The two boundary columns then represent different
-  // days, so the label-collapse / transparent-gridline logic must NOT
-  // fire — otherwise the THU label vanishes and FRI sits at the
-  // THU/FRI midpoint. Gate on the actual boundary date matching.
+  // Daily only. Just past midnight the station block can end at
+  // YESTERDAY (`dropEmptyStationToday` removed the empty bucket) while the
+  // forecast leads with today; the boundary columns are then different
+  // days, so the label-collapse logic must not fire. Gate on the actual
+  // boundary dates matching.
   const doubledToday = !isHourly
     && stationCount > 0
     && forecastCount > 0
     && boundaryIsSameDay(data.dateTime, stationCount, calendar);
-  // When sunshine is on, draw.ts grows the x-axis box by sunshineLabelBand
-  // pixels via afterFit. dailyTickLabelsPlugin then shifts weekday + date
-  // up by that amount so the new bottom strip is free for the sunshine
-  // box. When sunshine is off, sunshineLabelBand stays 0 and chart
-  // layout is unchanged.
+  // buildAxes adds this band to the x-axis size; the daily-tick-labels
+  // plugin shifts weekday + date up by it, freeing the strip for the
+  // sunshine box. 0 when sunshine labels are off.
   const labelsBaseSize = parseInt(String(config.forecast.labels_font_size)) || 11;
   const sunshineLabelBand = showSunshineLabels ? Math.max(16, labelsBaseSize + 6) : 0;
 
@@ -602,12 +523,9 @@ function composeChart(inputs: ChartInputs, phase: { current: 'compute' | 'init' 
     isHourly,
     style,
     sunshineLabelBand,
-    // Config interpretation happens HERE (the wiring layer) — draw.ts
-    // only consumes the resolved number. 'today' is pinned to 8 bars.
     visibleBars: effectiveVisibleBars(config as { forecast?: { type?: string; number_of_forecasts?: number | string } }),
     inPreview: inputs.inPreview,
-    // The two-line precip box (chance of rain, #288) hangs further
-    // below the baseline than the one-line box.
+    // The two-line precip box (#288) hangs lower than the one-line box.
     extraBottomPad: config.forecast.show_precip_probability === true
       ? PROBABILITY_EXTRA_BOTTOM_PAD
       : 0,
