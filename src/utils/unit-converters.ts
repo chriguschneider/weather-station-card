@@ -1,10 +1,9 @@
-// Pure unit-conversion helpers used by the live-attributes block.
-//
-// Wind / pressure tables are keyed by `targetUnit->sourceUnit`. Beaufort
-// and same-unit cases are short-circuited inside the converters and
-// never index into the tables.
+// What is left of the pre-ADR-0035 converters. The live panel converts
+// through units.ts; these helpers stay until step C3 of #478 moves the
+// past data (data-source.ts: classifier inputs and lux scale), the
+// readings' lux scale and the chart's precipitation label onto the units
+// table.
 
-import { parseNumericSafe } from './numeric.js';
 import { BEAUFORT_KMH_UPPER, DAYLIGHT_EFFICACY_LM_PER_W, fromCanonical, toCanonical } from './units.js';
 
 export { BEAUFORT_KMH_UPPER, DAYLIGHT_EFFICACY_LM_PER_W };
@@ -18,16 +17,6 @@ export const WIND_CONVERSION: Record<string, number> = {
   'km/h->mph': 1.60934,
   'mph->m/s': 1 / 0.44704,
   'mph->km/h': 1 / 1.60934,
-};
-
-/** Pressure conversion factors, same scheme as WIND_CONVERSION. */
-export const PRESSURE_CONVERSION: Record<string, number> = {
-  'mmHg->hPa': 0.75006,
-  'mmHg->inHg': 25.4,
-  'hPa->mmHg': 1 / 0.75006,
-  'hPa->inHg': 33.8639,
-  'inHg->mmHg': 1 / 25.4,
-  'inHg->hPa': 1 / 33.8639,
 };
 
 /** Normalise a wind speed to metres per second for the condition
@@ -67,12 +56,6 @@ export function toCelsius(
   return (fromUnit === '°F' || fromUnit === 'F') ? toCanonical('temperature', temp, '°F') : temp;
 }
 
-/** Inverse of `toCelsius`: express a °C value in `toUnit`. Only °F
- *  converts; anything else, a non-finite value included, passes through. */
-export function fromCelsius(tempC: number, toUnit: string | undefined): number {
-  return ((toUnit === '°F' || toUnit === 'F') ? fromCanonical('temperature', tempC, '°F') : null) ?? tempC;
-}
-
 /** Normalise a precipitation length — a total in mm or a mm/h rate — to
  *  millimetres for the condition classifier, whose rain thresholds
  *  (`rainy_threshold_mm`, `pouring_threshold_mm`, …) are in mm. Inches
@@ -96,25 +79,6 @@ export function toMillimeters(
     : precip;
 }
 
-/** True when the unit denotes a precipitation RATE (ends in `/h`,
- *  `/hr`, `/hour`) rather than an accumulated total. */
-export function isPrecipRateUnit(unit: string | undefined): boolean {
-  return !!unit && /\/(h|hr|hour)$/i.test(unit);
-}
-
-/** Reduce a precipitation unit to its canonical length base. Strips a
- *  trailing rate suffix and normalises every inch spelling to `in`;
- *  `mm/h` → `mm`, `IN/H` → `in`, `inch` → `in`, `"` → `in`. Unknown
- *  units (e.g. `%`) pass through lower-cased so the caller can detect
- *  the non-mm/in case and skip conversion. Undefined → `mm`. */
-export function precipBaseUnit(unit: string | undefined): string {
-  if (!unit) return 'mm';
-  const base = unit.toLowerCase().split('/')[0].trim();
-  return (base === 'in' || base === 'inch' || base === 'inches' || base === '"')
-    ? 'in'
-    : base;
-}
-
 /** Convert a precipitation length (total or rate — the factor is the
  *  same, the caller owns the `/h` label) between mm and in. Same base,
  *  any non-mm/in base or a non-finite value passes through unchanged. */
@@ -122,93 +86,6 @@ export function convertPrecipLength(value: number, fromBase: string, toBase: str
   if (fromBase === 'in' && toBase === 'mm') return toCanonical('precipitation', value, 'in') ?? value;
   if (fromBase === 'mm' && toBase === 'in') return fromCanonical('precipitation', value, 'in') ?? value;
   return value;
-}
-
-/** Format a precipitation value for the live attributes row in the
- *  configured display unit. `sourceUnit` is the sensor's native unit
- *  (or the derived-rate's source unit, e.g. `mm/h` / `in/h`);
- *  `targetBase` is the user's chosen display base (`mm` | `in`) and
- *  falls back to the source base when unset or not mm/in.
- *
- *  Inch values are ~25× smaller than their mm equivalent, so they get
- *  two decimals; mm keeps the legacy precision (drop the decimal above
- *  10, so a `339 mm/h` cell reads cleaner than `339.0`). The `/h`
- *  suffix is preserved for rates. */
-export function formatPrecipDisplay(
-  rawValue: number,
-  sourceUnit: string | undefined,
-  targetBase: string | undefined,
-): { value: string; unit: string } {
-  const isRate = isPrecipRateUnit(sourceUnit);
-  const sourceBase = precipBaseUnit(sourceUnit);
-  const target = (targetBase === 'mm' || targetBase === 'in') ? targetBase : sourceBase;
-  const converted = convertPrecipLength(rawValue, sourceBase, target);
-  let decimals: number;
-  if (target === 'in') decimals = 2;
-  else decimals = converted >= 10 ? 0 : 1;
-  return {
-    value: converted.toFixed(decimals),
-    unit: isRate ? `${target}/h` : target,
-  };
-}
-
-/** Beaufort force (0–12) for a wind speed in `fromUnit` (m/s, km/h,
- *  mph). The speed is brought to km/h through WIND_CONVERSION first, so
- *  a forecast entry in m/s and a station in km/h both land on the right
- *  force. A missing or unknown unit is read as m/s, HA's native wind
- *  unit. Null / non-finite input returns null. */
-export function toBeaufort(
-  windSpeed: number | null | undefined,
-  fromUnit: string | undefined,
-): number | null {
-  if (windSpeed == null || !Number.isFinite(windSpeed)) return null;
-  const factor = fromUnit === 'km/h' ? 1 : (WIND_CONVERSION[`km/h->${fromUnit}`] ?? WIND_CONVERSION['km/h->m/s']);
-  const kmh = windSpeed * factor;
-  const force = BEAUFORT_KMH_UPPER.findIndex((upper) => kmh < upper);
-  return force === -1 ? BEAUFORT_KMH_UPPER.length : force;
-}
-
-/** Convert windSpeed from `fromUnit` to `toUnit`. Same-unit returns
- *  rounded value; `Bft` goes through `toBeaufort` with the source unit.
- *  Unknown unit pair returns the input value unchanged (defensive at HA
- *  boundary). `fromUnit` / `toUnit` may be undefined when the HA entity
- *  hasn't populated `wind_speed_unit` yet — falls through to the
- *  unchanged return path. A missing or non-numeric speed returns
- *  undefined, so the row hides instead of printing "NaN". */
-export function convertWindSpeed(
-  windSpeed: unknown,
-  fromUnit: string | undefined,
-  toUnit: string | undefined,
-): number | undefined {
-  const v = parseNumericSafe(windSpeed);
-  if (v === null) return undefined;
-  if (toUnit === fromUnit) return Math.round(v);
-  if (toUnit === 'Bft') return toBeaufort(v, fromUnit) ?? undefined;
-  const factor = WIND_CONVERSION[`${toUnit}->${fromUnit}`];
-  return factor !== undefined ? Math.round(v * factor) : v;
-}
-
-/** Convert pressure from `fromUnit` to `toUnit`. Same-unit rounds to
- *  integer for hPa / mmHg, leaves inHg as-is. Cross-unit converts and
- *  rounds; for inHg target two decimals are preserved
- *  (`Math.round(x * 100) / 100`) since the integer rounding makes
- *  inHg readings useless. `fromUnit` / `toUnit` may be undefined when
- *  the HA entity hasn't populated `pressure_unit` yet. */
-export function convertPressure(
-  pressure: number,
-  fromUnit: string | undefined,
-  toUnit: string | undefined,
-): number {
-  if (toUnit === fromUnit) {
-    return (toUnit === 'hPa' || toUnit === 'mmHg')
-      ? Math.round(pressure) : pressure;
-  }
-  const factor = PRESSURE_CONVERSION[`${toUnit}->${fromUnit}`];
-  if (factor === undefined) return pressure;
-  const converted = pressure * factor;
-  return toUnit === 'inHg'
-    ? Math.round(converted * 100) / 100
-    : Math.round(converted);
 }
 
 // ── Solar irradiance → illuminance (community post 15, point 5) ──────

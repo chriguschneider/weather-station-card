@@ -448,6 +448,8 @@ describe('markedExtremes', () => {
     ]);
     expect(markedExtremes(ft, 'ft').max).toBeNull(); // 500 ft ≈ 152 m
     expect(markedExtremes(ft, 'm').max?.level).toBe(5500);
+    expect(markedExtremes(ft, 'foo').max).toBeNull();
+    expect(markedExtremes(ft, 'foo').min?.level).toBe(5000);
   });
 });
 
@@ -475,6 +477,10 @@ describe('ZeroDegreePopup site line', () => {
   it('converts to feet and omits the line without a site', () => {
     expect(openPopup({ site, unit: 'ft' }).charts[0].opts.siteLine.level).toBeCloseTo(881 / 0.3048, 6);
     expect(openPopup().charts[0].opts.siteLine).toBeUndefined();
+  });
+
+  it('omits the line for an unknown unit', () => {
+    expect(openPopup({ site, unit: 'foo' }).charts[0].opts.siteLine).toBeUndefined();
   });
 
   it('falls back to the default colour when var() cannot be resolved', () => {

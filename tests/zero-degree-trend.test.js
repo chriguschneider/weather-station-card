@@ -6,11 +6,11 @@ import {
   classifySiteState,
   reachesSite,
   resolveElevation,
-  metresPerUnit,
   snowLine,
   siteStateIcon,
   zeroDegreeTrendIcon,
 } from '../src/zero-degree-trend.js';
+import { toCanonical } from '../src/utils/units.js';
 
 const H = 3_600_000;
 const ms = (iso) => Date.parse(iso);
@@ -67,7 +67,7 @@ describe('classifyZeroDegreeTrend', () => {
     expect(r.trend).toBe('stable');
     expect(r.target).toEqual(flat[1]);
     expect(r.next).toBeNull();
-    expect([r.min, r.max]).toEqual([2450, 2600]);
+    expect([r.min, r.max]).toEqual([flat[1], flat[2]]);
     expect(zeroDegreeTrendIcon(r.trend)).toBe('mdi:arrow-right');
   });
 
@@ -106,15 +106,12 @@ describe('classifyZeroDegreeTrend', () => {
     expect(classifyZeroDegreeTrend(curve, 2000, 50 * H)).toBeNull();
   });
 
-  it('feet: thresholds scale with the unit', () => {
-    const per = metresPerUnit('ft');
-    expect(per).toBe(0.3048);
-    // 600 ft ≈ 183 m — under the 200 m threshold.
+  it('feet: a curve converted to metres meets the metre thresholds', () => {
     const curve = [{ t: 0, level: 7000 }, { t: 10 * H, level: 6400 }];
-    expect(classifyZeroDegreeTrend(curve, 7000, 0, per).trend).toBe('stable');
-    expect(classifyZeroDegreeTrend(curve, 7000, 0, 1).trend).toBe('falling_fast');
-    expect(metresPerUnit('m')).toBe(1);
-    expect(metresPerUnit(undefined)).toBe(1);
+    const metres = curve.map((p) => ({ t: p.t, level: toCanonical('length', p.level, 'ft') }));
+    // 600 ft ≈ 183 m — under the 200 m threshold.
+    expect(classifyZeroDegreeTrend(metres, metres[0].level, 0).trend).toBe('stable');
+    expect(classifyZeroDegreeTrend(curve, 7000, 0).trend).toBe('falling_fast');
   });
 
   it('falling then rising, rising then falling, all four pace/direction classes', () => {
@@ -156,9 +153,9 @@ describe('classifySiteState', () => {
     expect(siteStateIcon('unknown')).toBe('mdi:snowflake-thermometer');
   });
 
-  it('feet levels are converted before comparing with metres', () => {
-    // 3000 ft = 914 m, line 614 m: within 300 m above 581 m.
-    expect(classifySiteState(3000, 581, 0.3048)).toBe('near');
+  it('feet levels converted to metres', () => {
+    // 3000 ft = 914.4 m, line 614.4 m: within 300 m above 581 m.
+    expect(classifySiteState(toCanonical('length', 3000, 'ft'), 581)).toBe('near');
     expect(snowLine(2506)).toBe(2206);
   });
 });
@@ -169,8 +166,7 @@ describe('reachesSite', () => {
     expect(reachesSite(882, 581)).toBe(false);
     expect(reachesSite(1586, undefined)).toBe(false);
     expect(reachesSite(NaN, 581)).toBe(false);
-    expect(reachesSite(881, 581, 1)).toBe(true);
-    expect(reachesSite(3000, 581, 0.3048)).toBe(false);
+    expect(reachesSite(toCanonical('length', 3000, 'ft'), 581)).toBe(false);
   });
 });
 

@@ -1,23 +1,27 @@
 // Zero-degree rows: the current level of the 0 °C isotherm (the snow
-// line) and its 48 h trend (#330, #333). Sensor-only; the unit is
-// whatever the entity reports.
+// line) and its 48 h trend (#330, #333). Sensor-only. The texts stay in
+// the sensor's own unit (length has no display unit); the classification
+// runs on metres (ADR-0035).
 
 import { html, nothing } from 'lit';
 import { getDateTimeFormat } from '../utils/intl-cache.js';
+import { deltaToCanonical, toCanonical } from '../utils/units.js';
 import {
   classifySiteState,
   classifyZeroDegreeTrend,
-  metresPerUnit,
   reachesSite,
   resolveElevation,
   siteStateIcon,
   snowLine,
   zeroDegreeTrendIcon,
+  type ZeroDegreePoint,
+  type ZeroDegreeTrend,
 } from '../zero-degree-trend.js';
 import { attrEntity, formatEntityNumber, isPresent, type LivePanelCtx } from './context.js';
 
 const CURRENT = 'zero_degree_level';
 const TREND = 'zero_degree_level_48h';
+const STEADY_BAND_M = 100;
 
 /** Site elevation in metres (card option > sensor attribute > HA config). */
 export function zeroDegreeElevation(ctx: LivePanelCtx): number | undefined {
@@ -69,27 +73,75 @@ export function climateRowZeroDegree(ctx: LivePanelCtx, show: boolean, value: un
   if (!show || !isPresent(value)) return null;
   const eid = attrEntity(ctx.config, CURRENT, false);
   const text = formatEntityNumber(ctx, eid, value, { unit });
-  const level = Number(value);
+  const metres = ctx.readings.zero_degree_level?.canonical ?? null;
   const elevation = zeroDegreeElevation(ctx);
-  const perUnit = metresPerUnit(unit);
-  const state = classifySiteState(Number.isFinite(level) ? level : undefined, elevation, perUnit);
+  const state = metres === null ? 'unknown' : classifySiteState(metres, elevation);
   const row = html`${ctx.zeroDegreeLink(eid,
     html`<ha-icon icon="${siteStateIcon(state)}"></ha-icon> ${text}`)}`;
-  if (state === 'unknown' || elevation === undefined) return row;
-  const line = formatMetres(ctx, Math.round(snowLine(level, perUnit)));
+  if (state === 'unknown' || metres === null || elevation === undefined) return row;
+  const line = formatMetres(ctx, Math.round(snowLine(metres)));
   const title = `${ctx.str('zero_degree_snow_line').replace('{level}', line)}, `
     + `${zeroDegreePlace(ctx, elevation)} · ${ctx.str(`zero_degree_site_${state}`)}`;
   return html`<span title=${title} aria-label=${title}>${row}</span>`;
 }
 
-type TrendView = NonNullable<ReturnType<typeof classifyZeroDegreeTrend>>;
+// The classification in metres with every point swapped back for the
+// sensor's own: a round trip through metres would print 8200.000000000001 ft
+// (HA's formatter keeps a state's decimals).
+function inSensorUnit(view: ZeroDegreeTrend, byTime: ReadonlyMap<number, ZeroDegreePoint>): ZeroDegreeTrend {
+  const own = (p: ZeroDegreePoint): ZeroDegreePoint => byTime.get(p.t) ?? p;
+  return {
+    trend: view.trend,
+    target: own(view.target),
+    next: view.next && own(view.next),
+    min: own(view.min),
+    max: own(view.max),
+  };
+}
 
-function trendTitle(ctx: LivePanelCtx, view: TrendView, nowLevel: number | undefined, whenText: string): string {
+interface ClassifiedCurve {
+  /** The classification in metres. */
+  metresView: ZeroDegreeTrend;
+  /** The same with the sensor's own points. */
+  view: ZeroDegreeTrend;
+  /** The current level as the sensor reported it. */
+  nowLevel: number | undefined;
+}
+
+// The 48 h curve classified in metres; null without a curve, with an
+// unknown unit or without a current level. Now: the current sensor in
+// metres, else the first curve point ahead.
+function classifyCurve(ctx: LivePanelCtx, unit: string | undefined, nowValue: unknown): ClassifiedCurve | null {
+  const curve = ctx.values.zero_degree_curve;
+  if (!curve) return null;
+  const metres = curve.map((p) => ({ t: p.t, level: toCanonical('length', p.level, unit) }));
+  if (!metres.every((p): p is ZeroDegreePoint => p.level !== null)) return null;
+  const now = Date.now();
+  const current = ctx.readings.zero_degree_level?.canonical ?? null;
+  const ahead = curve.findIndex((p) => p.t >= now);
+  let nowMetres: number;
+  let nowLevel: number | undefined;
+  if (current !== null) {
+    nowMetres = current;
+    const raw = Number(nowValue);
+    nowLevel = Number.isFinite(raw) ? raw : undefined;
+  } else if (ahead >= 0) {
+    nowMetres = metres[ahead].level;
+    nowLevel = curve[ahead].level;
+  } else {
+    return null;
+  }
+  const metresView = classifyZeroDegreeTrend(metres, nowMetres, now);
+  if (!metresView) return null;
+  return { metresView, view: inSensorUnit(metresView, new Map(curve.map((p) => [p.t, p]))), nowLevel };
+}
+
+function trendTitle(ctx: LivePanelCtx, view: ZeroDegreeTrend, nowLevel: number | undefined, whenText: string): string {
   const fmt = (level: number, withUnit = true) => zeroDegreeFormat(ctx, level, withUnit);
   if (view.trend === 'stable') {
     return ctx.str('zero_degree_stays_between')
-      .replace('{min}', fmt(view.min, false))
-      .replace('{max}', fmt(view.max));
+      .replace('{min}', fmt(view.min.level, false))
+      .replace('{max}', fmt(view.max.level));
   }
   const { target, next } = view;
   const sentence = ctx.str('zero_degree_trend_to')
@@ -120,22 +172,16 @@ export function climateRowZeroDegree48h(
   nowValue?: unknown,
 ) {
   if (!isPresent(value)) return null;
-  const curve = ctx.values.zero_degree_curve;
-  const now = Date.now();
-  const nowNum = isPresent(nowValue) ? Number(nowValue) : NaN;
-  const nowLevel = Number.isFinite(nowNum) ? nowNum : curve?.find((p) => p.t >= now)?.level;
-  const perUnit = metresPerUnit(unit);
-  const view = curve && nowLevel !== undefined
-    ? classifyZeroDegreeTrend(curve, nowLevel, now, perUnit)
-    : null;
-  if (!view) return zeroDegree48hFallback(ctx, value, unit, change, at, nowValue);
+  const classified = classifyCurve(ctx, unit, nowValue);
+  if (!classified) return zeroDegree48hFallback(ctx, value, unit, change, at, nowValue);
+  const { view, metresView, nowLevel } = classified;
 
   const eid = attrEntity(ctx.config, TREND, false);
   const { target } = view;
   const when = zeroDegreeWhen(ctx, target.t);
   const whenText = `${when.day} ${when.time}`;
   const elevation = zeroDegreeElevation(ctx);
-  const reaches = reachesSite(target.level, elevation, perUnit);
+  const reaches = reachesSite(metresView.target.level, elevation);
 
   let title = trendTitle(ctx, view, nowLevel, whenText);
   if (reaches && elevation !== undefined) {
@@ -153,7 +199,8 @@ export function climateRowZeroDegree48h(
 }
 
 // Trend row without a usable curve: value + arrow from the `change`
-// attribute (within ±100 m counts as steady). An `at` attribute (ISO
+// attribute (within ±100 m counts as steady, #333; no arrow for an
+// unknown unit). An `at` attribute (ISO
 // datetime of the minimum) adds the lowest-value tooltip.
 export function zeroDegree48hFallback(
   ctx: LivePanelCtx,
@@ -166,9 +213,10 @@ export function zeroDegree48hFallback(
   const eid = attrEntity(ctx.config, TREND, false);
   const text = formatEntityNumber(ctx, eid, value, { unit });
   let trendIcon = '';
-  if (change !== undefined) {
-    if (Math.abs(change) < 100) trendIcon = 'mdi:trending-neutral';
-    else trendIcon = change > 0 ? 'mdi:trending-up' : 'mdi:trending-down';
+  const changeMetres = deltaToCanonical('length', change, unit);
+  if (changeMetres !== null) {
+    if (Math.abs(changeMetres) < STEADY_BAND_M) trendIcon = 'mdi:trending-neutral';
+    else trendIcon = changeMetres > 0 ? 'mdi:trending-up' : 'mdi:trending-down';
   }
   const atDate = at ? new Date(at) : null;
   let title = '';

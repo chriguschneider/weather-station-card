@@ -1,12 +1,11 @@
 // Zero-degree rows (#333): where the 0 °C isotherm is heading in the
 // next 48 h (trend row) and where the estimated snow line sits relative
 // to the location (current row). Pure functions, no DOM.
-// Input is the sensor's `forecast` curve in the sensor's unit; elevations
-// are always metres. The thresholds below are the card's own heuristics (#333).
+// Every level and elevation is in metres (ADR-0035); the caller converts
+// the sensor's unit. The thresholds below are the card's own heuristics (#333).
 
 import { parseLocation } from './location.js';
 import { HOUR_MS } from './utils/time-zone.js';
-import { deltaToCanonical } from './utils/units.js';
 
 export interface ZeroDegreePoint {
   /** Epoch ms. */
@@ -29,9 +28,9 @@ export interface ZeroDegreeTrend {
   target: ZeroDegreePoint;
   /** The opposite movement after the target, when it is significant. */
   next: ZeroDegreePoint | null;
-  /** Lowest and highest level in the window (the "stays between" range). */
-  min: number;
-  max: number;
+  /** Lowest and highest point in the window (the "stays between" range). */
+  min: ZeroDegreePoint;
+  max: ZeroDegreePoint;
 }
 
 const WINDOW_HOURS = 48;
@@ -48,20 +47,12 @@ const SNOW_LINE_OFFSET_M = 300;
 // (#333).
 const NEAR_BAND_M = 300;
 
-/** Metres per unit of the zero-degree sensor; anything but `ft` is
- *  taken as metres (the MeteoSwiss sensor reports `m`). */
-export function metresPerUnit(unit: string | undefined): number {
-  return (unit === 'ft' ? deltaToCanonical('length', 1, 'ft') : null) ?? 1;
-}
-
 /** Five-state tendency of the zero-degree level over the points within
- *  `nowTime … nowTime + 48 h`. `metresPerUnit` converts the curve's
- *  unit for the metre thresholds. Null when the window holds no point. */
+ *  `nowTime … nowTime + 48 h`. Null when the window holds no point. */
 export function classifyZeroDegreeTrend(
   curve: readonly ZeroDegreePoint[],
   nowLevel: number,
   nowTime: number,
-  unitMetres = 1,
 ): ZeroDegreeTrend | null {
   if (!Number.isFinite(nowLevel)) return null;
   const end = nowTime + WINDOW_HOURS * HOUR_MS;
@@ -69,18 +60,17 @@ export function classifyZeroDegreeTrend(
   if (!window.length) return null;
 
   const { min, max } = findExtremes(window);
-  const range = { min: min.level, max: max.level };
-  const pick = pickTarget(min, max, nowLevel, unitMetres);
-  if (!pick) return { trend: 'stable', target: min, next: null, ...range };
+  const pick = pickTarget(min, max, nowLevel);
+  if (!pick) return { trend: 'stable', target: min, next: null, min, max };
 
   const trend = paceTrend(pick, nowTime);
-  const next = findNext(window, pick.p, pick.falling, unitMetres);
-  return { trend, target: pick.p, next, ...range };
+  const next = findNext(window, pick.p, pick.falling);
+  return { trend, target: pick.p, next, min, max };
 }
 
 interface Candidate {
   p: ZeroDegreePoint;
-  /** Distance from the current level, in metres. */
+  /** Distance from the current level. */
   amount: number;
   falling: boolean;
 }
@@ -90,15 +80,15 @@ function isSignificant(amountMetres: number): boolean {
 }
 
 /** True when `level` is at least the significance threshold away from
- *  `nowLevel`; both in the curve's unit. */
-export function isSignificantChange(level: number, nowLevel: number, unitMetres = 1): boolean {
-  return isSignificant(Math.abs(level - nowLevel) * unitMetres);
+ *  `nowLevel`. */
+export function isSignificantChange(level: number, nowLevel: number): boolean {
+  return isSignificant(Math.abs(level - nowLevel));
 }
 
-/** Curve level (in the curve's unit) at which the estimated snow line
- *  reaches a site at `elevation` metres. */
-export function siteLineLevel(elevation: number, unitMetres = 1): number {
-  return (elevation + SNOW_LINE_OFFSET_M) / unitMetres;
+/** Zero-degree level at which the estimated snow line reaches a site at
+ *  `elevation`. */
+export function siteLineLevel(elevation: number): number {
+  return elevation + SNOW_LINE_OFFSET_M;
 }
 
 function findExtremes(window: readonly ZeroDegreePoint[]): { min: ZeroDegreePoint; max: ZeroDegreePoint } {
@@ -117,10 +107,9 @@ function pickTarget(
   min: ZeroDegreePoint,
   max: ZeroDegreePoint,
   nowLevel: number,
-  unitMetres: number,
 ): Candidate | undefined {
-  const low: Candidate = { p: min, amount: (nowLevel - min.level) * unitMetres, falling: true };
-  const high: Candidate = { p: max, amount: (max.level - nowLevel) * unitMetres, falling: false };
+  const low: Candidate = { p: min, amount: nowLevel - min.level, falling: true };
+  const high: Candidate = { p: max, amount: max.level - nowLevel, falling: false };
   const ordered = min.t <= max.t ? [low, high] : [high, low];
   return ordered.find((c) => isSignificant(c.amount));
 }
@@ -142,7 +131,6 @@ function findNext(
   window: readonly ZeroDegreePoint[],
   target: ZeroDegreePoint,
   falling: boolean,
-  unitMetres: number,
 ): ZeroDegreePoint | null {
   let next: ZeroDegreePoint | null = null;
   for (const p of window) {
@@ -150,7 +138,7 @@ function findNext(
     const better = !next || (falling ? p.level > next.level : p.level < next.level);
     if (better) next = p;
   }
-  if (!next || !isSignificant(Math.abs(next.level - target.level) * unitMetres)) return null;
+  if (!next || !isSignificant(Math.abs(next.level - target.level))) return null;
   return next;
 }
 
@@ -167,21 +155,16 @@ export function zeroDegreeTrendIcon(trend: ZeroDegreeTrendClass): string {
   return TREND_ICONS[trend];
 }
 
-/** Estimated snow line in the curve's unit. */
-export function snowLine(level: number, unitMetres = 1): number {
-  return level - SNOW_LINE_OFFSET_M / unitMetres;
+/** Estimated snow line of a zero-degree level. */
+export function snowLine(level: number): number {
+  return level - SNOW_LINE_OFFSET_M;
 }
 
-/** Where the estimated snow line lies relative to the site. `level` is
- *  in the sensor unit, `elevation` in metres. */
-export function classifySiteState(
-  level: number | undefined,
-  elevation: number | undefined,
-  unitMetres = 1,
-): SiteState {
+/** Where the estimated snow line lies relative to the site. */
+export function classifySiteState(level: number | undefined, elevation: number | undefined): SiteState {
   if (level === undefined || elevation === undefined
     || !Number.isFinite(level) || !Number.isFinite(elevation)) return 'unknown';
-  const line = level * unitMetres - SNOW_LINE_OFFSET_M;
+  const line = snowLine(level);
   if (line <= elevation) return 'at';
   if (line <= elevation + NEAR_BAND_M) return 'near';
   return 'far';
@@ -199,13 +182,9 @@ export function siteStateIcon(state: SiteState): string {
 }
 
 /** True when the estimated snow line at `targetLevel` reaches the site. */
-export function reachesSite(
-  targetLevel: number,
-  elevation: number | undefined,
-  unitMetres = 1,
-): boolean {
+export function reachesSite(targetLevel: number, elevation: number | undefined): boolean {
   if (elevation === undefined || !Number.isFinite(elevation) || !Number.isFinite(targetLevel)) return false;
-  return targetLevel * unitMetres - SNOW_LINE_OFFSET_M <= elevation;
+  return snowLine(targetLevel) <= elevation;
 }
 
 function toMetres(value: unknown): number | undefined {

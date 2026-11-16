@@ -269,6 +269,7 @@ describe('zero-degree rows', () => {
     config: { use_12hour_format: false, sensors: { zero_degree_level: 'sensor.z', zero_degree_level_48h: 'sensor.z48' }, ...extra.config },
     hass: { states: { 'sensor.z': { state: '2500', attributes: { unit_of_measurement: 'm' } } }, ...extra.hass },
     values: { zero_degree_48h_unit: 'm', ...extra.values },
+    readings: extra.readings ?? { zero_degree_level: [2500, 'm'] },
   });
 
   it('current level: plain without elevation, tooltip with it', () => {
@@ -305,7 +306,7 @@ describe('zero-degree rows', () => {
   it('trend row: a flat curve stays between, no current value uses the curve', () => {
     vi.spyOn(Date, 'now').mockReturnValue(T0);
     const flat = [0, 6, 12].map((h, i) => ({ t: T0 + h * 3_600_000, level: [2500, 2450, 2600][i] }));
-    const row = climateRowZeroDegree48h(zdCtx({ values: { zero_degree_curve: flat } }), 2450, 'm', 0, undefined, '');
+    const row = climateRowZeroDegree48h(zdCtx({ values: { zero_degree_curve: flat }, readings: {} }), 2450, 'm', 0, undefined, '');
     expect(attr(row, 'span[title]', 'title')).toBe('Stays between 2,450 and 2,600 m');
     expect(climateRowZeroDegree48h(zdCtx(), '', 'm', 0)).toBeNull();
   });
@@ -318,6 +319,63 @@ describe('zero-degree rows', () => {
     const row = climateRowZeroDegree48h(ctx, 1585, 'm', -865, '2026-10-22T05:00:00Z', 2450);
     expect(attr(row, 'span[title]', 'title')).toBe('Lowest 1,585 m Thu 07:00 · now 2,450 m');
     expect(attr(climateRowZeroDegree48h(ctx, 1585, 'm', -865, 'garbage'), 'span[title]', 'title')).toBeUndefined();
+  });
+
+  // Feet sensors (#507): the classification runs on metres, the texts stay in feet.
+  const trendIcon = (row) => attr(row, 'ha-icon[icon^="mdi:trending"]', 'icon');
+
+  it('current level in feet: snow line in metres, site state from metres', () => {
+    const ctx = zdCtx({ config: { elevation: 2000 }, readings: { zero_degree_level: [8200, 'ft'] } });
+    const row = climateRowZeroDegree(ctx, true, 8200, 'ft');
+    expect(text(row)).toBe('8,200 ft');
+    expect(attr(row, 'ha-icon', 'icon')).toBe('mdi:snowflake-alert');
+    expect(attr(row, 'span', 'title')).toBe('Snow line about 2,199 m (estimated), 2,000 m · just above you');
+  });
+
+  it('current level with an unknown unit: plain row', () => {
+    const ctx = zdCtx({ config: { elevation: 2000 }, readings: { zero_degree_level: [8200, 'foo'] } });
+    const row = climateRowZeroDegree(ctx, true, 8200, 'foo');
+    expect(attr(row, 'ha-icon', 'icon')).toBe('mdi:snowflake-thermometer');
+    expect(host(row).querySelector('[title]')).toBeNull();
+  });
+
+  it('fallback arrow: the 100 m steady band in metres, no arrow for an unknown unit', () => {
+    const ctx = zdCtx({ values: { zero_degree_48h_unit: 'ft' } });
+    expect(trendIcon(climateRowZeroDegree48h(ctx, 6000, 'ft', 300))).toBe('mdi:trending-neutral');
+    expect(trendIcon(climateRowZeroDegree48h(ctx, 6000, 'ft', 400))).toBe('mdi:trending-up');
+    expect(trendIcon(climateRowZeroDegree48h(ctx, 6000, 'ft', -400))).toBe('mdi:trending-down');
+    const metres = zdCtx();
+    expect(trendIcon(climateRowZeroDegree48h(metres, 1800, 'm', 40))).toBe('mdi:trending-neutral');
+    expect(trendIcon(climateRowZeroDegree48h(metres, 1800, 'm', 650))).toBe('mdi:trending-up');
+    expect(trendIcon(climateRowZeroDegree48h(zdCtx(), 1800, 'foo', 650))).toBeUndefined();
+  });
+
+  it('trend row with a curve in feet: 600 ft is under the 200 m threshold', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(T0);
+    const ftCurve = [{ t: T0, level: 7000 }, { t: T0 + 10 * 3_600_000, level: 6400 }];
+    const ctx = zdCtx({ values: { zero_degree_curve: ftCurve, zero_degree_48h_unit: 'ft' }, readings: {} });
+    const row = climateRowZeroDegree48h(ctx, 6400, 'ft', -600);
+    expect(attr(row, 'span[title]', 'title')).toBe('Stays between 6,400 and 7,000 ft');
+  });
+
+  it('trend row in feet: targets print the sensor figures, not a metre round trip', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(T0);
+    const ftCurve = [{ t: T0, level: 8200 }, { t: T0 + 10 * 3_600_000, level: 5000 }];
+    const ctx = zdCtx({
+      values: { zero_degree_curve: ftCurve, zero_degree_48h_unit: 'ft' },
+      readings: { zero_degree_level: [8200, 'ft'] },
+    });
+    const title = attr(climateRowZeroDegree48h(ctx, 5000, 'ft', -3200, undefined, 8200), 'span[title]', 'title');
+    expect(title).toMatch(/^Falls fast to 5,000 ft/);
+    expect(title).toContain('now 8,200 ft');
+  });
+
+  it('trend row with a curve in an unknown unit: the fallback row', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(T0);
+    const ctx = zdCtx({ values: { zero_degree_curve: curve, zero_degree_48h_unit: 'foo' }, readings: {} });
+    const row = climateRowZeroDegree48h(ctx, 1600, 'foo', -900);
+    expect(text(row)).toContain('48 h');
+    expect(trendIcon(row)).toBeUndefined();
   });
 });
 

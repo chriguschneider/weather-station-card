@@ -12,7 +12,8 @@ import type { Calendar } from './utils/time-zone.js';
 import { resolveCssVarIn } from './utils/resolve-css-var.js';
 import { PopupShell, el } from './popup-shell.js';
 
-import { isSignificantChange, metresPerUnit, siteLineLevel, type ZeroDegreePoint } from './zero-degree-trend.js';
+import { fromCanonical, toCanonical } from './utils/units.js';
+import { isSignificantChange, siteLineLevel, type ZeroDegreePoint } from './zero-degree-trend.js';
 
 export type { ZeroDegreePoint };
 
@@ -58,16 +59,17 @@ export function findCurveMaximum(curve: readonly ZeroDegreePoint[]): ZeroDegreeP
 
 /** The curve's extremes worth a marker: the lowest always, the highest
  *  only when it lies at least the trend's significance threshold above
- *  the current level (the curve's first point). */
+ *  the current level (the curve's first point), compared in metres. An
+ *  unknown unit gets no highest marker. */
 export function markedExtremes(
   curve: readonly ZeroDegreePoint[],
   unit: string | undefined,
 ): { min: ZeroDegreePoint | null; max: ZeroDegreePoint | null } {
   const min = findCurveMinimum(curve);
   const max = findCurveMaximum(curve);
-  const now = curve[0]?.level;
-  const showMax = !!max && now !== undefined && max.level > now
-    && isSignificantChange(max.level, now, metresPerUnit(unit));
+  const now = toCanonical('length', curve[0]?.level, unit);
+  const top = toCanonical('length', max?.level, unit);
+  const showMax = now !== null && top !== null && top > now && isSignificantChange(top, now);
   return { min, max: showMax ? max : null };
 }
 
@@ -405,6 +407,20 @@ export interface ZeroDegreePopupOpts extends ZeroDegreeFormatOpts {
   createChart?: ZeroDegreeChartFactory;
 }
 
+/** The site line in the curve's unit; absent without a site or for a
+ *  unit the card cannot convert metres into. */
+function siteLineFor(opts: ZeroDegreePopupOpts, theme: CSSStyleDeclaration): ZeroDegreeSiteLine | undefined {
+  const { site } = opts;
+  if (!site || !Number.isFinite(site.elevation)) return undefined;
+  const level = fromCanonical('length', siteLineLevel(site.elevation), opts.unit);
+  if (level === null) return undefined;
+  return {
+    level,
+    label: site.label,
+    color: resolvePopupColor(site.precipitationColor, theme, 'rgba(132, 209, 253, 1.0)'),
+  };
+}
+
 function cssVar(style: CSSStyleDeclaration, name: string): string {
   return style.getPropertyValue(name).trim();
 }
@@ -462,13 +478,7 @@ export class ZeroDegreePopup {
       hour12: opts.hour12,
       calendar: opts.calendar,
       formatValue: opts.formatValue,
-      siteLine: opts.site && Number.isFinite(opts.site.elevation)
-        ? {
-            level: siteLineLevel(opts.site.elevation, metresPerUnit(opts.unit)),
-            label: opts.site.label,
-            color: resolvePopupColor(opts.site.precipitationColor, theme, 'rgba(132, 209, 253, 1.0)'),
-          }
-        : undefined,
+      siteLine: siteLineFor(opts, theme),
       width: chartTarget.clientWidth || panel.clientWidth || 488,
       height: CHART_HEIGHT,
       colors: {
