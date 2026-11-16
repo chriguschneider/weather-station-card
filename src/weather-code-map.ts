@@ -1,12 +1,8 @@
 // WMO weather-code → card ConditionId lookup.
 //
-// Open-Meteo reports each day's weather as a WMO 4677 code
-// (https://open-meteo.com/en/docs — "Weather variable documentation").
-// The card draws condition icons from Home Assistant's own condition
-// vocabulary (`ConditionId` in const.ts), so the Open-Meteo past block
-// needs a translation table — the same shape unit conversions get
-// (ADR-0009): pure data, auditable at a glance, a one-line edit to
-// extend.
+// Open-Meteo reports weather as a WMO 4677 code
+// (https://open-meteo.com/en/docs — "Weather variable documentation");
+// this table maps it onto HA's condition vocabulary (ADR-0009 lookup style).
 //
 // Deliberately avoids `lightning` / `lightning-rainy` / `hail`. The
 // card's own day-classifier never emits those conditions, so mapping
@@ -53,8 +49,7 @@ export const WMO_CONDITION: Readonly<Record<number, ConditionId>> = {
   99: 'pouring', // thunderstorm with heavy hail
 };
 
-/** Map a WMO weather code to a card ConditionId. Non-numeric, NaN, or
- *  unknown input returns `cloudy` — a neutral fallback. */
+/** Map a WMO weather code to a ConditionId; unknown input returns `cloudy`. */
 export function wmoToCondition(code: number | null | undefined): ConditionId {
   if (typeof code !== 'number' || !Number.isFinite(code)) return 'cloudy';
   return WMO_CONDITION[code] ?? 'cloudy';

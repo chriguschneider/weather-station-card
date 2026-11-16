@@ -6,8 +6,7 @@
 // "rising_fast" / "falling_fast". Boundary belongs to the
 // lower-magnitude class (|Δ| < 1 is strict).
 //
-// Thresholds are hard-coded constants — the design rejects configurable
-// thresholds for v1 (see .workflow/live-pressure-trend/alignment.md).
+// The thresholds are fixed constants, not config options.
 
 export type PressureTrendClass =
   | 'rising_fast'
@@ -19,9 +18,7 @@ export type PressureTrendClass =
 const STABLE_BAND_HPA = 1;
 const FAST_BAND_HPA = 3;
 
-/** Classify a 3-hour pressure delta in hPa into one of five tendency
- *  classes. Returns null when the delta is null/non-finite so the
- *  caller can degrade to today's `mdi:gauge` rendering. */
+/** Classify a 3-hour pressure delta in hPa; null when it is null or non-finite. */
 export function getPressureTrend(deltaHpa: number | null): PressureTrendClass | null {
   if (deltaHpa == null || !Number.isFinite(deltaHpa)) return null;
   const abs = Math.abs(deltaHpa);
@@ -38,9 +35,7 @@ const PRESSURE_TREND_ICONS: Record<PressureTrendClass, string> = {
   falling_fast: 'arrow-down',
 };
 
-/** MDI icon name (without prefix) for a pressure trend class. Returns
- *  null when no trend is available so the caller can keep the legacy
- *  `gauge` icon. */
+/** MDI icon name (without prefix) for a trend class; null without a trend. */
 export function getPressureTrendIcon(trend: PressureTrendClass | null): string | null {
   return trend ? PRESSURE_TREND_ICONS[trend] : null;
 }

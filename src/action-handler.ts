@@ -1,26 +1,16 @@
-// Whole-card action handler: pointer-based tap / hold / double-tap
-// detection on the ha-card root, plus the HA-action dispatcher that
-// it fires. Shares `_dragMoved` with scroll-ux so a drag-to-scroll
-// suppresses the trailing tap.
-//
-// Why pointer events vs. plain click: we need hold detection (fires
-// before pointerup) and a way to suppress the trailing tap. A 250 ms
-// tap delay is required to disambiguate single from double — that's
-// the same window HA's own action-handler uses.
-//
-// Why we don't import HA's frontend handle-action: the import path
-// has changed names across HA versions; doing the dispatch ourselves
-// keeps the card portable.
+// Whole-card tap / hold / double-tap detection on the ha-card root, plus the
+// action dispatcher it fires. Shares `_dragMoved` with scroll-ux so a drag
+// suppresses the trailing tap. The 250 ms double-tap window matches HA's own
+// action-handler. We dispatch ourselves because HA's handle-action import
+// path differs between HA versions.
 
 import { safeQuery } from './utils/safe-query.js';
 
 const HOLD_MS = 500;
 const DBL_MS = 250;
 
-/** A single configured user action. Mirrors HA's `ui_action` selector
- *  output — every shape the editor can produce, plus a few legacy
- *  aliases (`service` for `perform_action`, `service_data` for `data`)
- *  that older YAML may carry. */
+/** A configured user action: HA's `ui_action` selector output plus the
+ *  aliases `service` (`perform_action`) and `service_data` (`data`). */
 export interface ActionConfig {
   action?: 'none' | 'more-info' | 'navigate' | 'url' | 'toggle'
     | 'perform-action' | 'call-service' | 'assist' | 'fire-dom-event'
@@ -37,9 +27,7 @@ export interface ActionConfig {
   [k: string]: unknown;
 }
 
-/** Subset of HA's `HomeAssistant` we touch: just `callService`. The
- *  full type lives in custom-card-helpers — keeping it loose here
- *  avoids a cross-cutting dependency at this layer. */
+/** The part of `HomeAssistant` this module touches. */
 interface HassLike {
   callService(domain: string, service: string, data?: Record<string, unknown>, target?: ActionConfig['target']): unknown;
 }
@@ -64,10 +52,8 @@ interface BoundHaCard extends HTMLElement {
   _wsActionHandlerBound?: boolean;
 }
 
-// Pointer events that originate on a card-internal control button
-// (mode-toggle, jump-to-now, scroll indicators) are part of that
-// control's own gesture — they must NOT trigger the card-level
-// tap/hold/double-tap action.
+// Presses on a card-internal control (mode toggle, jump-to-now, scroll
+// indicators) belong to that control and must not trigger the card action.
 function isCardControl(target: EventTarget | null): boolean {
   if (!target) return false;
   const el = target as Element;
@@ -79,9 +65,7 @@ export function setupActionHandler(card: ActionHandlerCard): void {
   const haCard = safeQuery<BoundHaCard>(card.shadowRoot, 'ha-card');
   if (!haCard) return;
 
-  // Cursor reflects "is anything wired" — refresh on every call so
-  // toggling tap_action in the editor flips the hand cursor on/off
-  // immediately, not only on first render.
+  // Runs on every call, before the bound guard, so an editor change flips the cursor.
   const cfg0 = card.config ?? ({});
   const isLive = (a: ActionConfig | undefined): boolean => !!(a?.action && a.action !== 'none');
   haCard.style.cursor = (isLive(cfg0.tap_action) || isLive(cfg0.hold_action) || isLive(cfg0.double_tap_action))
@@ -114,8 +98,7 @@ export function setupActionHandler(card: ActionHandlerCard): void {
     holdFired = false;
     clearHold();
     holdTimer = setTimeout(() => {
-      // If the user has been dragging the chart to scroll, the hold
-      // is part of that gesture — don't fire a hold_action for it.
+      // A hold during a drag-to-scroll belongs to the drag.
       if (card._dragMoved) return;
       holdFired = true;
       fire('hold');
@@ -126,15 +109,11 @@ export function setupActionHandler(card: ActionHandlerCard): void {
     if (isCardControl(ev.target)) return;
     clearHold();
     if (holdFired) return;
-    // Drag-to-scroll consumed this gesture; suppress the trailing tap.
-    // _dragMoved is reset on the next macrotask by the scroll-ux drag
-    // handler, so a fresh gesture immediately afterwards still detects
-    // normally.
+    // Drag-to-scroll consumed this gesture; scroll-ux resets _dragMoved on the next macrotask.
     if (card._dragMoved) return;
     const now = Date.now();
     if (now - lastTapAt < DBL_MS) {
-      // Second tap inside the double-tap window — cancel the queued
-      // single tap and fire double_tap instead.
+      // Second tap inside the window: replaces the queued single tap.
       lastTapAt = 0;
       if (pendingTap) { clearTimeout(pendingTap); pendingTap = null; }
       fire('double_tap');
@@ -168,18 +147,7 @@ export function setupActionHandler(card: ActionHandlerCard): void {
   };
 }
 
-/** Dispatches a configured action via the HA frontend's standard
- *  event / service contract. Mirrors the surface the editor exposes
- *  through ha-selector ui_action: more-info, navigate, url, toggle,
- *  perform-action (a.k.a. call-service), assist, fire-dom-event.
- *  'none' / unconfigured actions are no-ops.
- *
- *  Exported so unit tests can exercise each branch without rigging up
- *  pointer-event timing; the runtime path is via the fire() closure
- *  inside `setupActionHandler` above. */
-// Per-action handlers. Each takes the card + the action's config (plus the
-// resolved fallback entity for actions that may target a fallback) and
-// performs the side-effect. None return a value; runAction is fire-and-forget.
+// Per-action handlers; `fallback` is the entity used when the action names none.
 
 function _runMoreInfo(card: ActionHandlerCard, cfg: ActionConfig, fallback: string): void {
   const entityId = cfg.entity || fallback;
@@ -222,8 +190,7 @@ function _runToggle(card: ActionHandlerCard, cfg: ActionConfig, fallback: string
 }
 
 function _runService(card: ActionHandlerCard, cfg: ActionConfig): void {
-  // HA renamed `service` → `perform_action` in 2024.8; keep both for
-  // backwards compatibility with older YAML.
+  // HA renamed `service` to `perform_action` in 2024.8; accept both.
   const svc = cfg.perform_action || cfg.service;
   if (!svc || !card._hass) return;
   const dot = svc.indexOf('.');
@@ -242,9 +209,7 @@ function _runFireDomEvent(card: ActionHandlerCard, cfg: ActionConfig): void {
   card._fire('ll-custom', cfg);
 }
 
-// Dispatcher table — keeps runAction itself a thin dispatch instead of an
-// 8-arm if/else chain. `perform-action` and the legacy `call-service` alias
-// share the same handler.
+// `perform-action` and its legacy alias `call-service` share a handler.
 type ActionRunner = (card: ActionHandlerCard, cfg: ActionConfig, fallback: string) => void;
 const ACTION_RUNNERS: Record<string, ActionRunner> = {
   'more-info': _runMoreInfo,
@@ -257,6 +222,8 @@ const ACTION_RUNNERS: Record<string, ActionRunner> = {
   'fire-dom-event': (card, cfg) => _runFireDomEvent(card, cfg),
 };
 
+/** Dispatches a configured action through HA's event / service contract.
+ *  'none' and unconfigured actions are no-ops. */
 export function runAction(card: ActionHandlerCard, actionConfig: ActionConfig | undefined): void {
   if (!actionConfig?.action || actionConfig.action === 'none') return;
   const runner = ACTION_RUNNERS[actionConfig.action];

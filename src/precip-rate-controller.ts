@@ -1,5 +1,5 @@
 // Live mm/h rate derived from a cumulative rain counter (#472), as a Lit
-// ReactiveController next to the data sources (ADR-0033 amendment).
+// ReactiveController next to the data sources (ADR-0034).
 //
 // When `sensors.precipitation` reports a total instead of a rate (unit
 // not ending in /h, e.g. an Ecowitt counter in mm), the card keeps a

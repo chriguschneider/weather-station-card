@@ -1,23 +1,17 @@
-// Moon astronomy for the live panel's moon line — illuminated fraction,
-// waxing/waning, and rise/set times, computed client-side so the card
-// needs no Moon integration (or any entity) at all. Illumination is
-// geocentric (identical worldwide); rise/set take the site coordinates
-// from the card location (`location` option, else `hass.config`).
+// Client-side moon (illuminated fraction, waxing/waning, rise/set) and sun
+// times, so no Moon entity is needed. Illumination is geocentric; rise/set use
+// the card location.
 //
-// The formulas are the standard low-precision series from Meeus,
-// "Astronomical Algorithms", as popularized by the BSD-2-licensed
-// suncalc library (github.com/mourner/suncalc). This is a faithful
-// port of suncalc 1.9 — verified bit-identical against it over a
-// 120-day differential run. Versus modern high-precision ephemerides
-// (suncalc v2's ELP series) that puts illumination within ±2 % and
-// rise/set typically within ~5 min (worst ~15 near a midnight
-// crossing) — plenty for a display line, and worth staying
-// dependency-free for.
+// The moon series are Meeus, "Astronomical Algorithms", as in the BSD-2
+// suncalc library (github.com/mourner/suncalc), ported from suncalc 1.9.
+// Against high-precision ephemerides (suncalc v2's ELP series) illumination is
+// within ±2 % and rise/set within about 5 min (worst about 15 near a midnight
+// crossing). Sunrise/sunset use the NOAA series below (sunNoaa).
 
 import { DAY_MS, type Calendar } from './utils/time-zone.js';
 
 const RAD = Math.PI / 180;
-// Days since J2000.0 — the epoch all series below are anchored to.
+// Julian day of the Unix epoch, and of J2000.0 (the epoch the series are anchored to).
 const J1970 = 2440588;
 const J2000 = 2451545;
 // Earth's axial tilt (obliquity of the ecliptic).
@@ -281,11 +275,9 @@ export interface MoonEvent {
   time: Date;
 }
 
-/** The next moonrise or moonset after `now` — the moon line shows only
- *  this one event, mirroring the sun line's next-event-only policy.
- *  Scans up to three calendar days: gaps of >24 h between events are
- *  routine (the no-rise/no-set days), three days covers them at any
- *  inhabited latitude. */
+/** The next moonrise or moonset after `now`; the moon line shows only this
+ *  one event. Scans up to three calendar days, since gaps of more than 24 h
+ *  between events are routine (days with no rise or no set). */
 export function nextMoonEvent(
   now: Date,
   lat: number,

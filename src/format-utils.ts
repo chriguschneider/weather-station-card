@@ -1,23 +1,15 @@
-// Pure formatting / layout helpers used by the chart. Kept in their own
-// module so they can be unit-tested without pulling in Lit, Chart.js, or HA.
+// Pure formatting / layout helpers used by the chart, testable without Lit or HA.
 
 import { resolveCssVar } from './utils/resolve-css-var.js';
 
-/** Tick-index pair returned by `computeBlockSeparatorPositions`. The
- *  caller draws a vertical line at the midpoint between those two
- *  ticks (e.g. `(getPixelForTick(left) + getPixelForTick(right)) / 2`). */
+/** Tick-index pair; the caller draws a vertical line midway between the two ticks. */
 export type SeparatorPosition = readonly [leftIdx: number, rightIdx: number];
 
-/** Forecast block mode for separator positioning — daily uses the
- *  doubled-today framing, hourly uses a single "now" line. */
+/** Daily uses the doubled-today framing, hourly a single "now" line. */
 export type SeparatorMode = 'daily' | 'hourly';
 
-/** Reduce a CSS colour to ~`factor` of its original alpha. Used to render
- *  forecast precipitation bars at lower opacity than the measured station
- *  bars next to them. Handles rgb/rgba/hex/hsl/hsla — the shapes either
- *  the editor or a hand-written YAML config can produce. Other formats
- *  (named colours, oklch, colour-mix(), …) pass through unchanged so no
- *  exception escapes into the render path. */
+/** Scale a CSS colour's alpha by `factor`. Handles rgb/rgba/hex/hsl/hsla;
+ *  other formats (named, oklch, colour-mix(), …) pass through unchanged. */
 export function lightenColor(color: unknown, factor: number = 0.45): unknown {
   if (!color || typeof color !== 'string') return color;
   let m = /^rgba?\s*\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)\s*$/i.exec(color);
@@ -38,13 +30,10 @@ export function lightenColor(color: unknown, factor: number = 0.45): unknown {
   return color;
 }
 
-/** True when `color` is perceptually dark (luma < 0.5). Used to pick
- *  theme-aware colour DEFAULTS (e.g. the low-temp line, community
- *  post 15): HA exposes no explicit dark-mode flag to cards, but the
- *  resolved `--card-background-color` luma is a reliable proxy.
- *  Handles rgb/rgba and hex; anything unparseable (empty string,
- *  var() leftovers, named colours) returns false — the light-theme
- *  default is the safe fallback. */
+/** True when `color` is dark (luma < 0.5), to pick theme-aware colour defaults:
+ *  HA exposes no dark-mode flag to cards, so the resolved
+ *  `--card-background-color` stands in. Handles rgb/rgba and hex; anything
+ *  else returns false (the light default). */
 export function isDarkColor(color: unknown): boolean {
   if (!color || typeof color !== 'string') return false;
   const c = color.trim();
@@ -60,17 +49,14 @@ export function isDarkColor(color: unknown): boolean {
     g = parseInt(h.slice(2, 4), 16);
     b = parseInt(h.slice(4, 6), 16);
   }
-  // Rec. 601 luma — perceptual weighting is enough for a binary
-  // light/dark split; no need for linearised sRGB here.
+  // Rec. 601 luma; enough for a binary light/dark split.
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255 < 0.5;
 }
 
 const TEMP2_LEGACY_DEFAULT = 'rgba(68, 115, 158, 1.0)';
 
-/** Low-temperature line colour. Only the DEFAULT is theme-aware (light or
- *  dark variant by background luma); a user-set colour passes through
- *  `resolveCssVar`. Shared by the chart and the sources popup legend so
- *  both draw the same swatch. */
+/** Low-temperature line colour. Only the default is theme-aware; a user-set
+ *  colour passes through `resolveCssVar`. Shared by the chart and the sources popup. */
 export function resolveTemp2Color(configured: string | undefined | null, backgroundColor: unknown, host?: Element | null): string {
   const themed = isDarkColor(backgroundColor)
     ? 'rgba(130, 175, 220, 1.0)'
@@ -79,17 +65,9 @@ export function resolveTemp2Color(configured: string | undefined | null, backgro
   return resolveCssVar(configured, themed, host);
 }
 
-/** Decide where to scroll the hourly viewport on first render so the user
- *  lands at a useful position rather than "the start of all loaded data".
- *
- *    combination   → centre the station/forecast boundary in the viewport.
- *    station-only  → right edge (most recent hour visible).
- *    forecast-only → left edge (next hours visible).
- *    all-visible   → 0 (no scrolling possible anyway).
- *
- *  Returns a scrollLeft value clamped to [0, contentWidth - viewportWidth].
- *  Pure function — caller reads `scrollWidth` and `clientWidth` from the
- *  scroll container after layout and feeds them in. */
+/** First-render scrollLeft for the hourly viewport, clamped to
+ *  [0, contentWidth - viewportWidth]: station + forecast centres the boundary,
+ *  station-only shows the right edge, forecast-only the left edge. */
 export function computeInitialScrollLeft({
   stationCount,
   forecastCount,
@@ -120,10 +98,7 @@ export function computeInitialScrollLeft({
   return target;
 }
 
-/** Compute the tick-index pairs at which the chart's framing / "now"
- *  lines should be drawn. Returns an array of `[leftIdx, rightIdx]`
- *  pairs; the caller draws a vertical line at the midpoint between
- *  those two ticks.
+/** Tick-index pairs at which the framing / "now" lines are drawn.
  *
  *  Daily mode (today is a doubled column when both blocks are present):
  *  - Both blocks active: line before station-today + line after forecast-today.
@@ -147,8 +122,6 @@ export function computeBlockSeparatorPositions(
   const out: SeparatorPosition[] = [];
   if (stationCount > 0 && forecastCount > 0) {
     if (mode === 'hourly') {
-      // The "now" boundary sits between index (stationCount - 1) and
-      // index stationCount. One line, centred between those ticks.
       out.push([stationCount - 1, stationCount]);
     } else {
       if (stationCount >= 2) out.push([stationCount - 2, stationCount - 1]);

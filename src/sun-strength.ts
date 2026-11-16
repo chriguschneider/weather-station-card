@@ -1,16 +1,10 @@
-// Sun-strength classifier for the live-panel sun row.
+// Sun-strength classifier for the live-panel sun row: UV index + illuminance
+// become a cloud-aware sun icon (moon at night) plus the raw values. The cloud
+// shape is the lux/clear-sky ratio against the thresholds of
+// condition-classifier (sunny_cloud_ratio, partly_cloud_ratio).
 //
-// Merges UV-index + illuminance into a single visual: a cloud-aware
-// sun icon (or moon at night) plus the raw values. The day/night flip
-// is lux-driven so the row works without an HA `sun.sun` entity; cloud
-// shape is the lux/clearSky ratio bucketed against the same thresholds
-// the daily condition classifier already uses
-// (`condition-classifier.ts:106-107`).
-//
-// Pure module — no Home Assistant or DOM dependencies. UV-band cutoffs
-// follow the WHO 5-tier scheme (Low 0–2 · Moderate 3–5 · High 6–7 ·
-// Very high 8–10 · Extreme 11+). Boundary belongs to the higher band
-// (`uv >= 3` → moderate; `uv = 2.999` stays low).
+// UV bands follow the WHO 5-tier scheme (Low 0–2 · Moderate 3–5 · High 6–7 ·
+// Very high 8–10 · Extreme 11+); a boundary value belongs to the higher band.
 
 import { clearSkyLuxAt } from './condition-classifier.js';
 import { isSunUp } from './moon.js';
@@ -33,8 +27,8 @@ export interface SunStrengthInputs {
   uv: number | null;
   /** Illuminance reading in lux, or null when the sensor isn't wired. */
   lux: number | null;
-  /** Site latitude in degrees, used for clear-sky reference. Null →
-   *  factory falls back to the 110 000 lx constant. */
+  /** Site latitude in degrees, used for clear-sky reference. Null → the
+   *  clear-sky reference is the 110 000 lx constant. */
   lat: number | null;
   /** Site longitude in degrees. Null → fallback as above. */
   lon: number | null;
@@ -105,11 +99,8 @@ function pickIconAndCloud(
   return { iconShape: 'weather-cloudy', cloudPct };
 }
 
-/** Classify a UV + lux reading into a day/night mode, an MDI icon
- *  shape that mirrors cloud cover, a WHO UV band, and a sunscreen
- *  hint. Inputs may be individually null when a sensor isn't wired —
- *  the caller is expected to render only the segments it has data
- *  for. */
+/** Classify a UV + lux reading into day/night mode, a cloud-cover icon
+ *  shape, a WHO UV band and a sunscreen hint. Either input may be null. */
 export function classifySunStrength(input: SunStrengthInputs): SunStrengthResult {
   const { uv, lux, lat, lon, calendar } = input;
   const now = input.now instanceof Date ? input.now : new Date();
@@ -146,8 +137,7 @@ export function classifySunStrength(input: SunStrengthInputs): SunStrengthResult
 }
 
 // Truncation, not rounding, so each value stays in its display band:
-// 999.9 → "Lux 999" (raw band) and 9999 → "Lux 9.9k" (1-decimal band)
-// per .workflow/live-sun-strength/alignment.md.
+// 999.9 → "Lux 999" (raw band) and 9999 → "Lux 9.9k" (1-decimal band).
 export function formatLux(value: number | null): string {
   if (value == null || !Number.isFinite(value)) return 'Lux -';
   const v = Math.max(0, value);
