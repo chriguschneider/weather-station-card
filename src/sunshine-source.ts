@@ -1,13 +1,7 @@
-// Pure helpers for the sunshine-duration row.
-//
-// No DOM, no Home Assistant — just data shaping for the past tier and
-// the post-processing pass that overlays history / forecast attributes
-// onto the merged forecast array.
-//
-// The encoded decisions: Variant A (Methods F + C only) with two slots
-// and an F2 forecast tier. Method B2 (lux-derivation): when no recorder
-// sensor is configured, derive the past-tier value from the illuminance
-// sensor's high-resolution history via the lux/clearsky_lux ratio.
+// Pure helpers for the sunshine-duration row: the overlay that fills
+// `sunshine` on the merged forecast array (entity, Open-Meteo, cloud-cover
+// estimate) and the lux derivation (Method B2) for the station past.
+// Sources and precedence: ADR-0028.
 
 import { clearSkyLuxFactory } from './condition-classifier.js';
 import { resolveLocation } from './location.js';
@@ -19,13 +13,8 @@ import { declinationDeg } from './utils/solar.js';
  *  Date(...)`; numbers are treated as ms since epoch. */
 export type DateLike = Date | string | number;
 
-/** Per-day sunshine entry. The card supports a few historic shapes
- *  (object with `date` + `value`, object map by date, [date, value]
- *  tuple) — `findInDateArray` normalises across them. */
-/** Per-key value shape — the entries are loose-typed because the source
- *  may deliver numeric strings (HA recorder), proper numbers (Open-Meteo),
- *  or nulls (gap markers). `findInDateArray` normalises via
- *  `normalizeSunshineValue`. */
+/** Per-key value shape: numeric strings, numbers or null (gap marker).
+ *  `normalizeSunshineValue` normalises it. */
 export type SunshineValueLike = number | string | null;
 
 export interface DailySunshineEntry {
@@ -37,14 +26,13 @@ export interface DailySunshineEntry {
   sunshine_duration?: SunshineValueLike;
 }
 
-/** Per-hour sunshine entry — Open-Meteo's hourly response after we
- *  reshape it into {datetime, value} pairs. */
+/** Per-hour sunshine entry: Open-Meteo's hourly series as {datetime, value}. */
 export interface HourlySunshineEntry {
   datetime?: string;
   value?: number | string | null;
 }
 
-/** Loose envelope wrappers a user's REST template might emit. */
+/** Daily values: entries, a date-keyed map, or a `history` / `forecast` envelope. */
 export type DailySunshineInput =
   | ReadonlyArray<DailySunshineEntry | [string, number | string]>
   | { history?: DailySunshineInput; forecast?: DailySunshineInput }
@@ -52,10 +40,7 @@ export type DailySunshineInput =
 
 export type HourlySunshineInput = ReadonlyArray<HourlySunshineEntry>;
 
-/** Forecast entry shape this module operates on. Compatible with
- *  `ForecastEntry` from forecast-utils — kept loose here so the
- *  overlay can run before the rest of the pipeline has typed
- *  everything. */
+/** Forecast entry shape this module operates on. */
 export interface SunshineForecastEntry {
   datetime?: string;
   sunshine?: number | null;
@@ -70,23 +55,16 @@ export interface AttachSunshineOpts {
   latitude?: number | null;
   granularity?: 'daily' | 'hourly';
   /** When the recorder sensor and the Open-Meteo overlay both come up
-   *  empty, fall back to the Kasten-style estimator on
-   *  `entry.cloud_coverage` (#6 Option F3). The exponent tunes the
-   *  estimate; default 1.7 (mid-range of Kasten's 1.5–2.0). Off when
-   *  null — the chart shows nothing for the column rather than a
-   *  guess, matching the spec's "omit silently" behaviour for users
-   *  who haven't opted in. */
+   *  empty, estimate from `entry.cloud_coverage` with this Kasten
+   *  exponent (#6 Option F3). Null turns the estimate off; the column
+   *  stays empty. */
   cloudCoverageExponent?: number | null;
 }
 
-/** Astronomical day length in hours for a given latitude and date.
- *  Standard sunrise-equation: cos(H₀) = -tan(φ)·tan(δ), day length =
- *  2 H₀ / 15° per hour. No atmospheric-refraction correction (~6 min
- *  at horizon — negligible at the 0.1 h granularity needed for the
- *  "fraction of day" scaling).
- *
- *  Edge cases: polar night → 0, midnight sun → 24, non-finite latitude
- *  → 12 (equinox fallback). */
+/** Astronomical day length in hours (sunrise equation: cos(H₀) =
+ *  -tan(φ)·tan(δ), length = 2 H₀ / 15°). No refraction correction (~6
+ *  min, negligible for the day-fraction scaling). Polar night → 0,
+ *  midnight sun → 24, non-finite latitude → 12. */
 export function dayLengthHours(latDeg: number | null | undefined, date: DateLike, calendar: Calendar): number {
   if (!Number.isFinite(latDeg)) return 12;
   const d = date instanceof Date ? date : new Date(date);
@@ -100,17 +78,9 @@ export function dayLengthHours(latDeg: number | null | undefined, date: DateLike
   return (2 * H * 180 / Math.PI) / 15;
 }
 
-/** Auto-detect whether a sensor reports sunshine duration in hours or
- *  seconds, return hours either way.
- *
- *  Heuristic: a calendar day cannot exceed 24 h of sunshine, but any
- *  non-trivial daily total in seconds will exceed 30 (= 0.5 min). So
- *  values ≥ 30 are interpreted as seconds and divided by 3600. Values
- *  below 30 are kept as hours. Conservative on both sides — at 30 s/day
- *  a sensor in seconds-mode would still flip correctly, and a real
- *  "0.5 h" reading (rare; deep winter twilight) is preserved.
- *
- *  Returns null for non-finite / non-numeric inputs. */
+/** Sunshine in hours from a value in hours or seconds. A day cannot
+ *  exceed 24 h, so values ≥ 30 are read as seconds (÷ 3600), smaller
+ *  ones as hours. Null for non-numeric input, negatives clamp to 0. */
 export function normalizeSunshineValue(raw: unknown): number | null {
   if (raw == null) return null;
   const n = typeof raw === 'number' ? raw : parseFloat(raw as string);
@@ -119,31 +89,23 @@ export function normalizeSunshineValue(raw: unknown): number | null {
   return n >= 30 ? n / 3600 : n;
 }
 
-/** Civil-date string YYYY-MM-DD for matching daily attribute entries.
- *  Open-Meteo's `daily=…` response uses the civil dates of the
- *  requested coordinates (`timezone=auto`) — the HA location, so the
- *  match runs in the card's (server) zone, not UTC or the browser's. */
+/** Civil date YYYY-MM-DD in the card's (server) zone. Open-Meteo's daily
+ *  series uses the civil dates of the HA location (`timezone=auto`). */
 export function localDateString(date: DateLike, calendar: Calendar): string | null {
   const d = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(d.getTime())) return null;
   return calendar.dayKey(d);
 }
 
-/** Local-hour string YYYY-MM-DDTHH:00 for matching hourly attribute
- *  entries against Open-Meteo's hourly=sunshine_duration response.
- *  Minutes forced to :00 since the chart's hourly entries align to the
- *  hour and Open-Meteo emits one value per full hour. */
+/** Local-hour key YYYY-MM-DDTHH:00; Open-Meteo emits one value per full hour. */
 export function localHourString(date: DateLike, calendar: Calendar): string | null {
   const d = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(d.getTime())) return null;
   return calendar.hourKey(d);
 }
 
-/** Find an entry by hourly key in an array of {datetime, value} items.
- *  Open-Meteo's datetime strings are "YYYY-MM-DDTHH:MM" — slice to the
- *  first 13 chars ("YYYY-MM-DDTHH") so a :30 minute mismatch (rare;
- *  would only happen if Chart.js entries drift off the hour) still
- *  aligns. */
+/** Value of the {datetime, value} item in the same hour as `hourKey`.
+ *  Compares the first 13 chars ("YYYY-MM-DDTHH"), so minutes are ignored. */
 export function findInHourArray(
   arr: HourlySunshineInput | null | undefined,
   hourKey: string | null | undefined,
@@ -158,27 +120,16 @@ export function findInHourArray(
   return null;
 }
 
-/** Look up a sunshine value in a date-keyed array attribute. Accepts
- *  several shapes since "the right format" depends on the user's REST
- *  template:
- *
- *    1. [{date: "YYYY-MM-DD", value: <number>}, …]      (preferred)
- *    2. [{datetime: "YYYY-MM-DD…", value: <number>}, …]
- *    3. {<YYYY-MM-DD>: <number>, …}                     (object map)
- *    4. ["YYYY-MM-DD", <number>] tuples                 (rare in HA examples)
- *
- *  `arr` may also carry an envelope — { history: [...] } or
- *  { forecast: [...] } — which we peel off here too for ergonomics.
- *
- *  Returns the matched value normalized via `normalizeSunshineValue`,
- *  or null if no match. */
+/** Look up a day's sunshine in a date-keyed input: `{date|datetime, value}`
+ *  entries, `[date, value]` tuples, a `{date: value}` map, or a
+ *  `{history|forecast: [...]}` envelope. Normalised via
+ *  `normalizeSunshineValue`; null if there is no match. */
 export function findInDateArray(
   arr: DailySunshineInput | null | undefined,
   dateString: string | null | undefined,
 ): number | null {
   if (!arr || !dateString) return null;
 
-  // Envelope unwrap.
   if (!Array.isArray(arr) && typeof arr === 'object') {
     const obj = arr as { history?: DailySunshineInput; forecast?: DailySunshineInput }
       & Record<string, number | string | null>;
@@ -199,16 +150,11 @@ export function findInDateArray(
   return null;
 }
 
-/** Per-item matcher used by findInDateArray's array loop.
- *  Returns:
- *    - undefined when the item doesn't address the requested date
- *      (caller should `continue`),
- *    - a normalized number when the item matches and carries a value,
- *    - null when the item matches but the value is missing/invalid. */
+/** undefined: the item is for another date; number: match with a value;
+ *  null: match with a missing or invalid value. */
 function matchDailyEntry(item: unknown, dateString: string): number | null | undefined {
   if (!item) return undefined;
 
-  // Tuple [date, value].
   if (Array.isArray(item)) {
     if (item.length < 2) return undefined;
     const k = String(item[0] || '').slice(0, 10);
@@ -225,20 +171,10 @@ function matchDailyEntry(item: unknown, dateString: string): number | null | und
   return normalizeSunshineValue(v);
 }
 
-/** Compose the sunshine field on each forecast entry. Non-destructive
- *  — returns a NEW array; the input forecasts are read-only.
- *
- *  Two modes, picked via opts.granularity:
- *    - 'daily' (default): match each entry against `dailyValues` by
- *      local YYYY-MM-DD. `day_length` comes from the astronomical
- *      sunrise equation; bar fractions later are sunshine_h / day_length.
- *    - 'hourly': match against `hourlyValues` by local
- *      YYYY-MM-DDTHH:00. `day_length` is fixed at 1 h (one bar = one
- *      hour) so a fully sunny hour fills the bar.
- *
- *  Always caps at the appropriate maximum (no negative noise, no
- *  70-minute hours) and normalizes seconds → hours via
- *  `normalizeSunshineValue` at lookup time. */
+/** Set `sunshine` and `day_length` on each entry; returns a new array.
+ *  'daily' matches `dailyValues` by local date, day_length from the
+ *  sunrise equation; 'hourly' matches `hourlyValues` by local hour,
+ *  day_length 1. Values are clamped to 0..day_length. */
 export function attachSunshine<T extends SunshineForecastEntry>(
   forecasts: ReadonlyArray<T>,
   calendar: Calendar,
@@ -278,14 +214,9 @@ export function attachSunshine<T extends SunshineForecastEntry>(
       if (cap > 0 && value > cap) value = cap;
       if (value < 0) value = 0;
     }
-    // Preserve a pre-existing value from the upstream entry (e.g.
-    // recorder daily-max set by `_buildForecast`). attachSunshine only
-    // OVERLAYS the Open-Meteo value where upstream had nothing — past
-    // days, today, and the synthetic future-day bucket all keep their
-    // recorder value when one is configured. (#37 reverted the
-    // earlier today-bucket substitution: today now reads the recorder
-    // running daily-max like every other day, even though the value
-    // is partial early in the day.)
+    // An existing value (recorder daily max, entity sunshine) wins; the
+    // overlay only fills entries that have none. Today keeps the
+    // recorder's running max although it is partial early in the day (#37).
     const existing = (entry as { sunshine?: number | null }).sunshine;
     if (existing != null && Number.isFinite(existing)) {
       out.sunshine = existing;
@@ -297,11 +228,8 @@ export function attachSunshine<T extends SunshineForecastEntry>(
       && out.day_length != null
       && (out.day_length) > 0
     ) {
-      // #6 Option F3: when neither the recorder sensor nor the
-      // Open-Meteo overlay resolves a value, fall back to deriving
-      // sunshine from the forecast's cloud_coverage via Kasten. Only
-      // for daily granularity — hourly cloud_coverage is too coarse
-      // to estimate per-hour sunshine accurately.
+      // Daily only: hourly cloud_coverage is too coarse for a per-hour
+      // estimate (#6 Option F3).
       const cc = (entry as { cloud_coverage?: number | null }).cloud_coverage;
       out.sunshine = sunshineFromCloudCoverage(cc, out.day_length, cloudCoverageExponent);
     } else {
@@ -311,9 +239,7 @@ export function attachSunshine<T extends SunshineForecastEntry>(
   });
 }
 
-/** Kasten-style estimate: sunshine_h ≈ day_length × (1 − cc^p). Lives
- *  here rather than in forecast-utils so this module keeps no
- *  dependency on it. */
+/** Kasten-style estimate: sunshine_h ≈ day_length × (1 − cc^p). */
 export function sunshineFromCloudCoverage(
   cloudPercent: number | null | undefined,
   dayLengthH: number | null | undefined,
@@ -327,15 +253,9 @@ export function sunshineFromCloudCoverage(
   return dayLengthH * Math.max(0, fraction);
 }
 
-/** Convert (sunshine_h, dayLength_h) pairs into the 0..1 fractions
- *  that the SunshineAxis bar dataset uses. Out-of-range pairs (null
- *  sunshine, missing/zero day length) come out as null so Chart.js
- *  draws a gap instead of a 0-height bar that would visually be a thin
- *  baseline stripe.
- *
- *  Used both at chart construction (drawChart) and on every data
- *  refresh (updateChart) — extracted so the same logic doesn't drift
- *  between the two call sites. */
+/** (sunshine_h, dayLength_h) pairs as 0..1 bar fractions. Null sunshine
+ *  or a missing/zero day length gives null, so uPlot draws a gap and not
+ *  a thin baseline stripe. */
 export function sunshineFractions(
   sunshineHours: ReadonlyArray<number | null | undefined>,
   dayLengthHoursArr: ReadonlyArray<number | null | undefined> | null | undefined,
@@ -352,8 +272,7 @@ export function sunshineFractions(
   });
 }
 
-/** Source instance interface — typically an `OpenMeteoSource`,
- *  but any object with these two methods works. */
+/** What the overlay reads from an `OpenMeteoSource`. */
 export interface SunshineSource {
   getDailyValues(): DailySunshineInput | null;
   getHourlyValues(): HourlySunshineInput | null;
@@ -405,22 +324,8 @@ export function forecastCoversSunshine(
   return forecasts.every((e) => entitySunshineHours(e) != null);
 }
 
-/** Compose the overlay opts from a Home Assistant `hass` object and an
- *  OpenMeteo source instance, then run `attachSunshine`. Pure —
- *  testable without instantiating LitElement / a real card.
- *
- *  Inputs:
- *    - forecasts: pre-merged station+forecast array (each entry
- *      already has `datetime`).
- *    - hass: { config: { latitude } }.
- *    - location: the card's `location` option; its latitude wins over
- *      hass when valid.
- *    - source: an object exposing `getDailyValues()` /
- *      `getHourlyValues()`. Typically an `OpenMeteoSource`.
- *    - granularity: 'daily' (default) or 'hourly'. Picks which array
- *      `attachSunshine` matches against.
- *
- *  Output: new forecasts array with `sunshine` + `day_length` attached. */
+/** Run `attachSunshine` with the Open-Meteo source's values. The latitude
+ *  comes from the card's `location` option, else from `hass.config`. */
 export function overlayFromOpenMeteo<T extends SunshineForecastEntry>(
   forecasts: ReadonlyArray<T>,
   hass: HassLatLon | null | undefined,
@@ -459,39 +364,15 @@ export interface LuxSample {
 export interface DailyLuxSunshine {
   /** Local date key (`YYYY-MM-DD`) for the day this aggregate covers. */
   date: string;
-  /** Sunshine duration in hours (capped at the day's astronomical day-length). */
+  /** Sunshine duration in hours (not capped; callers cap at day length). */
   hours: number;
 }
 
-/** Method B2 from #6 / #66: derive sunshine duration in hours from a
- *  series of illuminance-sensor samples. For each sample interval,
- *  compute the ratio `measured_lux / clearsky_lux` at the interval
- *  start (zero-order hold — the recorder represents state as
- *  constant from t_n until t_{n+1}); count the interval as sunshine
- *  when the ratio meets or exceeds `threshold`.
- *
- *  Result is bucketed by the LOCAL date of each interval start. The
- *  per-day total is capped at the astronomical day-length (callers
- *  typically apply that cap when wiring into `attachSunshine`).
- *
- *  Pure: no HA dependency, no DOM, deterministic given the same
- *  inputs. The clearsky reference uses the existing
- *  `condition-classifier` factory so the lat/lon trig is shared
- *  with the live-condition path.
- *
- *  @param samples Sorted ascending by `ts`. Out-of-order or
- *                 malformed entries are filtered out.
- *  @param latitude Decimal degrees (positive north).
- *  @param longitude Decimal degrees (positive east).
- *  @param calendar Zone the per-day buckets are cut in.
- *  @param threshold lux/clearsky ratio threshold (#6 spec default 0.6).
- *  @param maxIntervalMs Skip pathological gaps longer than this — a
- *                      multi-hour gap shouldn't all count as one
- *                      "sunny interval" just because the bookend
- *                      samples were both above threshold. Default
- *                      10 minutes (the recorder typically stores
- *                      illuminance every 30 s during daytime).
- */
+/** Sunshine hours per local day from illuminance samples (Method B2,
+ *  #6/#66). An interval counts when lux / clearsky_lux at its start
+ *  (zero-order hold) is >= `threshold`. Intervals longer than
+ *  `maxIntervalMs` are skipped, so a data gap is not one sunny interval.
+ *  Samples are sorted here; malformed ones are dropped. */
 export function sunshineFromLuxHistory(
   samples: ReadonlyArray<LuxSample>,
   latitude: number,
@@ -504,7 +385,6 @@ export function sunshineFromLuxHistory(
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return [];
   if (!Number.isFinite(threshold) || threshold <= 0) return [];
 
-  // Filter out malformed samples + ensure chronological order.
   const valid = samples
     .filter((s) => s != null && Number.isFinite(s.ts) && Number.isFinite(s.lux) && s.lux >= 0)
     .slice()
@@ -512,7 +392,6 @@ export function sunshineFromLuxHistory(
   if (valid.length < 2) return [];
 
   const clearsky = clearSkyLuxFactory(latitude, longitude, calendar);
-  // ms-of-sunshine accumulator, keyed by local-date YYYY-MM-DD.
   const totals = new Map<string, number>();
 
   for (let i = 0; i < valid.length - 1; i++) {
@@ -526,10 +405,8 @@ export function sunshineFromLuxHistory(
     const ratio = s.lux / cs;
     if (ratio < threshold) continue;
 
-    // Bucket the interval into its starting day. (Spanning midnight
-    // is rare in practice — when the sun is up across midnight the
-    // station is in polar summer, far from this card's typical
-    // user; ignore the edge case and let the start day take credit.)
+    // An interval spanning midnight (polar summer only) is credited
+    // entirely to its start day.
     const dateKey = calendar.dayKey(s.ts);
     totals.set(dateKey, (totals.get(dateKey) ?? 0) + gap);
   }

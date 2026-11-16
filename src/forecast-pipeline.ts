@@ -44,7 +44,8 @@ export type OpenMeteoReader = Partial<SunshineSource> & Partial<ProbabilitySourc
 };
 
 // Kasten exponent for the cloud-cover sunshine estimate (F3) when
-// `condition_mapping.sunshine_cloud_exponent` is unset (ADR-0002).
+// `condition_mapping.sunshine_cloud_exponent` is unset or invalid
+// (mid-range of Kasten's 1.5–2.0).
 const DEFAULT_CLOUD_EXPONENT = 1.7;
 
 export interface SourcePlan {
@@ -58,7 +59,7 @@ export interface SourcePlan {
   // Where each part of the sunshine bar comes from (ADR-0028).
   sunshine: SunshineParts;
   // Exponent of the cloud-cover estimate that fills sunshine gaps; null
-  // when the estimate is off (hourly / today, or disabled in YAML).
+  // in hourly / today, where there is no estimate.
   cloudExponent: number | null;
   // Chance-of-rain row on (ADR-0027).
   precipProbability: boolean;
