@@ -1,9 +1,6 @@
-// Barrel re-export for the chart plugin factories. The factories
-// themselves live one file per plugin under chart/plugins/ — see
-// the header comment in each file for the rendering contract. Each
-// plugin runs against the Chart.js-shaped `ChartLike` contract in
-// `_shared.ts`; since the uPlot swap (ADR-0012) that contract is a
-// thin shim built in `chart/draw.ts`, not a real Chart.js instance.
+// Barrel for the plugin factories under chart/plugins/. They draw
+// against the `ChartLike` shim that `chart/draw.ts` builds around uPlot
+// (ADR-0012).
 
 export type {
   ChartScaleLike,

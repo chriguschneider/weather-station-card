@@ -1,19 +1,12 @@
-// Scroll UX wiring for the forecast block: drag-to-scroll on desktop,
-// left/right indicator chevrons, the jump-to-now floating button, the
-// scroll timeline (day segments + visible-section thumb) below the
-// chart, day paging for 'today', and the indicator visibility
-// tracking via the wrapper's scroll event.
+// Scroll UX for the forecast block: drag-to-scroll, indicator chevrons,
+// jump-to-now, the scroll timeline and day paging for 'today' (ADR-0021).
 //
-// Touch falls through to native `overflow-x: auto` scroll; we only
-// listen for movement-detection so a swipe doesn't also fire the
-// card-level tap_action. `_dragMoved` is shared with action-handler
-// so a drag-to-scroll suppresses the trailing tap.
+// Touch uses native `overflow-x: auto` scrolling; we only detect
+// movement so a swipe doesn't fire the card-level tap_action
+// (`_dragMoved`, shared with action-handler).
 //
-// Idempotent on stable wrapper elements via a `_wsScrollUxBound`
-// flag — Lit reuses the wrapper across data refreshes, so re-binding
-// on every render() would leak listeners. Calling setupScrollUx
-// when no wrapper exists (non-scrolling render) tears down any
-// prior binding.
+// Idempotent per wrapper via `_wsScrollUxBound`: Lit reuses the wrapper
+// across renders, so rebinding every time would leak listeners.
 
 import { safeQuery } from './utils/safe-query.js';
 import { computeInitialScrollLeft } from './format-utils.js';
@@ -25,10 +18,8 @@ const DRAG_THRESHOLD = 5;
 const STEP_BY = 0.85; // scroll about one viewport, leave a hint of overlap
 const DAY_SNAP_DELAY_MS = 160; // settle time before snapping to a day page
 
-/** 'today' is the day pager (2026-08): the viewport frames exactly one
- *  calendar day, chevrons page ±1 day and free scrolling snaps to day
- *  boundaries (page width ≡ wrapper.clientWidth, guaranteed by the
- *  gap-filled 8-blocks-per-day aggregation + effectiveVisibleBars). */
+/** 'today' is the day pager (ADR-0021): one calendar day per viewport,
+ *  so a page is exactly `wrapper.clientWidth` wide. */
 function isDayPager(card: ScrollUxCard): boolean {
   return (card.config?.forecast as { type?: string } | undefined)?.type === 'today';
 }
@@ -48,13 +39,10 @@ export interface ScrollUxCard {
 
 interface BoundWrapper extends HTMLElement {
   _wsScrollUxBound?: boolean;
-  /** The `.scroll-timeline` element the current binding attached its
-   *  pointer handlers to (null = none existed at bind time). Lit can
-   *  reuse the wrapper across a mode toggle while the timeline
-   *  appears, disappears, or is replaced in a LATER render — when the
-   *  live DOM no longer matches this reference, the binding must be
-   *  torn down and rebuilt or the new timeline would sit listener-less
-   *  (clicks would even fall through to the card's tap_action). */
+  /** The `.scroll-timeline` this binding attached to (null = none).
+   *  When a later render changes the live timeline on a reused
+   *  wrapper, the binding must be rebuilt or the new one would have no
+   *  listeners and its clicks would reach the card's tap_action. */
   _wsBoundTimeline?: HTMLElement | null;
 }
 
@@ -91,35 +79,24 @@ export function setupScrollUx(card: ScrollUxCard): void {
   const rightBtn = block ? block.querySelector<HTMLElement>('.scroll-indicator-right') : null;
   const jumpBtn = block ? block.querySelector<HTMLElement>('.jump-to-now') : null;
 
-  // ── Drag-to-scroll + tap suppression ──────────────────────────────
-  // We listen to ALL pointer types so a swipe / drag — whether mouse
-  // or touch — sets `card._dragMoved`, which the action handler on
-  // ha-card checks before firing tap_action / hold_action. Without
-  // that gate, a horizontal touch-swipe to scroll the chart on mobile
-  // would also fire the configured tap action on pointerup.
-  //
-  // The actual scrollLeft manipulation (and pointer capture) is still
-  // mouse-only — touch falls through to the native `overflow-x: auto`
-  // scroll, and calling preventDefault or capturing the pointer
-  // would interfere with that native gesture.
+  // All pointer types set `card._dragMoved`, which the ha-card action
+  // handler checks before firing tap_action / hold_action. Only the
+  // mouse path drives scrollLeft and captures the pointer; doing so for
+  // touch would interfere with native scrolling.
   let isDown = false;
   let dragMoved = false;
   let startX = 0;
   let startScrollLeft = 0;
   let activePointerId: number | null = null;
 
-  // ── Day-page snapping (today mode) ────────────────────────────────
-  // Free scrolling (touch momentum, wheel, released drags) settles on
-  // the nearest whole-day page. Programmatic navigations (chevrons,
-  // jump-to-now, timeline, the snap itself) declare their destination
-  // via `pendingTarget` and the snap stands down until it's reached —
-  // without this, browser smooth-scroll events thin out near the end
-  // of an animation, the debounce fires MID-FLIGHT, rounds back to the
-  // origin page and cancels the navigation (worst case: two smooth
-  // scrolls cancelling each other in a loop). A 1.2 s failsafe clears
-  // a stale target if the animation was interrupted (user wheel) —
-  // and re-arms the day snap, because an interrupted animation can
-  // rest mid-page with no further scroll events to trigger one.
+  // Day-page snapping (today mode): free scrolling settles on the
+  // nearest whole-day page. Programmatic navigations declare their
+  // destination in `pendingTarget` and the snap stands down until it is
+  // reached; smooth-scroll events thin out near the end of an
+  // animation, so the debounce would otherwise fire mid-flight and
+  // round back to the origin page. A 1.2 s failsafe clears a stale
+  // target and re-arms the snap, since an interrupted animation can
+  // rest mid-page with no further scroll events.
   let snapTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingTarget: number | null = null;
   let pendingClear: ReturnType<typeof setTimeout> | null = null;
@@ -142,9 +119,8 @@ export function setupScrollUx(card: ScrollUxCard): void {
       const w = wrapper.clientWidth;
       if (w <= 0 || isDown || pendingTarget !== null) return;
       // The far end is a valid resting page even when it is not a
-      // multiple of the page width — station-only trims the series to
-      // end at the "now" block, so its anchor page IS the end. Without
-      // this guard the snap would bounce the user off it.
+      // multiple of the page width (station-only ends at the "now"
+      // block).
       const maxLeft = Math.max(0, wrapper.scrollWidth - w);
       if (maxLeft - wrapper.scrollLeft <= 2) return;
       const nearest = clampLeft(Math.round(wrapper.scrollLeft / w) * w);
@@ -157,8 +133,7 @@ export function setupScrollUx(card: ScrollUxCard): void {
   const onPointerDown = (ev: PointerEvent): void => {
     isDown = true;
     dragMoved = false;
-    // A fresh user gesture supersedes any in-flight programmatic
-    // navigation — release the snap suppression.
+    // A user gesture supersedes any in-flight programmatic navigation.
     pendingTarget = null;
     activePointerId = ev.pointerId;
     startX = ev.clientX;
@@ -167,8 +142,7 @@ export function setupScrollUx(card: ScrollUxCard): void {
       try {
         wrapper.setPointerCapture(ev.pointerId);
       } catch (err) {
-        // setPointerCapture is gated by browser support for pointer
-        // events; older WebViews throw — drag still works without it.
+        // Older WebViews throw; drag still works without capture.
         void err;
       }
     }
@@ -179,15 +153,11 @@ export function setupScrollUx(card: ScrollUxCard): void {
     const dx = ev.clientX - startX;
     if (!dragMoved && Math.abs(dx) > DRAG_THRESHOLD) {
       dragMoved = true;
-      // Shared with the action handler so that a drag/swipe gesture
-      // doesn't also fire a tap_action on pointerup.
       card._dragMoved = true;
       wrapper.classList.add('dragging');
     }
     if (dragMoved && ev.pointerType === 'mouse') {
-      // Round to whole pixels — sub-pixel scrollLeft values produced
-      // by a fractional cursor delta make the chart shimmer during a
-      // slow drag. Integer scroll positions keep the drag crisp.
+      // Whole pixels: fractional scrollLeft makes the chart shimmer.
       wrapper.scrollLeft = Math.round(startScrollLeft - dx);
       ev.preventDefault();
     }
@@ -198,53 +168,39 @@ export function setupScrollUx(card: ScrollUxCard): void {
     isDown = false;
     activePointerId = null;
     wrapper.classList.remove('dragging');
-    // pointercancel from the browser claiming the gesture for native
-    // scroll counts as a drag, even if our pointermove threshold
-    // wasn't crossed yet — any pointerup that may bubble up to the
-    // ha-card afterwards must skip its tap-detection branch.
+    // pointercancel (browser claims the gesture for native scroll)
+    // counts as a drag even below the move threshold.
     if (ev?.type === 'pointercancel') {
       dragMoved = true;
       card._dragMoved = true;
     }
     if (dragMoved) {
-      // Reset via setTimeout(0) — a macrotask, not a microtask. The
-      // ha-card's pointerup listener bubbles up AFTER this one in the
-      // same event dispatch, and microtasks flush between listener
-      // invocations in V8/Blink, so a Promise.resolve().then(reset)
-      // would fire before the action handler reads the flag and the
-      // tap would still trigger. setTimeout(0) defers the reset to
-      // the next macrotask, after the entire event dispatch is done.
+      // Macrotask, not microtask: the ha-card pointerup listener runs
+      // after this one in the same dispatch, and microtasks flush
+      // between listeners, so a promise reset would clear the flag
+      // before the action handler reads it.
       setTimeout(() => { card._dragMoved = false; }, 0);
-      // Day pager: settle the released drag onto a whole-day page.
       if (isDayPager(card)) scheduleDaySnap();
     }
   };
 
-  // Listener passiveness is chosen per handler so a touch swipe never
-  // blocks on the main thread waiting to see if we'll preventDefault:
-  //   - pointerdown / pointerup / pointercancel never call
-  //     preventDefault → { passive: true } lets the browser start the
-  //     native momentum scroll immediately.
-  //   - pointermove DOES call preventDefault (mouse drag-to-scroll
-  //     path) → it must stay non-passive, marked explicitly so a
-  //     future edit doesn't silently flip it and break mouse drag.
+  // Only pointermove calls preventDefault (mouse drag), so it alone
+  // must stay non-passive; the others are passive so touch scrolling
+  // never waits on us.
   wrapper.addEventListener('pointerdown', onPointerDown, { passive: true });
   wrapper.addEventListener('pointermove', onPointerMove, { passive: false });
   wrapper.addEventListener('pointerup', onPointerEnd, { passive: true });
   wrapper.addEventListener('pointercancel', onPointerEnd, { passive: true });
 
-  // ── Indicator + jump-to-now click ─────────────────────────────────
-  // stopPropagation prevents the action handler (bound on ha-card)
-  // from interpreting the indicator click as a card-level tap.
-  // Day pager: chevrons page EXACTLY one viewport (= one calendar
-  // day); other modes keep the 0.85-viewport step with overlap.
+  // stopPropagation keeps the ha-card action handler from reading a
+  // control click as a card-level tap. The day pager pages exactly one
+  // viewport; other modes step by STEP_BY.
   const stopDown = (ev: Event): void => { ev.stopPropagation(); };
   const stepPx = (): number =>
     isDayPager(card) ? wrapper.clientWidth : wrapper.clientWidth * STEP_BY;
   const chevronTarget = (direction: -1 | 1): number => {
     let target = wrapper.scrollLeft + direction * stepPx();
-    // Day pager: land ON a page boundary even when the current
-    // position is mid-page (interrupted animation, resize drift).
+    // Land on a page boundary even when the position is mid-page.
     if (isDayPager(card) && wrapper.clientWidth > 0) {
       target = Math.round(target / wrapper.clientWidth) * wrapper.clientWidth;
     }
@@ -260,9 +216,8 @@ export function setupScrollUx(card: ScrollUxCard): void {
   };
   const onJumpClick = (ev: Event): void => {
     ev.stopPropagation();
-    // Day pager jumps to its anchor page (current day; series end for
-    // station-only, start for forecast-only); other modes centre the
-    // station/forecast boundary.
+    // Day pager: the anchor page; other modes: the station/forecast
+    // boundary.
     const dayPage = isDayPager(card)
       ? computeTodayPagerScrollLeft({
           forecasts: card.forecasts,
@@ -280,10 +235,7 @@ export function setupScrollUx(card: ScrollUxCard): void {
     });
     programmaticScrollTo(target);
   };
-  // The control pointerdown handlers only stopPropagation (never
-  // preventDefault) so they're safe to mark passive — a tap on a
-  // chevron then never adds main-thread latency to a scroll gesture
-  // that started on the control.
+  // These pointerdown handlers never preventDefault, so passive is safe.
   if (leftBtn) {
     leftBtn.addEventListener('click', onLeftClick);
     leftBtn.addEventListener('pointerdown', stopDown, { passive: true });
@@ -297,17 +249,10 @@ export function setupScrollUx(card: ScrollUxCard): void {
     jumpBtn.addEventListener('pointerdown', stopDown, { passive: true });
   }
 
-  // ── Timeline / minimap scrubbing ─────────────────────────────────
-  // Click jumps to (and centres on) the clicked position; holding and
-  // moving scrubs live. Day pager rounds every target to a whole-day
-  // page, so a click on a day label lands exactly on that day.
-  // stopPropagation on all three phases keeps the gesture out of the
-  // card-level tap/hold detection on ha-card.
+  // Timeline: a click centres on the clicked position, holding scrubs
+  // live; the day pager rounds targets to a whole-day page.
+  // stopPropagation keeps the gesture out of ha-card's tap/hold detection.
   const timeline = block ? block.querySelector<HTMLElement>('.scroll-timeline') : null;
-  // Remember which timeline (if any) this binding attached to — the
-  // idempotency check at the top compares it against the live DOM so
-  // a timeline that appears/vanishes on a reused wrapper forces a
-  // rebind instead of staying listener-less.
   wrapper._wsBoundTimeline = timeline;
   let tlScrubbing = false;
   const tlScrollTo = (clientX: number, smooth: boolean): void => {
@@ -322,8 +267,7 @@ export function setupScrollUx(card: ScrollUxCard): void {
     if (smooth) {
       programmaticScrollTo(target);
     } else {
-      // Live scrub — track the pointer instantly; snapping happens on
-      // release via the pointer-end handler.
+      // Live scrub tracks the pointer; snapping happens on release.
       pendingTarget = null;
       wrapper.scrollTo({ left: clampLeft(target), behavior: 'auto' });
     }
@@ -352,30 +296,17 @@ export function setupScrollUx(card: ScrollUxCard): void {
     timeline.addEventListener('pointercancel', onTlPointerEnd);
   }
 
-  // ── Scroll handling ──────────────────────────────────────────────
-  // Fully rAF-coalesced (perf pass 2026-08): scroll events fire at
-  // 60+ Hz on touch devices and BOTH consumers force synchronous
-  // layout reads (indicator visibility → scrollWidth/clientWidth) or
-  // canvas work — running them per event thrashed the main thread.
-  // One rAF per frame reads the freshest scrollLeft and does:
-  //   1. indicator + timeline-thumb DOM updates;
-  //   2. `setScrollWindow` on the virtualized chart — an uPlot
-  //      setScale pan that redraws only the ~visibleBars columns in
-  //      the viewport. The former full `chart.draw()` per frame
-  //      (entire 7 700-px canvas, all label plugins) is gone; the
-  //      day context lives in the scroll timeline below the chart.
+  // Scroll events are rAF-coalesced: both consumers force layout reads
+  // or canvas work. Once per frame: update the indicators and timeline
+  // thumb, then `setScrollWindow` on the virtualized chart (ADR-0019).
   let scrollRafId: number | null = null;
   const onScroll = (): void => {
-    // Programmatic navigation in flight: stand down until the smooth
-    // scroll reaches its declared destination, then release.
+    // Release the snap suppression once the navigation arrives.
     if (pendingTarget !== null && Math.abs(wrapper.scrollLeft - pendingTarget) <= 2) {
       pendingTarget = null;
     }
-    // Day pager: any FREE scroll motion (touch momentum, wheel)
-    // re-arms the settle-snap — not while a programmatic navigation
-    // knows its destination, and not while a pointer is actively
-    // dragging the chart or scrubbing the timeline (their end
-    // handlers snap).
+    // Free scroll motion re-arms the snap; drags, timeline scrubs and
+    // programmatic navigations snap (or stand down) on their own.
     if (isDayPager(card) && pendingTarget === null && !isDown && !tlScrubbing) scheduleDaySnap();
     if (scrollRafId !== null) return;
     scrollRafId = requestAnimationFrame(() => {
@@ -432,10 +363,8 @@ export function setupScrollUx(card: ScrollUxCard): void {
   };
 }
 
-/** Public — mainly invoked internally on scroll events, but also
- *  after data refreshes so the chevron and jump-to-now visibility
- *  reflects the new scrollWidth without waiting for the user to
- *  scroll. */
+/** Refresh chevron, jump-to-now and timeline-thumb state. Called on
+ *  scroll and after data refreshes (scrollWidth may have changed). */
 export function updateScrollIndicators(card: ScrollUxCard): void {
   const block = safeQuery<HTMLElement>(card.shadowRoot, '.forecast-scroll-block');
   if (!block) return;
@@ -451,10 +380,9 @@ export function updateScrollIndicators(card: ScrollUxCard): void {
     if (wrapper.scrollLeft < max - slop) right.removeAttribute('hidden');
     else right.setAttribute('hidden', '');
   }
-  // Jump-to-now visibility — hidden when current scrollLeft is within
-  // ~10% of one viewport width of the canonical "now" position. The
-  // threshold is relative so it scales with display size; phones get a
-  // tighter band than desktops in absolute pixels.
+  // Hidden within 10 % of a viewport width of `computeInitialScrollLeft`.
+  // That is the non-pager "now" position; the day pager's jump target is
+  // `computeTodayPagerScrollLeft`, so the two can differ there.
   const jump = block.querySelector<HTMLElement>('.jump-to-now');
   if (jump) {
     const target = computeInitialScrollLeft({
@@ -468,9 +396,7 @@ export function updateScrollIndicators(card: ScrollUxCard): void {
     if (offset > threshold) jump.removeAttribute('hidden');
     else jump.setAttribute('hidden', '');
   }
-  // Timeline thumb — mirrors the visible section onto the minimap.
-  // Positioned imperatively (style.left/width) so the 60 Hz scroll
-  // path never triggers a Lit render.
+  // Positioned imperatively so the scroll path never triggers a Lit render.
   const timeline = block.querySelector<HTMLElement>('.scroll-timeline');
   if (timeline && wrapper.scrollWidth > 0) {
     const thumb = timeline.querySelector<HTMLElement>('.tl-thumb');

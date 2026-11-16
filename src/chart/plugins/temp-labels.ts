@@ -1,11 +1,6 @@
-// Temperature value labels — renders "16°" "4°" etc. above (tempHigh)
-// and below (tempLow) each line point when `forecast.style === 'style2'`.
-// Replaces the chartjs-plugin-datalabels per-temp-line configuration
-// from the pre-uPlot era.
-//
-// Today's column gets bold font; everything else stays normal weight.
-// Colour: chart_text_color override if set, otherwise per-line colour
-// (temp1Color for high, temp2Color for low).
+// Temperature value labels ("16°") above (tempHigh) and below (tempLow)
+// each line point when `forecast.style === 'style2'`. Today's column is
+// bold. Colour: `chart_text_color` if set, else the per-line colour.
 
 import type { ChartLike, ChartPlugin, PluginCardConfig, PluginRenderData } from './_shared.js';
 import { startOfTodayMs } from '../../forecast-utils.js';
@@ -21,11 +16,9 @@ export interface TempLabelsPluginOpts {
   tempHighColor: string;
   tempLowColor: string;
   chartTextColor?: string;
-  /** Card background colour for the 3-px text halo drawn behind every
-   *  value (community post 15 "purple"): a strokeText outline in the
-   *  background colour keeps labels readable on top of the sunshine /
-   *  precipitation bars without touching the palette. Omit to render
-   *  without halo. */
+  /** Card background colour for the 3-px text halo behind every value,
+   *  which keeps labels readable over the sunshine / precip bars.
+   *  Omit to render without halo. */
   haloColor?: string;
   /** When false, labels keep one decimal place regardless of the source's
    *  own precision so daily/today/hourly read consistently (e.g. "28.0°"
@@ -38,13 +31,10 @@ export function createTempLabelsPlugin(opts: TempLabelsPluginOpts): ChartPlugin 
   const { config, data, calendar, tempHighColor, tempLowColor, chartTextColor, haloColor, roundTemp } = opts;
   const decimals = roundTemp ? 0 : 1;
   const baseSize = parseInt(String(config.forecast.labels_font_size)) || 11;
-  // style2 label is one size larger than the base axis-label size
-  // (matches the +1 in applyStyle2DataLabels) so it reads cleanly
-  // against the spline line behind it.
+  // One size above the axis labels so it reads against the line.
   const fontSize = baseSize + 1;
   const fontFamily = 'Helvetica, Arial, sans-serif';
 
-  // Today's pixel-day key; used to pick bold vs normal per column.
   const todayMs = startOfTodayMs(calendar);
 
   function isTodayAt(i: number): boolean {
@@ -64,12 +54,8 @@ export function createTempLabelsPlugin(opts: TempLabelsPluginOpts): ChartPlugin 
     const tempScale = chart.scales[axisKey];
     if (!xScale || !tempScale?.getPixelForValue) return;
     const c = chart.ctx;
-    // No clamping or flipping — the y-axis scale is pre-padded by
-    // ~33 % at the bottom and ~22 % at the top (in draw.ts) so the
-    // line always renders with enough chart space around it for the
-    // label to fit on its preferred side of the dot. Works the
-    // same for negative temperatures because the padding is
-    // proportional to the data range, not absolute.
+    // No clamping or flipping: the TempAxis range is padded in
+    // chart/draw.ts (bottom/top reserve) so the label always fits.
     c.save();
     c.textAlign = 'center';
     c.textBaseline = 'middle';
@@ -83,13 +69,12 @@ export function createTempLabelsPlugin(opts: TempLabelsPluginOpts): ChartPlugin 
       const v = values[i];
       if (v == null || !Number.isFinite(v)) continue;
       const x = xScale.getPixelForTick(i);
-      // Viewport culling (virtualized canvas).
+      // Viewport culling.
       if (x < chart.chartArea.left - 40 || x > chart.chartArea.right + 40) continue;
       const y = tempScale.getPixelForValue(v) + offsetY;
       const text = `${v.toFixed(decimals)}°`;
       c.font = `${isTodayAt(i) ? 'bold ' : ''}${fontSize}px ${fontFamily}`;
-      // Halo first, glyph on top — the outline in the card background
-      // colour lifts the label off sunshine/precip bars behind it.
+      // Halo first, glyph on top.
       if (haloColor) c.strokeText(text, x, y);
       c.fillText(text, x, y);
     }
@@ -100,10 +85,7 @@ export function createTempLabelsPlugin(opts: TempLabelsPluginOpts): ChartPlugin 
     id: 'tempLabels',
     afterDraw(chart: ChartLike): void {
       if (config.forecast.style !== 'style2') return;
-      // Offset = font size + dot radius (4) so the text BOTTOM
-      // edge sits above the dot top instead of overlapping it.
-      // Matches the Chart.js baseline's "X°" with clear gap to
-      // the orange/blue dot below it.
+      // Font size plus a 4 px gap clears the point marker.
       const off = fontSize + 4;
       drawValueColumn(chart, data.tempHigh, tempHighColor, -off, 'TempAxis');
       drawValueColumn(chart, data.tempLow, tempLowColor, off, 'TempAxis');
