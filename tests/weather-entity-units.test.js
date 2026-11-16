@@ -239,3 +239,29 @@ describe('live sky state without an illuminance sensor', () => {
     expect(card._liveCondition).not.toBe('sunny');
   });
 });
+
+describe('live lux for the classifier', () => {
+  const luxNow = (attributes, state) => {
+    const card = makeCard({ illuminance: 'sensor.lux' });
+    card.hass = makeHass({
+      'weather.pirateweather': pirateWeather,
+      'sensor.lux': { state, attributes },
+    });
+    return card._resolveLiveClassifierInputs(card._hass).luxNow;
+  };
+
+  it('reads irradiance through the daylight efficacy', () => {
+    expect(luxNow({ unit_of_measurement: 'W/m²' }, '650')).toBe(78000);
+    expect(luxNow({ device_class: 'irradiance' }, '650')).toBe(78000);
+  });
+
+  it('reads lux as it is, a unitless sensor in its assumed lx', () => {
+    expect(luxNow({ unit_of_measurement: 'lx' }, '32000')).toBe(32000);
+    expect(luxNow({}, '500')).toBe(500);
+  });
+
+  it('gives no lux for an unknown unit or an unavailable sensor', () => {
+    expect(luxNow({ unit_of_measurement: 'klx' }, '5')).toBeNull();
+    expect(luxNow({ unit_of_measurement: 'lx' }, 'unavailable')).toBeNull();
+  });
+});

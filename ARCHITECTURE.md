@@ -91,8 +91,13 @@ src/
 │                              availability scan shares. `stationUnits`
 │                              and `weatherEntityUnits` give the unit each
 │                              station sensor and the weather entity
-│                              deliver in, for the data sources. Pure
-│                              apart from the caller's last-good map.
+│                              deliver in, for the data sources;
+│                              `illuminanceUnit` the unit an illuminance
+│                              sensor is read in (`W/m²` for
+│                              `device_class: irradiance`, else its own,
+│                              else `lx`). An irradiance reading enters
+│                              as lux. Pure apart from the caller's
+│                              last-good map.
 │
 ├── display-units.ts           (ADR-0035)  The card's display units:
 │                              `resolveDisplayUnits` picks one unit per
@@ -353,11 +358,6 @@ src/
 │   │                          properties the chart re-reads on every
 │   │                          redraw; a MutationObserver on <html>
 │   │                          invalidates the cache on theme switch.
-│   ├── unit-converters.ts     (v2)  What is left of the ADR-0009
-│   │                          converters: the past data's classifier
-│   │                          inputs (m/s, °C, mm), the lux scale and
-│   │                          the chart's mm/in label. Goes in step C3
-│   │                          of #478 (ADR-0035).
 │   ├── units.ts               Units table per quantity: canonical unit,
 │   │                          factors, spellings, decimals (ADR-0035).
 │   ├── availability-grace.ts  (#213)  Grace-period bookkeeping for
@@ -869,8 +869,7 @@ files**):
 - The live-row classifiers — `precip-rate.ts`, `pressure-trend.ts`,
   `dew-point-comfort.ts`, `sun-strength.ts`.
 - `utils/*` — safe-query, numeric, intl-cache, resolve-css-var,
-  theme-tokens, unit-converters, units, shared-requests, series-cache,
-  time-zone.
+  theme-tokens, units, shared-requests, series-cache, time-zone.
 - `defaults.ts` — DEFAULTS shape + schema-drift CI test (issue #93).
 - Editor mutator methods (`tests/editor.test.js`) + per-partial
   render smoketests + the `section-keys.ts` schema-drift guard

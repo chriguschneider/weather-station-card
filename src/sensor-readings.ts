@@ -11,7 +11,6 @@
 import { resolveLiveSource, type LiveSource } from './live-source.js';
 import { resolveDisplayUnits, type DisplayUnits } from './display-units.js';
 import { CANONICAL_UNIT, parseUnit, toCanonical, type Quantity } from './utils/units.js';
-import { luxScaleFor } from './utils/unit-converters.js';
 import { parseNumericSafe } from './utils/numeric.js';
 
 export interface StateLike {
@@ -186,8 +185,10 @@ export function extractSensorReadings(input: {
 
   // 'lx' is HA's illuminance unit (developers.home-assistant.io/docs/core/entity/sensor/).
   const illState = stateOf(idOf(sensors.illuminance));
-  const illScale = luxScaleFor(illState?.attributes?.unit_of_measurement, illState?.attributes?.device_class);
-  const illuminance = toLux(read('illuminance', null, () => (illScale !== 1 ? 'lx' : unitOf(illState))), illScale);
+  const illUnit = illuminanceUnit(illState?.attributes);
+  const illuminance = parseUnit('illuminance', illUnit) === 'W/m²'
+    ? toLux(read('illuminance', null, () => 'lx'), illUnit)
+    : read('illuminance', null, () => unitOf(illState));
   const zeroDegree = (key: string): Reading =>
     read(key, null, () => (stateOf(idOf(sensors[key])) ? sensorUnit(key) ?? 'm' : undefined));
   return {
@@ -334,11 +335,19 @@ function assumedUnits(
   };
 }
 
-// Irradiance (W/m²) scales into lux here, so every consumer sees lux.
-function toLux(reading: Reading, scale: number): Reading {
-  const num = reading.value !== undefined ? parseFloat(reading.value) : NaN;
-  if (scale === 1 || !Number.isFinite(num)) return reading;
-  return { ...reading, value: String(Math.round(num * scale)) };
+/** The unit an illuminance sensor's value is read in: `W/m²` for
+ *  `device_class: irradiance` whatever its unit says, else its own unit,
+ *  and `lx` for a sensor without one (its assumed unit, ADR-0035). */
+export function illuminanceUnit(attributes: Record<string, unknown> | undefined): string {
+  if (attributes?.device_class === 'irradiance') return 'W/m²';
+  return unitOf({ state: '', attributes }) ?? 'lx';
+}
+
+// Irradiance (W/m²) enters as lux here (ADR-0035, point 7), so every
+// consumer sees lux. A non-numeric value is left alone.
+function toLux(reading: Reading, unit: string): Reading {
+  const lux = toCanonical('illuminance', parseNumericSafe(reading.value), unit);
+  return lux === null ? reading : { ...reading, value: String(Math.round(lux)) };
 }
 
 // Wind direction takes the sensor only while its state is numeric and

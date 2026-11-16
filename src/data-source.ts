@@ -19,11 +19,10 @@ import {
 } from './forecast-utils.js';
 import { resolveLocation } from './location.js';
 import { sensorSunshineHours, sunshineFromLuxHistory, type LuxSample } from './sunshine-source.js';
-import { stationUnits, unitOf, weatherEntityUnits, type UnitSystemLike, type WeatherUnits } from './sensor-readings.js';
+import { illuminanceUnit, stationUnits, unitOf, weatherEntityUnits, type UnitSystemLike, type WeatherUnits } from './sensor-readings.js';
 import { depthUnitId } from './display-units.js';
 import { deltaToCanonical, toCanonical, type Quantity } from './utils/units.js';
 import { parseNumericSafe } from './utils/numeric.js';
-import { luxScaleFor } from './utils/unit-converters.js';
 import { dedupeRequest } from './utils/shared-requests.js';
 import { safeLocalStorage } from './utils/safe-storage.js';
 import { HOUR_MS, serverCalendar, type Calendar } from './utils/time-zone.js';
@@ -666,7 +665,11 @@ export class MeasuredDataSource {
       neededDays.push(this.calendar.dayKey(d));
     }
     // W/m² sensors convert to lux first (scale 1 for plain lux sensors).
-    const luxScale = this._luxScale(luxId);
+    // An unknown unit is never read as lux (ADR-0035, point 5): no
+    // derivation, so the configured station source yields 0 h.
+    const luxUnit = this._luxUnit(luxId);
+    const luxScale = toCanonical('illuminance', 1, luxUnit);
+    if (luxScale === null) return null;
     const cachedDays = loadLuxDayCache(this.calendar.timeZone, luxId, threshold, lat as number, lon as number, luxScale);
     const missingDays = cachedDays
       ? neededDays.filter((k) => cachedDays[k] === undefined)
@@ -704,7 +707,7 @@ export class MeasuredDataSource {
       const ts = typeof row.lu === 'number' ? row.lu * 1000 : NaN;
       const lux = typeof row.s === 'string' ? parseFloat(row.s) : NaN;
       if (Number.isFinite(ts) && Number.isFinite(lux) && lux >= 0) {
-        samples.push({ ts, lux: lux * luxScale });
+        samples.push({ ts, lux: toCanonical('illuminance', lux, luxUnit) as number });
       }
     }
     if (samples.length < 2) return this._luxMapFromCache(cachedDays, neededDays);
@@ -776,6 +779,7 @@ export class MeasuredDataSource {
     const dayMs = (date: Date): number => this.calendar.startOfDay(date).getTime();
 
     const units = this._stationUnits(sensors);
+    const luxUnit = this._luxUnit(sensors.illuminance);
     const precipUnit = depthUnitId(units.precipitation);
     const sunshineUnit = sensors.sunshine_duration
       ? unitOf(this.hass?.states?.[sensors.sunshine_duration])
@@ -820,7 +824,7 @@ export class MeasuredDataSource {
       const windMean = toCanonical('speed', at(sensors.wind_speed, 'mean'), units.wind_speed);
       const gustMax = toCanonical('speed', at(sensors.gust_speed, 'max'), units.gust_speed);
       const luxMaxRaw = at(sensors.illuminance, 'max');
-      const luxMax = luxMaxRaw != null ? luxMaxRaw * this._luxScale(sensors.illuminance) : luxMaxRaw;
+      const luxMax = toCanonical('illuminance', luxMaxRaw, luxUnit);
       const dewPointMean = toCanonical('temperature', at(sensors.dew_point, 'mean'), units.dew_point);
 
       const precipitation = sensors.precipitation
@@ -909,13 +913,10 @@ export class MeasuredDataSource {
     return out;
   }
 
-  /** Lux multiplier of the illuminance entity: see `luxScaleFor` (1 for a
-   *  plain lux sensor). Applied once wherever raw readings enter the lux pipeline. */
-  private _luxScale(eid?: string): number {
-    if (!eid || !this.hass?.states) return 1;
-    const attrs = this.hass.states[eid]?.attributes as
-      { unit_of_measurement?: unknown; device_class?: unknown } | undefined;
-    return luxScaleFor(attrs?.unit_of_measurement, attrs?.device_class);
+  /** The unit the illuminance entity's readings are in, see
+   *  `illuminanceUnit`. */
+  private _luxUnit(eid?: string): string {
+    return illuminanceUnit(eid ? this.hass?.states?.[eid]?.attributes : undefined);
   }
 
   /** The units the station's statistics and states are in, once per build. */
@@ -972,6 +973,7 @@ export class MeasuredDataSource {
     const hourMs = (date: Date): number => this.calendar.startOfHour(date).getTime();
 
     const units = this._stationUnits(sensors);
+    const luxUnit = this._luxUnit(sensors.illuminance);
     const precipUnit = depthUnitId(units.precipitation);
     const out: ForecastEntry[] = [];
     for (let i = 1; i <= hours; i++) {
@@ -1006,7 +1008,7 @@ export class MeasuredDataSource {
       const windMean = toCanonical('speed', atOrLive(sensors.wind_speed, 'mean'), units.wind_speed);
       const gustMax = toCanonical('speed', atOrLive(sensors.gust_speed, 'max'), units.gust_speed);
       const luxMaxRaw = atOrLive(sensors.illuminance, 'max');
-      const luxMax = luxMaxRaw != null ? luxMaxRaw * this._luxScale(sensors.illuminance) : luxMaxRaw;
+      const luxMax = toCanonical('illuminance', luxMaxRaw, luxUnit);
       const dewPointMean = toCanonical('temperature', atOrLive(sensors.dew_point, 'mean'), units.dew_point);
       // A last hour with a single live datapoint: max/min collapse to it so
       // the classifier avoids its no-data fallback.
