@@ -73,6 +73,17 @@ describe('aggregateThreeHourCalendar', () => {
     expect(block.precipitation).toBe(1.7);
     expect(block.condition).toBe('rainy');
   });
+
+  it('averages wind unrounded and other numerics to one decimal', () => {
+    const out = aggregateThreeHourCalendar([
+      entry(2026, 7, 5, 12, { wind_speed: 2, humidity: 70 }),
+      entry(2026, 7, 5, 13, { wind_speed: 3, humidity: 71 }),
+      entry(2026, 7, 5, 14, { wind_speed: 3.5, humidity: 71 }),
+    ], cal);
+    const block = out[4];
+    expect(block.wind_speed).toBeCloseTo(2.8333, 4);
+    expect(block.humidity).toBe(70.7);
+  });
 });
 
 describe('trimLeadingEmptyBlocks', () => {

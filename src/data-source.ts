@@ -19,9 +19,10 @@ import {
 } from './forecast-utils.js';
 import { resolveLocation } from './location.js';
 import { sunshineFromLuxHistory, type LuxSample } from './sunshine-source.js';
-import { deltaToCanonical } from './utils/units.js';
+import { stationUnits, weatherEntityUnits, type UnitSystemLike, type WeatherUnits } from './sensor-readings.js';
+import { deltaToCanonical, toCanonical, type Quantity } from './utils/units.js';
+import { parseNumericSafe } from './utils/numeric.js';
 import {
-  toMetersPerSecond,
   luxScaleFor,
   toCelsius,
   toMillimeters,
@@ -131,10 +132,17 @@ export interface HassLike {
     version?: string;
     /** The HA server's IANA zone. */
     time_zone?: string;
+    unit_system?: UnitSystemLike;
   };
   states?: Record<string, { state: string; attributes?: Record<string, unknown> } | undefined>;
   connection?: HassConnection;
   callWS<T = unknown>(msg: Record<string, unknown>): Promise<T>;
+}
+
+// A forecast field as its canonical unit (ADR-0035): numbers and numeric
+// strings convert, anything else and an unknown unit give null.
+function canonicalField(quantity: Quantity, value: unknown, unit: unknown): number | null {
+  return toCanonical(quantity, typeof value === 'number' ? value : parseNumericSafe(value), unit);
 }
 
 /** Buckets indexed by start ms. */
@@ -770,7 +778,7 @@ export class MeasuredDataSource {
 
     const dayMs = (date: Date): number => this.calendar.startOfDay(date).getTime();
 
-    const windUnit = this._sensorUnit(sensors.wind_speed) || this._sensorUnit(sensors.gust_speed);
+    const units = this._stationUnits(sensors);
     const tempUnit = this._sensorUnit(sensors.temperature);
     const dewUnit = this._sensorUnit(sensors.dew_point) || tempUnit;
     const precipUnit = this._sensorUnit(sensors.precipitation);
@@ -807,8 +815,8 @@ export class MeasuredDataSource {
       }
       const humidityMean = at(sensors.humidity, 'mean');
       const pressureMean = at(sensors.pressure, 'mean');
-      const windMean = at(sensors.wind_speed, 'mean');
-      const gustMax = at(sensors.gust_speed, 'max');
+      const windMean = toCanonical('speed', at(sensors.wind_speed, 'mean'), units.wind_speed);
+      const gustMax = toCanonical('speed', at(sensors.gust_speed, 'max'), units.gust_speed);
       const luxMaxRaw = at(sensors.illuminance, 'max');
       const luxMax = luxMaxRaw != null ? luxMaxRaw * this._luxScale(sensors.illuminance) : luxMaxRaw;
       const dewPointMean = at(sensors.dew_point, 'mean');
@@ -880,8 +888,8 @@ export class MeasuredDataSource {
           humidity: humidityMean,
           lux_max: luxMax,
           precip_total: toMillimeters(precipitation, precipUnit),
-          wind_mean: toMetersPerSecond(windMean, windUnit),
-          gust_max: toMetersPerSecond(gustMax, windUnit),
+          wind_mean: windMean,
+          gust_max: gustMax,
           dew_point_mean: toCelsius(dewPointMean, dewUnit),
         }, this.calendar.dayOfYear(dayStart)),
       });
@@ -896,6 +904,16 @@ export class MeasuredDataSource {
     const attrs = this.hass.states[eid]?.attributes as
       { unit_of_measurement?: unknown; device_class?: unknown } | undefined;
     return luxScaleFor(attrs?.unit_of_measurement, attrs?.device_class);
+  }
+
+  /** The units the station's statistics and states are in, once per build. */
+  private _stationUnits(sensors: SensorMap) {
+    return stationUnits({
+      sensors,
+      states: this.hass?.states,
+      weatherEntity: this.config.weather_entity,
+      unitSystem: this.hass?.config?.unit_system,
+    });
   }
 
   /** Native unit_of_measurement of a sensor entity. classifyDay is
@@ -949,7 +967,7 @@ export class MeasuredDataSource {
 
     const hourMs = (date: Date): number => this.calendar.startOfHour(date).getTime();
 
-    const windUnit = this._sensorUnit(sensors.wind_speed) || this._sensorUnit(sensors.gust_speed);
+    const units = this._stationUnits(sensors);
     const tempUnit = this._sensorUnit(sensors.temperature);
     const dewUnit = this._sensorUnit(sensors.dew_point) || tempUnit;
     const precipUnit = this._sensorUnit(sensors.precipitation);
@@ -983,8 +1001,8 @@ export class MeasuredDataSource {
       let tempMin = at(sensors.temperature, 'min');
       const humidityMean = atOrLive(sensors.humidity, 'mean');
       const pressureMean = atOrLive(sensors.pressure, 'mean');
-      const windMean = atOrLive(sensors.wind_speed, 'mean');
-      const gustMax = atOrLive(sensors.gust_speed, 'max');
+      const windMean = toCanonical('speed', atOrLive(sensors.wind_speed, 'mean'), units.wind_speed);
+      const gustMax = toCanonical('speed', atOrLive(sensors.gust_speed, 'max'), units.gust_speed);
       const luxMaxRaw = atOrLive(sensors.illuminance, 'max');
       const luxMax = luxMaxRaw != null ? luxMaxRaw * this._luxScale(sensors.illuminance) : luxMaxRaw;
       const dewPointMean = atOrLive(sensors.dew_point, 'mean');
@@ -1026,8 +1044,8 @@ export class MeasuredDataSource {
           humidity: humidityMean,
           lux_max: luxMax,
           precip_total: toMillimeters(precipitation, precipUnit),
-          wind_mean: toMetersPerSecond(windMean, windUnit),
-          gust_max: toMetersPerSecond(gustMax, windUnit),
+          wind_mean: windMean,
+          gust_max: gustMax,
           dew_point_mean: toCelsius(dewPointMean, dewUnit),
           hourStart,
           clearsky_lux: luxFor(hourStart),
@@ -1146,18 +1164,18 @@ export class ForecastDataSource {
         this._emit({ forecast: [], error: 'hass connection unavailable' });
         return;
       }
-      // Tag entries with the weather entity's wind_speed_unit: the renderer's
-      // default fromUnit comes from the station sensor, which may differ
-      // (m/s station + km/h entity would show forecast wind too high).
-      const wxWindUnit = state.attributes?.wind_speed_unit as string | undefined;
       this._unsubPromise = this.hass.connection.subscribeMessage(
         (event) => {
           const raw = (event.forecast as ForecastEntry[]) || [];
-          // Resolve the server calendar at event time: `hass` may have
-          // been swapped since the subscription.
+          // Resolve the server calendar and the entity's units at event
+          // time: `hass` may have been swapped since the subscription.
           const serverCal = serverCalendar(this.hass);
+          const units = weatherEntityUnits(
+            this.hass?.states?.[entity]?.attributes,
+            this.hass?.config?.unit_system,
+          );
           this._emit({
-            forecast: raw.map((e) => this._normalizeEntry(e, isHourly, serverCal, wxWindUnit)),
+            forecast: raw.map((e) => this._normalizeEntry(e, isHourly, serverCal, units)),
           });
         },
         {
@@ -1173,28 +1191,30 @@ export class ForecastDataSource {
   }
 
   /** Daily entries are calendar days (#355), re-anchored at the card's
-   *  midnight; hourly entries stay instants. Untouched entries pass
-   *  through by reference. */
+   *  midnight; hourly entries stay instants. Wind and gust enter as m/s
+   *  (ADR-0035). Always a copy. */
   private _normalizeEntry(
     e: ForecastEntry,
     isHourly: boolean,
     serverCal: Calendar,
-    windUnit: string | undefined,
+    units: WeatherUnits,
   ): ForecastEntry {
+    const out: ForecastEntry = { ...e };
     const raw: unknown = e?.datetime;
-    let datetime: string | null = null;
     if (typeof raw === 'string') {
       const fixed = isHourly
         ? normalizeHourlyDatetime(raw, this.calendar)
         : anchorDailyDatetime(raw, this.calendar, serverCal);
-      if (fixed && fixed !== raw) datetime = fixed;
+      if (fixed && fixed !== raw) out.datetime = fixed;
     }
-    if (datetime === null && !windUnit) return e;
-    return {
-      ...e,
-      ...(datetime === null ? {} : { datetime }),
-      ...(windUnit ? { wind_speed_unit: windUnit } : {}),
-    };
+    // An absent key stays absent and null stays null, so the chart keeps
+    // telling "no wind data" from "no such field".
+    for (const key of ['wind_speed', 'wind_gust_speed'] as const) {
+      const value: unknown = e?.[key];
+      if (value === undefined || value === null) continue;
+      out[key] = canonicalField('speed', value, units.wind_speed);
+    }
+    return out;
   }
 
   private _emit(event: DataSourceEvent): void {

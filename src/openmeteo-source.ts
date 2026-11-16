@@ -146,9 +146,8 @@ export interface OpenMeteoSourceOpts {
 }
 
 /** Forecast-endpoint URL; `includeHourly` adds `hourly=HOURLY_FIELDS`.
- *  Units are pinned (°C / mm / m·s⁻¹) because with no station sensor
- *  there is no source unit to derive; entries carry `wind_speed_unit`
- *  so the renderer converts wind. */
+ *  The request pins °C, mm and m/s because these are the card's
+ *  canonical units (ADR-0035), so the values enter as they arrive. */
 export function buildOpenMeteoUrl(
   latitude: number,
   longitude: number,
@@ -319,8 +318,6 @@ export function buildDailyForecast(
       wind_speed: numOrNull(windMax[i]),
       wind_gust_speed: numOrNull(gustMax[i]),
       wind_bearing: numOrNull(windDir[i]),
-      // The request pins wind_speed_unit=ms.
-      wind_speed_unit: 'm/s',
       pressure: null,
       humidity: null,
       uv_index: null,
@@ -358,7 +355,6 @@ export function buildHourlyForecast(
       wind_speed: numOrNull(wind[i]),
       wind_gust_speed: numOrNull(gust[i]),
       wind_bearing: numOrNull(dir[i]),
-      wind_speed_unit: 'm/s',
       pressure: null,
       humidity: null,
       uv_index: null,

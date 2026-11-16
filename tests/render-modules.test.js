@@ -393,7 +393,6 @@ function liveCtx({ config = {}, states = {}, values = {}, readings = {} } = {}) 
     cardinalDirections: en.cardinalDirections,
     readings: r,
     displayUnits: { temperature: '°C', pressure: 'hPa', speed: 'km/h', precipitation: 'mm' },
-    stationWindUnit: 'km/h',
     values,
     entityLink: (_eid, content) => content,
     zeroDegreeLink: (_eid, content) => content,

@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   extractSensorReadings,
+  stationUnits,
+  weatherEntityUnits,
   isUnavailableState,
   unavailableSensors,
   precipRateReading,
@@ -32,6 +34,75 @@ const metricWeather = {
     wind_speed_unit: 'km/h',
   },
 };
+
+describe('stationUnits', () => {
+  const units = (sensors, states, weatherEntity = undefined, unitSystem = undefined) =>
+    stationUnits({ sensors, states, weatherEntity, unitSystem });
+
+  it('gives a gust sensor without a unit the wind sensor unit', () => {
+    const u = units({ wind_speed: 'sensor.w', gust_speed: 'sensor.g' }, {
+      'sensor.w': sensor('15', 'km/h'),
+      'sensor.g': sensor('31'),
+    });
+    expect([u.wind_speed, u.gust_speed]).toEqual(['km/h', 'km/h']);
+  });
+
+  it('takes the entity attributes for sensors without a unit', () => {
+    const u = units({
+      temperature: 'sensor.t', dew_point: 'sensor.d', pressure: 'sensor.p',
+      wind_speed: 'sensor.w', gust_speed: 'sensor.g', precipitation: 'sensor.r',
+    }, {
+      'sensor.t': sensor('68'), 'sensor.d': sensor('50'), 'sensor.p': sensor('30'),
+      'sensor.w': sensor('5'), 'sensor.g': sensor('9'), 'sensor.r': sensor('1'),
+      'weather.home': {
+        state: 'sunny',
+        attributes: { temperature_unit: '°F', pressure_unit: 'inHg', wind_speed_unit: 'mph', precipitation_unit: 'in' },
+      },
+    }, 'weather.home');
+    expect(u).toEqual({
+      temperature: '°F', dew_point: '°F', pressure: 'inHg', wind_speed: 'mph', gust_speed: 'mph', precipitation: 'in',
+    });
+  });
+
+  it('takes the unit system without sensor units or an entity', () => {
+    const u = units({}, {}, undefined, {
+      temperature: '°F', pressure: 'psi', wind_speed: 'mph', accumulated_precipitation: 'in',
+    });
+    expect(u).toEqual({
+      temperature: '°F', dew_point: '°F', pressure: 'psi', wind_speed: 'mph', gust_speed: 'mph', precipitation: 'in',
+    });
+  });
+
+  it('falls back to the canonical units', () => {
+    expect(units({}, undefined)).toEqual({
+      temperature: '°C', dew_point: '°C', pressure: 'hPa', wind_speed: 'm/s', gust_speed: 'm/s', precipitation: 'mm',
+    });
+  });
+
+  it('gives a dew sensor without a unit the temperature sensor unit', () => {
+    const u = units({ temperature: 'sensor.t', dew_point: 'sensor.d' }, {
+      'sensor.t': sensor('68', '°F'),
+      'sensor.d': sensor('50'),
+    });
+    expect(u.dew_point).toBe('°F');
+  });
+
+  it('keeps an unknown sensor unit as written', () => {
+    expect(units({ wind_speed: 'sensor.w' }, { 'sensor.w': sensor('5', 'foo') }).wind_speed).toBe('foo');
+  });
+});
+
+describe('weatherEntityUnits', () => {
+  it('takes the entity attribute first, then the unit system, then canonical', () => {
+    expect(weatherEntityUnits({ wind_speed_unit: 'kn' }, { temperature: '°F', wind_speed: 'mph' }))
+      .toEqual({ temperature: '°F', pressure: 'hPa', wind_speed: 'kn', precipitation: 'mm' });
+  });
+
+  it('gives the canonical units without attributes', () => {
+    expect(weatherEntityUnits(undefined))
+      .toEqual({ temperature: '°C', pressure: 'hPa', wind_speed: 'm/s', precipitation: 'mm' });
+  });
+});
 
 describe('extractSensorReadings: value, unit and source decided together', () => {
   it('takes a live sensor with its own unit and records the station', () => {
@@ -172,12 +243,10 @@ describe('extractSensorReadings: value, unit and source decided together', () =>
     expect(r.uv_index).toEqual({
       value: '3', unit: undefined, canonical: null, source: { kind: 'weather', entityId: 'weather.home' },
     });
-    expect(r.units).toEqual({ wind: 'km/h' });
   });
 
   it('falls back to the base units without sensor or entity', () => {
     const r = run({}, {}, undefined);
-    expect(r.units).toEqual({ wind: 'm/s' });
     expect(r.temperature).toEqual({ value: undefined, unit: '°C', canonical: null, source: undefined });
     expect(r.wind_direction).toEqual({ value: undefined, unit: '°', canonical: null, source: undefined });
   });

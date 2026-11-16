@@ -1699,7 +1699,6 @@ _liveCtx(language?: string): LivePanelCtx {
       speed: this.unitSpeed ?? 'm/s',
       precipitation: r?.displayUnits.precipitation ?? 'mm',
     },
-    stationWindUnit: r?.units.wind ?? 'm/s',
     values: {
       humidity: this.humidity,
       precipitation: this.precipitation,

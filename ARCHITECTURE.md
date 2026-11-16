@@ -88,8 +88,11 @@ src/
 │                              the card's `displayUnits`, the rate-sensor
 │                              reading, `liveSourcesOf` for the info
 │                              popup and the unavailable test the
-│                              availability scan shares. Pure apart from
-│                              the caller's last-good map.
+│                              availability scan shares. `stationUnits`
+│                              and `weatherEntityUnits` give the unit each
+│                              station sensor and the weather entity
+│                              deliver in, for the data sources. Pure
+│                              apart from the caller's last-good map.
 │
 ├── display-units.ts           (ADR-0035)  The card's display units:
 │                              `resolveDisplayUnits` picks one unit per
@@ -146,7 +149,9 @@ src/
 │                              Daily columns are reduced from hourly
 │                              statistics in the card's calendar
 │                              (`reduceHourlyToDays`, ADR-0030).
-│                              Also hosts `fetchPressure3hDelta` +
+│                              Wind and gust in the entries are m/s
+│                              (ADR-0035), converted from the sensor's
+│                              or the weather entity's unit. Also hosts `fetchPressure3hDelta` +
 │                              `PressureDeltaCache` for the live
 │                              pressure-trend row.
 │

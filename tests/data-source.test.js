@@ -185,7 +185,49 @@ describe('MeasuredDataSource._buildForecast', () => {
       'sensor.gust': [{ start: dayMs(1).date.toISOString(), max: 31 }], // ≈ 8.6 m/s
     };
     const [entry] = ds._buildForecast(stats, sensors, startDay, 1);
+    expect(entry.wind_speed).toBeCloseTo(4.1667, 4);
+    expect(entry.wind_gust_speed).toBeCloseTo(8.6111, 4);
     expect(entry.condition).not.toBe('exceptional');
+  });
+
+  it('reads a gust sensor in its own unit, not the wind sensor unit (#478)', () => {
+    const ds = new MeasuredDataSource({
+      ...kmhHass,
+      states: { ...kmhHass.states, 'sensor.gust': { attributes: { unit_of_measurement: 'mph' } } },
+    }, { sensors, days: 1 }, cal);
+    const stats = {
+      'sensor.temp': [{ start: dayMs(1).date.toISOString(), max: 20, min: 10, mean: 15 }],
+      'sensor.gust': [{ start: dayMs(1).date.toISOString(), max: 60 }],
+    };
+    const [entry] = ds._buildForecast(stats, sensors, startDay, 1);
+    expect(entry.wind_gust_speed).toBeCloseTo(26.8224, 9);
+    expect(entry.condition).toBe('exceptional');
+  });
+
+  it('reads a gust sensor without a unit in the wind sensor unit', () => {
+    const ds = new MeasuredDataSource({
+      ...kmhHass,
+      states: { ...kmhHass.states, 'sensor.gust': { attributes: {} } },
+    }, { sensors, days: 1 }, cal);
+    const stats = {
+      'sensor.temp': [{ start: dayMs(1).date.toISOString(), max: 20, min: 10, mean: 15 }],
+      'sensor.gust': [{ start: dayMs(1).date.toISOString(), max: 95 }],
+    };
+    const [entry] = ds._buildForecast(stats, sensors, startDay, 1);
+    expect(entry.wind_gust_speed).toBeCloseTo(26.389, 3);
+    expect(entry.condition).toBe('exceptional');
+  });
+
+  it('gives a wind sensor with an unknown unit no wind', () => {
+    const ds = new MeasuredDataSource({
+      ...kmhHass,
+      states: { 'sensor.wind': { attributes: { unit_of_measurement: 'foo' } } },
+    }, { sensors, days: 1 }, cal);
+    const stats = {
+      'sensor.wind': [{ start: dayMs(1).date.toISOString(), mean: 15 }],
+    };
+    const [entry] = ds._buildForecast(stats, sensors, startDay, 1);
+    expect(entry.wind_speed).toBeNull();
   });
 
   it('still flags a genuine storm-force km/h gust as exceptional (#197)', () => {
@@ -206,6 +248,7 @@ describe('MeasuredDataSource._buildForecast', () => {
       'sensor.gust': [{ start: dayMs(1).date.toISOString(), max: 31 }],
     };
     const [entry] = ds._buildForecast(stats, sensors, startDay, 1);
+    expect(entry.wind_gust_speed).toBe(31);
     expect(entry.condition).toBe('exceptional');
   });
 
@@ -893,6 +936,19 @@ describe('MeasuredDataSource hourly mode', () => {
     expect(out[2].wind_speed).toBe(5.5);
   });
 
+  it('converts a live km/h wind state in the last hour to m/s', () => {
+    const hass = {
+      config: { latitude: 47.4, longitude: 8.5 },
+      states: { 'sensor.wind': { state: '18', attributes: { unit_of_measurement: 'km/h' } } },
+      callWS: vi.fn(),
+    };
+    const ds = new MeasuredDataSource(hass, {
+      sensors, days: 1, forecast: { type: 'hourly' },
+    }, cal);
+    const [entry] = ds._buildHourlyForecast({}, sensors, startHour, 1);
+    expect(entry.wind_speed).toBe(5);
+  });
+
   it('falls back to live state for precipitation in the last hour', () => {
     const hass = {
       config: { latitude: 47.4, longitude: 8.5 },
@@ -1214,45 +1270,50 @@ describe('ForecastDataSource', () => {
     const [callback] = conn.subscribeMessage.mock.calls[0];
     const entry = { datetime: '2026-05-01T13:00:00+00:00', temperature: 20 };
     callback({ forecast: [entry] });
-    // Untouched entries pass through by reference.
-    expect(events.at(-1).forecast[0]).toBe(entry);
+    expect(events.at(-1).forecast[0]).toEqual(entry);
   });
 
-  // Bug fix: the renderer's _convertWindSpeed defaults the source unit
-  // to the synthetic-weather attribute, which mirrors the station
-  // sensor's unit. When the weather entity's unit differs (e.g. station
-  // m/s + MeteoSwiss km/h), forecast wind got mis-converted by ~3.6×.
-  // Tagging each entry with the weather entity's wind_speed_unit lets
-  // the renderer pick the right source unit per-entry.
-  it('tags forecast entries with the weather entity wind_speed_unit when available', async () => {
+  // Forecast wind enters as m/s (ADR-0035), read in the entity's unit.
+  const windOf = async (forecastEntry) => {
+    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.home' }, cal);
+    const events = [];
+    ds.subscribe((e) => events.push(e));
+    await Promise.resolve();
+    const [callback] = conn.subscribeMessage.mock.calls[0];
+    callback({ forecast: [{ datetime: '2026-05-01T00:00:00Z', ...forecastEntry }] });
+    return events.at(-1).forecast[0];
+  };
+
+  it('converts forecast wind from the entity wind_speed_unit to m/s', async () => {
     hass.states['weather.home'].attributes.wind_speed_unit = 'km/h';
-    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.home' }, cal);
-    const events = [];
-    ds.subscribe((e) => events.push(e));
-    await Promise.resolve();
-    const [callback] = conn.subscribeMessage.mock.calls[0];
-    callback({
-      forecast: [
-        { datetime: '2026-05-01T00:00:00Z', wind_speed: 20 },
-        { datetime: '2026-05-02T00:00:00Z', wind_speed: 15 },
-      ],
-    });
-    expect(events.at(-1).forecast).toEqual([
-      { datetime: cal.zonedDate(2026, 5, 1).toISOString(), wind_speed: 20, wind_speed_unit: 'km/h' },
-      { datetime: cal.zonedDate(2026, 5, 2).toISOString(), wind_speed: 15, wind_speed_unit: 'km/h' },
-    ]);
+    const entry = await windOf({ wind_speed: 20, wind_gust_speed: 36 });
+    expect(entry.wind_speed).toBeCloseTo(5.5556, 4);
+    expect(entry.wind_gust_speed).toBeCloseTo(10, 9);
+    expect('wind_speed_unit' in entry).toBe(false);
   });
 
-  it('does not tag forecast entries when the weather entity exposes no wind_speed_unit', async () => {
-    // weather.home fixture has supported_features only — no wind_speed_unit.
-    const ds = new ForecastDataSource(hass, { weather_entity: 'weather.home' }, cal);
-    const events = [];
-    ds.subscribe((e) => events.push(e));
-    await Promise.resolve();
-    const [callback] = conn.subscribeMessage.mock.calls[0];
-    callback({ forecast: [{ datetime: '2026-05-01T00:00:00Z', wind_speed: 20 }] });
-    const entry = events.at(-1).forecast[0];
-    expect(entry.wind_speed_unit).toBeUndefined();
+  it('reads forecast wind in the unit system without an entity unit', async () => {
+    hass.config = { ...hass.config, unit_system: { wind_speed: 'mph' } };
+    const entry = await windOf({ wind_speed: 20 });
+    expect(entry.wind_speed).toBeCloseTo(8.9408, 9);
+  });
+
+  it('keeps forecast wind as m/s without an entity unit or unit system', async () => {
+    const entry = await windOf({ wind_speed: 20 });
+    expect(entry.wind_speed).toBe(20);
+  });
+
+  it('gives forecast wind in an unknown unit no value', async () => {
+    hass.states['weather.home'].attributes.wind_speed_unit = 'foo';
+    const entry = await windOf({ wind_speed: 20 });
+    expect(entry.wind_speed).toBeNull();
+  });
+
+  it('keeps a null wind null and adds no absent wind key', async () => {
+    hass.states['weather.home'].attributes.wind_speed_unit = 'km/h';
+    const entry = await windOf({ wind_speed: null });
+    expect(entry.wind_speed).toBeNull();
+    expect('wind_gust_speed' in entry).toBe(false);
   });
 
   it('unsubscribe disposes the underlying subscription', async () => {

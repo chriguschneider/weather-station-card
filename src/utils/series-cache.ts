@@ -12,8 +12,9 @@ export type CachedSeriesEntry = Record<string, unknown>;
 
 const PREFIX = 'wsc_series_';
 // Bump when the stored shape or what an entry means changes: keys carry the
-// time zone (ADR-0030) and daily entries are card days (#355).
-const VERSION = 3;
+// time zone (ADR-0030), daily entries are card days (#355), and wind is
+// m/s (ADR-0035).
+const VERSION = 4;
 
 /** Older payloads would show a visibly wrong window until the live fetch lands. */
 const MAX_AGE_MS = 12 * 60 * 60 * 1000;

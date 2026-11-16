@@ -272,8 +272,8 @@ describe('buildDailyForecast', () => {
     expect(out[2].datetime).toBe('2026-05-19T22:00:00.000Z');
   });
 
-  it('tags wind_speed_unit so the renderer can convert wind', () => {
-    expect(buildDailyForecast(sample, cal)[0].wind_speed_unit).toBe('m/s');
+  it('emits wind in m/s without a unit tag (ADR-0035)', () => {
+    expect('wind_speed_unit' in buildDailyForecast(sample, cal)[0]).toBe(false);
   });
 
   it('leaves sunshine unset and humidity/pressure/uv null', () => {
@@ -339,7 +339,7 @@ describe('buildHourlyForecast', () => {
     expect(e.wind_speed).toBe(4.5);
     expect(e.wind_gust_speed).toBe(9.2);
     expect(e.wind_bearing).toBe(200);
-    expect(e.wind_speed_unit).toBe('m/s');
+    expect('wind_speed_unit' in e).toBe(false);
   });
 
   it('derives condition from the WMO weather_code', () => {

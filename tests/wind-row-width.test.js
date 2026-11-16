@@ -23,14 +23,15 @@ const speeds = (card) => {
 };
 
 describe('wind row width', () => {
+  // Entries are m/s (ADR-0035); the cells show km/h.
   it('gives every speed the width of the longest one', () => {
-    const cells = speeds(makeCard([8, 9, 10, 29].map((wind_speed, i) => ({ datetime: `2026-10-0${i + 1}T12:00:00Z`, wind_speed, wind_speed_unit: 'km/h' }))));
-    expect(cells).toHaveLength(4);
+    const cells = speeds(makeCard([2, 2.5, 3, 8].map((wind_speed, i) => ({ datetime: `2026-10-0${i + 1}T12:00:00Z`, wind_speed }))));
+    expect(cells.map((c) => c.textContent)).toEqual(['7', '9', '11', '29']);
     cells.forEach((c) => expect(c.style.minWidth).toBe('2ch'));
   });
 
   it('ignores cells without a speed', () => {
-    const cells = speeds(makeCard([{ datetime: '2026-10-01T12:00:00Z', wind_bearing: 90 }, { datetime: '2026-10-02T12:00:00Z', wind_speed: 7, wind_speed_unit: 'km/h' }]));
+    const cells = speeds(makeCard([{ datetime: '2026-10-01T12:00:00Z', wind_bearing: 90 }, { datetime: '2026-10-02T12:00:00Z', wind_speed: 2 }]));
     expect(cells).toHaveLength(1);
     expect(cells[0].style.minWidth).toBe('1ch');
   });
@@ -40,15 +41,10 @@ describe('wind row width', () => {
   });
 });
 
-describe('forecast Beaufort per entry unit (#438)', () => {
+describe('forecast Beaufort (#438)', () => {
   it('reads an m/s forecast entry in m/s even when the station uses km/h', () => {
-    const card = makeCard([
-      // 10 m/s = 36 km/h → Bft 5; read as km/h it would be Bft 2.
-      { datetime: '2026-10-01T12:00:00Z', wind_speed: 10, wind_speed_unit: 'm/s' },
-      { datetime: '2026-10-02T12:00:00Z', wind_speed: 10, wind_speed_unit: 'km/h' },
-      // An untagged entry is in the station's unit (km/h).
-      { datetime: '2026-10-03T12:00:00Z', wind_speed: 10 },
-    ], { speed: 'Bft' });
-    expect(speeds(card).map((c) => c.textContent)).toEqual(['5', '2', '2']);
+    // 10 m/s = 36 km/h → Bft 5; read as km/h it would be Bft 2.
+    const card = makeCard([{ datetime: '2026-10-01T12:00:00Z', wind_speed: 10 }], { speed: 'Bft' });
+    expect(speeds(card).map((c) => c.textContent)).toEqual(['5']);
   });
 });
