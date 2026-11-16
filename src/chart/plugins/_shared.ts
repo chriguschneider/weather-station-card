@@ -1,18 +1,10 @@
-// Shared types for the Chart.js plugin factories under chart/plugins/.
-// Each plugin sits in its own file (#57 split — was previously the
-// 600-line monolith chart/plugins.ts with dailyTickLabels at cog 46).
-//
-// Why the types live in one file rather than per-plugin: every plugin
-// reads from the same Chart.js context (the per-tick scale, the
-// canvas, chartArea). Inlining the shapes per plugin would duplicate
-// ~50 lines × 4 plugins. The shared file keeps the structural
-// inheritance (ChartLike → afterDraw) legible and lets the unit
-// tests mock once.
+// Shared types for the plugin factories under chart/plugins/: the
+// Chart.js-shaped context that `chart/draw.ts` builds around uPlot
+// (ADR-0012). One file so every plugin and its unit-test mocks use the
+// same shapes.
 
-/** Subset of the Chart.js Scale we touch. Avoids a chart.js type
- *  import (Chart 4 has its own typings but they require resolving the
- *  whole `Chart<...>` generic, which is unnecessary noise for plugin
- *  authoring at this layer). */
+/** Subset of a Chart.js-style scale: tick geometry and value-to-pixel
+ *  lookup, as synthesised by the shim in `chart/draw.ts`. */
 export interface ChartScaleLike {
   ticks: Array<{ value?: number; label?: string }>;
   top: number;
@@ -34,24 +26,18 @@ export interface ChartMetaLike {
   data?: ChartBarLike[];
 }
 
-/** Subset of the Chart instance we use from inside plugins. The
- *  generic `data` field is intentionally untyped — the `data` prop our
- *  plugins read from is the per-render bag we passed in from the
- *  factory, not Chart.js's internal data. */
+/** The chart surface plugins draw on: scales, 2D context, plot-area
+ *  rectangle and per-dataset geometry. */
 export interface ChartLike {
   scales: { x?: ChartScaleLike; PrecipAxis?: ChartScaleLike } & Record<string, ChartScaleLike | undefined>;
   ctx: CanvasRenderingContext2D;
   chartArea: { top: number; bottom: number; left: number; right: number };
-  /** The DOM canvas the chart renders into. Plugins use it to walk up
-   *  to the horizontal-scroll wrapper (`.forecast-scroll.scrolling`)
-   *  for hourly mode so they can react to the user's scroll position. */
+  /** The DOM canvas the chart renders into. */
   canvas?: HTMLCanvasElement | null;
   getDatasetMeta(idx: number): ChartMetaLike | null;
 }
 
-/** A Chart.js plugin object — a subset that matches the four plugins
- *  exported from this module. Chart.js will accept extra fields like
- *  `id`, but the typed surface here is only what we use. */
+/** A plugin: an id plus the draw hooks `chart/draw.ts` calls. */
 export interface ChartPlugin {
   id: string;
   afterDraw?(chart: ChartLike): void;

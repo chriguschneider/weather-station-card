@@ -1,21 +1,11 @@
-// Replaces Chart.js's tick labels for all three forecast modes.
-// Chart.js still reserves the axis height (the tick callback returns
-// empty strings — see chart/draw.ts), and this plugin paints the
-// actual labels on top:
+// X-axis tick labels for all three forecast modes. The uPlot axis only
+// reserves the strip (`buildAxes` in chart/draw.ts); this plugin paints:
 //
-//   - daily:  weekday + 2-digit date, centred per column. Doubled-today
-//             framing collapses station-today + forecast-today into a
-//             single boundary label.
-//   - today / hourly: 24-hour time per column (left-aligned). Date
-//             label only on the leftmost-visible column and on
-//             midnight columns; midnight columns also draw a bold
-//             day-boundary line from the chart bottom up to the date
-//             row.
-//
-// The afterDraw hook itself is intentionally short (#57 cog-46
-// refactor): it dispatches to one of two branch helpers based on
-// `forecast.type`. Each branch helper holds its own loop and is
-// independently grep-able.
+//   - daily: weekday + 2-digit date, centred per column.
+//   - today / hourly: 24-hour time per column, left-aligned. A date
+//     label on day-boundary columns (and the first column of a
+//     non-scrolling 'today'); midnight columns also draw a bold
+//     day-boundary line up to the date row.
 
 import { getDateTimeFormat } from '../../utils/intl-cache.js';
 import type { ChartLike, ChartPlugin, CssStyleLike, PluginCardConfig, PluginRenderData } from './_shared.js';
@@ -34,11 +24,8 @@ export interface DailyTickLabelsPluginOpts {
   sunshineLabelBand?: number;
 }
 
-/** Per-tick value cache. The plugin redraws on every scroll event in
- *  'hourly' mode (so the leftmost-visible date label tracks the
- *  viewport). Without this cache we'd construct 168 Date objects and
- *  make 168+ Intl calls each frame — Intl is 10-50× slower than
- *  primitive ops, so that's the dominant cost in the redraw. */
+/** Per-tick values, cached so a redraw does no Date construction or
+ *  Intl formatting. */
 interface TickInfo {
   hour: number;
   minutes: number;
@@ -50,9 +37,8 @@ interface TickInfo {
   dKey: number;
 }
 
-/** Bag of resources shared across the daily / hourly branch helpers
- *  inside `createDailyTickLabelsPlugin`. Captured once per plugin
- *  instantiation so the per-frame redraws are pure rendering work. */
+/** Resources shared by the daily and hourly branch helpers, captured
+ *  once per plugin instance. */
 interface RenderContext {
   config: PluginCardConfig;
   calendar: Calendar;
@@ -65,19 +51,10 @@ interface RenderContext {
   getTickInfo(dataIdx: number): TickInfo | null;
 }
 
-/** Today / hourly branch. Renders 24-hour time per column, left-
- *  aligned, with a stacked date label (BOLD, primary text colour) on
- *  day-boundary columns (and, for non-scrolling 'today', the first
- *  column). Midnight columns additionally draw a thick day-boundary
- *  stroke.
- *
- *  Perf pass 2026-08: the former scrollLeft-tracking "sticky" date on
- *  the leftmost VISIBLE column is gone — it forced a full canvas
- *  redraw on every scroll frame just to move one text label. The
- *  scroll timeline below the chart carries the day context now; the
- *  canvas output no longer depends on the scroll position.
- *  Off-viewport columns are culled via `cullX` (virtualized canvas —
- *  see chart/draw.ts). */
+/** Today / hourly branch: 24-hour time per column with a bold date
+ *  label on day-boundary columns (and the first column of a
+ *  non-scrolling 'today'). The output does not depend on the scroll
+ *  position. Off-viewport columns are culled (virtualized canvas). */
 function drawHourlyTimeLabels(chart: ChartLike, ctx: RenderContext): void {
   const xScale = chart.scales.x!;
   const c = chart.ctx;
@@ -103,36 +80,24 @@ function drawHourlyTimeLabels(chart: ChartLike, ctx: RenderContext): void {
     const x = xScale.getPixelForTick(i);
     const colLeft = x - colW / 2;
     const labelX = colLeft + labelGap;
-    // chart.js auto-skips overlapping ticks at hourly: the visible
-    // tick array's `tick.value` is the underlying data INDEX, while
-    // `i` is just the position within the visible subset.
     const tick = xScale.ticks[i];
     const dataIdx = (tick && typeof tick.value === 'number') ? tick.value : i;
     const info = ctx.getTickInfo(dataIdx);
     if (!info) continue;
 
-    // Day boundary detected either by an exact midnight tick OR by the
-    // calendar date (dKey) changing across consecutive columns. The
-    // dKey-change branch covers 3h-aggregated 'today' mode where no
-    // column anchors at exactly 00:00 (the midnight hour is pooled
-    // inside the 22:00 block; the next column anchors at 01:00 of the
-    // new day). prevDKey is tracked for EVERY column — including
-    // culled ones — so the boundary detection survives the viewport
-    // window.
+    // A day boundary is a midnight tick OR a change of calendar date
+    // (dKey): 3h-aggregated 'today' has no column at exactly 00:00.
+    // prevDKey is tracked for culled columns too, so detection survives
+    // the viewport window.
     const dayChanged = prevDKey !== null && info.dKey !== prevDKey;
     const isDayBoundary = info.isMidnight || dayChanged;
     prevDKey = info.dKey;
 
-    // Viewport culling: with the virtualized canvas only ~visibleBars
-    // columns land inside the plot area — skip the draw calls for the
-    // rest (the loop bookkeeping above stays, it feeds boundary
-    // detection).
+    // Viewport culling (after the bookkeeping above, which feeds
+    // boundary detection).
     if (x < cullMin || x > cullMax) continue;
 
     if (isDayBoundary) {
-      // Bold day-boundary marker: thick vertical line from chart bottom
-      // up to the TOP of the date text, anchored at the column's LEFT
-      // edge.
       c.save();
       c.strokeStyle = weekdayColor;
       c.lineWidth = 2;
@@ -156,9 +121,9 @@ function drawHourlyTimeLabels(chart: ChartLike, ctx: RenderContext): void {
   c.restore();
 }
 
-/** Daily branch. Renders weekday + 2-digit date, centred per column.
- *  Doubled-today framing (both blocks active) collapses
- *  station-today + forecast-today into a single boundary label. */
+/** Daily branch: weekday + 2-digit date, centred per column. With a
+ *  doubled today (both blocks active) the station-today and
+ *  forecast-today columns share one label at their boundary. */
 function drawDailyDateWeekdayLabels(chart: ChartLike, ctx: RenderContext): void {
   const xScale = chart.scales.x!;
   const c = chart.ctx;
@@ -181,13 +146,10 @@ function drawDailyDateWeekdayLabels(chart: ChartLike, ctx: RenderContext): void 
     const info = ctx.getTickInfo(i);
     if (!info) continue;
 
-    // Today is a doubled column when both blocks are active. Skip
-    // the station-today label (i = stationCount - 1) and draw a
-    // single centred label at the boundary in the forecast-today
-    // pass.
+    // Skip the station-today label; the forecast-today pass draws the
+    // shared one.
     if (ctx.doubledToday && i === ctx.stationCount - 1) continue;
     const x = xScale.getPixelForTick(i);
-    // Viewport culling for the virtualized (scrolling) canvas.
     if (x < cullMin || x > cullMax) continue;
     const labelX = (ctx.doubledToday && i === ctx.stationCount)
       ? (xScale.getPixelForTick(i - 1) + x) / 2
@@ -219,13 +181,8 @@ export function createDailyTickLabelsPlugin({
 }: DailyTickLabelsPluginOpts): ChartPlugin {
   const showDateRow = config.forecast.show_date !== false;
 
-  // Pulled from the process-wide intl-cache so re-instantiating the
-  // plugin (mode toggle, theme change) re-uses the same Intl
-  // instances that other parts of the card already paid to build.
-  // Intl.DateTimeFormat construction is ~0.5-2 ms per call;
-  // toLocale*-based alternatives recreate it under the hood per
-  // call, so explicit caching is ~3× faster than the toLocale*
-  // shortcut.
+  // Shared Intl cache: re-instantiating the plugin reuses the
+  // formatters instead of constructing new ones.
   const timeFmt = getDateTimeFormat(language, {
     hour12: false, hour: '2-digit', minute: '2-digit', timeZone: calendar.timeZone,
   });
@@ -270,11 +227,6 @@ export function createDailyTickLabelsPlugin({
     afterDraw(chart: ChartLike): void {
       const xScale = chart.scales.x;
       if (!xScale?.ticks) return;
-      // Branch dispatch — each path owns its own loop, save/restore,
-      // and column geometry. Keeps the cognitive complexity of the
-      // afterDraw hook itself small (under SonarCloud's 15-cog
-      // threshold) and makes each rendering mode independently
-      // reviewable.
       if (config.forecast.type === 'today' || config.forecast.type === 'hourly') {
         drawHourlyTimeLabels(chart, renderCtx);
       } else {

@@ -1,10 +1,6 @@
-// Loading placeholder rendered in place of the chart while data
-// sources are still firing their first callbacks. Reserves the same
-// vertical space as the eventual chart so the swap doesn't reflow.
-// Visual content is a moving shimmer sweep (CSS, on the wrapper's
-// ::after pseudo) — no gridline / axis structure, since that mental
-// model didn't match the real chart's geometry and made the swap
-// visually jarring. The motion alone is enough of a "loading" signal.
+// Loading placeholder shown until the first data arrives. Reserves the
+// chart's height so the swap doesn't reflow; the shimmer sweep is CSS
+// on the wrapper's ::after.
 
 import { html, type TemplateResult } from 'lit';
 

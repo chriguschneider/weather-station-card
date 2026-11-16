@@ -1,33 +1,13 @@
-// Precipitation-label plugin: renders the per-column precip value
-// with the number at the regular `labels_font_size` and the unit at
-// ~50 % so "mm" / "in" doesn't dominate narrow bars. Replaces the
-// chart's own datalabel for the precip dataset (display:false on that
-// dataset's datalabels block) and reproduces the boxed look
-// (chart-bg fill, bar-coloured 1.5 px border).
-//
-// With `data.precipProb` present (forecast.show_precip_probability,
-// #288) a forecast column's box grows to two lines: the amount and
-// the chance side by side in the number size, separated by a muted
-// slash, with each unit centred under its own number —
+// Per-column precip box: number at `labels_font_size`, unit at ~50 %,
+// bar-coloured 1.5 px border. With `data.precipProb` (#288) a forecast
+// column becomes two lines, amount and chance side by side with each
+// unit under its number:
 //
 //     4.2 / 85
 //     mm     %
 //
-// Side-by-side rather than stacked because the box only grows ~7 px
-// instead of ~12 px, and units-below rather than inline because the
-// inline form ("4.2 mm / 85 %") measures ~60 px, wider than a column
-// on a phone (8 columns ≈ 45 px). Measured at 11 px / 6 px Helvetica:
-// 41–44 px wide, so the box still fits the narrowest column.
-//
-// Why a custom plugin and not chartjs-plugin-datalabels?
-// chartjs-datalabels can render multiline text but applies one font
-// to the whole label. We need *different* font sizes for the number
-// and the unit on the same line, so the unit doesn't crowd narrow
-// bars. That's outside that plugin's API surface — hence this small,
-// contained plugin alongside chartjs-datalabels (which still drives
-// the temperature labels above and below the line). Two mechanisms
-// is a deliberate trade-off: full unification would mean
-// reimplementing every chartjs-datalabels feature for temperature too.
+// The inline form ("4.2 mm / 85 %") is wider than a phone column
+// (8 columns, ~45 px); this one is not.
 
 import type { ChartBarLike, ChartLike, ChartPlugin, PluginCardConfig, PluginRenderData } from './_shared.js';
 import { convertPrecipLength } from '../../utils/unit-converters.js';
@@ -37,10 +17,8 @@ import { convertPrecipLength } from '../../utils/unit-converters.js';
  *  from here on the chance is something the reader wants to see. */
 export const PROBABILITY_ONLY_MIN = 30;
 
-/** Extra bottom padding the two-line box needs below the baseline,
- *  on top of draw.ts's 14 px for the one-line box. Half the box
- *  (≈ 11 px at the default 11 px font) hangs below the PrecipAxis
- *  0-line; the one-line box only hangs ≈ 8 px. */
+/** Extra bottom padding the two-line box needs below the PrecipAxis
+ *  0-line, on top of the one-line box's padding in draw.ts. */
 export const PROBABILITY_EXTRA_BOTTOM_PAD = 4;
 
 export interface PrecipLabelPluginOpts {
@@ -73,12 +51,9 @@ interface BoxStyle {
 
 type Ctx = ChartLike['ctx'];
 
-/** Column centre in canvas px, or null when the column is off-screen.
- *  Centre on the COLUMN, not on the bar — when sunshine is enabled,
- *  draw.ts groups precip into the left half of the column and the
- *  label still sits under the whole column. Falls back to bar.x if the
- *  x-scale isn't ready. Viewport culling (virtualized canvas):
- *  off-screen columns skip the measureText + box drawing entirely. */
+/** Column centre in canvas px, or null when the column is off-screen
+ *  (viewport culling). Centred on the column, not the bar: with
+ *  sunshine on, the bar sits in the left half of the column. */
 function columnCentre(chart: ChartLike, bar: ChartBarLike, i: number): number | null {
   const xScale = chart.scales.x;
   const cx = xScale && typeof xScale.getPixelForTick === 'function'
@@ -90,8 +65,8 @@ function columnCentre(chart: ChartLike, bar: ChartBarLike, i: number): number | 
 
 /** Convert the per-bar amount into the display unit. Bar heights stay
  *  in the source unit (handled by the axis); only this label text is
- *  converted. Inches need two decimals (values are ~25× smaller); mm
- *  keeps the legacy whole-number-above-9 rule. */
+ *  converted. Inches need two decimals; mm rounds to a whole number
+ *  above 9. */
 function formatAmount(rawValue: number, sourceBase: string, targetBase: string): string {
   const value = convertPrecipLength(rawValue, sourceBase, targetBase);
   if (targetBase === 'in') return value.toFixed(2);
@@ -112,7 +87,7 @@ function drawBox(c: Ctx, left: number, top: number, w: number, h: number, st: Bo
   c.strokeRect(left, top, w, h);
 }
 
-/** One-line box: "4.2 mm" — the pre-#288 look, unchanged. */
+/** One-line box: "4.2 mm". */
 function drawOneLineBox(c: Ctx, cx: number, baselineY: number, number: string, unit: string, st: BoxStyle): void {
   const gap = 2;
   c.font = `${st.baseSize}px ${st.fontFamily}`;
@@ -210,9 +185,8 @@ export function createPrecipLabelPlugin({
         strokeColor: precipColor,
         fillColor: chartTextColor || textColor,
       };
-      // All labels share a fixed Y line just above the precipitation
-      // axis baseline, so they sit in a row at the chart bottom
-      // regardless of bar height (matches the original datalabels look).
+      // All boxes share one Y line at the PrecipAxis baseline,
+      // regardless of bar height.
       const precipAxis = chart.scales.PrecipAxis;
       const baselineY = precipAxis?.getPixelForValue
         ? precipAxis.getPixelForValue(0)
