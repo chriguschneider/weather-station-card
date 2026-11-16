@@ -13,16 +13,13 @@ import {
   climateRowNextRain,
   climateRowPrecip,
   climateRowPressure,
-  displayPressure,
 } from './climate-rows.js';
 import { climateRowZeroDegree, climateRowZeroDegree48h } from './zero-degree-rows.js';
 import { renderMoonLine, siteCoords, sunRowSun, sunRowSunStrength } from './sun-rows.js';
-import { displayWindSpeed, windRowDirection, windRowGust, windRowSpeed } from './wind-rows.js';
+import { windRowDirection, windRowGust, windRowSpeed } from './wind-rows.js';
 
 /** Values the rows read beyond the raw readings, derived once per render. */
 interface Derived {
-  dPressure: number | undefined;
-  dWindSpeed: number | undefined;
   lat: number | null;
   lon: number | null;
 }
@@ -34,13 +31,13 @@ export function renderAttributeLine(ctx: LivePanelCtx, token: AttributeToken, d:
   const v = ctx.values;
   switch (token) {
     case 'pressure':
-      return climateRowPressure(ctx, true, d.dPressure, v.pressureDelta3h ?? null);
+      return climateRowPressure(ctx, true, v.pressureDelta3h ?? null);
     case 'dew_point_humidity':
-      return climateRowDewPoint(ctx, true, v.dew_point, true, v.humidity);
+      return climateRowDewPoint(ctx, true, true, v.humidity);
     case 'dew_point':
-      return climateRowDewPoint(ctx, true, v.dew_point, false, v.humidity);
+      return climateRowDewPoint(ctx, true, false, v.humidity);
     case 'humidity':
-      return climateRowDewPoint(ctx, false, v.dew_point, true, v.humidity);
+      return climateRowDewPoint(ctx, false, true, v.humidity);
     case 'precipitation':
       return climateRowPrecip(ctx, true, isPresent(v.precipitation), v.precipitation, v.precipitation_unit);
     case 'zero_degree_level':
@@ -63,9 +60,9 @@ export function renderAttributeLine(ctx: LivePanelCtx, token: AttributeToken, d:
     case 'wind_direction':
       return windRowDirection(ctx, true, v.windDirection);
     case 'wind_speed':
-      return windRowSpeed(ctx, true, d.dWindSpeed);
+      return windRowSpeed(ctx, true);
     case 'wind_gust_speed':
-      return windRowGust(ctx, true, v.wind_gust_speed);
+      return windRowGust(ctx, true);
     default:
       return null;
   }
@@ -89,8 +86,6 @@ export function renderAttributes(ctx: LivePanelCtx) {
   // arrangement filtered by the show_* toggles.
   const layout = resolveAttributesLayout(ctx.config);
   const d: Derived = {
-    dPressure: displayPressure(ctx, ctx.values.pressure),
-    dWindSpeed: displayWindSpeed(ctx, ctx.values.windSpeed),
     // Missing coordinates fall through to the 110 000 lx constant inside
     // classifySunStrength.
     ...siteCoords(ctx),

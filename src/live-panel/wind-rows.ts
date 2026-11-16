@@ -1,13 +1,12 @@
 // Wind rows: the live panel's direction / speed / gust lines and the
-// forecast block's per-column wind row (conversions: ADR-0009).
+// forecast block's per-column wind row (display units: ADR-0035).
 
 import { html } from 'lit';
 import { cardinalDirectionsIcon } from '../const.js';
 import { MDI_PATHS } from '../icons/mdi-paths.js';
 import { sanitizeForecastEntries } from '../chart/sanitize.js';
-import { convertWindSpeed } from '../utils/unit-converters.js';
-import { parseNumericSafe } from '../utils/numeric.js';
-import { attrEntity, unitLabel, type LivePanelCtx } from './context.js';
+import { displayNumber } from '../display-units.js';
+import { attrEntity, shownText, shownValue, unitLabel, type LivePanelCtx } from './context.js';
 
 const ICON_INDEX_BY_DIR: Record<string, number> = {
   N: 0, NNE: 1, NE: 1, ENE: 2, E: 2, ESE: 3, SE: 3, SSE: 4, S: 4,
@@ -27,26 +26,17 @@ export function windDirText(directions: readonly string[], deg: number | string)
   return deg;
 }
 
-/** Live wind speed in the display unit; undefined hides the row. */
-export function displayWindSpeed(ctx: LivePanelCtx, windSpeed: unknown): number | undefined {
-  return convertWindSpeed(windSpeed, ctx.weatherUnits.windSpeed, ctx.unitSpeed);
-}
-
 /** A forecast entry's own unit (set by ForecastDataSource from the weather
  *  entity) wins over the station's, so forecast wind is not mis-converted
- *  when the two disagree. */
+ *  when the two disagree. Null for an unknown unit. */
 export function convertWind(ctx: LivePanelCtx, raw: unknown, sourceUnit?: string): number | null {
   if (typeof raw !== 'number' || !Number.isFinite(raw)) return null;
-  return convertWindSpeed(raw, sourceUnit ?? ctx.weatherUnits.windSpeed, ctx.unitSpeed) ?? null;
+  return displayNumber('speed', raw, sourceUnit ?? ctx.stationWindUnit, ctx.displayUnits.speed);
 }
 
-export function windSpeedText(ctx: LivePanelCtx, speed: number): string {
-  const u = unitLabel(ctx, ctx.unitSpeed);
-  return u ? `${speed} ${u}` : String(speed);
-}
-
-export function gustSpeed(ctx: LivePanelCtx, gust: unknown): number | null {
-  return convertWind(ctx, parseNumericSafe(gust));
+export function windSpeedText(ctx: LivePanelCtx, key: 'wind_speed' | 'gust_speed'): string {
+  const shown = shownValue(ctx, key);
+  return shown ? shownText(shown) : '';
 }
 
 export function windRowDirection(ctx: LivePanelCtx, show: boolean, windDirection: unknown) {
@@ -56,20 +46,20 @@ export function windRowDirection(ctx: LivePanelCtx, show: boolean, windDirection
     html`<ha-icon icon="hass:${windDirIcon(dir)}"></ha-icon> ${windDirText(ctx.cardinalDirections, dir)}`)}`;
 }
 
-export function windRowSpeed(ctx: LivePanelCtx, show: boolean, dWindSpeed: number | null | undefined) {
-  if (!show || dWindSpeed == null) return null;
+export function windRowSpeed(ctx: LivePanelCtx, show: boolean) {
+  const text = show ? windSpeedText(ctx, 'wind_speed') : '';
+  if (!text) return null;
   return html`${ctx.entityLink(attrEntity(ctx.config, 'wind_speed'),
     html`<ha-icon icon="hass:weather-windy"></ha-icon>
-    ${windSpeedText(ctx, dWindSpeed)}`)}`;
+    ${text}`)}`;
 }
 
-export function windRowGust(ctx: LivePanelCtx, show: boolean, windGustSpeed: unknown) {
-  if (!show) return null;
-  const dGust = gustSpeed(ctx, windGustSpeed);
-  if (dGust === null) return null;
+export function windRowGust(ctx: LivePanelCtx, show: boolean) {
+  const text = show ? windSpeedText(ctx, 'gust_speed') : '';
+  if (!text) return null;
   return html`${ctx.entityLink(attrEntity(ctx.config, 'gust_speed'),
     html`<ha-icon icon="hass:weather-windy-variant"></ha-icon>
-    ${windSpeedText(ctx, dGust)}`)}`;
+    ${text}`)}`;
 }
 
 // ADR-0018: the wide forecast rows render inline-SVG <use> references
@@ -103,7 +93,7 @@ export function renderForecastWind(
   if (!showArrow && !showSpeed) return html``;
 
   const forecast = sanitizeForecastEntries(forecasts ? forecasts.slice(0, forecastItems) : []) as ForecastWindEntry[];
-  const unit = unitLabel(ctx, ctx.unitSpeed);
+  const unit = unitLabel(ctx, ctx.displayUnits.speed);
 
   // Every speed gets the width of the longest one, so all cells wrap
   // (speed below the arrow) or none does, whatever the screen width.

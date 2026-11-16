@@ -79,7 +79,7 @@ const fi: LocaleEntry = {
   'legend_high': 'Ylin',
   'legend_low': 'Alin',
   'legend_precip': 'Sademäärä',
-  'pressure_tooltip_template': '{trend} · Δ3h {delta} hPa · {influence}',
+  'pressure_tooltip_template': '{trend} · Δ3h {delta} {unit} · {influence}',
   'units': {
     'km/h': 'km/h',
     'm/s': 'm/s',

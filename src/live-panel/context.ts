@@ -5,6 +5,8 @@
 import type { Calendar } from '../utils/time-zone.js';
 import type { ZeroDegreePoint } from '../zero-degree-popup.js';
 import { getNumberFormat } from '../utils/intl-cache.js';
+import { parseNumericSafe } from '../utils/numeric.js';
+import { displayNumber, type DisplayQuantity, type DisplayUnits } from '../display-units.js';
 
 export interface LiveStateObj {
   state: string;
@@ -37,17 +39,12 @@ export interface LiveConfig {
 
 /** The live readings the card extracts from its sensors. */
 export interface LiveValues {
-  temperature?: unknown;
   humidity?: unknown;
-  pressure?: unknown;
-  dew_point?: unknown;
   precipitation?: unknown;
   precipitation_unit?: string;
   uv_index?: unknown;
   illuminance?: unknown;
-  windSpeed?: unknown;
   windDirection?: unknown;
-  wind_gust_speed?: unknown;
   zero_degree_level?: unknown;
   zero_degree_unit?: string;
   zero_degree_48h_level?: unknown;
@@ -59,6 +56,19 @@ export interface LiveValues {
   next_rain_icon?: string;
   next_rain_title?: string;
   pressureDelta3h?: number | null;
+}
+
+export const LIVE_READING_KEYS = [
+  'temperature', 'dew_point', 'pressure', 'wind_speed', 'gust_speed', 'zero_degree_level', 'zero_degree_level_48h',
+] as const;
+export type LiveReadingKey = typeof LIVE_READING_KEYS[number];
+
+/** A live reading as extracted (sensor-readings.ts): the raw value, its
+ *  unit, and the value in canonical units (null for an unknown unit). */
+export interface LiveReading {
+  value: unknown;
+  unit: string | undefined;
+  canonical: number | null;
 }
 
 export type LinkFn = (entityId: string | undefined, content: unknown) => unknown;
@@ -74,12 +84,11 @@ export interface LivePanelCtx {
   /** Unit labels of the active locale (`units` table). */
   units: Record<string, string | undefined>;
   cardinalDirections: readonly string[];
-  unitPressure?: string;
-  unitSpeed?: string;
-  /** Units of the synthetic weather object (the station's source units). */
-  weatherUnits: { temperature?: string; windSpeed?: string; pressure?: string };
-  /** Unit of the temperature sensor; the dew-point classifier wants °C. */
-  sourceTempUnit: string;
+  readings: Readonly<Record<LiveReadingKey, LiveReading>>;
+  /** The card's display units (ADR-0035, point 4). */
+  displayUnits: DisplayUnits;
+  /** Unit of forecast entries without their own `wind_speed_unit` (station statistics). */
+  stationWindUnit: string;
   values: LiveValues;
   /** Wraps content in a more-info link for the entity (or returns it). */
   entityLink: LinkFn;
@@ -100,9 +109,47 @@ export function attrEntity(
   return undefined;
 }
 
+// The locale tables are keyed by the config's spelling: the units-table
+// id `Beaufort` is `Bft` there.
+const LABEL_KEY: Readonly<Record<string, string>> = { Beaufort: 'Bft' };
+
 /** Locale label of a unit key ('' when no unit is set). */
-export function unitLabel(ctx: LivePanelCtx, unit: string | undefined): string {
-  return unit ? ctx.units[unit] ?? unit : '';
+export function unitLabel(ctx: Pick<LivePanelCtx, 'units'>, unit: string | undefined): string {
+  if (!unit) return '';
+  const key = LABEL_KEY[unit] ?? unit;
+  return ctx.units[key] ?? key;
+}
+
+export type ShownKey = 'temperature' | 'dew_point' | 'pressure' | 'wind_speed' | 'gust_speed';
+
+const SHOWN_QUANTITY: Readonly<Record<ShownKey, DisplayQuantity>> = {
+  temperature: 'temperature',
+  dew_point: 'temperature',
+  pressure: 'pressure',
+  wind_speed: 'speed',
+  gust_speed: 'speed',
+};
+
+/** A reading as the card shows it (ADR-0035, points 4 and 5): number and
+ *  label in the display unit, or the raw value with its own unit when
+ *  that unit is unknown. Null when the value is not numeric. */
+export function shownValue(
+  ctx: Pick<LivePanelCtx, 'readings' | 'displayUnits' | 'units'>,
+  key: ShownKey,
+): { value: number | string; unit: string } | null {
+  const reading = ctx.readings[key];
+  const num = parseNumericSafe(reading?.value);
+  if (num === null) return null;
+  const quantity = SHOWN_QUANTITY[key];
+  const displayUnit = ctx.displayUnits[quantity];
+  const value = reading.canonical === null ? null : displayNumber(quantity, num, reading.unit, displayUnit);
+  if (value === null) return { value: String(reading.value), unit: reading.unit ?? '' };
+  return { value, unit: unitLabel(ctx, displayUnit) };
+}
+
+/** Value, a space, unit; the value alone without a unit. */
+export function shownText(shown: { value: number | string; unit: string }): string {
+  return shown.unit ? `${shown.value} ${shown.unit}` : String(shown.value);
 }
 
 export interface EntityFormatOptions {
@@ -150,14 +197,6 @@ export function formatEntityNumber(
     ? getNumberFormat(ctx.language, { maximumFractionDigits: maxFractionDigits }).format(num)
     : String(value);
   return withUnit && unit ? `${text} ${unit}` : text;
-}
-
-/** Rounds to one decimal, the main temperature's rule; non-numeric
- *  values pass through as text. */
-export function oneDecimal(v: unknown): string {
-  const n = parseFloat(String(v));
-  if (!Number.isFinite(n)) return v === undefined || v === null ? '' : String(v);
-  return String(n % 1 !== 0 ? Math.round(n * 10) / 10 : n);
 }
 
 export const isPresent = (v: unknown): boolean => v !== undefined && v !== '';

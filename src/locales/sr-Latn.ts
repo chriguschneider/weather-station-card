@@ -34,7 +34,7 @@ const sr_Latn: LocaleEntry = {
   'pressure_influence_stable': 'bez promena',
   'pressure_influence_falling': 'pogoršanje',
   'pressure_influence_falling_fast': 'moguća oluja',
-  'pressure_tooltip_template': '{trend} · Δ3h {delta} hPa · {influence}',
+  'pressure_tooltip_template': '{trend} · Δ3h {delta} {unit} · {influence}',
   'dew_point_band_raureif': 'opasnost od mraza',
   'dew_point_band_nebel': 'opasnost od magle',
   'dew_point_band_schwuel': 'sparno',

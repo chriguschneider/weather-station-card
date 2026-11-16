@@ -79,7 +79,7 @@ const uk: LocaleEntry = {
   'legend_high': 'Макс.',
   'legend_low': 'Мін.',
   'legend_precip': 'Опади',
-  'pressure_tooltip_template': '{trend} · Δ3h {delta} hPa · {influence}',
+  'pressure_tooltip_template': '{trend} · Δ3h {delta} {unit} · {influence}',
   'units': {
     'km/h': 'км/год',
     'm/s': 'м/с',

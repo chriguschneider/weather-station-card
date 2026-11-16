@@ -34,7 +34,7 @@ const de: LocaleEntry = {
   'pressure_influence_stable': 'Wetter bleibt stabil',
   'pressure_influence_falling': 'Verschlechterung wahrscheinlich',
   'pressure_influence_falling_fast': 'Sturmgefahr',
-  'pressure_tooltip_template': '{trend} · Δ3h {delta} hPa · {influence}',
+  'pressure_tooltip_template': '{trend} · Δ3h {delta} {unit} · {influence}',
   'dew_point_band_raureif': 'Raureifgefahr',
   'dew_point_band_nebel': 'Nebelgefahr',
   'dew_point_band_schwuel': 'Schwül',

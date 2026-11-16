@@ -79,7 +79,7 @@ const el: LocaleEntry = {
   'legend_high': 'Μέγ.',
   'legend_low': 'Ελάχ.',
   'legend_precip': 'Υετός',
-  'pressure_tooltip_template': '{trend} · Δ3h {delta} hPa · {influence}',
+  'pressure_tooltip_template': '{trend} · Δ3h {delta} {unit} · {influence}',
   'units': {
     'km/h': 'χλμ/ώρα',
     'm/s': 'μ/δ',

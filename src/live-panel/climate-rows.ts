@@ -7,67 +7,73 @@ import { html } from 'lit';
 import { getPressureTrend, getPressureTrendIcon } from '../pressure-trend.js';
 import { getDewPointComfort, getDewPointComfortIcon } from '../dew-point-comfort.js';
 import { precipIcon } from '../precip-rate.js';
-import { convertPressure, isPrecipRateUnit, toMillimeters } from '../utils/unit-converters.js';
+import { isPrecipRateUnit, toMillimeters } from '../utils/unit-converters.js';
+import { displayDecimals, fromCanonical, parseUnit, toDisplay } from '../utils/units.js';
 import { parseNumericSafe } from '../utils/numeric.js';
-import { attrEntity, oneDecimal, unitLabel, type LivePanelCtx } from './context.js';
+import { attrEntity, shownText, shownValue, unitLabel, type LivePanelCtx, type LiveReading } from './context.js';
 
 const isNumeric = (v: unknown): boolean => v != null && Number.isFinite(parseFloat(String(v)));
 
-/** Pressure in the display unit; undefined hides the row
- *  (Math.round(null) would turn a null attribute into a bogus 0). */
-export function displayPressure(ctx: LivePanelCtx, pressure: unknown): number | undefined {
-  const num = parseNumericSafe(pressure);
-  if (num === null) return undefined;
-  return convertPressure(num, ctx.weatherUnits.pressure, ctx.unitPressure);
-}
-
-export function pressureText(ctx: LivePanelCtx, dPressure: unknown): string {
-  const u = unitLabel(ctx, ctx.unitPressure);
-  return u ? `${String(dPressure)} ${u}` : String(dPressure);
+export function pressureText(ctx: LivePanelCtx): string {
+  const shown = shownValue(ctx, 'pressure');
+  return shown ? shownText(shown) : '';
 }
 
 export function humidityText(humidity: unknown): string {
   return `${String(humidity)} %`;
 }
 
-/** Dew point capped at one decimal, same rule as the main temperature:
- *  a weather entity's computed attribute is often a full-precision float. */
-export function dewPointText(ctx: LivePanelCtx, dewPoint: unknown): string {
-  const unit = ctx.weatherUnits.temperature;
-  const v = oneDecimal(dewPoint);
-  return v && unit ? `${v} ${unit}` : v;
+export function dewPointText(ctx: LivePanelCtx): string {
+  const shown = shownValue(ctx, 'dew_point');
+  return shown ? shownText(shown) : '';
 }
 
 export function precipitationText(precipitation: unknown, unit: string | undefined): string {
   return unit ? `${String(precipitation)} ${unit}` : String(precipitation);
 }
 
-export function climateRowPressure(ctx: LivePanelCtx, show: boolean, dPressure: unknown, deltaHpa: number | null) {
-  if (!show || dPressure == null || !isNumeric(dPressure)) return null;
+export function climateRowPressure(ctx: LivePanelCtx, show: boolean, deltaHpa: number | null) {
+  const text = show ? pressureText(ctx) : '';
+  if (!text) return null;
   const trend = getPressureTrend(deltaHpa);
   const iconName = getPressureTrendIcon(trend) || 'gauge';
   // Icon-only: the tooltip carries trend, 3-h delta and influence. The
-  // delta stays in hPa (the WMO classification unit) whatever the display unit.
+  // trend is classified in hPa; the delta is shown in the row's unit.
   let ariaLabel = '';
-  if (trend && deltaHpa != null && Number.isFinite(deltaHpa)) {
-    const deltaStr = (deltaHpa > 0 ? '+' : '') + deltaHpa.toFixed(1);
+  const unit = ctx.displayUnits.pressure;
+  const d = toDisplay('pressure', deltaHpa, unit, 'delta');
+  if (trend && d !== null) {
+    const deltaStr = (d > 0 ? '+' : '') + d.toFixed(displayDecimals('pressure', unit, 'delta') ?? 1);
     ariaLabel = ctx.str('pressure_tooltip_template')
       .replace('{trend}', ctx.str(`pressure_trend_${trend}`))
       .replace('{delta}', deltaStr)
+      .replace('{unit}', unitLabel(ctx, unit))
       .replace('{influence}', ctx.str(`pressure_influence_${trend}`));
   }
   return html`${ctx.entityLink(attrEntity(ctx.config, 'pressure'),
     html`<span title=${ariaLabel} aria-label=${ariaLabel}><ha-icon
       icon="hass:${iconName}"
-    ></ha-icon> ${pressureText(ctx, dPressure)}</span>`)}`;
+    ></ha-icon> ${text}</span>`)}`;
 }
 
-function dewPointTitle(ctx: LivePanelCtx, band: string, tdRaw: number, tairRaw: number): string {
-  const spread = Math.max(0, tairRaw - tdRaw);
+// A reading in whole degrees of the display unit: the raw number when it
+// already is in that unit, so a 54 °F sensor is not shown as 53.99… → 54.
+function inDisplayTemperature(reading: LiveReading, unit: string): number | null {
+  const raw = parseNumericSafe(reading.value);
+  if (raw !== null && parseUnit('temperature', reading.unit) === parseUnit('temperature', unit)) return raw;
+  return fromCanonical('temperature', reading.canonical, unit);
+}
+
+function dewPointTitle(ctx: LivePanelCtx, band: string): string {
+  const unit = ctx.displayUnits.temperature;
+  const td = inDisplayTemperature(ctx.readings.dew_point, unit);
+  const tair = inDisplayTemperature(ctx.readings.temperature, unit);
+  if (td === null || tair === null) return '';
+  const spread = Math.max(0, tair - td);
   return ctx.str('dew_point_tooltip_template')
-    .replace('{td}', String(Math.round(tdRaw)))
+    .replace('{td}', String(Math.round(td)))
     .replace('{spread}', String(Math.round(spread)))
-    .replace(/\{unit\}/g, String(ctx.weatherUnits.temperature))
+    .replace(/\{unit\}/g, unitLabel(ctx, unit))
     .replace('{band}', ctx.str(`dew_point_band_${band}`));
 }
 
@@ -76,29 +82,26 @@ function dewPointTitle(ctx: LivePanelCtx, band: string, tdRaw: number, tairRaw: 
 export function climateRowDewPoint(
   ctx: LivePanelCtx,
   show: boolean,
-  dewPoint: unknown,
   showHumidity: boolean,
   humidity: unknown,
 ) {
-  const dewVisible = show && isNumeric(dewPoint);
+  const dewText = show ? dewPointText(ctx) : '';
   const humVisible = showHumidity && isNumeric(humidity);
-  if (!dewVisible && !humVisible) return null;
+  if (!dewText && !humVisible) return null;
   const humSegment = humVisible
     ? ctx.entityLink(attrEntity(ctx.config, 'humidity'),
         html`<ha-icon icon="hass:water-percent"></ha-icon> ${humidityText(humidity)}`)
     : html``;
-  if (!dewVisible) return humSegment;
-  // The classifier wants °C; display values stay in the user's unit.
-  const toC = (v: number) => (ctx.sourceTempUnit === '°F' ? (v - 32) * 5 / 9 : v);
-  const tdRaw = parseFloat(String(dewPoint));
-  const tairRaw = parseFloat(String(ctx.values.temperature));
-  const band = getDewPointComfort(toC(tdRaw), Number.isFinite(tairRaw) ? toC(tairRaw) : null);
+  if (!dewText) return humSegment;
+  // The classifier reads canonical °C; an unknown unit gives no band.
+  const { dew_point: dew, temperature } = ctx.readings;
+  const band = getDewPointComfort(dew.canonical, temperature.canonical);
   const iconName = getDewPointComfortIcon(band) || 'thermometer-water';
-  const ariaLabel = band && Number.isFinite(tairRaw) ? dewPointTitle(ctx, band, tdRaw, tairRaw) : '';
+  const ariaLabel = band ? dewPointTitle(ctx, band) : '';
   const dewSegment = ctx.entityLink(attrEntity(ctx.config, 'dew_point'),
     html`<span title=${ariaLabel} aria-label=${ariaLabel}><ha-icon
       icon="hass:${iconName}"
-    ></ha-icon> ${dewPointText(ctx, dewPoint)}</span>`);
+    ></ha-icon> ${dewText}</span>`);
   return humVisible ? html`${dewSegment} ${humSegment}` : dewSegment;
 }
 

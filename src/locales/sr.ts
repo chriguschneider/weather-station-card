@@ -34,7 +34,7 @@ const sr: LocaleEntry = {
   'pressure_influence_stable': 'без промена',
   'pressure_influence_falling': 'погоршање',
   'pressure_influence_falling_fast': 'могућа олуја',
-  'pressure_tooltip_template': '{trend} · Δ3h {delta} hPa · {influence}',
+  'pressure_tooltip_template': '{trend} · Δ3h {delta} {unit} · {influence}',
   'dew_point_band_raureif': 'опасност од мраза',
   'dew_point_band_nebel': 'опасност од магле',
   'dew_point_band_schwuel': 'спарно',

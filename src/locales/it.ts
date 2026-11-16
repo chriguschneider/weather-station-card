@@ -79,7 +79,7 @@ const it: LocaleEntry = {
   'sun_strength_cloudy': 'nuvoloso',
   'sun_strength_protection_advised': 'protezione solare consigliata',
   'sun_strength_night_reason': 'Sole sotto l’orizzonte — UV nascosto',
-  'pressure_tooltip_template': '{trend} · Δ3h {delta} hPa · {influence}',
+  'pressure_tooltip_template': '{trend} · Δ3h {delta} {unit} · {influence}',
   'units': {
     'km/h': 'km/h',
     'm/s': 'm/s',
