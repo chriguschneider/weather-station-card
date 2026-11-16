@@ -403,8 +403,9 @@ describe('MeasuredDataSource._buildForecast', () => {
     const out = ds._buildForecast(stats, sensorsWithSunshine, startDay, 3);
     // The first emitted day uses the recorder running daily-max for sunshine,
     // not null (the previous behaviour from #16). #37 reverts that — empirical
-    // truth even when small early in the day.
-    expect(out[0].sunshine).toBe(1440);
+    // truth even when small early in the day. Without a unit, 1440 is
+    // read as seconds (the magnitude rule).
+    expect(out[0].sunshine).toBeCloseTo(0.4, 9);
   });
 
   it("uses today's live state, not the daily max carrying yesterday's total", () => {
@@ -542,8 +543,43 @@ describe('MeasuredDataSource._buildForecast', () => {
     const dayKey = `${todayStart.getFullYear()}-${String(todayStart.getMonth() + 1).padStart(2, '0')}-${String(todayStart.getDate()).padStart(2, '0')}`;
     const luxByDate = new Map([[dayKey, 7.5]]);
     const out = ds._buildForecast(stats, sensorsWithSunshine, startDay, 3, luxByDate);
-    // Method C (recorder sensor) wins — 999, not 7.5.
-    expect(out[0].sunshine).toBe(999);
+    // Method C (recorder sensor) wins — 999 s without a unit, not 7.5.
+    expect(out[0].sunshine).toBeCloseTo(0.2775, 9);
+  });
+
+  describe("sunshine sensor in its own unit (#521)", () => {
+    const sunSensors = { ...sensors, sunshine_duration: 'sensor.sun' };
+    const sunHass = (unit, state) => ({
+      ...fakeHass,
+      states: {
+        'sensor.sun': {
+          ...(state !== undefined ? { state } : {}),
+          attributes: { unit_of_measurement: unit },
+        },
+      },
+    });
+
+    it('reads a sensor in minutes: a completed day and today', () => {
+      const ds = new MeasuredDataSource(sunHass('min', '45'), { sensors: sunSensors, days: 3 }, cal);
+      const stats = { 'sensor.sun': [{ start: dayMs(2).date.toISOString(), max: 330 }] };
+      const out = ds._buildForecast(stats, sunSensors, startDay, 3);
+      expect(out[1].sunshine).toBe(5.5);
+      expect(out[2].sunshine).toBe(0.75);
+    });
+
+    it('reads a sensor in seconds', () => {
+      const ds = new MeasuredDataSource(sunHass('s'), { sensors: sunSensors, days: 3 }, cal);
+      const stats = { 'sensor.sun': [{ start: dayMs(2).date.toISOString(), max: 28800 }] };
+      const out = ds._buildForecast(stats, sunSensors, startDay, 3);
+      expect(out[1].sunshine).toBe(8);
+    });
+
+    it('gives 0 h, never the raw number, for a unit the card does not know', () => {
+      const ds = new MeasuredDataSource(sunHass('foo'), { sensors: sunSensors, days: 3 }, cal);
+      const stats = { 'sensor.sun': [{ start: dayMs(2).date.toISOString(), max: 5 }] };
+      const out = ds._buildForecast(stats, sunSensors, startDay, 3);
+      expect(out[1].sunshine).toBe(0);
+    });
   });
 
   it('emits 0 (not null) when an illuminance source is configured but resolves no value — the source is authoritative', () => {

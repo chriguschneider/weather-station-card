@@ -104,7 +104,7 @@ export function unavailableSensors(
 const idOf = (raw: unknown): string | undefined =>
   typeof raw === 'string' && raw ? raw : undefined;
 
-const unitOf = (s: StateLike | undefined): string | undefined => {
+export const unitOf = (s: StateLike | undefined): string | undefined => {
   const u = s?.attributes?.unit_of_measurement;
   return typeof u === 'string' && u ? u : undefined;
 };
