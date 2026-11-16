@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { fetchPressure3hDelta } from '../src/data-source.js';
+import { getPressureTrend } from '../src/pressure-trend.js';
 import { clearDedupeCaches } from '../src/utils/shared-requests.js';
 import { Calendar } from '../src/utils/time-zone.js';
 
@@ -102,6 +103,27 @@ describe('fetchPressure3hDelta', () => {
     });
     const delta = await fetchPressure3hDelta(hass, 'sensor.pressure', cal);
     expect(delta).toBeCloseTo(0.09 * 33.8639, 3);
+  });
+
+  it('converts a kPa source delta into hPa, so the trend can fall fast', async () => {
+    // 101.7 → 101.3 kPa over 3 h is -0.4 kPa = -4 hPa.
+    const endMs = new Date('2026-05-12T14:00:00Z').getTime();
+    const hass = mockHass({
+      stateUnit: 'kPa',
+      stats: { 'sensor.pressure': strip(endMs, [101.7, 101.6, 101.4, 101.3]) },
+    });
+    const delta = await fetchPressure3hDelta(hass, 'sensor.pressure', cal);
+    expect(delta).toBeCloseTo(-4, 5);
+    expect(getPressureTrend(delta)).toBe('falling_fast');
+  });
+
+  it('returns null for a unit that is not a pressure unit', async () => {
+    const endMs = new Date('2026-05-12T14:00:00Z').getTime();
+    const hass = mockHass({
+      stateUnit: 'foo',
+      stats: { 'sensor.pressure': strip(endMs, [1015, 1016, 1017, 1018]) },
+    });
+    expect(await fetchPressure3hDelta(hass, 'sensor.pressure', cal)).toBeNull();
   });
 
   it('reuses the cached value within the same hour bucket', async () => {

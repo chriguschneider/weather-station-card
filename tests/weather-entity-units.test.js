@@ -156,7 +156,7 @@ describe('unavailable sensor, entity value in a different unit', () => {
       'sensor.dew': unavailable('°F'),
     });
     expect(card._readings.dew_point.source.kind).toBe('weather');
-    expect(card._resolveLiveClassifierInputs(card._hass).dewUnit).toBe('°C');
+    expect(card._resolveLiveClassifierInputs(card._hass).dewPointC).toBeCloseTo(10, 5);
   });
 
   it('keeps the dew sensor unit for a live dew sensor', () => {
@@ -167,7 +167,25 @@ describe('unavailable sensor, entity value in a different unit', () => {
       'sensor.dew': { state: '50', attributes: { unit_of_measurement: '°F' } },
     });
     expect(card._readings.dew_point.source.kind).toBe('station');
-    expect(card._resolveLiveClassifierInputs(card._hass).dewUnit).toBe('°F');
+    expect(card._resolveLiveClassifierInputs(card._hass).dewPointC).toBeCloseTo(10, 5);
+  });
+
+  it('keeps a wind sensor with an unknown unit away from the classifier', () => {
+    const card = makeCard({ wind_speed: 'sensor.w' });
+    card.hass = makeHass({
+      'weather.pirateweather': metricEntity,
+      'sensor.w': { state: '20', attributes: { unit_of_measurement: 'foo' } },
+    });
+    expect(card._resolveLiveClassifierInputs(card._hass).windMs).toBeNull();
+  });
+});
+
+describe('canonical readings from the weather entity', () => {
+  it('reads 13.16 mph as m/s', () => {
+    const card = makeCard({});
+    card.hass = makeHass({ 'weather.pirateweather': pirateWeather });
+    expect(card._readings.wind_speed.canonical).toBeCloseTo(5.883, 3);
+    expect(card._resolveLiveClassifierInputs(card._hass).windMs).toBeCloseTo(5.883, 3);
   });
 });
 
