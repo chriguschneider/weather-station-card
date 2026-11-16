@@ -389,12 +389,17 @@ src/
 │
 ├── chart/
 │   ├── orchestrator.ts        buildForecastChart(inputs) — pure inputs
-│   │                          (target, config, data, counts, units,
-│   │                          theme host) in, assembles datasets +
-│   │                          plugins, calls buildChart and returns the
-│   │                          chart handle. Never touches the card; a
-│   │                          failure comes back as ChartBuildError
-│   │                          tagged 'compute' or 'init' (#452).
+│   │                          (target, config, canonical data, counts,
+│   │                          the card's display units, theme host) in,
+│   │                          assembles datasets + plugins, calls
+│   │                          buildChart and returns the chart handle.
+│   │                          toDisplayData is the one place the chart
+│   │                          converts: temperature and precipitation go
+│   │                          into the display units once, so line, bars,
+│   │                          axes and labels share one unit (ADR-0035).
+│   │                          Never touches the card; a failure comes
+│   │                          back as ChartBuildError tagged 'compute' or
+│   │                          'init' (#452).
 │   │
 │   ├── draw.ts                uPlot instance builder — buildChart(ctx,
 │   │                          opts) returns a configured uPlot chart

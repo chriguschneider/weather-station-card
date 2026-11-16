@@ -417,7 +417,7 @@ expands user-supplied `var(...)` exactly as before.
 | --- | --- | --- |
 | `units.pressure` | `'hPa' \| 'mmHg' \| 'inHg'` | Display unit; auto-converts from the sensor's native unit. |
 | `units.speed` | `'m/s' \| 'km/h' \| 'mph' \| 'Bft'` | Display unit; auto-converts. |
-| `units.precipitation` | `'mm' \| 'in'` | Display unit for the precipitation attribute; auto-converts (mm ↔ in) for both rate sensors and cumulative-counter-derived rates. Defaults to the sensor's own unit, so an inch sensor reads `in` / `in/h` with no config. |
+| `units.precipitation` | `'mm' \| 'in'` | Display unit for the precipitation attribute; auto-converts (mm ↔ in) for both rate sensors and cumulative-counter-derived rates. Defaults to the sensor's own unit, so an inch sensor reads `in` / `in/h` with no config. The same unit applies to the chart's rain bars, their axis and labels. |
 
 ## Advanced
 

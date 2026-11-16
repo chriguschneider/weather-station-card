@@ -57,6 +57,7 @@ interface OrchestratorConfig extends PluginCardConfig {
     temperature1_color?: string;
     temperature2_color?: string;
     disable_animation?: boolean;
+    round_temp?: boolean;
   };
   use_12hour_format?: boolean;
 }

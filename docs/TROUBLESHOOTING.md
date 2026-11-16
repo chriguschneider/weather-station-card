@@ -26,12 +26,12 @@ a concrete cause:
   HACS's `?hacstag=` query — bumping it (Settings → Dashboards → Resources,
   edit the entry, change the suffix) forces every browser to re-fetch.
   A "Reload frontend" via your user profile menu also works.
-- **Wrong unit_system (US-vs-metric).** The chart's precip-axis maximum
-  defaults differ between metric (`length: km` → 20 mm full-scale) and
-  imperial (`length: mi` → 1 in full-scale). If your unit system is set
-  in HA but your sensors emit the other unit, the bars will look tiny or
-  clipped. Override `forecast.precip_bar_size` and check
-  `unit_of_measurement` on the sensor.
+- **Rain bars look tiny or clipped.** The rain axis is scaled in the
+  card's precipitation unit: at least 20 mm for daily columns, 4 mm for
+  hourly ones, 1 in for inches. That unit is `units.precipitation` if
+  set, else the unit of your rain sensor, else the weather entity's, else
+  Home Assistant's. Check `unit_of_measurement` on the sensor if it is
+  not the unit you expect.
 
 ## Today's column is doubled — is that a bug?
 
