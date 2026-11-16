@@ -377,6 +377,12 @@ describe('zero-degree rows', () => {
     expect(text(row)).toContain('48 h');
     expect(trendIcon(row)).toBeUndefined();
   });
+
+  it('trend row with a curve in the past and no current level: the fallback row', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(T0 + 48 * 3_600_000);
+    const ctx = zdCtx({ values: { zero_degree_curve: curve }, readings: {} });
+    expect(text(climateRowZeroDegree48h(ctx, 1600, 'm', -900))).toContain('48 h');
+  });
 });
 
 describe('sun rows', () => {
