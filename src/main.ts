@@ -1224,10 +1224,8 @@ drawChart(): void {
       // initial scroll for the next updated() cycle. No-op rebuilds never reach
       // drawChart.
       this._initialScrollApplied = false;
-      // uPlot has no animation system: reset() is a no-op and update() repaints at
-      // the final state.
+      // uPlot has no animation system: update() repaints at the final state.
       if (this.config?.forecast?.disable_animation !== true && !this._isInPreview) {
-        this.forecastChart.reset();
         this.forecastChart.update();
       }
       // drawChart runs inside _refreshForecasts, whose forecasts assignment

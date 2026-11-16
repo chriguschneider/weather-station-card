@@ -33,7 +33,6 @@ function mockChart() {
       sunshine: [0],
     },
     update: vi.fn(),
-    reset: vi.fn(),
   };
 }
 
