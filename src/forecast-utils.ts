@@ -5,7 +5,9 @@
 import { pad2, type Calendar } from './utils/time-zone.js';
 
 /** Forecast entry shape consumed by the chart; emitted by both data
- *  sources. Numeric fields are null when upstream has no reading. */
+ *  sources. Numeric fields are null when upstream has no reading.
+ *  Temperatures are °C, precipitation mm, wind and gust m/s, pressure
+ *  hPa (ADR-0035). */
 export interface ForecastEntry {
   /** ISO-8601 timestamp at the start of the bucket (local midnight at
    *  daily mode, hour-start at hourly). */

@@ -83,6 +83,12 @@ describe('save / load roundtrip', () => {
     expect(loadSeriesCache('wsc_series_station_k', NOW)).toBeNull();
   });
 
+  it('misses on a v4 payload, whose temperature, rain and pressure were in the source unit', () => {
+    storage.setItem('wsc_series_station_k',
+      JSON.stringify({ v: 4, ts: NOW, forecast: [{ datetime: 'x', temperature: 68 }] }));
+    expect(loadSeriesCache('wsc_series_station_k', NOW)).toBeNull();
+  });
+
   it('misses when the stored forecast is not an array', () => {
     storage.setItem('wsc_series_station_k',
       JSON.stringify({ v: 1, ts: NOW, forecast: { datetime: 'x' } }));

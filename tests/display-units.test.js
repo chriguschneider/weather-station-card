@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveDisplayUnits, displayNumber } from '../src/display-units.js';
+import { resolveDisplayUnits, displayNumber, depthUnitId } from '../src/display-units.js';
 
 const none = { temperature: [], pressure: [], speed: [], precipitation: [] };
 
@@ -32,6 +32,20 @@ describe('resolveDisplayUnits', () => {
 
   it('skips an unknown precipitation unit', () => {
     expect(resolveDisplayUnits({ ...none, precipitation: ['foo/h', 'in'] }).precipitation).toBe('in');
+  });
+});
+
+describe('depthUnitId', () => {
+  it.each([
+    ['mm', 'mm'],
+    ['inches', 'in'],
+    ['in/h', 'in'],
+    ['mm/d', 'mm'],
+    ['cm', 'cm'],
+    ['%', null],
+    [undefined, null],
+  ])('%s → %s', (raw, id) => {
+    expect(depthUnitId(raw)).toBe(id);
   });
 });
 

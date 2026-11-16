@@ -149,9 +149,12 @@ src/
 │                              Daily columns are reduced from hourly
 │                              statistics in the card's calendar
 │                              (`reduceHourlyToDays`, ADR-0030).
-│                              Wind and gust in the entries are m/s
-│                              (ADR-0035), converted from the sensor's
-│                              or the weather entity's unit. Also hosts `fetchPressure3hDelta` +
+│                              Both sources emit entries in canonical
+│                              units (ADR-0035: °C, mm, m/s, hPa),
+│                              converted from the sensor's or the
+│                              weather entity's unit; the condition
+│                              classifier reads them without a unit.
+│                              Also hosts `fetchPressure3hDelta` +
 │                              `PressureDeltaCache` for the live
 │                              pressure-trend row.
 │

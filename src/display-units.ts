@@ -18,12 +18,17 @@ export type DisplayUnitCandidates = Readonly<Record<DisplayQuantity, readonly un
 
 const DISPLAY_QUANTITIES: readonly DisplayQuantity[] = ['temperature', 'pressure', 'speed', 'precipitation'];
 
-function candidateId(quantity: DisplayQuantity, raw: unknown): string | null {
-  const id = parseUnit(quantity, raw);
-  if (id !== null || quantity !== 'precipitation') return id;
-  // A rate sensor names the depth unit the card shows: in/h → in.
+/** Units-table id of the depth unit a precipitation unit names: a depth
+ *  unit is itself, a rate names its depth (in/h → in); null otherwise. */
+export function depthUnitId(raw: unknown): string | null {
+  const id = parseUnit('precipitation', raw);
+  if (id !== null) return id;
   const rate = parseUnit('precipitation_rate', raw);
   return rate === null ? null : rate.split('/')[0];
+}
+
+function candidateId(quantity: DisplayQuantity, raw: unknown): string | null {
+  return quantity === 'precipitation' ? depthUnitId(raw) : parseUnit(quantity, raw);
 }
 
 /** Per quantity the first candidate the units table knows, else the
