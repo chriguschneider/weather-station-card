@@ -6,12 +6,13 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, html } from 'lit';
 import en from '../src/locales/en.js';
 import { Calendar } from '../src/utils/time-zone.js';
+import { toCanonical } from '../src/utils/units.js';
 import {
-  attrEntity, formatEntityNumber, isPresent, oneDecimal, unitLabel,
+  attrEntity, formatEntityNumber, isPresent, LIVE_READING_KEYS, shownText, shownValue, unitLabel,
 } from '../src/live-panel/context.js';
 import {
   climateRowDewPoint, climateRowNextRain, climateRowPrecip, climateRowPressure,
-  dewPointText, displayPressure, precipitationText, pressureText,
+  dewPointText, precipitationText, pressureText,
 } from '../src/live-panel/climate-rows.js';
 import {
   climateRowZeroDegree, climateRowZeroDegree48h, formatMetres, zeroDegreeElevation,
@@ -21,7 +22,7 @@ import {
   moonText, renderMoonLine, renderSun, siteCoords, sunEventTimes, sunRowSun, sunRowSunStrength, sunText, uvText,
 } from '../src/live-panel/sun-rows.js';
 import {
-  convertWind, displayWindSpeed, gustSpeed, renderForecastWind, spriteIcon, windDirIcon, windDirText,
+  convertWind, renderForecastWind, spriteIcon, windDirIcon, windDirText,
   windRowDirection, windRowGust, windRowSpeed, windSpeedText,
 } from '../src/live-panel/wind-rows.js';
 import { renderAttributeColumn, renderAttributeLine, renderAttributes } from '../src/live-panel/attributes.js';
@@ -29,7 +30,25 @@ import { sourceValueText } from '../src/live-panel/source-values.js';
 
 const BERN = { latitude: 46.95, longitude: 7.45 };
 
-function makeCtx({ config = {}, hass = {}, values = {}, ...rest } = {}) {
+const QUANTITY = {
+  temperature: 'temperature', dew_point: 'temperature', pressure: 'pressure',
+  wind_speed: 'speed', gust_speed: 'speed', zero_degree_level: 'length', zero_degree_level_48h: 'length',
+};
+
+// A reading as sensor-readings.ts extracts it: the raw value, its unit
+// and the canonical value (null for an unknown unit).
+function readingsOf(spec = {}) {
+  const out = {};
+  for (const key of LIVE_READING_KEYS) {
+    const [value, unit] = spec[key] ?? [undefined, undefined];
+    out[key] = { value, unit, canonical: toCanonical(QUANTITY[key], parseFloat(String(value)), unit) };
+  }
+  return out;
+}
+
+const DISPLAY = { temperature: '°C', pressure: 'hPa', speed: 'km/h', precipitation: 'mm' };
+
+function makeCtx({ config = {}, hass = {}, values = {}, readings = {}, displayUnits = {}, ...rest } = {}) {
   return {
     config,
     hass: { states: {}, config: {}, ...hass },
@@ -38,10 +57,9 @@ function makeCtx({ config = {}, hass = {}, values = {}, ...rest } = {}) {
     str: (k) => (typeof en[k] === 'string' ? en[k] : ''),
     units: en.units,
     cardinalDirections: en.cardinalDirections,
-    unitPressure: 'hPa',
-    unitSpeed: 'km/h',
-    weatherUnits: { temperature: '°C', windSpeed: 'km/h', pressure: 'hPa' },
-    sourceTempUnit: '°C',
+    readings: readingsOf(readings),
+    displayUnits: { ...DISPLAY, ...displayUnits },
+    stationWindUnit: 'km/h',
     values,
     entityLink: (eid, content) => (eid ? html`<a data-eid=${eid}>${content}</a>` : content),
     zeroDegreeLink: (eid, content) => html`<b data-eid=${eid}>${content}</b>`,
@@ -75,14 +93,23 @@ describe('context helpers', () => {
     expect(unitLabel(ctx, 'hPa')).toBe(en.units.hPa);
     expect(unitLabel(ctx, 'furlong')).toBe('furlong');
     expect(unitLabel(ctx, undefined)).toBe('');
+    // The locale tables are keyed by the config spelling.
+    expect(unitLabel(ctx, 'Beaufort')).toBe('Bft');
   });
 
-  it('oneDecimal / isPresent', () => {
-    expect(oneDecimal('12.345')).toBe('12.3');
-    expect(oneDecimal(12)).toBe('12');
-    expect(oneDecimal('n/a')).toBe('n/a');
-    expect(oneDecimal(undefined)).toBe('');
-    expect(oneDecimal(null)).toBe('');
+  it('shownValue: display unit, raw value for an unknown unit, null without a number', () => {
+    const ctx = makeCtx({ readings: { temperature: ['12.345', '°C'], pressure: ['n/a', 'hPa'], wind_speed: [20, 'foo'] } });
+    expect(shownValue(ctx, 'temperature')).toEqual({ value: 12.3, unit: '°C' });
+    expect(shownValue(ctx, 'pressure')).toBeNull();
+    expect(shownValue(ctx, 'gust_speed')).toBeNull();
+    expect(shownValue(ctx, 'wind_speed')).toEqual({ value: '20', unit: 'foo' });
+    expect(shownText({ value: 4, unit: '' })).toBe('4');
+    expect(shownText({ value: 4, unit: 'm/s' })).toBe('4 m/s');
+    const noUnit = makeCtx({ readings: { wind_speed: [20, undefined] } });
+    expect(shownText(shownValue(noUnit, 'wind_speed'))).toBe('20');
+  });
+
+  it('isPresent', () => {
     expect(isPresent('')).toBe(false);
     expect(isPresent(0)).toBe(true);
   });
@@ -117,41 +144,77 @@ describe('context helpers', () => {
 });
 
 describe('climate rows', () => {
+  const pressureCtx = (value, unit, display = 'hPa') => makeCtx({
+    config: { sensors: { pressure: 'sensor.p' } },
+    readings: { pressure: [value, unit] },
+    displayUnits: { pressure: display },
+  });
+  const title = (row) => attr(row, 'span[title]', 'title');
+
   it('pressure: hidden without a number, tooltip with trend', () => {
-    const ctx = makeCtx({ config: { sensors: { pressure: 'sensor.p' } } });
-    expect(climateRowPressure(ctx, false, 1013, null)).toBeNull();
-    expect(climateRowPressure(ctx, true, undefined, null)).toBeNull();
-    const row = climateRowPressure(ctx, true, 1013, -2.4);
+    const ctx = pressureCtx(1013.4, 'hPa');
+    expect(climateRowPressure(ctx, false, null)).toBeNull();
+    expect(climateRowPressure(pressureCtx(undefined, 'hPa'), true, null)).toBeNull();
+    expect(climateRowPressure(pressureCtx('unavailable', 'hPa'), true, null)).toBeNull();
+    const row = climateRowPressure(ctx, true, -2.4);
     expect(text(row)).toBe(`1013 ${en.units.hPa}`);
-    const title = attr(row, 'span[title]', 'title');
-    expect(title).toContain('-2.4');
+    expect(title(row)).toContain(`-2.4 ${en.units.hPa}`);
     expect(attr(row, 'a', 'data-eid')).toBe('sensor.p');
-    expect(attr(climateRowPressure(ctx, true, 1013, null), 'span', 'title')).toBe('');
+    expect(title(climateRowPressure(ctx, true, 3))).toContain(`+3.0 ${en.units.hPa}`);
+    expect(attr(climateRowPressure(ctx, true, null), 'span', 'title')).toBe('');
   });
 
-  it('pressure converts and formats its text', () => {
-    const ctx = makeCtx({ weatherUnits: { pressure: 'hPa' }, unitPressure: 'hPa' });
-    expect(displayPressure(ctx, '1013.4')).toBe(1013);
-    expect(displayPressure(ctx, null)).toBeUndefined();
-    expect(pressureText({ ...ctx, unitPressure: undefined }, 1013)).toBe('1013');
+  it('pressure: row and 3-hour change in the display unit (community post 24)', () => {
+    const inHg = climateRowPressure(pressureCtx(1013, 'hPa', 'inHg'), true, -1.4);
+    expect(text(inHg)).toBe('29.91 inHg');
+    expect(title(inHg)).toContain('-0.04 inHg');
+    expect(title(inHg)).toContain(en.pressure_trend_falling);
+    expect(attr(inHg, 'ha-icon', 'icon')).toBe('hass:arrow-bottom-right');
+    // The trend is classified in hPa, whatever the display unit.
+    expect(attr(climateRowPressure(pressureCtx(1013, 'hPa'), true, -1.4), 'ha-icon', 'icon')).toBe('hass:arrow-bottom-right');
+    const mmHg = climateRowPressure(pressureCtx(1013, 'hPa', 'mmHg'), true, -2.4);
+    expect(text(mmHg)).toBe(`760 ${en.units.mmHg}`);
+    expect(title(mmHg)).toContain(`-1.8 ${en.units.mmHg}`);
+  });
+
+  it('pressure: every sensor unit converts into the display unit', () => {
+    expect(pressureText(pressureCtx(101.3, 'kPa'))).toBe(`1013 ${en.units.hPa}`);
+    expect(pressureText(pressureCtx(946.4, 'mbar'))).toBe(`946 ${en.units.hPa}`);
+    // A same-unit pressure follows the units table's decimals.
+    expect(pressureText(pressureCtx(29.921, 'inHg', 'inHg'))).toBe('29.92 inHg');
+    expect(pressureText(pressureCtx(1013, 'foo'))).toBe('1013 foo');
+    expect(pressureText(pressureCtx(null, 'hPa'))).toBe('');
   });
 
   it('dew point: band tooltip, one decimal, humidity segment', () => {
-    const ctx = makeCtx({ values: { temperature: 20 } });
-    const row = climateRowDewPoint(ctx, true, '12.345', true, 60);
+    const ctx = makeCtx({ readings: { dew_point: ['12.345', '°C'], temperature: [20, '°C'] } });
+    const row = climateRowDewPoint(ctx, true, true, 60);
     expect(text(row)).toBe('12.3 °C 60 %');
-    expect(attr(row, 'span[title]', 'title')).toMatch(/12/);
-    expect(text(climateRowDewPoint(ctx, false, 12, true, 60))).toBe('60 %');
-    expect(text(climateRowDewPoint(ctx, true, 12, false, 60))).toBe('12 °C');
+    expect(title(row)).toMatch(/12/);
+    expect(text(climateRowDewPoint(ctx, false, true, 60))).toBe('60 %');
+    expect(climateRowDewPoint(ctx, false, false, 60)).toBeNull();
+    const whole = makeCtx({ readings: { dew_point: [12, '°C'], temperature: [20, '°C'] } });
+    expect(text(climateRowDewPoint(whole, true, false, 60))).toBe('12 °C');
   });
 
-  it('dew point converts °F sources for the classifier', () => {
-    const ctx = makeCtx({ sourceTempUnit: '°F', weatherUnits: { temperature: '°F' }, values: { temperature: 68 } });
-    const row = climateRowDewPoint(ctx, true, 54, false, undefined);
+  it('dew point: °F, mixed units and an unknown unit', () => {
+    const f = makeCtx({ readings: { dew_point: [54, '°F'], temperature: [68.5, '°F'] }, displayUnits: { temperature: '°F' } });
+    const row = climateRowDewPoint(f, true, false, undefined);
     expect(text(row)).toBe('54 °F');
-    expect(attr(row, 'span[title]', 'title')).toContain('°F');
-    expect(attr(climateRowDewPoint(makeCtx(), true, 12, false, undefined), 'span', 'title')).toBe('');
-    expect(dewPointText(makeCtx({ weatherUnits: {} }), 12)).toBe('12');
+    expect(title(row)).toBe('Dew point 54 °F · Spread 15 °F · comfortable');
+    const mixed = makeCtx({ readings: { dew_point: [50, '°F'], temperature: [20, '°C'] } });
+    const mixedRow = climateRowDewPoint(mixed, true, false, undefined);
+    expect(text(mixedRow)).toBe('10 °C');
+    expect(title(mixedRow)).toBe('Dew point 10 °C · Spread 10 °C · comfortable');
+    const foo = makeCtx({ readings: { dew_point: [12, 'foo'], temperature: [20, '°C'] } });
+    const fooRow = climateRowDewPoint(foo, true, false, undefined);
+    expect(text(fooRow)).toBe('12 foo');
+    expect(attr(fooRow, 'ha-icon', 'icon')).toBe('hass:thermometer-water');
+    expect(attr(fooRow, 'span', 'title')).toBe('');
+    // Without an air temperature there is no band and no tooltip.
+    const alone = makeCtx({ readings: { dew_point: [12, '°C'] } });
+    expect(attr(climateRowDewPoint(alone, true, false, undefined), 'span', 'title')).toBe('');
+    expect(dewPointText(makeCtx())).toBe('');
   });
 
   it('precipitation: rate icon, link to the rate sensor', () => {
@@ -292,18 +355,41 @@ describe('wind rows', () => {
   });
 
   it('live rows', () => {
-    const ctx = makeCtx({ config: { sensors: { wind_direction: 'sensor.wd', wind_speed: 'sensor.ws', gust_speed: 'sensor.g' } } });
+    const ctx = makeCtx({
+      config: { sensors: { wind_direction: 'sensor.wd', wind_speed: 'sensor.ws', gust_speed: 'sensor.g' } },
+      readings: { wind_speed: ['10', 'km/h'], gust_speed: ['5', 'km/h'] },
+    });
     expect(windRowDirection(ctx, true, undefined)).toBeNull();
     expect(windRowDirection(ctx, false, 90)).toBeNull();
     expect(text(windRowDirection(ctx, true, 90))).toBe(en.cardinalDirections[4]);
-    expect(windRowSpeed(ctx, false, 10)).toBeNull();
-    expect(text(windRowSpeed(ctx, true, displayWindSpeed(ctx, '10')))).toBe(`10 ${en.units['km/h']}`);
-    expect(windRowGust(ctx, false, 5)).toBeNull();
-    expect(attr(windRowGust(ctx, true, '5'), 'a', 'data-eid')).toBe('sensor.g');
-    expect(gustSpeed(ctx, 'x')).toBeNull();
+    expect(windRowSpeed(ctx, false)).toBeNull();
+    expect(text(windRowSpeed(ctx, true))).toBe(`10 ${en.units['km/h']}`);
+    expect(windRowGust(ctx, false)).toBeNull();
+    expect(attr(windRowGust(ctx, true), 'a', 'data-eid')).toBe('sensor.g');
+    expect(windRowGust(makeCtx({ readings: { gust_speed: ['x', 'km/h'] } }), true)).toBeNull();
+  });
+
+  it('live rows convert every sensor unit', () => {
+    const speed = (value, unit, display = 'km/h') =>
+      windSpeedText(makeCtx({ readings: { wind_speed: [value, unit] }, displayUnits: { speed: display } }), 'wind_speed');
+    expect(speed(20, 'kn')).toBe(`37 ${en.units['km/h']}`);
+    expect(speed(30.5, 'km/h')).toBe(`31 ${en.units['km/h']}`);
+    expect(speed(12.5, 'km/h')).toBe(`13 ${en.units['km/h']}`);
+    expect(speed(20, 'km/h', 'Beaufort')).toBe('4 Bft');
+    expect(speed(20, 'foo')).toBe('20 foo');
+    // A reading whose unit was assumed at extraction is like any other.
+    expect(speed(20, 'km/h')).toBe(`20 ${en.units['km/h']}`);
+    expect(windRowSpeed(makeCtx({ readings: { wind_speed: ['unavailable', 'km/h'] } }), true)).toBeNull();
+  });
+
+  it('forecast wind converts entries into the display unit', () => {
+    const ctx = makeCtx();
     expect(convertWind(ctx, 10, 'm/s')).toBe(36);
+    expect(convertWind({ ...ctx, stationWindUnit: 'm/s' }, 10)).toBe(36);
+    expect(convertWind(ctx, 10)).toBe(10);
+    expect(convertWind(ctx, 10, 'foo')).toBeNull();
     expect(convertWind(ctx, '10')).toBeNull();
-    expect(windSpeedText({ ...ctx, unitSpeed: undefined }, 4)).toBe('4');
+    expect(convertWind(ctx, NaN)).toBeNull();
   });
 
   it('sprite icon: sprite reference, else ha-icon', () => {
@@ -323,23 +409,30 @@ describe('wind rows', () => {
     const both = host(renderForecastWind(withFc({}), items, 10));
     expect(both.querySelectorAll('.wind-detail')).toHaveLength(2);
     expect(both.querySelectorAll('.wind-speed')).toHaveLength(1);
+    expect(both.querySelector('.wind-unit').textContent).toBe(en.units['km/h']);
+    const foo = [{ datetime: '2026-10-01T12:00:00Z', wind_speed: 10, wind_speed_unit: 'foo', wind_bearing: 90 }];
+    expect(host(renderForecastWind(withFc({}), foo, 10)).querySelectorAll('.wind-speed')).toHaveLength(0);
     expect(both.querySelectorAll('.wind-icon')).toHaveLength(1);
     expect(host(renderForecastWind(makeCtx(), null, 10)).querySelectorAll('.wind-detail')).toHaveLength(0);
   });
 });
 
 describe('attribute composition', () => {
+  const readings = {
+    pressure: [1013, 'hPa'], dew_point: [12, '°C'], temperature: [20, '°C'],
+    wind_speed: [10, 'km/h'], gust_speed: [20, 'km/h'],
+  };
   const values = {
-    pressure: 1013, humidity: 60, dew_point: 12, temperature: 20, precipitation: '1.2', precipitation_unit: 'mm/h',
-    windSpeed: 10, windDirection: 90, wind_gust_speed: 20, uv_index: 3, illuminance: 50000,
+    humidity: 60, precipitation: '1.2', precipitation_unit: 'mm/h',
+    windDirection: 90, uv_index: 3, illuminance: 50000,
     zero_degree_level: 2500, zero_degree_unit: 'm', zero_degree_48h_level: 1800, zero_degree_48h_unit: 'm',
     next_rain_text: 'Now', next_rain_icon: 'mdi:x', next_rain_title: 'Radar',
   };
-  const d = { dPressure: 1013, dWindSpeed: 10, lat: null, lon: null };
+  const d = { lat: null, lon: null };
 
   it('maps every token onto a row', () => {
     vi.useFakeTimers({ now: new Date('2026-07-01T10:00:00Z') });
-    const ctx = makeCtx({ values, config: { location: BERN } });
+    const ctx = makeCtx({ values, readings, config: { location: BERN } });
     for (const token of ['pressure', 'dew_point_humidity', 'dew_point', 'humidity', 'precipitation',
       'zero_degree_level', 'zero_degree_level_48h', 'next_rain', 'uv_illuminance', 'uv_index', 'illuminance',
       'sun', 'moon', 'wind_direction', 'wind_speed', 'wind_gust_speed']) {
@@ -350,9 +443,9 @@ describe('attribute composition', () => {
 
   it('drops empty columns and honours show_attributes', () => {
     const ctx = makeCtx({ values: {} });
-    expect(renderAttributeColumn(ctx, ['pressure', 'humidity'], { ...d, dPressure: undefined })).toBeNull();
+    expect(renderAttributeColumn(ctx, ['pressure', 'humidity'], d)).toBeNull();
     expect(text(renderAttributes(makeCtx({ config: { show_attributes: false } })))).toBe('');
-    const el = host(renderAttributes(makeCtx({ values, config: { attributes_layout: [['pressure'], ['wind_speed']] } })));
+    const el = host(renderAttributes(makeCtx({ values, readings, config: { attributes_layout: [['pressure'], ['wind_speed']] } })));
     expect(el.querySelectorAll('.attributes > div')).toHaveLength(2);
   });
 });
@@ -362,12 +455,16 @@ describe('sources popup value text', () => {
     vi.useFakeTimers({ now: new Date('2026-07-01T10:00:00Z') });
     const ctx = makeCtx({
       config: { location: BERN },
+      readings: {
+        temperature: [19.44, '°C'], dew_point: [12.34, '°C'], pressure: [1013.4, 'hPa'],
+        wind_speed: [10, 'km/h'], gust_speed: [20, 'km/h'],
+      },
       values: {
-        temperature: 19.44, humidity: 60, dew_point: 12.34, pressure: 1013.4, precipitation: 0.4, precipitation_unit: 'mm/h',
-        uv_index: 3.14, illuminance: 50000, windSpeed: 10, wind_gust_speed: 20, windDirection: 'SW',
+        humidity: 60, precipitation: 0.4, precipitation_unit: 'mm/h',
+        uv_index: 3.14, illuminance: 50000, windDirection: 'SW',
       },
     });
-    const v = (k) => sourceValueText(ctx, k, '°C');
+    const v = (k) => sourceValueText(ctx, k);
     expect(v('temperature')).toBe('19.4°C');
     expect(v('humidity')).toBe('60 %');
     expect(v('dew_point')).toBe('12.3 °C');
@@ -381,13 +478,19 @@ describe('sources popup value text', () => {
     expect(v('sun')).toBe(sunText(ctx));
     expect(v('moon')).toBe(moonText(ctx));
     expect(v('nope')).toBe('');
+    // ADR-0031: the popup shows what the row shows.
+    const rowText = (token) => text(renderAttributeLine(ctx, token, { lat: null, lon: null }));
+    expect(v('pressure')).toBe(rowText('pressure'));
+    expect(v('dew_point')).toBe(rowText('dew_point'));
+    expect(v('wind_speed')).toBe(rowText('wind_speed'));
+    expect(v('gust_speed')).toBe(rowText('wind_gust_speed'));
   });
 
   it('is empty for values that are not on screen', () => {
     const ctx = makeCtx({ config: {} });
     for (const k of ['temperature', 'humidity', 'dew_point', 'pressure', 'precipitation', 'uv_index',
       'illuminance', 'wind_speed', 'gust_speed', 'wind_direction', 'sun']) {
-      expect(sourceValueText(ctx, k, '°C'), k).toBe('');
+      expect(sourceValueText(ctx, k), k).toBe('');
     }
   });
 });

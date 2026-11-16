@@ -141,9 +141,6 @@ function resolvePrecipRateInput(
     : null;
 }
 
-/** A weather-sourced reading in the station's source unit, which the rows
- *  still expect until they format from canonical (#478). Sensor values
- *  and same-unit weather values pass through. */
 declare global {
   interface Window {
     customCards?: any[];
@@ -1564,6 +1561,9 @@ renderMain({ config, weather } = this) {
 
   const live = this._liveCtx();
   const shownTemperature = shownValue(live, 'temperature');
+  const temperatureTpl = shownTemperature
+    ? html`${shownTemperature.value}<span>${shownTemperature.unit}</span>`
+    : html`—<span>${unitLabel(live, live.displayUnits.temperature)}</span>`;
 
   // The condition glyph opens the weather entity's more-info (it carries the
   // forecast panel); station-only setups use the temperature sensor.
@@ -1583,10 +1583,7 @@ renderMain({ config, weather } = this) {
       ${iconHtml}
       <div>
         <div>
-          ${showTemperature ? this._entityLink(this._attrEntity('temperature'),
-            shownTemperature
-              ? html`${shownTemperature.value}<span>${shownTemperature.unit}</span>`
-              : html`—<span>${unitLabel(live, live.displayUnits.temperature)}</span>`) : ''}
+          ${showTemperature ? this._entityLink(this._attrEntity('temperature'), temperatureTpl) : ''}
           ${showCurrentCondition ? html`
             <div class="current-condition">
               ${this._entityLink(

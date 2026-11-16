@@ -6,6 +6,10 @@
 
 import { describe, it, expect } from 'vitest';
 import '../src/main.js';
+import { shownText, shownValue } from '../src/live-panel/context.js';
+
+// The text a live row shows for `key`.
+const shown = (card, key) => shownText(shownValue(card._liveCtx(), key));
 
 const makeHass = (states) => ({
   states,
@@ -42,11 +46,16 @@ describe('weather-entity fallback units', () => {
   it('takes wind, pressure and temperature units from the entity when no sensor is wired', () => {
     const card = makeCard({});
     card.hass = makeHass({ 'weather.pirateweather': pirateWeather });
-    expect(card._sourceWindUnit).toBe('mph');
     expect(card.unitSpeed).toBe('mph');
-    expect(card._sourcePressureUnit).toBe('inHg');
-    expect(card._sourceTempUnit).toBe('°F');
+    // The card's default `units.pressure: hPa` wins over the entity's unit.
+    expect(card.unitPressure).toBe('hPa');
+    expect(card.unitTemperature).toBe('°F');
     expect(card.windSpeed).toBe('13.16');
+    expect(card._readings.wind_speed.canonical).toBeCloseTo(5.883, 3);
+    expect(card._readings.pressure.canonical).toBeCloseTo(1018.29, 2);
+    expect(card._readings.temperature.canonical).toBeCloseTo(21.11, 2);
+    expect(shown(card, 'wind_speed')).toBe('13 mph');
+    expect(shown(card, 'pressure')).toBe('1018 hPa');
   });
 
   it('does not classify a 13 mph breeze as windy', () => {
@@ -62,9 +71,11 @@ describe('weather-entity fallback units', () => {
       'weather.pirateweather': pirateWeather,
       'sensor.gust': { state: '30', attributes: { unit_of_measurement: 'km/h' } },
     });
-    expect(card._sourceWindUnit).toBe('km/h');
-    expect(parseFloat(card.windSpeed)).toBeCloseTo(13.16 * 1.60934, 2);
+    expect(card.unitSpeed).toBe('km/h');
+    expect(card._readings.wind_speed.canonical).toBeCloseTo(5.883, 3);
+    expect(shown(card, 'wind_speed')).toBe('21 km/h');
     expect(card.wind_gust_speed).toBe('30');
+    expect(shown(card, 'gust_speed')).toBe('30 km/h');
   });
 
   it('rescales entity dew point into the station temperature unit', () => {
@@ -73,8 +84,9 @@ describe('weather-entity fallback units', () => {
       'weather.pirateweather': pirateWeather,
       'sensor.t': { state: '21', attributes: { unit_of_measurement: '°C' } },
     });
-    expect(card._sourceTempUnit).toBe('°C');
-    expect(parseFloat(card.dew_point)).toBeCloseTo(10, 5);
+    expect(card.unitTemperature).toBe('°C');
+    expect(card._readings.dew_point.canonical).toBeCloseTo(10, 5);
+    expect(shown(card, 'dew_point')).toBe('10 °C');
   });
 });
 
@@ -102,10 +114,10 @@ describe('unavailable sensor, entity value in a different unit', () => {
       'weather.pirateweather': metricEntity,
       'sensor.t': unavailable('°F'),
     });
-    expect(card._sourceTempUnit).toBe('°F');
-    expect(parseFloat(card.temperature)).toBeCloseTo(68, 5);
-    // Dew point follows the temperature source unit.
-    expect(parseFloat(card.dew_point)).toBeCloseTo(50, 5);
+    expect(card.unitTemperature).toBe('°F');
+    expect(card._readings.temperature.canonical).toBeCloseTo(20, 5);
+    expect(shown(card, 'temperature')).toBe('68 °F');
+    expect(shown(card, 'dew_point')).toBe('50 °F');
   });
 
   it('converts a °F entity temperature into a °C sensor unit', () => {
@@ -114,7 +126,9 @@ describe('unavailable sensor, entity value in a different unit', () => {
       'weather.pirateweather': pirateWeather,
       'sensor.t': unavailable('°C'),
     });
-    expect(parseFloat(card.temperature)).toBeCloseTo((70 - 32) * 5 / 9, 5);
+    expect(card.unitTemperature).toBe('°C');
+    expect(card._readings.temperature.canonical).toBeCloseTo(21.11, 2);
+    expect(shown(card, 'temperature')).toBe('21.1 °C');
   });
 
   it('converts an hPa entity pressure into an inHg sensor unit', () => {
@@ -123,8 +137,14 @@ describe('unavailable sensor, entity value in a different unit', () => {
       'weather.pirateweather': metricEntity,
       'sensor.p': unavailable('inHg'),
     });
-    expect(card._sourcePressureUnit).toBe('inHg');
-    expect(parseFloat(card.pressure)).toBeCloseTo(29.92, 2);
+    expect(card._readings.pressure.canonical).toBeCloseTo(1013.25, 5);
+    card.config.units = {};
+    card.hass = makeHass({
+      'weather.pirateweather': metricEntity,
+      'sensor.p': unavailable('inHg'),
+    });
+    expect(card.unitPressure).toBe('inHg');
+    expect(shown(card, 'pressure')).toBe('29.92 inHg');
   });
 
   it('converts an inHg entity pressure into an hPa sensor unit', () => {
@@ -133,7 +153,9 @@ describe('unavailable sensor, entity value in a different unit', () => {
       'weather.pirateweather': pirateWeather,
       'sensor.p': unavailable('hPa'),
     });
-    expect(parseFloat(card.pressure)).toBeCloseTo(30.07 * 33.8639, 1);
+    expect(card.unitPressure).toBe('hPa');
+    expect(card._readings.pressure.canonical).toBeCloseTo(1018.29, 2);
+    expect(shown(card, 'pressure')).toBe('1018 hPa');
   });
 
   it('converts km/h entity wind into an m/s sensor unit', () => {
@@ -142,8 +164,9 @@ describe('unavailable sensor, entity value in a different unit', () => {
       'weather.pirateweather': metricEntity,
       'sensor.w': unavailable('m/s'),
     });
-    expect(card._sourceWindUnit).toBe('m/s');
-    expect(parseFloat(card.windSpeed)).toBeCloseTo(10, 5);
+    expect(card.unitSpeed).toBe('m/s');
+    expect(card._readings.wind_speed.canonical).toBeCloseTo(10, 5);
+    expect(shown(card, 'wind_speed')).toBe('10 m/s');
   });
 
   it('classifies an entity dew point in the unit it was converted into', () => {

@@ -3,11 +3,16 @@ import { describe, it, expect } from 'vitest';
 import { render } from 'lit';
 import '../src/main.js';
 
-function makeCard(items) {
+// A station wind sensor in km/h sets the display unit unless
+// `units.speed` names another one.
+function makeCard(items, units = {}) {
   const card = document.createElement('weather-station-card');
-  card.setConfig({});
-  card.weather = { attributes: { wind_speed_unit: 'km/h' } };
-  card.unitSpeed = 'km/h';
+  card.setConfig({ show_station: false, sensors: { wind_speed: 'sensor.wind' }, units });
+  card.hass = {
+    states: { 'sensor.wind': { state: '12', attributes: { unit_of_measurement: 'km/h' } } },
+    config: { unit_system: {} },
+    language: 'en',
+  };
   card.forecasts = items;
   return card;
 }
@@ -41,8 +46,9 @@ describe('forecast Beaufort per entry unit (#438)', () => {
       // 10 m/s = 36 km/h → Bft 5; read as km/h it would be Bft 2.
       { datetime: '2026-10-01T12:00:00Z', wind_speed: 10, wind_speed_unit: 'm/s' },
       { datetime: '2026-10-02T12:00:00Z', wind_speed: 10, wind_speed_unit: 'km/h' },
-    ]);
-    card.unitSpeed = 'Bft';
-    expect(speeds(card).map((c) => c.textContent)).toEqual(['5', '2']);
+      // An untagged entry is in the station's unit (km/h).
+      { datetime: '2026-10-03T12:00:00Z', wind_speed: 10 },
+    ], { speed: 'Bft' });
+    expect(speeds(card).map((c) => c.textContent)).toEqual(['5', '2', '2']);
   });
 });

@@ -582,9 +582,10 @@ set hass(hass)               ← v1.9.x: 12-line orchestrator (ADR-0007)
   │     _sources.setHass(hass) and return
   ├─ sun
   ├─ _extractSensorReadings(hass)
-  │     Phase 1 — sensor entity reads, source-unit detection,
-  │     weather_entity attribute fallback for forecast-only mode.
-  │     Mutates this.<reading> + this._sourceWindUnit etc.
+  │     Phase 1 — sensor entity reads (value, unit, canonical),
+  │     weather_entity attribute fallback for forecast-only mode,
+  │     display units (ADR-0035). Stores this._readings, mutates
+  │     this.<reading> + this.unitTemperature / unitPressure / unitSpeed.
   ├─ _classifyLiveCondition(hass)
   │     Phase 2 — minute-memoized classifier + synthesized weather
   │     stand-in. Same classifier as forecast columns, fed with
