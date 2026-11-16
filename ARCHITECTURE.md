@@ -336,6 +336,8 @@ src/
 │   │                          invalidates the cache on theme switch.
 │   ├── unit-converters.ts     (v2)  Pure wind / pressure unit-
 │   │                          conversion lookup tables (ADR-0009).
+│   ├── units.ts               Units table per quantity: canonical unit,
+│   │                          factors, spellings, decimals (ADR-0035).
 │   ├── availability-grace.ts  (#213)  Grace-period bookkeeping for
 │   │                          unavailable sensors (in grace vs overdue).
 │   ├── fetch-signal.ts        Abort signal + 15 s timeout for the
@@ -839,7 +841,7 @@ files**):
 - The live-row classifiers — `precip-rate.ts`, `pressure-trend.ts`,
   `dew-point-comfort.ts`, `sun-strength.ts`.
 - `utils/*` — safe-query, numeric, intl-cache, resolve-css-var,
-  theme-tokens, unit-converters, shared-requests, series-cache,
+  theme-tokens, unit-converters, units, shared-requests, series-cache,
   time-zone.
 - `defaults.ts` — DEFAULTS shape + schema-drift CI test (issue #93).
 - Editor mutator methods (`tests/editor.test.js`) + per-partial

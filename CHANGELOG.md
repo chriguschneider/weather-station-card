@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Under the hood
+
+- One table of units and their conversion factors, taken from Home Assistant's own, as the base for a single units model. Nothing changes on the dashboard (#492).
+
 ## [3.1.0-beta.1] — 2026-11-15
 
 ![Nothing changes on the dashboard: the card looks exactly as in 3.0.0](https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/images/main.png)

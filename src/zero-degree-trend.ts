@@ -6,6 +6,7 @@
 
 import { parseLocation } from './location.js';
 import { HOUR_MS } from './utils/time-zone.js';
+import { deltaToCanonical } from './utils/units.js';
 
 export interface ZeroDegreePoint {
   /** Epoch ms. */
@@ -46,13 +47,11 @@ const SNOW_LINE_OFFSET_M = 300;
 // Snow line up to this far above the site counts as "just above you"
 // (#333).
 const NEAR_BAND_M = 300;
-// International foot, exactly 0.3048 m (NIST SP 811, appendix B.8).
-const METRES_PER_FOOT = 0.3048;
 
 /** Metres per unit of the zero-degree sensor; anything but `ft` is
  *  taken as metres (the MeteoSwiss sensor reports `m`). */
 export function metresPerUnit(unit: string | undefined): number {
-  return unit === 'ft' ? METRES_PER_FOOT : 1;
+  return (unit === 'ft' ? deltaToCanonical('length', 1, 'ft') : null) ?? 1;
 }
 
 /** Five-state tendency of the zero-degree level over the points within

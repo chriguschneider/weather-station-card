@@ -5,6 +5,9 @@
 // never index into the tables.
 
 import { parseNumericSafe } from './numeric.js';
+import { BEAUFORT_KMH_UPPER, DAYLIGHT_EFFICACY_LM_PER_W, fromCanonical, toCanonical } from './units.js';
+
+export { BEAUFORT_KMH_UPPER, DAYLIGHT_EFFICACY_LM_PER_W };
 
 /** Wind-speed conversion factors. multiply source-unit value by the
  *  factor for `target->source` to get the value in the target unit. */
@@ -61,13 +64,13 @@ export function toCelsius(
   fromUnit: string | undefined,
 ): number | null {
   if (temp == null || !Number.isFinite(temp)) return null;
-  return (fromUnit === '°F' || fromUnit === 'F') ? (temp - 32) * 5 / 9 : temp;
+  return (fromUnit === '°F' || fromUnit === 'F') ? toCanonical('temperature', temp, '°F') : temp;
 }
 
 /** Inverse of `toCelsius`: express a °C value in `toUnit`. Only °F
- *  converts; anything else passes through. */
+ *  converts; anything else, a non-finite value included, passes through. */
 export function fromCelsius(tempC: number, toUnit: string | undefined): number {
-  return (toUnit === '°F' || toUnit === 'F') ? tempC * 9 / 5 + 32 : tempC;
+  return ((toUnit === '°F' || toUnit === 'F') ? fromCanonical('temperature', tempC, '°F') : null) ?? tempC;
 }
 
 /** Normalise a precipitation length — a total in mm or a mm/h rate — to
@@ -89,7 +92,7 @@ export function toMillimeters(
   if (!fromUnit) return precip;
   const base = fromUnit.toLowerCase().split('/')[0].trim();
   return (base === 'in' || base === 'inch' || base === 'inches' || base === '"')
-    ? precip * 25.4
+    ? toCanonical('precipitation', precip, 'in')
     : precip;
 }
 
@@ -113,12 +116,11 @@ export function precipBaseUnit(unit: string | undefined): string {
 }
 
 /** Convert a precipitation length (total or rate — the factor is the
- *  same, the caller owns the `/h` label) between mm and in. Same base
- *  or any non-mm/in base passes through unchanged. */
+ *  same, the caller owns the `/h` label) between mm and in. Same base,
+ *  any non-mm/in base or a non-finite value passes through unchanged. */
 export function convertPrecipLength(value: number, fromBase: string, toBase: string): number {
-  if (!Number.isFinite(value) || fromBase === toBase) return value;
-  if (fromBase === 'in' && toBase === 'mm') return value * 25.4;
-  if (fromBase === 'mm' && toBase === 'in') return value / 25.4;
+  if (fromBase === 'in' && toBase === 'mm') return toCanonical('precipitation', value, 'in') ?? value;
+  if (fromBase === 'mm' && toBase === 'in') return fromCanonical('precipitation', value, 'in') ?? value;
   return value;
 }
 
@@ -149,13 +151,6 @@ export function formatPrecipDisplay(
     unit: isRate ? `${target}/h` : target,
   };
 }
-
-/** Upper bounds (exclusive) of Beaufort forces 0–11 in km/h; a speed at
- *  or above the last bound is force 12. These are the km/h bands of the
- *  Beaufort scale (WMO Code 1100), e.g.
- *  https://en.wikipedia.org/wiki/Beaufort_scale — unchanged from the
- *  card's former `calculateBeaufortScale` table. */
-export const BEAUFORT_KMH_UPPER: readonly number[] = [1, 6, 12, 20, 29, 39, 50, 62, 75, 89, 103, 118];
 
 /** Beaufort force (0–12) for a wind speed in `fromUnit` (m/s, km/h,
  *  mph). The speed is brought to km/h through WIND_CONVERSION first, so
@@ -219,18 +214,9 @@ export function convertPressure(
 // ── Solar irradiance → illuminance (community post 15, point 5) ──────
 //
 // Many stations (SWS-12500-class, Ecowitt solar sensors) report solar
-// irradiance in W/m² instead of illuminance in lux. The card's whole
-// sun pipeline — clear-sky ratios in the condition classifier, the B2
-// sunshine derivation, the live sun-strength row — is lux-based, and
-// crucially RATIO-based (measured / theoretical clear-sky), so a
-// constant conversion factor mostly cancels out. 120 lm/W is the
-// upper-middle of the daylight luminous-efficacy range (93–120 lm/W);
-// it maps full sun (~1000 W/m²) to ~120 klx, right at the clear-sky
-// model's noon value. Fine-tuning stays available through
+// irradiance in W/m² instead of illuminance in lux, and the card's sun
+// pipeline is lux-based. Fine-tuning stays available through
 // `condition_mapping.sunshine_lux_ratio`.
-
-/** Daylight luminous efficacy used for W/m² → lx conversion. */
-export const DAYLIGHT_EFFICACY_LM_PER_W = 120;
 
 /** True when a unit string denotes solar irradiance (W/m² in its
  *  common spellings). */
