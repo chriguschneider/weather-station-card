@@ -1641,11 +1641,9 @@ _updateClock(): void {
   }
 }
 
-// Idempotent timer management for the clock. The timer runs only while
-// the clock is shown AND the document is visible — a wall tablet that
-// switches to another dashboard (or a backgrounded browser tab) stops
-// burning a wakeup per second. _handleVisibilityChange re-arms on
-// return and repaints immediately so the user never sees a stale time.
+// Idempotent clock timer: runs only while the clock is shown and the document
+// is visible (a hidden wall-tablet dashboard stops burning a wakeup per
+// second). _handleVisibilityChange re-arms it and repaints at once.
 _syncClockTimer(wantClock: boolean): void {
   const visible = typeof document === 'undefined' || !document.hidden;
   const shouldRun = wantClock && visible;
@@ -1721,14 +1719,10 @@ _liveCtx(language?: string): LivePanelCtx {
   };
 }
 
-// Entity-link wrapper: clicking a live-panel value opens HA's
-// more-info dialog for the sensor behind it — the same affordance
-// HA's own entities card gives every row. `role="button"` doubles as
-// the marker the card-level action handler uses to EXCLUDE the
-// element from tap/hold/double-tap detection (see isCardControl in
-// action-handler.ts), so a row click never also fires the card's
-// tap_action. Values without a backing entity (sensor not configured
-// AND no weather-entity fallback) render unwrapped — no dead cursor.
+// Clicking a live-panel value opens HA's more-info for its sensor.
+// `role="button"` is also what action-handler's isCardControl excludes from
+// tap/hold detection, so a row click never fires tap_action. Values without a
+// backing entity render unwrapped.
 _entityLink(entityId: string | undefined, content: any): any {
   if (!entityId || !this._hass?.states?.[entityId]) return content;
   return this._activatable(() => this._fire('hass-more-info', { entityId }), content);
@@ -1747,11 +1741,9 @@ _activatable(activate: (el: HTMLElement) => void, content: any, hasPopup?: 'dial
     }}>${content}</span>`;
 }
 
-// Info button (show_sources, ADR-0031): one muted icon in the top-right
-// corner of the live panel (the clock shifts left to make room), or next to the chart's mode toggle when the live block
-// is hidden. Accent-coloured when a shown value fell back to the
-// weather entity or a station sensor is stale, so the exception is
-// visible without opening the popup.
+// Info button (show_sources, ADR-0031): a muted icon in the live panel's
+// top-right corner, or next to the chart's mode toggle when the live block is
+// hidden. Accent-coloured when a shown value fell back or a sensor is stale.
 _renderSourcesButton(place: 'main' | 'chart' = 'main'): unknown {
   const cfg = this.config;
   if (cfg?.show_sources === false) return nothing;
@@ -1763,9 +1755,8 @@ _renderSourcesButton(place: 'main' | 'chart' = 'main'): unknown {
     const toggleShown = cfg.forecast?.show_mode_toggle !== false;
     placeClass = toggleShown ? ' wsc-sources-chart' : ' wsc-sources-chart wsc-sources-chart-alone';
   }
-  // Derived at render time from the availability scan's overdue list
-  // (`_sources.missingSensors`; the controller requests an update when
-  // it changes), so grace expiry re-renders the button.
+  // Derived at render time from the availability scan's overdue ids, so grace
+  // expiry re-renders the button (the controller requests the update).
   const alert = sourcesAlert(cfg, this._liveSources, this._sources.overdueIds);
   const label = this._str(alert ? 'sources_button_problem' : 'sources_button');
   const button = this._activatable(
@@ -1783,7 +1774,6 @@ _sourceLabelFor(key: string): string {
   return sourceLabelFor(key, (k) => this._str(k), ed, enEd);
 }
 
-// One popup line per value the card shows (render/source-lines.ts).
 _sourceLines(): SourceLine[] {
   return sourceLines({
     live: this._liveCtx(),
@@ -1967,19 +1957,10 @@ _renderMoonLine(language?: string) {
   return renderMoonLine(this._liveCtx(language));
 }
 
-// ADR-0018: the wide per-column rows render up to 168 condition icons
-// plus 168 wind arrows in hourly mode. As <ha-icon> each one costs a
-// custom-element upgrade + async icon resolution — measured at ~140 ms
-// of the hourly cold mount (ADR-0016 could only REORDER that work past
-// the first paint, not remove it). The rows therefore render plain
-// inline-SVG <use> references against a single hidden sprite emitted
-// once per card (renderIconSpriteDefs in render()). Icon names outside
-// the shipped sprite fall back to a regular <ha-icon>, so an upstream
-// mapping addition degrades to the slow path instead of a blank cell.
-// The template is hoisted to module scope (see ICON_SPRITE_TEMPLATE)
-// so render() returns the SAME TemplateResult every pass — Lit's diff
-// then skips the whole subtree instead of re-walking N symbol
-// templates on every render (perf pass 2026-08).
+// ADR-0018: the per-column rows use inline-SVG <use> references against one
+// hidden sprite per card, not up to 168 <ha-icon> elements. Names outside the
+// sprite fall back to <ha-icon>. The hoisted template (ICON_SPRITE_TEMPLATE)
+// is the same TemplateResult every pass, so Lit skips the whole subtree.
 renderIconSpriteDefs() {
   return ICON_SPRITE_TEMPLATE;
 }
@@ -2006,37 +1987,10 @@ renderWind({ forecastItems } = this) {
     return event;
   }
 
-  // Sync the animation-tracking state once the chart block exists in
-  // the DOM. Runs after every Lit commit, gated on whether the block
-  // is currently mounted (it isn't during the loading branch).
-  //
-  // Two responsibilities, both behind the block-exists check:
-  //   1. Set _chartMountAnimationPlayed=true so the next render
-  //      doesn't reapply the 'first-mount' class. Delayed via
-  //      setTimeout (animation duration + buffer) so HA's hass-state
-  //      ping-pong — which re-renders this component every few 100 ms
-  //      — doesn't strip the class mid-animation. Without the delay,
-  //      Lit re-renders inside the 420 ms slide-up window with the
-  //      flag already true, the template drops 'first-mount', the
-  //      browser cancels the animation, and the user sees nothing.
-  //   2. Detect a forecast.type change on a block that STAYED MOUNTED
-  //      across the render (cached toggle case) and force-restart the
-  //      view-change CSS animation via classList remove → reflow → add.
-  //      Without this, Lit's template diff updates the class attribute
-  //      but the browser collapses same-class-same-name into a no-op
-  //      and the cross-fade doesn't re-fire on consecutive toggles.
-  //      The remount case (cache miss) doesn't need this branch: the
-  //      fresh element already carries 'view-changing' from the
-  //      template, so the animation runs on mount.
-  // Day-pager self-healing (2026-08): a data refresh can RESHAPE the
-  // content — after midnight the series gains a day, a longer provider
-  // forecast appends blocks — which changes .forecast-content's width
-  // while the wrapper's PIXEL scrollLeft is preserved by the browser.
-  // The preserved position then lands mid-page: the viewport shows
-  // "21:00 yesterday … 18:00 today" instead of a whole day. After
-  // every render, snap a drifted pager back to the nearest whole-day
-  // page. Skipped while the user is actively dragging (the drag-end
-  // snap in scroll-ux owns that case) and inert when already aligned.
+  // Day pager: a data refresh can reshape .forecast-content (a new day after
+  // midnight, a longer forecast) while the browser keeps the pixel scrollLeft,
+  // leaving the viewport mid-page. After every render, snap back to the
+  // nearest whole day, unless the user is dragging (scroll-ux owns that snap).
   _maybeRealignDayPager() {
     if (this.config?.forecast?.type !== 'today') return;
     const wrapper = safeQuery<HTMLElement>(this.shadowRoot, '.forecast-scroll.scrolling');
@@ -2045,6 +1999,10 @@ renderWind({ forecastItems } = this) {
     if (left !== null) wrapper.scrollLeft = left;
   }
 
+  // Runs after every Lit commit while the chart block is mounted. Restarts the
+  // view-change animation when forecast.type changed on a still-mounted block
+  // (Lit only updates the class; the browser collapses that into a no-op). A
+  // remounted block already carries 'view-changing' from the template.
   _maybeRetriggerViewChangeAnimation() {
     const block = safeQuery<HTMLElement>(this.shadowRoot, '.forecast-scroll-block');
     if (!block) return;
@@ -2058,10 +2016,8 @@ renderWind({ forecastItems } = this) {
       block.classList.add('view-changing');
     }
     if (!this._chartMountAnimationPlayed && this._chartMountAnimationTimer === null) {
-      // Defer the flag-flip until the start animation has visibly
-      // finished. Wall-clock delay matches the CSS animation duration
-      // plus a small frame buffer. Stored on the instance so a Lit
-      // disconnect/reconnect cycle doesn't accidentally schedule twice.
+      // Flip the flag once the start animation has played: HA re-renders every few
+      // 100 ms and would otherwise drop 'first-mount' mid-animation.
       this._chartMountAnimationTimer = window.setTimeout(() => {
         this._chartMountAnimationPlayed = true;
         this._chartMountAnimationTimer = null;
@@ -2070,11 +2026,9 @@ renderWind({ forecastItems } = this) {
     this._lastForecastType = type;
   }
 
-  // Apply the "scroll to now" position once per render generation.
-  // A generation changes when forecast.type or number_of_forecasts
-  // change — outside those, we leave scrollLeft alone so the user's
-  // manual scroll position survives data refreshes (which fire every
-  // hour from MeasuredDataSource).
+  // Apply the "scroll to now" position once per render generation (a change of
+  // forecast.type or number_of_forecasts). Otherwise scrollLeft is left alone,
+  // so the user's manual position survives data refreshes.
   _maybeApplyInitialScroll(changedProperties: Map<PropertyKey, unknown>) {
     const wrapper = safeQuery(this.shadowRoot,'.forecast-scroll.scrolling');
     if (!wrapper) {
@@ -2084,7 +2038,6 @@ renderWind({ forecastItems } = this) {
       return;
     }
     const cfg = this.config;
-    // Wait for every block the card intends to render (render/scroll-position.ts).
     if (!initialScrollDataReady(cfg, this._stationCount || 0, this._forecastCount || 0)) {
       this._initialScrollApplied = false;
       return;
@@ -2120,11 +2073,9 @@ renderWind({ forecastItems } = this) {
       return true;
     };
 
-    // Best case: layout already settled. Otherwise observe the inner
-    // content for size changes — that fires once Chart.js's canvas
-    // settles and the wrapper actually overflows. Hard cap (1 s after
-    // dataReady) so we don't observe forever if the wrapper never
-    // overflows for some reason.
+    // If layout has already settled, apply now; otherwise observe the content
+    // for size changes until the wrapper overflows. The 1 s cap stops the
+    // observer from running forever.
     if (apply()) return;
 
     const content = wrapper.querySelector('.forecast-content');
@@ -2138,13 +2089,9 @@ renderWind({ forecastItems } = this) {
     const startedAt = Date.now();
     let framePending = false;
     const observer = new ResizeObserver(() => {
-      // Chart.js sizes the canvas progressively over its ~800 ms grow
-      // animation, so this observer fires many times per frame. apply()
-      // reads wrapper.scrollWidth/clientWidth — each a forced synchronous
-      // layout — so running it per tick thrashes layout. Coalesce into
-      // one rAF: apply() runs at most once per frame. Behaviour is
-      // unchanged (apply() just returns false until layout settles); the
-      // 1 s hard cap still bounds the wait.
+      // The observer fires many times per frame while the canvas settles, and
+      // apply() forces layout via scrollWidth/clientWidth; coalesce into one rAF
+      // per frame. The 1 s cap still bounds the wait.
       if (framePending) return;
       framePending = true;
       this._pendingScrollFrame = requestAnimationFrame(() => {
@@ -2174,13 +2121,9 @@ renderWind({ forecastItems } = this) {
 
 customElements.define('weather-station-card', WeatherStationCard);
 
-// Console banner — same pattern Mushroom / mini-graph-card / etc. use.
-// The literal '__CARD_VERSION__' is replaced at build time by the
-// package.json version (see injectCardVersion in rollup.config.mjs).
-// Single source of truth — no manual release-time bump dance. Lets
-// users (and us during dev) confirm at a glance which build is loaded,
-// especially useful when the browser served a stale-cached bundle and
-// the rendered card looks wrong.
+// Console banner (as Mushroom / mini-graph-card do): shows which build is
+// loaded, e.g. when a stale cached bundle is served. '__CARD_VERSION__' is
+// replaced at build time from package.json (ADR-0006).
 const CARD_VERSION = '__CARD_VERSION__';
 console.info(
   `%c WEATHER-STATION-CARD %c v${CARD_VERSION} `,
