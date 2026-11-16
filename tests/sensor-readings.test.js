@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   extractSensorReadings,
+  illuminanceUnit,
   stationUnits,
   weatherEntityUnits,
   isUnavailableState,
@@ -302,6 +303,29 @@ describe('extractSensorReadings: value, unit and source decided together', () =>
     expect(lux.illuminance.unit).toBe('lx');
   });
 
+  it('scales a unitless irradiance sensor and every W/m² spelling into lux', () => {
+    const byClass = run({ illuminance: 'sensor.sol' }, {
+      'sensor.sol': sensor('100', undefined, { device_class: 'irradiance' }),
+    });
+    expect(byClass.illuminance.value).toBe('12000');
+    expect(byClass.illuminance.unit).toBe('lx');
+    const spelled = run({ illuminance: 'sensor.sol' }, { 'sensor.sol': sensor('100', 'w / m2') });
+    expect(spelled.illuminance.value).toBe('12000');
+    expect(spelled.illuminance.unit).toBe('lx');
+  });
+
+  it('leaves an illuminance sensor in an unknown unit as it is', () => {
+    const r = run({ illuminance: 'sensor.lux' }, { 'sensor.lux': sensor('5', 'klx') });
+    expect(r.illuminance.value).toBe('5');
+    expect(r.illuminance.unit).toBe('klx');
+    expect(r.illuminance.canonical).toBeNull();
+  });
+
+  it('keeps an unavailable irradiance sensor without a last good value undefined', () => {
+    const r = run({ illuminance: 'sensor.sol' }, { 'sensor.sol': sensor('unavailable', 'W/m²') });
+    expect(r.illuminance.value).toBeUndefined();
+  });
+
   it('never records a weather source for the sensor-only keys', () => {
     const r = run({ precipitation: 'sensor.rain', zero_degree_level: 'sensor.zdl' }, {
       'sensor.rain': sensor('', 'mm'),
@@ -388,5 +412,17 @@ describe('liveSourcesOf', () => {
     expect(sources.humidity).toBeUndefined();
     expect(sources.sun).toEqual({ kind: 'computed' });
     expect(sources.moon).toEqual({ kind: 'computed' });
+  });
+});
+
+describe('illuminanceUnit', () => {
+  it('reads irradiance by device class over the unit, else the own unit, else lx', () => {
+    expect(illuminanceUnit({ unit_of_measurement: 'lx' })).toBe('lx');
+    expect(illuminanceUnit({ unit_of_measurement: 'W/m²' })).toBe('W/m²');
+    expect(illuminanceUnit({ device_class: 'irradiance' })).toBe('W/m²');
+    expect(illuminanceUnit({ device_class: 'irradiance', unit_of_measurement: 'lx' })).toBe('W/m²');
+    expect(illuminanceUnit({})).toBe('lx');
+    expect(illuminanceUnit(undefined)).toBe('lx');
+    expect(illuminanceUnit({ unit_of_measurement: 'klx' })).toBe('klx');
   });
 });

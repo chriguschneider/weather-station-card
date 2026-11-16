@@ -19,10 +19,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **The chart draws everything in one unit.** A station in °F or inches next to a forecast in metric units (or next to Open-Meteo's past days, which are always metric) gave a temperature line and rain bars made of mixed numbers. The chart now converts every value into the unit the live panel shows.
 - The chart's rain unit follows your rain sensor (or `units.precipitation`) instead of Home Assistant's unit system. With `units.precipitation` set, the bars and their scale are in that unit too, not only the label (#478).
 - A sunshine sensor in minutes or seconds is read in its own unit. Before, the card took its number as hours, so 330 min filled the whole bar. With Open-Meteo, an hour or a day with less than 30 seconds of sun no longer shows as full sunshine (#478).
+- An illuminance sensor in a unit the card does not know (anything but lx or W/m²) no longer feeds the weather symbol and the sunshine bar as if it were lux (#478).
 
 ### Under the hood
 
 - One table of units and their conversion factors, taken from Home Assistant's own, as the base for a single units model. Nothing changes on the dashboard (#492).
+- Every value now enters the card through the one units table and leaves it in your display unit; the old converters are gone (#478).
 
 ## [3.1.0-beta.1] — 2026-11-15
 

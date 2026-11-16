@@ -32,6 +32,7 @@ import { pastFromOpenMeteo } from './past-source.js';
 import type { LiveSource } from './live-source.js';
 import {
   extractSensorReadings,
+  illuminanceUnit,
   liveSourcesOf,
   precipRateReading,
   type Reading,
@@ -51,7 +52,6 @@ import { setupScrollUx } from './scroll-ux.js';
 import { setupActionHandler } from './action-handler.js';
 import { TeardownRegistry } from './teardown-registry.js';
 import { PrecipRateController, type CounterState } from './precip-rate-controller.js';
-import { luxScaleFor } from './utils/unit-converters.js';
 import { deltaToCanonical, parseUnit, toCanonical } from './utils/units.js';
 import { buildForecastChart, ChartBuildError, toDisplayData } from './chart/orchestrator.js';
 import type { DisplayUnits } from './display-units.js';
@@ -745,15 +745,13 @@ _resolveLiveClassifierInputs(hass: HassMain): any {
     dewPointC: r?.dew_point.canonical ?? null,
     windMs: r?.wind_speed.canonical ?? null,
     gustMs: r?.gust_speed.canonical ?? null,
-    // Irradiance sensors scale into lux for the clear-sky ratio.
-    luxNow: (() => {
-      const raw = parseNumericSafe(illuminanceState?.state);
-      if (raw == null) return raw;
-      return raw * luxScaleFor(
-        illuminanceState?.attributes?.unit_of_measurement,
-        illuminanceState?.attributes?.device_class,
-      );
-    })(),
+    // Lux for the clear-sky ratio. An unknown unit gives null, which the
+    // classifier treats as no illuminance input (ADR-0035, point 5).
+    luxNow: toCanonical(
+      'illuminance',
+      parseNumericSafe(illuminanceState?.state),
+      illuminanceUnit(illuminanceState?.attributes),
+    ),
     precipRateMmH,
     lat: loc?.latitude,
     lon: loc?.longitude,

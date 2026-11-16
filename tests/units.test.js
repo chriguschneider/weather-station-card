@@ -17,7 +17,6 @@ import {
   roundForDisplay,
   toDisplay,
 } from '../src/utils/units.js';
-import * as legacy from '../src/utils/unit-converters.js';
 
 const QUANTITIES = Object.keys(UNITS);
 const ALL_UNITS = QUANTITIES.flatMap((quantity) => UNITS[quantity].map((def) => [quantity, def.id, def]));
@@ -221,6 +220,11 @@ describe('reference values', () => {
   ])('%s: %d %s = %d %s', (quantity, value, from, expected, to, tolerance) => {
     expect(Math.abs(convert(quantity, value, from, to) - expected)).toBeLessThanOrEqual(tolerance);
   });
+
+  it('the daylight efficacy and the Beaufort bands', () => {
+    expect(DAYLIGHT_EFFICACY_LM_PER_W).toBe(120);
+    expect(BEAUFORT_KMH_UPPER).toEqual([1, 6, 12, 20, 29, 39, 50, 62, 75, 89, 103, 118]);
+  });
 });
 
 describe('differences', () => {
@@ -348,47 +352,5 @@ describe('roundForDisplay and toDisplay', () => {
     expect(Object.is(roundForDisplay('pressure', -0.004, 'inHg', 'delta'), 0)).toBe(true);
     expect(Object.is(roundForDisplay('pressure', -0.4, 'hPa'), 0)).toBe(true);
     expect(Object.is(toDisplay('temperature', -0.04, '°C'), 0)).toBe(true);
-  });
-});
-
-// The helpers of unit-converters.ts read the
-// table and must return what their literal arithmetic returns. `toBe`
-// is Object.is, so this holds to the last bit, -0 included.
-describe('helpers wired to the table', () => {
-  const SWEEP = [-0, 0, -40, -17.78, 0.01, 0.1, 0.3, 1, 2.54, 31.9, 32, 68, 98.6, 212, 1013.25, 1e-7, 123456.789];
-  for (let i = 1; i <= 200; i++) SWEEP.push(Math.sin(i) * 150, i / 7);
-
-  it('toCelsius', () => {
-    for (const v of SWEEP) {
-      expect(legacy.toCelsius(v, '°F')).toBe((v - 32) * 5 / 9);
-      expect(legacy.toCelsius(v, 'F')).toBe((v - 32) * 5 / 9);
-      expect(legacy.toCelsius(v, '°C')).toBe(v);
-    }
-  });
-
-  it('toMillimeters and convertPrecipLength', () => {
-    for (const v of SWEEP) {
-      expect(legacy.toMillimeters(v, 'in')).toBe(v * 25.4);
-      expect(legacy.toMillimeters(v, 'in/h')).toBe(v * 25.4);
-      expect(legacy.toMillimeters(v, 'mm')).toBe(v);
-      expect(legacy.convertPrecipLength(v, 'in', 'mm')).toBe(v * 25.4);
-      expect(legacy.convertPrecipLength(v, 'mm', 'in')).toBe(v / 25.4);
-      expect(legacy.convertPrecipLength(v, 'mm', 'mm')).toBe(v);
-      expect(legacy.convertPrecipLength(v, 'in', 'in')).toBe(v);
-      expect(legacy.convertPrecipLength(v, '%', 'mm')).toBe(v);
-    }
-    for (const v of [NaN, Infinity, -Infinity]) {
-      expect(legacy.convertPrecipLength(v, 'in', 'mm')).toBe(v);
-      expect(legacy.convertPrecipLength(v, 'mm', 'in')).toBe(v);
-    }
-  });
-
-  it('the lux scale and the Beaufort bands', () => {
-    expect(DAYLIGHT_EFFICACY_LM_PER_W).toBe(120);
-    expect(legacy.DAYLIGHT_EFFICACY_LM_PER_W).toBe(120);
-    expect(legacy.luxScaleFor('W/m²')).toBe(120);
-    expect(legacy.luxScaleFor('lx')).toBe(1);
-    expect(legacy.BEAUFORT_KMH_UPPER).toBe(BEAUFORT_KMH_UPPER);
-    expect(BEAUFORT_KMH_UPPER).toEqual([1, 6, 12, 20, 29, 39, 50, 62, 75, 89, 103, 118]);
   });
 });

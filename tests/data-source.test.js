@@ -204,6 +204,27 @@ describe('MeasuredDataSource._buildForecast', () => {
     expect(entry.condition).toBe('exceptional');
   });
 
+  // The illuminance max enters the classifier as lux: 700 W/m² is 84000 lx
+  // against a clear-sky noon of about 93000 lx, 700 lx is overcast, and a
+  // unit the table does not know is no lux input at all (ADR-0035).
+  it.each([
+    ['W/m²', 'sunny'],
+    ['lx', 'cloudy'],
+    ['klx', 'cloudy'],
+  ])('reads the illuminance max in %s as lux for the condition', (unit, condition) => {
+    const ds = new MeasuredDataSource({
+      config: { latitude: 47.4, longitude: 8.5 },
+      callWS: vi.fn(),
+      states: { 'sensor.lux': { attributes: { unit_of_measurement: unit } } },
+    }, { sensors, days: 1 }, cal);
+    const stats = {
+      'sensor.temp': [{ start: dayMs(1).date.toISOString(), max: 20, min: 10, mean: 15 }],
+      'sensor.lux': [{ start: dayMs(1).date.toISOString(), max: 700 }],
+    };
+    const [entry] = ds._buildForecast(stats, sensors, startDay, 1);
+    expect(entry.condition).toBe(condition);
+  });
+
   it('reads a gust sensor without a unit in the wind sensor unit', () => {
     const ds = new MeasuredDataSource({
       ...kmhHass,
@@ -785,6 +806,16 @@ describe('MeasuredDataSource._fetchLuxSunshine (#56 + #66)', () => {
     const result = await ds._fetchLuxSunshine(sensors, new Date(t0 - HOUR_MS), new Date(t0 + HOUR_MS));
     const totalHours = Array.from(result.values()).reduce((s, h) => s + h, 0);
     expect(totalHours).toBeGreaterThan(0.4);
+  });
+
+  it('derives nothing from a sensor in a unit the table does not know', async () => {
+    const sensors = { illuminance: 'sensor.lux' };
+    const hass = makeHass(async () => ({}));
+    hass.states = { 'sensor.lux': { state: '5', attributes: { unit_of_measurement: 'klx' } } };
+    const ds = new MeasuredDataSource(hass, { sensors }, cal);
+    const result = await ds._fetchLuxSunshine(sensors, new Date(0), new Date(1));
+    expect(result).toBeNull();
+    expect(hass.callWS).not.toHaveBeenCalled();
   });
 
   it('unconverted 650-"lux" samples would NOT count (guards the conversion)', async () => {
