@@ -242,7 +242,7 @@ src/
 │
 ├── zero-degree-trend.ts       (#333)  Zero-degree rows: 48 h trend of
 │                              the 0 °C isotherm and the snow line
-│                              relative to the location. Pure.
+│                              relative to the location. Pure, metres.
 │
 ├── live-source.ts             (ADR-0031)  Provenance of each live
 │                              value (station / stale / weather) and the
@@ -345,8 +345,11 @@ src/
 │   │                          properties the chart re-reads on every
 │   │                          redraw; a MutationObserver on <html>
 │   │                          invalidates the cache on theme switch.
-│   ├── unit-converters.ts     (v2)  Pure wind / pressure unit-
-│   │                          conversion lookup tables (ADR-0009).
+│   ├── unit-converters.ts     (v2)  What is left of the ADR-0009
+│   │                          converters: the past data's classifier
+│   │                          inputs (m/s, °C, mm), the lux scale and
+│   │                          the chart's mm/in label. Goes in step C3
+│   │                          of #478 (ADR-0035).
 │   ├── units.ts               Units table per quantity: canonical unit,
 │   │                          factors, spellings, decimals (ADR-0035).
 │   ├── availability-grace.ts  (#213)  Grace-period bookkeeping for

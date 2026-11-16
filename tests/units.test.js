@@ -18,7 +18,6 @@ import {
   toDisplay,
 } from '../src/utils/units.js';
 import * as legacy from '../src/utils/unit-converters.js';
-import { metresPerUnit } from '../src/zero-degree-trend.js';
 
 const QUANTITIES = Object.keys(UNITS);
 const ALL_UNITS = QUANTITIES.flatMap((quantity) => UNITS[quantity].map((def) => [quantity, def.id, def]));
@@ -262,12 +261,6 @@ describe('Beaufort', () => {
     expect(fromCanonical('speed', toCanonical('speed', 250, 'km/h'), 'Bft')).toBe(12);
   });
 
-  it('agrees with the band lookup the live panel uses', () => {
-    for (let kmh = 0; kmh <= 130; kmh += 0.5) {
-      expect(convert('speed', kmh, 'km/h', 'Bft')).toBe(legacy.toBeaufort(kmh, 'km/h'));
-    }
-  });
-
   it('as a source: Home Assistant\'s 0.836 · B^1.5 in m/s', () => {
     expect(toCanonical('speed', 0, 'Beaufort')).toBe(0);
     expect(toCanonical('speed', 1, 'Beaufort')).toBe(0.836);
@@ -358,25 +351,18 @@ describe('roundForDisplay and toDisplay', () => {
   });
 });
 
-// The helpers of unit-converters.ts and zero-degree-trend.ts read the
+// The helpers of unit-converters.ts read the
 // table and must return what their literal arithmetic returns. `toBe`
 // is Object.is, so this holds to the last bit, -0 included.
 describe('helpers wired to the table', () => {
   const SWEEP = [-0, 0, -40, -17.78, 0.01, 0.1, 0.3, 1, 2.54, 31.9, 32, 68, 98.6, 212, 1013.25, 1e-7, 123456.789];
   for (let i = 1; i <= 200; i++) SWEEP.push(Math.sin(i) * 150, i / 7);
 
-  it('toCelsius and fromCelsius', () => {
+  it('toCelsius', () => {
     for (const v of SWEEP) {
       expect(legacy.toCelsius(v, '°F')).toBe((v - 32) * 5 / 9);
       expect(legacy.toCelsius(v, 'F')).toBe((v - 32) * 5 / 9);
       expect(legacy.toCelsius(v, '°C')).toBe(v);
-      expect(legacy.fromCelsius(v, '°F')).toBe(v * 9 / 5 + 32);
-      expect(legacy.fromCelsius(v, 'F')).toBe(v * 9 / 5 + 32);
-      expect(legacy.fromCelsius(v, '°C')).toBe(v);
-      expect(legacy.fromCelsius(v, undefined)).toBe(v);
-    }
-    for (const v of [NaN, Infinity, -Infinity]) {
-      expect(legacy.fromCelsius(v, '°F')).toBe(v * 9 / 5 + 32);
     }
   });
 
@@ -397,11 +383,7 @@ describe('helpers wired to the table', () => {
     }
   });
 
-  it('metresPerUnit, the lux scale and the Beaufort bands', () => {
-    expect(metresPerUnit('ft')).toBe(0.3048);
-    expect(metresPerUnit('m')).toBe(1);
-    expect(metresPerUnit('feet')).toBe(1);
-    expect(metresPerUnit(undefined)).toBe(1);
+  it('the lux scale and the Beaufort bands', () => {
     expect(DAYLIGHT_EFFICACY_LM_PER_W).toBe(120);
     expect(legacy.DAYLIGHT_EFFICACY_LM_PER_W).toBe(120);
     expect(legacy.luxScaleFor('W/m²')).toBe(120);
