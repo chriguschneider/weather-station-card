@@ -126,6 +126,26 @@ describe('fetchPressure3hDelta', () => {
     expect(await fetchPressure3hDelta(hass, 'sensor.pressure', cal)).toBeNull();
   });
 
+  it('reads a sensor without a unit in hPa', async () => {
+    const endMs = new Date('2026-05-12T14:00:00Z').getTime();
+    const hass = mockHass({
+      stateUnit: null,
+      stats: { 'sensor.pressure': strip(endMs, [1015, 1016, 1017, 1018]) },
+    });
+    const delta = await fetchPressure3hDelta(hass, 'sensor.pressure', cal);
+    expect(delta).toBeCloseTo(3, 5);
+  });
+
+  it('reads a sensor without a unit in the assumed unit passed in', async () => {
+    const endMs = new Date('2026-05-12T14:00:00Z').getTime();
+    const hass = mockHass({
+      stateUnit: null,
+      stats: { 'sensor.pressure': strip(endMs, [101.7, 101.6, 101.4, 101.3]) },
+    });
+    const delta = await fetchPressure3hDelta(hass, 'sensor.pressure', cal, undefined, 'kPa');
+    expect(delta).toBeCloseTo(-4, 5);
+  });
+
   it('reuses the cached value within the same hour bucket', async () => {
     const endMs = new Date('2026-05-12T14:00:00Z').getTime();
     const hass = mockHass({

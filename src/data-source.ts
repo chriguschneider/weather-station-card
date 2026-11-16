@@ -323,12 +323,13 @@ export interface PressureDeltaCache {
  *  sensor. Returns `null` when the recorder has fewer than the two
  *  buckets required (newest hour and 3 h earlier), when either mean is
  *  null, when the sensor's unit is not a known pressure unit, or on fetch
- *  error. A `cache` hit for the current hour skips the WS call. */
+ *  error. A sensor without a unit is read in `assumedUnit`. A `cache` hit for the current hour skips the WS call. */
 export async function fetchPressure3hDelta(
   hass: HassLike | null,
   entityId: string | undefined,
   calendar: Calendar,
   cache?: PressureDeltaCache,
+  assumedUnit = 'hPa',
 ): Promise<number | null> {
   if (!hass || !entityId) return null;
 
@@ -379,7 +380,7 @@ export async function fetchPressure3hDelta(
           | string
           | undefined;
         const rawDelta = newest.mean - older.mean;
-        delta = deltaToCanonical('pressure', rawDelta, sourceUnit);
+        delta = deltaToCanonical('pressure', rawDelta, sourceUnit || assumedUnit);
       }
     }
   }

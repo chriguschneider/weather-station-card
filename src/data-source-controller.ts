@@ -47,6 +47,8 @@ import { TeardownRegistry } from './teardown-registry.js';
 export interface DataSourceHost extends ReactiveControllerHost {
   readonly config: CardConfig;
   readonly _hass: HassLike | null;
+  /** Latest sensor readings; `assumed.pressure` reads a unit-less sensor. */
+  readonly _readings?: { assumed: { pressure: string } } | null;
   /** Every day boundary follows this; `syncCalendar` replaces it. */
   calendar: Calendar;
   /** Station or forecast data changed: rebuild the chart entries. */
@@ -461,6 +463,7 @@ export class DataSourceController implements ReactiveController {
     try {
       const delta = await fetchPressure3hDelta(
         this.host._hass, pressureId, this.host.calendar, this._pressureDeltaCache,
+        this.host._readings?.assumed.pressure,
       );
       if (delta !== this.pressureDelta3h) {
         this.pressureDelta3h = delta;

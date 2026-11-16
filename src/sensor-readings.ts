@@ -68,6 +68,8 @@ export interface SensorReadings {
   units: { wind: string; pressure: string; temperature: string; precipBase: string };
   /** The card's display units, one per quantity (ADR-0035). */
   displayUnits: DisplayUnits;
+  /** The units a sensor without `unit_of_measurement` is read in. */
+  assumed: { pressure: string; precipitation: string };
 }
 
 /** `hass.config.unit_system`, keys as in Home Assistant's
@@ -220,6 +222,7 @@ export function extractSensorReadings(input: {
     zero_degree_level: zeroDegree('zero_degree_level'),
     zero_degree_level_48h: zeroDegree('zero_degree_level_48h'),
     units,
+    assumed: { pressure: assumed.pressure, precipitation: assumed.precipitation },
     displayUnits: resolveDisplayUnits({
       temperature: [sensorUnit('temperature'), wxUnit('temperature_unit'), unitSystem.temperature],
       pressure: [configUnits.pressure, sensorUnit('pressure'), wxUnit('pressure_unit'), unitSystem.pressure],

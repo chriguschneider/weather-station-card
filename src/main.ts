@@ -120,21 +120,22 @@ interface HassEntityState {
  *  A dedicated `sensors.precipitation_rate` entity (#253) is a rate by
  *  contract, so a bare `mm` from it counts as mm/h. A cumulative counter
  *  counts only with a rate unit; its total read as a rate would classify
- *  a dry day as 'rainy'. */
+ *  a dry day as 'rainy'. A sensor without a unit is read in
+ *  `assumedUnit` (ADR-0035 amendment of 2026-11-16). */
 function resolvePrecipRateInput(
   rateState: HassEntityState | null | undefined,
   counterState: HassEntityState | null | undefined,
+  assumedUnit: string,
 ): number | null {
+  const unitOf = (s: HassEntityState): unknown => s.attributes?.unit_of_measurement || assumedUnit;
   if (rateState) {
     const n = parseNumericSafe(rateState.state);
-    const unit = rateState.attributes?.unit_of_measurement;
+    const unit = unitOf(rateState);
     return toCanonical('precipitation_rate', n, unit) ?? toCanonical('precipitation', n, unit);
   }
-  return toCanonical(
-    'precipitation_rate',
-    parseNumericSafe(counterState?.state),
-    counterState?.attributes?.unit_of_measurement,
-  );
+  return counterState
+    ? toCanonical('precipitation_rate', parseNumericSafe(counterState.state), unitOf(counterState))
+    : null;
 }
 
 /** A weather-sourced reading in the station's source unit, which the rows
@@ -732,6 +733,7 @@ _resolveLiveClassifierInputs(hass: HassMain): any {
   const precipRateMmH = resolvePrecipRateInput(
     sensors.precipitation_rate ? hass.states?.[sensors.precipitation_rate] : null,
     sensors.precipitation ? hass.states?.[sensors.precipitation] : null,
+    this._readings?.assumed.precipitation ?? 'mm',
   );
   const r = this._readings;
 
