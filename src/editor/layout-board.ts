@@ -1,24 +1,13 @@
-// Editor control — the attribute-row layout board (ADR-0025).
+// Attribute-row layout board (ADR-0025): one drop zone per layout column
+// plus a trailing "new column" zone. Every drop writes an explicit
+// `attributes_layout`; the pill row above decides which rows are on, the
+// board where they sit.
 //
-// A row of drop zones, one per layout column plus a trailing "new
-// column" zone, each holding the rows currently on as draggable pills.
-// Dragging a pill within a column reorders it, dragging across columns
-// moves it, dropping on the trailing zone opens a column. Every drop
-// writes an explicit `attributes_layout`; the toggle-pill row above the
-// board keeps deciding WHICH rows are on, the board decides WHERE.
-//
-// Pointer events, not HTML5 drag-and-drop: the native API does not
-// fire on touch, and the editor is used on tablets. The board is
-// re-rendered from a preview layout while a drag is in flight, so the
-// dragged pill itself is the placeholder (dimmed, dashed) and the
-// columns never jump; a fixed-position ghost follows the pointer. The
-// preview is always derived from the layout at drag start, so a column
-// emptied by the drag stays open for a drop-back until the pointer is
-// released (normalizeLayout drops it on commit).
-//
-// Keyboard: arrow keys on a focused pill move it one step; the same
-// move helper backs both paths. Styles live in the editor's global
-// <style> block next to the toggle pills (`.layout-board`, …).
+// Pointer events, not HTML5 drag-and-drop: the native API does not fire on
+// touch. The board re-renders from a preview layout derived from the layout
+// at drag start, so a column emptied by the drag stays open for a drop-back
+// until release (normalizeLayout drops it on commit). Arrow keys move a
+// focused pill through the same move helper.
 
 import { html, nothing, type TemplateResult } from 'lit';
 import {
@@ -162,8 +151,7 @@ interface DragState {
   onCancel: (ev: PointerEvent) => void;
 }
 
-// One drag at a time per document; the board is re-rendered from
-// `drag.preview` while this is set.
+// One drag at a time per document.
 let drag: DragState | null = null;
 
 /** Test/debug seam: the layout the board currently previews. */

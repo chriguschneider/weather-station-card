@@ -33,7 +33,6 @@ interface RawConfig {
   [key: string]: unknown;
 }
 
-/** `value` as a positive integer, `fallback` for anything else. */
 export function positiveInt(value: unknown, fallback: number): number {
   const n = parseInt(String(value), 10);
   return Number.isFinite(n) && n > 0 ? n : fallback;
