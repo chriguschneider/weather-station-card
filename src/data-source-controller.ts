@@ -4,10 +4,8 @@
 // pressure delta and the sensor-availability scan with its grace timer.
 //
 // The card keeps the ADR-0017 entity-delta gate and decides WHEN to
-// sync; this controller decides WHAT runs. It owns its own
-// TeardownRegistry, registered on connect and drained on disconnect, so
-// the card's disconnect path no longer needs to know which source or
-// timer is alive.
+// sync; this controller decides WHAT runs. Its own TeardownRegistry is
+// filled on connect and drained on disconnect.
 
 import type { ReactiveController, ReactiveControllerHost } from 'lit';
 import {
@@ -189,7 +187,7 @@ export class DataSourceController implements ReactiveController {
 
   private _createMeasured(hass: HassLike): void {
     // Stale-while-revalidate: paint the last persisted payload while the
-    // recorder roundtrip (0.5–3 s on a Pi) is in flight.
+    // recorder roundtrip is in flight.
     if (!this.stationReady) {
       const cached = loadSeriesCache(this.stationSeriesKey());
       if (cached?.length) {
@@ -403,9 +401,8 @@ export class DataSourceController implements ReactiveController {
           this.host.onSourceData();
           return;
         }
-        // Overlay-only: update values in the live chart instead of a
-        // rebuild, which re-allocated the bar slots and made the precip
-        // bars start wide and snap narrow once sunshine landed.
+        // Overlay-only: update values in the live chart; a rebuild
+        // re-allocates the bar slots and the bars change width.
         if (event?.ok) this.host.onOverlayData();
       });
     }

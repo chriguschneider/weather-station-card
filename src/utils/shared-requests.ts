@@ -1,25 +1,10 @@
-// Module-level request deduplication (perf pass 2026-08).
+// Request deduplication shared by every card in the tab (ADR-0020): an
+// in-flight call is awaited by later callers with the same key, and a
+// settled result is reused for a short TTL. Failures are never cached.
 //
-// A dashboard with N weather-station-cards used to issue N identical
-// recorder / history / Open-Meteo requests at load (and again every
-// poll cycle when the cards' timers drift close together). The module
-// map lives once per browser tab — every card instance shares it —
-// so identical requests collapse into one roundtrip:
-//
-//   - in-flight dedup: a second caller with the same key awaits the
-//     FIRST caller's promise instead of firing its own request;
-//   - short result TTL: a caller arriving moments later (typical for
-//     staggered card mounts during dashboard load) reuses the settled
-//     result without any await-latency.
-//
-// Failures are never cached — a rejected fn() propagates to every
-// concurrent caller and the next call retries fresh.
-//
-// SHARED-REFERENCE CONTRACT: every caller of the same key receives
-// the SAME resolved object (no clone — payloads can be tens of
-// thousands of recorder rows). Callers must treat the result as
-// deep-frozen: mutating it would silently corrupt what every other
-// card on the dashboard sees. Derive, don't modify.
+// SHARED-REFERENCE CONTRACT: every caller of the same key receives the SAME
+// resolved object (no clone; payloads can be tens of thousands of rows).
+// Treat it as deep-frozen: mutating it corrupts what every other card sees.
 
 const inFlight = new Map<string, Promise<unknown>>();
 const results = new Map<string, { ts: number; value: unknown }>();
@@ -42,8 +27,6 @@ export function dedupeRequest<T>(
     try {
       const value = await fn();
       results.set(key, { ts: now(), value });
-      // FIFO prune — the map stays small (one entry per distinct
-      // request signature on the dashboard).
       while (results.size > MAX_RESULTS) {
         const oldest = results.keys().next().value;
         if (oldest === undefined) break;

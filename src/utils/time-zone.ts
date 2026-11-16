@@ -1,18 +1,11 @@
-// Calendar math in one IANA time zone (issue #285, ADR-0030).
+// Calendar math in one IANA time zone (#285, ADR-0030): every day / hour
+// computation goes through a `Calendar`, never Date's local getters, so a
+// remote viewer's day columns cut at the location's midnight.
 //
-// The card shows the weather at a location — station sensors, the
-// forecast for that place, and the recorder's daily statistics, which
-// HA buckets by the SERVER's midnight. Doing day boundaries in the
-// browser's zone made a remote viewer's day columns cut at the wrong
-// midnight, so every day / hour computation goes through a `Calendar`
-// instead of Date's local getters and setters.
-//
-// Each card owns one `Calendar` and passes it explicitly: clock ticks,
-// fetch callbacks and chart plugins run asynchronously, so a page-wide
-// zone would let two cards in two zones read each other's. When the
-// zone matches the browser's own (the common case) the methods take
-// Date's native path, so behaviour there is identical to the pre-#285
-// code.
+// Each card owns one `Calendar` and passes it explicitly: clock ticks, fetch
+// callbacks and chart plugins are asynchronous, so a page-wide zone would let
+// two cards in two zones read each other's. A zone equal to the browser's
+// takes Date's native path.
 
 export const DAY_MS = 86_400_000;
 export const HOUR_MS = 3_600_000;

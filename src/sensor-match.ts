@@ -1,12 +1,7 @@
-// Which entity fits which sensor slot (#451). Shared by the card's
-// auto-pick for a new card (`getStubConfig`) and the editor's per-slot
-// entity pickers, so the picker always offers the entity the card
-// picked.
-//
-// Each slot has `auto` tiers, tried in order by the auto-pick, and
-// `extra` predicates that only widen the picker's list. An auto tier
-// that is too loose for a silent pick (any temperature sensor as the
-// dew point) belongs in `extra`.
+// Which entity fits which sensor slot (#451), shared by the new-card
+// auto-pick and the editor's pickers. `auto` tiers are tried in order;
+// `extra` predicates only widen the picker's list, so a tier too loose
+// for a silent pick (any temperature sensor as dew point) goes there.
 
 import { findNextRainEntity } from './next-rain.js';
 

@@ -4,9 +4,7 @@
 // sensor-readings.ts: the configured station sensor, the sensor's
 // last good value while it is unavailable (#213), or the weather
 // entity's current attributes when no usable sensor value exists.
-// The card used to know this only implicitly; recording it lets the
-// panel label each value so a mixed setup (local station + forecast
-// provider) is readable at a glance.
+// The panel labels each value with it.
 
 // `computed`: derived in-card from the location (sun, moon), no entity.
 export type LiveSourceKind = 'station' | 'stale' | 'weather' | 'computed';
@@ -42,12 +40,10 @@ export interface SourceLabels {
   computed?: string;
 }
 
-// The fallback rule itself: sensor-readings.ts calls this first and
-// takes the value from the side it picks, so the recorded source is
-// the value's source by construction (#451).
-// `sensorValue` is the sensor's usable value (its live
-// state, or its last good state while unavailable); `weatherHasValue`
-// whether the weather entity carries the matching attribute.
+// The fallback rule: the value is taken from the side this picks, so the
+// recorded source is the value's source by construction (#451).
+// `sensorValue` is the live state or the last good state while unavailable;
+// `weatherHasValue` whether the weather entity carries the attribute.
 export function resolveLiveSource(opts: {
   sensorId: string | undefined;
   sensorState: string | undefined;

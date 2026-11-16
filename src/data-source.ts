@@ -1,14 +1,7 @@
-// DataSource: feeds the card a `forecast`-shaped array.
-//
-// The render layer consumes `this.forecasts` — an array of entries with
-// fields `datetime`, `temperature`, `templow`, `precipitation`,
-// `wind_speed`, `wind_bearing`, `pressure`, `humidity`, `uv_index`,
-// `condition`. Anything that produces this shape can drive the chart.
-//
+// Data sources that feed the card `ForecastEntry[]`-shaped arrays.
 // MeasuredDataSource: past data via recorder/statistics_during_period.
 // ForecastDataSource: future data via weather/subscribe_forecast.
-// Both expose subscribe(callback) → unsubscribe and emit
-// { forecast, error? } events.
+// Both expose subscribe(callback) → unsubscribe and emit { forecast, error? }.
 
 import {
   classifyDay,
@@ -37,10 +30,8 @@ import { dedupeRequest } from './utils/shared-requests.js';
 import { safeLocalStorage } from './utils/safe-storage.js';
 import { HOUR_MS, serverCalendar, type Calendar } from './utils/time-zone.js';
 
-// Dedup TTL for identical recorder requests across sibling cards on
-// the same dashboard. Long enough to absorb staggered card mounts and
-// drifting poll timers, short enough that a manual dashboard refresh
-// still fetches fresh buckets.
+// Long enough to absorb staggered card mounts and drifting poll timers,
+// short enough that a manual dashboard refresh still fetches fresh buckets.
 const STATS_DEDUPE_TTL_MS = 60 * 1000;
 
 const POLL_INTERVAL_MS = 60 * 60 * 1000;
@@ -62,11 +53,8 @@ export interface StatBucket {
 /** WS response shape: `{ entity_id: StatBucket[] }`. */
 export type StatsResponse = Record<string, StatBucket[] | undefined>;
 
-/** Sensor-id config bag. All keys optional — the user can wire only
- *  the sensors they have. Each value is a HA entity id (or undefined
- *  when the user hasn't picked one). */
-// Key order mirrors the editor's picker grid (render-sensors.ts) so the
-// type, the stub config, the docs table and the UI all read the same.
+// Key order mirrors the editor's picker grid so the type, the stub config,
+// the docs table and the UI all read the same.
 export interface SensorMap {
   temperature?: string;
   pressure?: string;
@@ -86,10 +74,9 @@ export interface SensorMap {
   /** Sunshine duration entity (handled by the sunshine overlay, not
    *  this module — listed so config-typing stays accurate). */
   sunshine_duration?: string;
-  /** DEPRECATED (v2.3, ADR-0022): the moon line is computed in-card
-   *  and reads no entity. The key stays typed so configs written for
-   *  ≤v2.2 don't fail the type boundary, and stays EXCLUDED from the
-   *  recorder statistics fetch below (its enum state has none). */
+  /** Deprecated (ADR-0022): the moon line is computed in-card and reads
+   *  no entity. Stays typed so old configs pass, and is EXCLUDED from the
+   *  recorder statistics fetch (its enum state has none). */
   moon_phase?: string;
 }
 
@@ -99,17 +86,14 @@ export interface DataSourceConfig {
   days?: number | string;
   forecast?: {
     type?: 'daily' | 'hourly' | 'today';
-    /** Opt-in: backfill the past block from Open-Meteo when no station
-     *  sensors are configured (ADR-0015). Read in main.ts, not by the
-     *  data sources themselves — listed here so config typing stays
-     *  accurate. */
+    /** Opt-in Open-Meteo backfill of the past block (ADR-0015). Not read
+     *  by the data sources; listed so config typing stays accurate. */
     openmeteo_history?: boolean;
   } | null;
   sensors?: SensorMap;
   condition_mapping?: ConditionThresholdOverrides & {
-    /** Threshold for the Method-B2 lux-derivation: a sample counts
-     *  as sunshine when `measured_lux / clearsky_lux ≥ this`.
-     *  Default 0.6. */
+    /** A lux sample counts as sunshine when `measured_lux / clearsky_lux
+     *  ≥ this`. Default 0.6. */
     sunshine_lux_ratio?: number;
   };
   weather_entity?: string;
@@ -153,8 +137,7 @@ export interface HassLike {
   callWS<T = unknown>(msg: Record<string, unknown>): Promise<T>;
 }
 
-/** Map indexed by bucket-start ms — used by `bucketPrecipitation` to
- *  diff adjacent buckets for `state_class: measurement` sensors. */
+/** Buckets indexed by start ms. */
 export type BucketMap = Map<number, StatBucket>;
 
 /** Bucket-relative rainfall extraction that adapts to the sensor's
@@ -164,17 +147,9 @@ export type BucketMap = Map<number, StatBucket>;
  *    total            → API returns `sum`        (use as-is)
  *    measurement      → API returns `max` only   (diff current.max − previous.max)
  *
- *  For the diff path a non-positive delta means the lifetime counter
- *  reset between buckets (battery swap, device reinstall, integration
- *  restart); fall back to current bucket's max as the bucket total in
- *  that case.
- *
- *  The function is bucket-size-agnostic — it works the same for daily
- *  and hourly statistics. Callers pass keys that match whatever bucket
- *  granularity they fetched (`period: 'day'` or `period: 'hour'`).
- *
- *  Exported as a free function so the unit tests don't need to
- *  instantiate `MeasuredDataSource`. */
+ *  A negative delta means the lifetime counter reset between buckets
+ *  (battery swap, reinstall); the current bucket's max is the total then.
+ *  Bucket-size-agnostic: callers pass keys of the granularity they fetched. */
 export function bucketPrecipitation(
   byBucket: BucketMap | null | undefined,
   currentKey: number,
@@ -275,9 +250,7 @@ function byStart(series: ReadonlyArray<StatBucket> | null | undefined): Array<{ 
  *  The counter reset lands a beat AFTER the hour rolls over, so HA
  *  records the server's 00:00 bucket as `min 0, max <yesterday's
  *  final>`. Its `min` is the post-reset floor; every other hour's
- *  `max` is the value at the hour's end. (Verified against a live
- *  recorder on 2026-08-28: Aug 27's 00:00 bucket carried Aug 26's
- *  10.3992.)
+ *  `max` is the value at the hour's end.
  *
  *  Each hour's signed change is credited to the card day that hour
  *  starts in; a card day spanning two server days sums both. */
@@ -338,10 +311,9 @@ export function sunshineServerDayLast(
   return last;
 }
 
-/** 1-entry cache shared between the call site and `fetchPressure3hDelta`.
- *  Caller owns the object; the fetch mutates `bucketMs` / `value` so a
- *  re-render within the same hour skips the WS roundtrip. Reset by
- *  setting `bucketMs = null` (e.g. when the configured sensor changes). */
+/** Caller-owned 1-entry cache for `fetchPressure3hDelta`: a re-render
+ *  within the same hour skips the WS roundtrip. Reset with `bucketMs = null`
+ *  (e.g. when the configured sensor changes). */
 export interface PressureDeltaCache {
   bucketMs: number | null;
   value: number | null;
@@ -358,11 +330,8 @@ function toHpa(value: number, sourceUnit: string | undefined): number {
 /** Fetch the 3-hour pressure delta in hPa for the configured pressure
  *  sensor. Returns `null` when the recorder has fewer than the two
  *  buckets required (newest hour and 3 h earlier), when either mean is
- *  null, or on fetch error.
- *
- *  When `cache` is provided and its `bucketMs` matches the start of the
- *  current hour, the cached value is returned without issuing a WS
- *  call — multiple renders within the same hour share one roundtrip. */
+ *  null, or on fetch error. A `cache` hit for the current hour skips the
+ *  WS call. */
 export async function fetchPressure3hDelta(
   hass: HassLike | null,
   entityId: string | undefined,
@@ -382,9 +351,7 @@ export async function fetchPressure3hDelta(
 
   let stats: StatsResponse;
   try {
-    // Module-level dedup: the key carries entity + hour bucket, so all
-    // cards watching the same pressure sensor share one roundtrip per
-    // hour regardless of when each of them renders.
+    // Key carries entity + hour bucket: cards on the same sensor share one roundtrip per hour.
     stats = await dedupeRequest(
       `pressure3h:${entityId}:${bucketMs}`,
       HOUR_MS,
@@ -429,26 +396,16 @@ export async function fetchPressure3hDelta(
   return delta;
 }
 
-/** Internal shape of the bag passed to `_mapHourCondition` —
- *  `ClassifyInputs` plus the contextual fields the data source uses
- *  to drive `classifyDay`. */
 interface HourClassifyBag extends ClassifyInputs {
   hourStart?: Date;
 }
 
-// ── Lux-sunshine per-day cache (perf pass 2026-08) ──────────────────
-//
-// The B2 lux derivation used to refetch the illuminance sensor's FULL
-// high-resolution history over the whole window (days+1, typically 8
-// days) on EVERY hourly poll — tens of thousands of rows of JSON over
-// the WebSocket plus a recorder DB scan, although completed days can
-// never change. The cache stores the derived hours per completed local
-// day; once warm, each poll only fetches today's samples (~1/8 of the
-// payload). Keyed by entity + derivation parameters so a threshold or
-// location change invalidates cleanly.
+// Per-day lux-sunshine cache: completed days never change, so once warm each
+// poll fetches only today's samples. Keyed by entity, zone and derivation
+// parameters, so a threshold, scale or location change invalidates it.
 
 const LUX_CACHE_PREFIX = 'wsc_lux_days_';
-// v2: the key carries the time zone the days were cut in (ADR-0030).
+// The key carries the time zone the days were cut in (ADR-0030).
 const LUX_CACHE_VERSION = 2;
 const LUX_CACHE_MAX_DAYS = 120;
 
@@ -458,8 +415,8 @@ interface LuxDayCacheShape {
   lat: number;
   lon: number;
   /** Irradiance→lux multiplier the cached hours were derived with
-   *  (1 for plain lux sensors). A unit change on the same entity
-   *  invalidates the cache. Missing in v1 payloads → treated as 1. */
+   *  (1 for plain lux sensors); a unit change invalidates the cache.
+   *  Missing → treated as 1. */
   scale?: number;
   days: Record<string, number>;
 }
@@ -529,8 +486,7 @@ function saveLuxDayCache(
       luxCacheKey(entityId, timeZone),
       JSON.stringify({ v: LUX_CACHE_VERSION, threshold, lat, lon, scale, days } satisfies LuxDayCacheShape),
     );
-    // The v1 slot was keyed by entity alone; drop it so it does not
-    // linger in localStorage.
+    // Drop the legacy slot keyed by entity alone so it does not linger.
     storage.removeItem(`${LUX_CACHE_PREFIX}${entityId}`);
   } catch {
     // Quota / private mode — best-effort.
@@ -544,10 +500,7 @@ export class MeasuredDataSource {
   private _timer: ReturnType<typeof setInterval> | null = null;
   private _listener: DataSourceListener | null = null;
   private _failureCount = 0;
-  // True when an interval poll came due while the document was hidden.
-  // The poll is skipped then (recorder roundtrips for an invisible
-  // dashboard are pure waste); `notifyVisible` runs the deferred poll
-  // as soon as the card is on screen again.
+  // An interval poll came due while hidden and was skipped; `notifyVisible` runs it.
   private _pollDeferredWhileHidden = false;
 
   constructor(hass: HassLike | null, config: DataSourceConfig, readonly calendar: Calendar) {
@@ -561,8 +514,6 @@ export class MeasuredDataSource {
 
   subscribe(callback: DataSourceListener): Unsubscribe {
     this._listener = callback;
-    // Fire-and-forget the initial poll; the interval re-polls every
-    // POLL_INTERVAL_MS regardless of whether the first call resolves.
     void this._poll(true);
     this._timer = setInterval(() => { void this._poll(); }, POLL_INTERVAL_MS);
     return () => this.unsubscribe();
@@ -576,8 +527,7 @@ export class MeasuredDataSource {
     }
   }
 
-  /** Called by the card when the document became visible again. Runs
-   *  the poll that was skipped while hidden (if any). */
+  /** Runs the poll skipped while the document was hidden, if any. */
   notifyVisible(): void {
     if (!this._pollDeferredWhileHidden) return;
     this._pollDeferredWhileHidden = false;
@@ -586,10 +536,8 @@ export class MeasuredDataSource {
 
   private async _poll(initial: boolean = false): Promise<void> {
     if (!this._listener || !this.hass) return;
-    // Interval polls are skipped while the document is hidden — a
-    // recorder statistics roundtrip for an off-screen dashboard is
-    // wasted DB + WS load. The INITIAL poll always runs so a card
-    // mounted in a background tab still has data when first shown.
+    // Hidden documents skip interval polls; the INITIAL poll always runs so
+    // a card mounted in a background tab has data when first shown.
     if (!initial && typeof document !== 'undefined' && document.hidden) {
       this._pollDeferredWhileHidden = true;
       return;
@@ -601,8 +549,7 @@ export class MeasuredDataSource {
     } catch (err) {
       this._failureCount += 1;
       console.error('[weather-station-card] statistics fetch failed', err);
-      // After a few consecutive failures, surface to the render layer so
-      // the card can display a banner instead of hanging on stale data.
+      // Surface repeated failures so the card shows a banner instead of stale data.
       if (this._failureCount >= 3 && this._listener) {
         const e = err as { message?: string } | null;
         this._listener({ forecast: [], error: String(e?.message ? e.message : err) });
@@ -614,42 +561,31 @@ export class MeasuredDataSource {
     if (!this.hass) return [];
     const cfgDays = parseInt(String(this.config.days), 10) || 7;
     const type = this.config.forecast?.type;
-    // 'today' (day pager, 2026-08 rework) shares the FULL hourly
-    // window — the render layer 3-h-aggregates the whole span and
-    // pages it one day per viewport. Identical fetch parameters also
-    // mean 'today' and 'hourly' genuinely share the recorder response
-    // via the request dedup and the mode-toggle lazy-cache.
+    // 'today' shares the FULL hourly window (the render layer pages it per
+    // day); identical fetch parameters let it share the recorder response.
     const isToday = type === 'today';
     const isHourly = type === 'hourly' || isToday;
     const days = cfgDays;
     const sensors: SensorMap = this.config.sensors ?? {};
 
     // Two keys never reach the recorder:
-    //   - moon_phase: legacy ≤v2.2 configs may still carry it (an enum
-    //     entity with no statistics); the card itself no longer reads it.
-    //   - precipitation_rate: a live-only mm/h reading. Its statistics
-    //     are mean/max of a rate, which bucketPrecipitation would
-    //     happily diff into a meaningless "rainfall per day".
+    //   - moon_phase: an enum entity with no statistics, deprecated.
+    //   - precipitation_rate: a live-only rate; bucketPrecipitation would
+    //     diff its mean/max into a meaningless "rainfall per day".
     const { moon_phase: _moonPhase, precipitation_rate: _precipRate, ...chartSensors } = sensors;
     void _moonPhase;
     void _precipRate;
     const entityIds = Object.values(chartSensors).filter(Boolean) as string[];
     if (entityIds.length === 0) return [];
 
-    // One hourly request serves every mode. The window ends at the
-    // next full hour (exclusive) and starts at the card's midnight
-    // `days` days back (2026-08): anchoring the start to a day boundary
-    // keeps the first day complete, so the scroll timeline's first
-    // segment is a full-width day (not a 2px sliver whose label can't
-    // render) and the 'today' day pager's first page carries real data
-    // instead of gap columns. One extra hour before that start gives a
-    // cumulative precipitation sensor a baseline on the oldest hour.
+    // One hourly request serves every mode. The window ends at the next full
+    // hour (exclusive) and starts at the card's midnight `days` days back, so
+    // the first day is complete. One extra hour before that start is the
+    // cumulative-precipitation baseline of the oldest hour.
     //
-    // Daily mode reduces the same hours to card days (#355) instead of
-    // asking for `period: 'day'`, which HA cuts at the server's
-    // midnight. That day before the oldest column is the daily
-    // precipitation baseline. Identical requests share one roundtrip
-    // across modes and cards (ADR-0020).
+    // Daily mode reduces the same hours to card days (#355) instead of using
+    // `period: 'day'`, which HA cuts at the server's midnight. Identical
+    // requests share one roundtrip across modes and cards (ADR-0020).
     const todayStart = this.calendar.startOfDay(Date.now());
     const end = new Date(this.calendar.startOfHour(Date.now()).getTime() + HOUR_MS);
     const dayStart = this.calendar.addDays(todayStart, -days);
@@ -672,14 +608,10 @@ export class MeasuredDataSource {
       daily[eid] = reduceHourlyToDays(series, this.calendar);
     }
 
-    // Method B2 fallback: when the user has an illuminance sensor
-    // configured but no `sensors.sunshine_duration`, derive sunshine
-    // duration from the high-resolution illuminance history via the
-    // lux/clearsky_lux ratio. Skipped silently if either input is
-    // missing — Open-Meteo overlay or F3 then fills the row.
+    // Illuminance sensor without `sensors.sunshine_duration`: derive sunshine
+    // from the lux / clear-sky-lux ratio. Null when inapplicable.
     const luxByDate = await this._fetchLuxSunshine(sensors, dayStart, this.calendar.addDays(todayStart, 1));
-    // Counters that reset at midnight (a sunshine utility meter) reset
-    // at the server's.
+    // A sunshine counter (utility meter) resets at the server's midnight.
     const serverCal = serverCalendar(this.hass);
     const sunshineSeries = sensors.sunshine_duration ? stats?.[sensors.sunshine_duration] : null;
     const sunshineByDate = sensors.sunshine_duration
@@ -696,11 +628,8 @@ export class MeasuredDataSource {
     return this._buildForecast(daily, sensors, dayStart, days, luxByDate, sunshineByDate, sunshineServerLast);
   }
 
-  /** Recorder statistics call routed through the module-level request
-   *  dedup. Window boundaries are hour-/midnight-aligned, so sibling
-   *  cards with the same sensors and window produce byte-identical
-   *  request objects — N cards on one dashboard collapse to a single
-   *  recorder roundtrip. */
+  /** Window boundaries are hour-/midnight-aligned, so sibling cards with
+   *  the same sensors build byte-identical requests and share one roundtrip. */
   private _callStatsDeduped(msg: Record<string, unknown>): Promise<StatsResponse> {
     const hass = this.hass as HassLike;
     return dedupeRequest(
@@ -710,12 +639,9 @@ export class MeasuredDataSource {
     );
   }
 
-  /** B2 past-tier helper: fetch the configured illuminance sensor's
-   *  high-resolution history and convert it into a per-day
-   *  sunshine-hours map. Returns `null` when the path is inapplicable
-   *  (no illuminance sensor, recorder sensor takes precedence, or
-   *  the WS call fails) so the caller can short-circuit to the next
-   *  precedence tier. */
+  /** Per-day sunshine-hours map derived from the illuminance sensor's
+   *  history. Null when inapplicable (no illuminance sensor, a recorder
+   *  sunshine sensor takes precedence, or the WS call fails). */
   private async _fetchLuxSunshine(
     sensors: SensorMap,
     start: Date,
@@ -733,19 +659,15 @@ export class MeasuredDataSource {
       ? Number(cm.sunshine_lux_ratio)
       : 0.6;
 
-    // Per-day cache: completed days never change, so after the first
-    // full-window fetch every subsequent poll only needs TODAY's
-    // samples. `neededDays` walks the completed local days inside the
-    // requested window (start is midnight-aligned in the daily path).
+    // `neededDays`: the completed local days inside the window, served from
+    // the per-day cache when present.
     const today = this.calendar.startOfDay(Date.now());
     const todayMs = today.getTime();
     const neededDays: string[] = [];
     for (let d = this.calendar.startOfDay(start); d.getTime() < todayMs; d = this.calendar.addDays(d, 1)) {
       neededDays.push(this.calendar.dayKey(d));
     }
-    // W/m² irradiance sensors convert to lux before the
-    // ratio-vs-clear-sky derivation (scale 1 for plain lux sensors);
-    // the cache is keyed on the scale so a unit change invalidates.
+    // W/m² sensors convert to lux first (scale 1 for plain lux sensors).
     const luxScale = this._luxScale(luxId);
     const cachedDays = loadLuxDayCache(this.calendar.timeZone, luxId, threshold, lat as number, lon as number, luxScale);
     const missingDays = cachedDays
@@ -753,8 +675,7 @@ export class MeasuredDataSource {
       : neededDays;
     const fetchStart = missingDays.length === 0 ? today : start;
 
-    // history/history_during_period is the modern, compact recorder
-    // history WS call (HA 2022+). Returns
+    // history/history_during_period (HA 2022+) returns
     // { [entity_id]: [ { s: '<state>', lu: <unix-seconds> }, … ] }.
     let history: Record<string, Array<{ s?: unknown; lu?: unknown }>> = {};
     try {
@@ -768,18 +689,14 @@ export class MeasuredDataSource {
         no_attributes: true,
         significant_changes_only: false,
       };
-      // Same cross-card dedup as the stats call — the lux history is
-      // by far the heaviest recorder payload the card requests.
+      // Same cross-card dedup as the stats call; this is the heaviest payload.
       history = await dedupeRequest(
         `history:${this.calendar.timeZone}:${JSON.stringify(msg)}`,
         STATS_DEDUPE_TTL_MS,
         () => hass.callWS<typeof history>(msg),
       );
     } catch (err) {
-      // Recorder unavailable / entity gone / permission — silently
-      // fall through to the next precedence tier rather than show
-      // an error banner for an opportunistic enhancement. Cached
-      // completed days still serve if we have them.
+      // An opportunistic enhancement: no error banner, cached days still serve.
       console.debug('[weather-station-card] lux-history fetch failed', err);
       return this._luxMapFromCache(cachedDays, neededDays);
     }
@@ -796,8 +713,6 @@ export class MeasuredDataSource {
 
     const perDay = sunshineFromLuxHistory(samples, lat as number, lon as number, this.calendar, threshold);
 
-    // Result map: cached completed days first, freshly-derived values
-    // (today, plus any completed days this fetch covered) on top.
     const map = new Map<string, number>();
     if (cachedDays) {
       for (const k of neededDays) {
@@ -806,13 +721,10 @@ export class MeasuredDataSource {
     }
     for (const e of perDay) map.set(e.date, e.hours);
 
-    // Persist every completed day the fetch window covered. Days the
-    // derivation emitted nothing for are stored as an explicit 0 in
-    // the CACHE (preventing a perpetual refetch for genuinely sunless
-    // or sensor-offline days) but NOT injected into the returned map —
-    // the caller's "configured sunshine source is authoritative → 0 h"
-    // rule produces the same 0 downstream, and the returned map keeps
-    // its historical only-days-with-sunshine shape.
+    // Days the derivation emitted nothing for are cached as an explicit 0
+    // (no perpetual refetch of sunless or offline days) but not put in the
+    // returned map; the caller's "configured source is authoritative → 0 h"
+    // rule yields the same 0.
     // Compare day keys as strings: YYYY-MM-DD sorts chronologically, and
     // parsing the key as a local time would read it in the browser's
     // zone rather than the server's (ADR-0026).
@@ -852,8 +764,8 @@ export class MeasuredDataSource {
     sunshineByDate: Map<string, number> | null = null,
     sunshineServerLast: number | null = null,
   ): ForecastEntry[] {
-    // Index each entity's series by midnight-of-day so day alignment doesn't
-    // depend on positional indices (the API omits entries for empty days).
+    // Index by midnight-of-day: the API omits entries for empty days, so
+    // positional indices would misalign.
     const byDate: Record<string, BucketMap> = {};
     for (const [eid, series] of Object.entries(stats || {})) {
       const m: BucketMap = new Map();
@@ -874,8 +786,7 @@ export class MeasuredDataSource {
       const dayStart = this.calendar.addDays(start, i);
       const dayStartMs = dayMs(dayStart);
       const prevKey = dayMs(this.calendar.addDays(dayStart, -1));
-      // Today is always the LAST bucket in the daily window (the caller
-      // sizes start so start+days lands on today).
+      // `start + days` lands on today, the last bucket.
       const isToday = i === days;
 
       const at = (eid: string | undefined, field: keyof StatBucket): number | null => {
@@ -890,16 +801,10 @@ export class MeasuredDataSource {
 
       let tempMax = at(sensors.temperature, 'max');
       let tempMin = at(sensors.temperature, 'min');
-      // Fold the live reading into today's running high/low so the
-      // current day always carries a measured temperature point. Today's
-      // daily statistic is rolled up from COMPLETED hourly statistics, so
-      // it lags real-time by up to an hour and is empty entirely in the
-      // first hour after local midnight. When the bucket is still empty
-      // both collapse to the live value (a single anchor); once completed
-      // hours exist, max()/min() keep the recorded extremes and only
-      // stretch the range to the live value. Without this the today column
-      // goes null, the solid line stops at yesterday, and the de-overlap
-      // in main.ts strands today on the forecast side — the visible gap.
+      // Fold the live reading into today's high/low. Today's daily statistic
+      // rolls up COMPLETED hours only: it lags by up to an hour and is empty
+      // in the first hour after midnight. Without the fold today's column is
+      // null and the solid line stops at yesterday.
       if (isToday) {
         const live = this._liveNumber(sensors.temperature);
         if (live != null) {
@@ -912,8 +817,6 @@ export class MeasuredDataSource {
       const windMean = at(sensors.wind_speed, 'mean');
       const gustMax = at(sensors.gust_speed, 'max');
       const luxMaxRaw = at(sensors.illuminance, 'max');
-      // Irradiance sensors (W/m²) scale into lux for the classifier's
-      // clear-sky ratio; plain lux sensors pass through (scale 1).
       const luxMax = luxMaxRaw != null ? luxMaxRaw * this._luxScale(sensors.illuminance) : luxMaxRaw;
       const dewPointMean = at(sensors.dew_point, 'mean');
 
@@ -921,43 +824,27 @@ export class MeasuredDataSource {
         ? bucketPrecipitation(byDate[sensors.precipitation], dayStartMs, prevKey)
         : null;
 
-      // Sunshine duration from a HA recorder sensor (e.g. integration
-      // sensor on `sensor.open_meteo_sunshine_today`). Daily-max is
-      // the running total; for completed past days it's the full
-      // day's sunshine in seconds (or hours, normalised by
-      // attachSunshine). For TODAY's bucket the value is partial —
-      // at 10 am it's the morning's "sunshine-so-far". #16 (closed)
-      // briefly substituted Open-Meteo's full-day forecast there to
-      // avoid the morning-feels-tiny problem, but the user feedback
-      // in #37 (which is what reverts that here) was that the
-      // forecast value felt wrong in the afternoon: an overcast
-      // afternoon would still show "11 h" because the morning had
-      // predicted it. Showing the measured running total is the
-      // empirical truth even when small early in the day.
+      // Sunshine from a recorder sensor, in seconds or hours (attachSunshine
+      // normalises). TODAY shows the measured running total, even when small
+      // early in the day, not Open-Meteo's full-day forecast (#37).
       let sunshineRaw = sensors.sunshine_duration
         ? at(sensors.sunshine_duration, 'max')
         : null;
-      // Prefer the hourly end-of-day value: the daily max above reports
-      // `max(yesterday, this day)` because the midnight reset leaves the
-      // previous day's final value inside this day's 00:00 bucket, and
-      // it keeps a revised forecast's highest intermediate value.
+      // Prefer the hourly end-of-day value: the daily max reports
+      // `max(yesterday, this day)` (the 00:00 bucket carries yesterday's
+      // final value) and keeps a revised forecast's highest intermediate value.
       if (sensors.sunshine_duration && sunshineByDate) {
         const recovered = sunshineByDate.get(this.calendar.dayKey(dayStart));
         if (recovered != null) sunshineRaw = recovered;
       }
-      // On TODAY the live state beats both. Statistics roll up
-      // COMPLETED hours only, so even the carry-over-free hourly total
-      // lags by up to an hour — and in the first hour after midnight
-      // there is nothing rolled up at all. Note this REPLACES rather
-      // than max()-ing the way the temperature fold above does: on an
-      // uncorrected daily bucket max() would just re-elect the stale
-      // carry-over, which is exactly the reported symptom (a 30-minute
-      // morning drawn as yesterday's 11 h).
+      // On TODAY the live state beats both: statistics cover COMPLETED hours
+      // only. This REPLACES rather than max()-ing the way the temperature
+      // fold does: max() would re-elect the stale carry-over on an
+      // uncorrected daily bucket.
       //
-      // `sunshineServerLast` is set when the server's day starts at
-      // another instant than the card's, so the live state spans another
-      // day: take the hourly card-day total plus the live growth since
-      // the last recorded hour of the server day (#379).
+      // `sunshineServerLast` is set when the server's day starts at another
+      // instant than the card's: take the hourly card-day total plus the live
+      // growth since the last recorded hour of the server day (#379).
       if (isToday && sensors.sunshine_duration) {
         const live = this._liveNumber(sensors.sunshine_duration);
         if (live != null) {
@@ -966,25 +853,18 @@ export class MeasuredDataSource {
             : Math.max(0, (sunshineByDate?.get(this.calendar.dayKey(dayStart)) ?? 0) + live - sunshineServerLast);
         }
       }
-      // B2 fallback: when no recorder sunshine sensor resolved
-      // a value, look up the per-day total from the lux-derivation
-      // map computed from the illuminance sensor's history. The
-      // map's date key is `YYYY-MM-DD` in the card's zone (#285) — same
-      // shape `sunshineFromLuxHistory` emits. Recorder sensor
-      // (Method C) still wins when both are available.
+      // Lux-derived fallback; a recorder sunshine sensor wins. Keys are
+      // `YYYY-MM-DD` in the card's zone (#285).
       if (sunshineRaw == null && luxByDate) {
         const luxHours = luxByDate.get(this.calendar.dayKey(dayStart));
         if (luxHours != null && Number.isFinite(luxHours)) {
           sunshineRaw = luxHours;
         }
       }
-      // A configured station sunshine source is authoritative for the
-      // station columns: a day it has no value for is 0 h measured, not
-      // "no data". Leaving sunshineRaw null lets attachSunshine's
-      // Open-Meteo overlay overwrite the station column with a forecast
-      // value — e.g. an overcast morning, where the lux derivation finds
-      // no above-threshold interval and emits no entry, would otherwise
-      // show the full-day forecast instead of the measured 0 h.
+      // A configured station sunshine source is authoritative: a day it has
+      // no value for is 0 h measured, not "no data". Null would let
+      // attachSunshine's Open-Meteo overlay put a forecast into the station
+      // column (e.g. an overcast day the lux derivation emits no entry for).
       if (sunshineRaw == null && (sensors.sunshine_duration || sensors.illuminance)) {
         sunshineRaw = 0;
       }
@@ -1016,11 +896,8 @@ export class MeasuredDataSource {
     return out;
   }
 
-  /** Lux multiplier for the configured illuminance slot: 120 when the
-   *  entity is a solar-IRRADIANCE sensor (W/m² unit or
-   *  `device_class: irradiance` — community post 15, point 5), 1 for
-   *  a plain lux sensor. Applied once wherever raw readings enter the
-   *  lux-based sun pipeline. */
+  /** Lux multiplier of the illuminance entity: see `luxScaleFor` (1 for a
+   *  plain lux sensor). Applied once wherever raw readings enter the lux pipeline. */
   private _luxScale(eid?: string): number {
     if (!eid || !this.hass?.states) return 1;
     const attrs = this.hass.states[eid]?.attributes as
@@ -1028,11 +905,8 @@ export class MeasuredDataSource {
     return luxScaleFor(attrs?.unit_of_measurement, attrs?.device_class);
   }
 
-  /** Native unit_of_measurement of a sensor entity, or undefined.
-   *  classifyDay is unit-blind (°C / mm / m/s), so the builders use this
-   *  to normalise each input to the classifier's canonical unit before
-   *  feeding it — otherwise km/h wind, °F temp, or inch precip
-   *  misclassify against the m/s / °C / mm thresholds. */
+  /** Native unit_of_measurement of a sensor entity. classifyDay is
+   *  unit-blind (°C / mm / m/s), so inputs are normalised before it. */
   private _sensorUnit(eid?: string): string | undefined {
     return eid
       ? (this.hass?.states?.[eid]?.attributes?.unit_of_measurement as string | undefined)
@@ -1040,10 +914,7 @@ export class MeasuredDataSource {
   }
 
   /** Entity's current numeric state, or null when missing / non-finite.
-   *  Used to live-fill the in-progress bucket the recorder hasn't
-   *  finalized yet — today's daily column and the current hourly bucket.
-   *  It's the same value the dashboard's "now" panel shows, so the
-   *  fallback is both correct and consistent UX. */
+   *  Live-fills the in-progress bucket the recorder hasn't finalized. */
   private _liveNumber(eid?: string): number | null {
     if (!eid || !this.hass?.states) return null;
     const s = this.hass.states[eid];
@@ -1060,19 +931,10 @@ export class MeasuredDataSource {
     return classifyDay({ ...day, clearsky_lux }, this.config.condition_mapping ?? {});
   }
 
-  /** Hourly counterpart to _buildForecast. Emits one entry per hour
-   *  (datetime = hour-start ISO). Differences from daily:
-   *    - temperature is the hourly `mean` (single-line render — see
-   *      hourlyTempSeries in forecast-utils).
-   *    - templow is omitted; the chart hides dataset[1] when no entry
-   *      carries a low.
-   *    - precipitation uses `bucketPrecipitation` against the previous
-   *      hour as baseline (same logic as daily, just at hour scale).
-   *    - condition still goes through `classifyDay`; clear-sky lux is
-   *      computed for the actual hour rather than the day's noon, so
-   *      the cloud-cover ratio reflects the relevant solar geometry.
-   *      Threshold semantics (rainy_threshold_mm etc.) are kept as-is
-   *      and known to be conservative at hour scale. */
+  /** Hourly counterpart to _buildForecast: one entry per hour
+   *  (datetime = hour-start ISO). Temperature is the hourly mean and
+   *  templow is omitted. Precipitation diffs against the previous hour.
+   *  Clear-sky lux is computed for the actual hour, not the day's noon. */
   private _buildHourlyForecast(
     stats: StatsResponse,
     sensors: SensorMap,
@@ -1088,10 +950,7 @@ export class MeasuredDataSource {
       byHour[eid] = m;
     }
 
-    // Precompute lat/lon trig once and cache declination per day-of-year.
-    // ~168 hourly rows × ~5 trig calls in clearSkyLuxAt would be ~840 trig
-    // ops; with this factory it's ~168 (one cos(hourAngle) per row, the
-    // rest reused from the cache).
+    // The factory precomputes lat/lon trig and caches declination per day.
     const loc = resolveLocation(this.config, this.hass);
     const luxFor = clearSkyLuxFactory(loc ? loc.latitude : null, loc ? loc.longitude : null, this.calendar);
 
@@ -1117,10 +976,9 @@ export class MeasuredDataSource {
         const v = e[field];
         return v === undefined ? null : (v as number | null);
       };
-      // For the last (current, partial) hour: when the recorder hasn't
-      // got the bucket yet, use the live state. For complete past hours
-      // a missing entry is genuine missing data — keep null so Chart.js
-      // draws a gap.
+      // The last (partial) hour falls back to the live state when the
+      // recorder has no bucket yet. For complete past hours a missing entry
+      // is genuine missing data: null, drawn as a gap.
       const atOrLive = (eid: string | undefined, field: keyof StatBucket): number | null => {
         const v = at(eid, field);
         if (v != null || !isLastHour) return v;
@@ -1135,13 +993,10 @@ export class MeasuredDataSource {
       const windMean = atOrLive(sensors.wind_speed, 'mean');
       const gustMax = atOrLive(sensors.gust_speed, 'max');
       const luxMaxRaw = atOrLive(sensors.illuminance, 'max');
-      // Same irradiance→lux scaling as the daily path.
       const luxMax = luxMaxRaw != null ? luxMaxRaw * this._luxScale(sensors.illuminance) : luxMaxRaw;
       const dewPointMean = atOrLive(sensors.dew_point, 'mean');
-      // For the last hour with only a single live datapoint, max/min
-      // collapse to the same value so the classifier still gets numbers
-      // to work with (otherwise temp_max/min stay null and several
-      // classifier branches go through the no-data fallback).
+      // A last hour with a single live datapoint: max/min collapse to it so
+      // the classifier avoids its no-data fallback.
       if (isLastHour) {
         tempMax ??= tempMean;
         tempMin ??= tempMean;
@@ -1151,10 +1006,8 @@ export class MeasuredDataSource {
         ? bucketPrecipitation(byHour[sensors.precipitation], hourKey, prevKey)
         : null;
       if (isLastHour && precipitation == null && sensors.precipitation) {
-        // Mirror the live-fill we do for temperature, scaled to the
-        // bucketPrecipitation semantics: treat the entity's live state
-        // as a synthetic "current.max" for the in-progress hour and
-        // diff against the previous hour's recorded max.
+        // Treat the live state as a synthetic "current.max" for the
+        // in-progress hour and diff against the previous hour's max.
         const live = this._liveNumber(sensors.precipitation);
         const map = byHour[sensors.precipitation];
         const prev = map ? map.get(prevKey) : null;
@@ -1192,10 +1045,8 @@ export class MeasuredDataSource {
   }
 
   private _mapHourCondition(hour: HourClassifyBag): ConditionId {
-    // Caller (_buildHourlyForecast) precomputes clearsky_lux via the
-    // cached factory so we don't redo per-row trig. Fall back to a
-    // per-call clearSkyLuxAt if a caller passes the raw hour bag without
-    // it (e.g. tests).
+    // _buildHourlyForecast passes clearsky_lux from the cached factory;
+    // the per-call clearSkyLuxAt covers a bag without it.
     let clearsky_lux = hour.clearsky_lux;
     if (clearsky_lux == null) {
       const loc = resolveLocation(this.config, this.hass);
@@ -1245,9 +1096,8 @@ export class ForecastDataSource {
   async unsubscribe(): Promise<void> {
     this._listener = null;
     const pending = this._unsubPromise;
-    // Always clear the slot first so a subsequent unsubscribe() doesn't
-    // await the same (possibly rejected) promise. If subscribeMessage
-    // rejected, awaiting it again would just re-throw without progress.
+    // Clear the slot first so a later unsubscribe() does not await the same
+    // (possibly rejected) promise.
     this._unsubPromise = null;
     if (!pending) return;
     try {
@@ -1303,12 +1153,9 @@ export class ForecastDataSource {
         this._emit({ forecast: [], error: 'hass connection unavailable' });
         return;
       }
-      // Tag each entry with the weather entity's wind_speed_unit so
-      // the renderer can convert correctly even when the station
-      // sensor (which feeds the synthetic weather attributes used as
-      // the default fromUnit) reports a different unit. Without this,
-      // a m/s station + km/h weather entity yields ~3.6× too-high
-      // forecast wind.
+      // Tag entries with the weather entity's wind_speed_unit: the renderer's
+      // default fromUnit comes from the station sensor, which may differ
+      // (m/s station + km/h entity would show forecast wind too high).
       const wxWindUnit = state.attributes?.wind_speed_unit as string | undefined;
       this._unsubPromise = this.hass.connection.subscribeMessage(
         (event) => {
