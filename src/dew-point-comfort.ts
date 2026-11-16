@@ -9,9 +9,8 @@
 // on a cold morning. The Nebel ≤ 1 °C spread mirrors
 // `condition-classifier.ts` `fog_dewpoint_spread_c = 1`.
 //
-// Thresholds are hard-coded constants — no editor knob in v1 (see
-// .workflow/live-dewpoint-comfort/alignment.md). Inputs are °C only;
-// callers convert °F at the call site.
+// The thresholds are fixed constants, not config options. Inputs are °C only;
+// callers convert °F.
 
 export type DewPointComfortBand =
   | 'raureif'
@@ -25,9 +24,7 @@ const FOG_SPREAD_C = 1;        // spread ≤ 1  →  Nebel (matches condition-cl
 const MUGGY_TD_C = 16;         // Td > 16  →  Schwül
 const DEW_SPREAD_C = 3;        // spread ≤ 3  →  Tau (or Raureif when also frost)
 
-/** Classify a dew-point + air-temperature pair (both in °C) into one of
- *  five comfort bands. Returns null when either input is null /
- *  non-finite so the caller can fall back to today's static icon. */
+/** Classify a dew-point + air-temperature pair (°C); null when either is null or non-finite. */
 export function getDewPointComfort(
   td_c: number | null,
   tair_c: number | null,
@@ -54,9 +51,7 @@ const DEW_POINT_COMFORT_ICONS: Record<DewPointComfortBand, string> = {
   komfort: 'thermometer-water',
 };
 
-/** MDI icon name (without prefix) for a comfort band. Returns null when
- *  no band is available so the caller can keep the legacy
- *  `thermometer-water` icon. */
+/** MDI icon name (without prefix) for a comfort band; null without a band. */
 export function getDewPointComfortIcon(
   band: DewPointComfortBand | null,
 ): string | null {

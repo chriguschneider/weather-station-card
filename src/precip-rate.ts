@@ -12,12 +12,10 @@
 //
 // The denominator is wall-clock `now`, NOT `latest.t`. That makes the rate
 // decay automatically as wall-clock advances without new sensor ticks: Δv
-// stays fixed, Δt grows, rate → 0. No min-span guard, no walk-back — the
-// `now`-driven denominator does the work both guards used to do (suppress
-// noise on short windows and decay stale bursts).
+// stays fixed, Δt grows, rate → 0. No min-span guard, no walk-back.
 //
-// All functions here are pure data → number. No I/O, no timers, no
-// localStorage — that wiring lives in `main.ts`.
+// The derivation is pure; only loadBuffer / saveBuffer touch localStorage.
+// The tick and buffer wiring lives in PrecipRateController (ADR-0034).
 
 import { safeLocalStorage } from './utils/safe-storage.js';
 
@@ -54,53 +52,30 @@ const DEFAULT_FRESH_THRESHOLD_MS = 120_000;
 const DEFAULT_RATE_FLOOR = 0.1;
 export const DEFAULT_MAX_AGE_MS = 900_000;
 
-// Rate-intensity thresholds (mm/h). Three icon buckets, mapped onto
-// MDI icons HA's frontend already ships:
-//
-//   rate ≤ 0       water-off       (dry / pre-onset)
-//   rate < 2.5     weather-rainy   (drizzle → light)
-//   rate ≥ 2.5     weather-pouring (moderate → heavy)
-//
-// We deliberately do NOT use `weather-partly-rainy` for drizzle: the
-// sun-behind-cloud glyph contradicts the "it's raining" context, so
-// drizzle and light rain share the plain `weather-rainy` icon and the
-// numeric mm/h carries the intensity nuance.
-//
-// Boundary is half-open on the upper side so the mapping is monotonic
-// non-decreasing: rate === 2.5 → pouring, not rainy.
+// Rate-intensity icon buckets (mm/h): ≤ 0 water-off, < 2.5 weather-rainy,
+// ≥ 2.5 weather-pouring. Not weather-partly-rainy: its sun glyph
+// contradicts "it's raining". The upper boundary is half-open: 2.5 → pouring.
 const PRECIP_RATE_LIGHT_MAX = 2.5;
 
-/** Map a mm/h rate to a Home Assistant `ha-icon` name. Returns one of
- *  the `hass:` / MDI icons that HA's frontend ships out of the box —
- *  no custom icon pack needed.
- *
- *  Negative or non-finite inputs collapse to the "dry" icon; the
- *  caller already defends against this (`computeRate` clamps Δv<0 to
- *  0), but the icon function is the user-facing surface and we want
- *  it total. */
+/** Map a mm/h rate to an MDI icon HA ships. Negative or non-finite
+ *  input maps to the "dry" icon. */
 export function precipIcon(rate: number): string {
   if (!Number.isFinite(rate) || rate <= 0) return 'hass:water-off';
   if (rate < PRECIP_RATE_LIGHT_MAX) return 'hass:weather-rainy';
   return 'hass:weather-pouring';
 }
 
-// LocalStorage key prefix. Per-entity so a dashboard with two cards
-// pointed at different cumulative sensors maintains two independent
-// buffers; Issue #117 documents this as the accepted multi-instance
-// convergence model.
+// Per-entity key, so cards on different cumulative sensors keep independent
+// buffers (#117).
 const STORAGE_PREFIX = 'weather-station-card.precipSamples.';
 
-/** Subset of the Web Storage API the load/save helpers use. Same shape
- *  as `openmeteo-source.ts`'s `StorageLike` — tests and unsupported
- *  environments (private mode, locked-down iframes) inject their own. */
+/** Subset of the Web Storage API the load/save helpers use; tests inject their own. */
 export interface StorageLike {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
 }
 
-/** Persisted payload shape. Wrapping `samples` in an object (instead of
- *  serialising the array directly) leaves room for a schema-version
- *  field in slice 3 without breaking the load path. */
+/** Persisted payload shape: `samples` wrapped in an object. */
 interface PersistedBuffer {
   samples?: unknown;
 }
@@ -116,23 +91,17 @@ function isSample(x: unknown): x is Sample {
          typeof s.v === 'number' && Number.isFinite(s.v);
 }
 
-/** Append `sample` to `buffer` in chronological order. Returns a new array;
- *  callers can replace their field reference without aliasing. Drops the
- *  sample if `v` or `t` aren't finite — the cumulative-detection gate in
- *  `set hass` is paranoid about HA's `unavailable` / `unknown` states
- *  bleeding numerics. */
+/** Append `sample`, returning a new array (the same array for a duplicate
+ *  or a non-finite sample). */
 export function appendSample(buffer: Sample[], sample: Sample): Sample[] {
   if (!Number.isFinite(sample.t) || !Number.isFinite(sample.v)) return buffer;
-  // Same-timestamp re-renders happen because `set hass` fires on any
-  // entity update, not just our precip sensor. Skip duplicates to keep
-  // the buffer tight.
+  // `set hass` fires on any entity update, so the same sample can arrive repeatedly.
   const last = buffer.length > 0 ? buffer[buffer.length - 1] : null;
   if (last?.t === sample.t && last?.v === sample.v) return buffer;
   return [...buffer, sample];
 }
 
-/** Drop samples older than `maxAgeMs`. Used both to prune in-memory state
- *  and (in slice 2) to filter localStorage on load. */
+/** Drop samples older than `maxAgeMs`. */
 export function pruneOlderThan(
   buffer: Sample[],
   maxAgeMs: number,
@@ -140,23 +109,14 @@ export function pruneOlderThan(
 ): Sample[] {
   if (buffer.length === 0) return buffer;
   const cutoff = now - maxAgeMs;
-  // Buffer is chronological — find the first surviving index and slice.
   let i = 0;
   while (i < buffer.length && buffer[i].t < cutoff) i += 1;
   return i === 0 ? buffer : buffer.slice(i);
 }
 
-/** Return the largest tail-suffix of `buffer` that contains no
- *  counter-reset boundary. A reset is any index `i` where
- *  `buffer[i].v < buffer[i-1].v` — daily `*_rain_today` rollover at
- *  midnight, utility-meter reset, device reboot. We use *only* the
- *  samples after the latest reset, so `computeRate` never divides a
- *  positive Δt into a negative Δv and emits a phantom negative rate.
- *
- *  Within a 15-min buffer (DEFAULT_MAX_AGE_MS) at most one reset can
- *  occur, so a single forward scan is sufficient. Pre-reset samples
- *  are discarded — they'll age out of the buffer on subsequent
- *  prunes; we don't mutate the input. */
+/** Largest tail of `buffer` without a counter reset (an index where v
+ *  drops: midnight `*_rain_today` rollover, utility-meter reset, reboot),
+ *  so computeRate never emits a negative rate. Doesn't mutate the input. */
 export function findUsableSlice(buffer: Sample[]): Sample[] {
   let cut = 0;
   for (let i = 1; i < buffer.length; i++) {
@@ -165,30 +125,11 @@ export function findUsableSlice(buffer: Sample[]): Sample[] {
   return cut === 0 ? buffer : buffer.slice(cut);
 }
 
-/** Derive a mm/h rate from the buffer.
- *
- *  Strategy:
- *  1. Trim the buffer at the latest counter-reset boundary
- *     (`findUsableSlice`) so a midnight rollover doesn't poison Δv.
- *  2. Pick `anchor = usable[usable.length - targetN]` (clamped to 0).
- *  3. `rate = (latest.v - anchor.v) / (now - anchor.t)`.
- *
- *  Note the `now - anchor.t` denominator — NOT `latest.t - anchor.t`.
- *  As wall-clock advances without new ticks, the denominator grows and
- *  the rate decays to 0. This is what lets the card "breathe" after a
- *  rain burst ends instead of cliffing from the burst rate to ⋯ when
- *  the buffer ages out.
- *
- *  Edge cases:
- *  - Empty buffer → rate 0.
- *  - Single sample, age ≤ freshThresholdMs → rate `floor` (default 0.1).
- *    We know the sensor just ticked but can't quantify until a second
- *    sample lands.
- *  - Single sample, age > freshThresholdMs → rate 0.
- *  - Δv < 0 (reset findUsableSlice missed) → rate 0 (defensive).
- *
- *  `sampleCount` in the result reflects the full input buffer (what
- *  the caller stored), not the post-reset slice. */
+/** mm/h from the buffer: trim at the last counter reset, then
+ *  (latest.v - anchor.v) / (now - anchor.t), anchor being the targetN-th
+ *  last sample. The denominator is wall-clock now, not latest.t, so the
+ *  rate decays between ticks. One fresh sample returns `floor`, otherwise
+ *  0. `sampleCount` counts the full input buffer. */
 export function computeRate(
   buffer: Sample[],
   now: number = Date.now(),
@@ -217,11 +158,8 @@ export function computeRate(
   return { rate: (deltaV * 3_600_000) / deltaT, sampleCount };
 }
 
-/** Pull the raw `samples` array out of localStorage for one entity.
- *  Returns `[]` on any failure path — storage blocked, key absent,
- *  JSON corrupt, schema mismatch. Caller is responsible for filtering
- *  and sorting; the split keeps `loadBuffer`'s cyclomatic complexity
- *  below the project's 15-branch threshold. */
+/** Raw `samples` array from localStorage; `[]` on any failure. The caller
+ *  filters and sorts. */
 function readPersistedSamples(store: StorageLike, entityId: string): unknown[] {
   try {
     const raw = store.getItem(storageKey(entityId));
@@ -238,13 +176,8 @@ function readPersistedSamples(store: StorageLike, entityId: string): unknown[] {
   }
 }
 
-/** Best-effort persisted-buffer read. Drops over-age entries inline so
- *  the caller never has to remember to prune the loaded buffer before
- *  appending. Returns `[]` on any failure path (no storage, key absent,
- *  JSON corrupt, schema mismatch, every entry expired) — never throws.
- *
- *  Storage is the `localStorage`-shaped Web Storage subset. `now`
- *  defaults to `Date.now()` so tests can pin a deterministic clock. */
+/** Best-effort persisted-buffer read. Drops over-age entries inline.
+ *  Returns `[]` on any failure path and never throws. */
 export function loadBuffer(
   entityId: string,
   storage?: StorageLike | null,
@@ -260,15 +193,12 @@ export function loadBuffer(
     if (!isSample(s) || s.t < cutoff) continue;
     out.push({ t: s.t, v: s.v });
   }
-  // Defensive: persisted buffer might be out-of-order if a future
-  // writer mishandles it. Sort ascending so `computeRate`'s
-  // chronological assumption holds.
+  // computeRate assumes chronological order; don't trust the stored order.
   out.sort((a, b) => a.t - b.t);
   return out;
 }
 
-/** Best-effort persisted-buffer write. Silent on quota / private-mode
- *  failure, matching `saveToStorage` in `openmeteo-source.ts`. */
+/** Best-effort persisted-buffer write; silent on quota / private-mode failure. */
 export function saveBuffer(
   entityId: string,
   buffer: Sample[],

@@ -16,10 +16,8 @@ import type { ConditionId } from './const.js';
 import { declinationDeg } from './utils/solar.js';
 import type { Calendar } from './utils/time-zone.js';
 
-/** Threshold-set that the classifier consults — both the built-in
- *  `DEFAULTS` (calibrated for daily totals) and any user-supplied
- *  `condition_mapping` overrides have this shape. Callers can supply
- *  a partial subset; missing keys fall back to the defaults. */
+/** Thresholds the classifier consults; `condition_mapping` overrides may
+ *  give a subset, missing keys fall back to the defaults. */
 export interface ConditionThresholds {
   exceptional_gust_ms: number;
   exceptional_precip_mm: number;
@@ -55,23 +53,13 @@ export interface ClassifyInputs {
   clearsky_lux?: number | null;
 }
 
-/** Period dispatch — selects which precipitation threshold table to
- *  use. 'hour' rescales `rainy_threshold_mm`, `pouring_threshold_mm`,
- *  and `exceptional_precip_mm` to per-hour values. */
+/** Selects the precipitation threshold table; 'hour' uses per-hour values. */
 export type Period = 'day' | 'hour';
 
-// Default thresholds. Every value is grounded in an official scale or
-// glossary entry; users can override individual keys via the card's
-// `condition_mapping` config.
-//
-// The precipitation thresholds (`*_precip_mm`, `rainy_threshold_mm`,
-// `pouring_threshold_mm`) are calibrated for *daily* totals — `0.5 mm`
-// over 24 h is light drizzle, `10 mm` over 24 h is pouring, `50 mm`
-// over 24 h is the NWS exceptional-rainfall outlook. When `classifyDay`
-// is called with `period: 'hour'`, the precipitation thresholds are
-// rescaled per HOURLY_PRECIP_OVERRIDES below before user overrides
-// apply. Wind, gust, fog, and cloud thresholds use the same value at
-// either period (they're instantaneous / mean values, not totals).
+// Default thresholds, each grounded in an official scale or glossary entry.
+// The precipitation thresholds are daily totals; period 'hour' swaps them for
+// HOURLY_PRECIP_OVERRIDES before user overrides apply. Wind, gust, fog and
+// cloud thresholds are the same at either period.
 const DEFAULTS: ConditionThresholds = Object.freeze({
   // Beaufort 10 ("storm") begins at 24.5 m/s. WMO No. 306 Vol. I.1.
   exceptional_gust_ms: 24.5,
@@ -153,13 +141,8 @@ export function clearSkyLuxAt(latDeg: number, lonDeg: number, calendar: Calendar
   return 110000 * cosZ;
 }
 
-/** Same math as clearSkyLuxAt, but returns a closure that caches
- *  lat-trig (sinφ, cosφ) and the per-day declination (sinδ, cosδ) so
- *  repeated calls for many timestamps in the same lat/lon don't redo
- *  trig that doesn't change. Used by
- *  `MeasuredDataSource._buildHourlyForecast` to compute clearsky lux
- *  for ~168 hourly rows in one fetch — the cache reduces trig per row
- *  from ~5 calls to ~1 (just `cos(hourAngle)`). */
+/** Same math as clearSkyLuxAt as a closure that caches the latitude trig
+ *  and the per-day declination, for many timestamps at one location. */
 export function clearSkyLuxFactory(
   latDeg: number | null | undefined,
   lonDeg: number | null | undefined,
@@ -190,14 +173,9 @@ export function clearSkyLuxFactory(
   };
 }
 
-/** Map a per-period record to an HA condition ID. Worst-of-period
- *  priority: extreme weather > precipitation > fog > wind > cloud cover.
- *
- *  `period` selects the threshold table for precipitation rules:
- *    - 'day' (default): `precip_total` interpreted as mm in the past 24 h
- *    - 'hour': `precip_total` interpreted as mm in the past 1 h, with
- *      thresholds rescaled accordingly so the same data doesn't bias
- *      toward 'pouring' / 'exceptional' just because the bucket shrank. */
+/** Map a per-period record to an HA condition ID. Priority: extreme weather >
+ *  precipitation > fog > wind > cloud cover. `precip_total` is mm per 24 h for
+ *  'day' and mm per hour for 'hour', with the thresholds rescaled to match. */
 export function classifyDay(
   day: ClassifyInputs,
   overrides: ConditionThresholdOverrides = {},
@@ -242,13 +220,13 @@ export function classifyDay(
     return 'fog';
   }
 
-  // 5. CLOUD COVER — ratio used for both cloud condition and windy variant.
+  // 4. CLOUD COVER — ratio used for both cloud condition and windy variant.
   let cloudRatio: number | null = null;
   if (lux_max != null && clearsky_lux != null && clearsky_lux > 0) {
     cloudRatio = lux_max / clearsky_lux;
   }
 
-  // 4. WIND dominant.
+  // 5. WIND dominant.
   const windy =
     (gust_max != null && gust_max >= t.windy_threshold_ms) ||
     (wind_mean != null && wind_mean >= t.windy_mean_threshold_ms);

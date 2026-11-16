@@ -1,21 +1,7 @@
-// Precipitation-probability overlay for the forecast columns (#288).
-//
-// The chart prints the chance of rain next to the amount in the
-// per-column precip pill. The value comes from two places, in this
-// order (ADR-0027):
-//   1. the weather entity's own forecast — `precipitation_probability`
-//      is a standard HA Forecast slot (MeteoSwiss, AccuWeather,
-//      OpenWeatherMap, Pirate Weather fill it);
-//   2. Open-Meteo, as a fallback for entities that leave it empty
-//      (Met.no, the core Open-Meteo integration) — one extra field on
-//      the request the sunshine bar already makes.
-//
-// This module is the overlay step: match Open-Meteo's per-day / per-hour
-// values onto forecast entries that have no probability yet. Measured
-// station entries never get one — probability is a forecast notion —
-// so callers pass the forecast slice only.
-//
-// Pure; unit-tested in tests/precip-probability.test.js.
+// Precipitation-probability overlay for the forecast columns (#288): the
+// weather entity's own `precipitation_probability` first, Open-Meteo values
+// only for entries that have none (ADR-0027). Measured station entries never
+// get one, so callers pass the forecast slice only.
 
 import { localDateString, localHourString } from './sunshine-source.js';
 import type { Calendar } from './utils/time-zone.js';
@@ -52,20 +38,15 @@ export interface AttachPrecipProbabilityOpts {
   granularity?: 'daily' | 'hourly';
 }
 
-/** Clamp a raw value to an integer 0..100, or null when it is not a
- *  finite number. Shared by the entity and Open-Meteo paths so the
- *  pill never prints "NaN" or "120". */
+/** Clamp a raw value to an integer 0..100, or null when it is not a finite number. */
 export function normalizeProbability(value: unknown): number | null {
   const n = typeof value === 'string' ? Number(value) : value;
   if (typeof n !== 'number' || !Number.isFinite(n)) return null;
   return Math.round(Math.max(0, Math.min(100, n)));
 }
 
-/** Overlay Open-Meteo probabilities onto forecast entries that have
- *  none. Non-destructive — returns a NEW array. An entry that already
- *  carries a finite `precipitation_probability` (from the weather
- *  entity) keeps it, normalized to an integer percent; an entry that
- *  matches nothing keeps `null` so the pill prints the amount alone. */
+/** Overlay Open-Meteo probabilities onto entries that have none; returns a
+ *  new array. An entity-provided value wins; an unmatched entry gets `null`. */
 export function attachPrecipProbability<T extends ProbabilityForecastEntry>(
   forecasts: ReadonlyArray<T>,
   calendar: Calendar,
@@ -95,9 +76,7 @@ export function attachPrecipProbability<T extends ProbabilityForecastEntry>(
   });
 }
 
-/** Index the Open-Meteo array by its time key. Hourly keys compare on
- *  "YYYY-MM-DDTHH" (first 13 chars), daily on "YYYY-MM-DD" — the same
- *  tolerance the sunshine overlay uses. Malformed items are skipped. */
+/** Index by time key: "YYYY-MM-DDTHH" (hourly) or "YYYY-MM-DD" (daily). Malformed items are skipped. */
 function buildLookup(
   source: ReadonlyArray<DailyProbabilityEntry | HourlyProbabilityEntry> | null | undefined,
   isHourly: boolean,
@@ -116,9 +95,8 @@ function buildLookup(
   return lookup;
 }
 
-/** Wire `attachPrecipProbability` to an `OpenMeteoSource` (or anything
- *  with the two getters). A missing source still normalizes the
- *  entity-provided values. */
+/** `attachPrecipProbability` fed from an `OpenMeteoSource`; a missing source
+ *  still normalizes entity-provided values. */
 export function overlayPrecipProbability<T extends ProbabilityForecastEntry>(
   forecasts: ReadonlyArray<T>,
   source: Partial<ProbabilitySource> | null | undefined,
@@ -134,9 +112,8 @@ export function overlayPrecipProbability<T extends ProbabilityForecastEntry>(
   return attachPrecipProbability(forecasts, calendar, { dailyValues, hourlyValues, granularity });
 }
 
-/** True when at least one entry carries a usable probability — the
- *  card uses this to decide whether the entity covers the feature or
- *  the Open-Meteo fallback must be fetched. */
+/** True when at least one entry carries a usable probability, i.e. the
+ *  entity covers it and no Open-Meteo fallback is needed. */
 export function forecastHasProbability(
   forecasts: ReadonlyArray<ProbabilityForecastEntry> | null | undefined,
 ): boolean {
