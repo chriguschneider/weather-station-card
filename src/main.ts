@@ -1,26 +1,7 @@
-// main.ts — integration boundary file. LitElement + Home Assistant +
-// uPlot wiring (via chart/orchestrator), type-checked under
-// `tsc --strict`. HA-shaped fields
-// use the `HassMain` extension of the data-source `HassLike` type below
-// — the full HomeAssistant type would pull in too many UI deps.
-// Anything where the HA frontend type-shape isn't documented
-// (synthesised `weather`, editor-callback payloads) is `any`-typed,
-// with eslint-disable lines limited to those exact slots.
-//
-// Why the opt-out on stricter typing: this class touches ~30 instance
-// fields (forecasts, weather, current sensor readings, scroll-ux
-// teardowns, animation controllers, …), most of which were declared
-// implicitly via runtime assignment in `set hass` / `setConfig`.
-// Strict-typing them all means porting half a dozen HA frontend type
-// imports we don't currently depend on, mocking them where the types
-// are missing, and threading `HassLike` through the entire render path
-// — without adding value to the goal of "the codebase compiles under TS
-// and downstream contributors get types when they import from us".
-//
-// The boundary modules main.ts pulls in (data-source, chart/*,
-// sunshine-source, openmeteo-source, scroll-ux, action-handler,
-// editor/*) ARE all strictly typed — anyone importing from this card
-// gets typed exports.
+// main.ts — the <weather-station-card> element, the Home Assistant boundary
+// (ADR-0004). `any` only where the HA frontend shape is undocumented
+// (synthesised `weather`, editor-callback payloads); the modules it imports
+// are strictly typed.
 
 import locale, { ensureLocaleLoaded, resolveLocaleKey } from './locale.js';
 import { weatherIcons } from './const.js';
@@ -109,45 +90,30 @@ import {
   resolveInitialScrollLeft,
 } from './render/scroll-position.js';
 import { calendarFor, type Calendar } from './utils/time-zone.js';
-// Chart library: uPlot. Imported transitively via ./chart/draw.js —
-// there is no global registration step (uPlot has no plugin registry;
-// per-instance hooks/plugins are passed directly to the constructor).
 
-/** Card-side extension of `HassLike`. main.ts reads two fields the
- *  data-sources don't (`language`, `selectedLanguage`) — they pick
- *  the locale for `Intl` formatters in the live-condition / clock
- *  paths. */
+/** Card-side extension of `HassLike` with the locale fields the `Intl`
+ *  formatters read. */
 interface HassMain extends HassLike {
   language?: string;
   selectedLanguage?: string;
-  // HA frontend exposes the running Home Assistant version here; read
-  // only by the `debug: true` diagnostics panel. HassLike narrows
-  // `config` to lat/lon, so widen it for the main-card boundary.
+  // HA's running version, read only by the `debug: true` panel; HassLike
+  // narrows `config` to lat/lon, so widen it here.
   config?: HassLike['config'] & { version?: string };
 }
 
-/** Sub-shapes used inside `set hass`: a single HA entity state from
- *  `hass.states[eid]`. Defined here rather than in HassLike so the
- *  data-source layer doesn't need it. */
+/** A single HA entity state from `hass.states[eid]`. */
 interface HassEntityState {
   state: string;
   attributes?: Record<string, unknown>;
 }
 
-/** Precipitation input for the live-condition classifier: an
- *  instantaneous rate plus the unit to normalise it with, or a null
- *  rate when the configured sensor cannot express one.
+/** Precipitation input for the live-condition classifier: a rate plus its
+ *  unit, or a null rate when the sensor cannot express one.
  *
- *  A dedicated `sensors.precipitation_rate` entity (#253) is
- *  authoritative — it measures mm/h, so precipitation can drive the
- *  live condition even when `sensors.precipitation` is a cumulative
- *  counter. A counter on its own yields null: turning it into an
- *  instantaneous rate needs history, and reading its total as a rate
- *  would classify a dry day as 'rainy'.
- *
- *  The rate slot's contract is mm/h, so it counts as a rate even when
- *  the integration ships a bare `mm` unit — `toMillimeters` downstream
- *  only reads the length base, so the missing suffix costs nothing. */
+ *  A dedicated `sensors.precipitation_rate` entity (#253) is authoritative
+ *  (mm/h), even with a bare `mm` unit: `toMillimeters` only reads the length
+ *  base. A cumulative counter alone yields null; its total read as a rate
+ *  would classify a dry day as 'rainy'. */
 function resolvePrecipRateInput(
   rateState: HassEntityState | null | undefined,
   counterState: HassEntityState | null | undefined,
@@ -162,11 +128,8 @@ function resolvePrecipRateInput(
   };
 }
 
-/** Augment the global Window so `window.customCards` (HA's card-list
- *  registry) is typed wherever main.ts touches it. */
 declare global {
   interface Window {
-    // deno-lint-ignore no-explicit-any
     customCards?: any[];
   }
 }
@@ -175,29 +138,17 @@ declare global {
 // no illuminance sensor to measure cloud cover itself.
 const SKY_STATES = new Set(['sunny', 'clear-night', 'partlycloudy', 'cloudy']);
 
-// In-bundle icon sprite (ADR-0018), built ONCE at module load. MDI_PATHS
-// is a static import, so the symbol list can never change at runtime —
-// rebuilding the template array per render() pass was pure waste.
+// In-bundle icon sprite (ADR-0018), built once at module load; MDI_PATHS is
+// a static import, so the symbol list cannot change at runtime.
 const ICON_SPRITE_TEMPLATE = html`<svg class="wsc-sprite" aria-hidden="true">${
   Object.entries(MDI_PATHS).map(([name, path]) =>
     svg`<symbol id="wsc-i-${name}" viewBox="0 0 24 24"><path d="${path}"></path></symbol>`)
 }</svg>`;
 
-// Field-declaration block for the WeatherStationCard class. HA-shaped
-// fields are typed as `any` (or HassMain where threaded) — the full
-// HomeAssistant type pulls in HA frontend deps we don't otherwise
-// need. Reactive Lit properties are declared as plain fields here
-// and referenced in `static get properties()` below; Lit's runtime
-// decoration syncs the two without further gymnastics.
+// Reactive Lit properties are listed in `static get properties()` below.
 class WeatherStationCard extends LitElement {
-  // --- Reactive properties (referenced in static get properties()) ---
-  // Hass is stored as `_hass` per HA's pattern; the public `hass` is
-  // a setter that stamps `_hass` and also derives sensor-state values.
-  /** Home Assistant state object. Card-side `HassMain` extends the
-   *  data-source `HassLike` with the extra locale fields the live-
-   *  condition / clock formatters read. */
+  // `hass` is a setter that stamps `_hass` and derives the sensor values.
   _hass: HassMain | null = null;
-  // deno-lint-ignore no-explicit-any
   config: any = null;
   language: string = 'en';
   // Every day boundary and displayed time goes through this (ADR-0030).
@@ -207,46 +158,27 @@ class WeatherStationCard extends LitElement {
   // attribute update (~1/min) schedules a Lit update that refreshes the
   // computed sun and moon lines. Nothing reads its attributes;
   // sun and moon come from the card location (ADR-0022).
-  // deno-lint-ignore no-explicit-any
   sun: any = null;
-  // deno-lint-ignore no-explicit-any
   weather: any = null;
-  // deno-lint-ignore no-explicit-any
   temperature: any;
-  // deno-lint-ignore no-explicit-any
   humidity: any;
-  // deno-lint-ignore no-explicit-any
   pressure: any;
-  // deno-lint-ignore no-explicit-any
   windSpeed: any;
-  // deno-lint-ignore no-explicit-any
   windDirection: any;
-  // deno-lint-ignore no-explicit-any
   forecastChart: any = null;
-  // deno-lint-ignore no-explicit-any
   forecastItems: any;
-  // deno-lint-ignore no-explicit-any
   forecasts: any[] | null = null;
 
-  // --- Sensor state (read from `set hass`) ---
-  // deno-lint-ignore no-explicit-any
   uv_index: any;
-  // deno-lint-ignore no-explicit-any
   dew_point: any;
-  // deno-lint-ignore no-explicit-any
   wind_gust_speed: any;
-  // deno-lint-ignore no-explicit-any
   illuminance: any;
-  // deno-lint-ignore no-explicit-any
   precipitation: any;
-  // deno-lint-ignore no-explicit-any
   precipitation_unit: string | undefined;
-  // Zero-degree level (0 °C isotherm altitude) — sensor-only, no
-  // weather-entity fallback. Unit comes from the entity (m or ft).
-  // deno-lint-ignore no-explicit-any
+  // Zero-degree level (0 °C isotherm altitude): sensor-only, unit (m or ft)
+  // from the entity.
   zero_degree_level: any;
   zero_degree_unit: string | undefined;
-  // deno-lint-ignore no-explicit-any
   zero_degree_48h_level: any;
   zero_degree_48h_unit: string | undefined;
   zero_degree_48h_change: number | undefined;
@@ -274,20 +206,16 @@ class WeatherStationCard extends LitElement {
   unitSpeed: string | undefined;
   unitPressure: string | undefined;
   unitPrecip: string | undefined;
-  // Source units captured during phase 1 (sensor extraction) so phase 2
-  // can build the synthesized weather stand-in without re-deriving them.
+  // Source units captured in phase 1 for the synthesised weather stand-in.
   _sourceWindUnit: string = 'm/s';
   _sourcePressureUnit: string = 'hPa';
   _sourceTempUnit: string = '°C';
   // Last extraction (value, unit and source per key); the classifier
   // reads units from it, the popup the sources via _liveSources.
   _readings: SensorReadings | null = null;
-  // Precip source base unit ('mm' | 'in'), stripped of any /h suffix.
-  // The derived-rate path and the wall-clock tick read it to label and
-  // convert the rate without re-reading the sensor attribute.
+  // Precip source base unit ('mm' | 'in'), without any /h suffix.
   _sourcePrecipUnit: string = 'mm';
 
-  // --- Caching / live-condition memo ---
   _liveConditionKey: string | undefined;
   _liveCondition: string | undefined;
   // True when the classifier picked the live condition and the sun is
@@ -295,142 +223,97 @@ class WeatherStationCard extends LitElement {
   // night glyph.
   _liveNight = false;
 
-  // --- Entity-delta gate (ADR-0017) ---
-  // eid → hass.states[eid] reference at the end of the last full
-  // `set hass` pass. HA state objects are immutable, so reference
-  // equality across hass objects means "this entity did not change"
-  // and the three phases can be skipped wholesale. null forces the
-  // next tick down the full path (after setConfig or a data-source
-  // teardown).
+  // eid → hass.states[eid] at the end of the last full `set hass` pass. HA
+  // state objects are immutable, so identical references mean "unchanged" and
+  // the three phases are skipped (ADR-0017). null forces the full path (after
+  // setConfig or a data-source teardown).
   _watchedStatesSnapshot: Record<string, unknown> | null = null;
 
-  // --- Data sources (data-source-controller.ts) ---
   // Station / forecast / Open-Meteo sources, calendar sync, pressure
   // delta and the availability scan. Created in the constructor.
   _sources: DataSourceController;
   // Column counts of the last merge; the chart frames the boundary with them.
   _stationCount: number = 0;
   _forecastCount: number = 0;
-  /** entityId → last parseable state, feeding the unavailable-fallback
-   *  in _extractSensorReadings. In-memory only — resets on reload. */
+  /** entityId → last parseable state, the fallback when a sensor is unavailable.
+   *  In-memory only. */
   _lastGoodStates: Record<string, string> = {};
-  /** Advisory config-schema warnings from `validateConfig` (Slice 2) —
-   *  unknown YAML keys / wrong-typed values. Surfaced through
-   *  `renderErrorBanner()`; never blocks the render. */
+  /** Advisory config-schema warnings from `validateConfig` (unknown keys,
+   *  wrong-typed values), shown via `renderErrorBanner()`; never blocks render. */
   _configWarnings: string[] = [];
-  /** The config exactly as HA handed it to `setConfig`, before the
-   *  DEFAULTS spread. The mode toggle re-enters setConfig from this,
-   *  not from `this.config`: the merged object carries every `show_*`
-   *  default explicitly, which validateConfig would read as a dozen
+  /** The config exactly as HA handed it to `setConfig`. The mode toggle
+   *  re-enters setConfig from this, not from `this.config`: the normalized
+   *  object carries every `show_*` default, which validateConfig would read as
    *  user-set toggles next to `attributes_layout`. */
   _rawConfig: Record<string, unknown> | null = null;
-  /** Last forecast.type that the chart block was actually rendered
-   *  with (i.e. data was ready). Compared in render() + `updated()`
-   *  to decide which animation class to apply on the block. */
+  /** Last forecast.type the chart block was rendered with (data ready); decides
+   *  the animation class. */
   _lastForecastType: string | undefined = undefined;
-  /** Flips true after the chart block has been rendered into the DOM
-   *  with data the first time, AND the start animation has had time
-   *  to play out (see _chartMountAnimationTimer). The start animation
-   *  (ws-chart-fadein, slide-up) only plays before this flag flips;
-   *  subsequent mounts (e.g. after a daily↔hourly cache-miss tore the
-   *  block down) get the view-change cross-fade instead, so the user
-   *  doesn't see the start animation replayed on every toggle. */
+  /** True once the chart block has rendered with data and the start animation
+   *  has played out (see _chartMountAnimationTimer). Later mounts get the
+   *  view-change cross-fade instead of replaying the start animation. */
   _chartMountAnimationPlayed: boolean = false;
-  /** Pending timer that flips _chartMountAnimationPlayed once the
-   *  start animation has finished. Stored so the scheduling guard
-   *  doesn't run twice and so disconnectedCallback can clear it. */
+  /** Pending timer that flips _chartMountAnimationPlayed; cleared in
+   *  disconnectedCallback. */
   _chartMountAnimationTimer: number | null = null;
   _initialChartBuilt: boolean = false;
-  // Set by _refreshForecastsUnsafe whenever `this.forecasts` was rebuilt
-  // from source data. measureCard's skip-path (chart alive, same column
-  // count) consumes it via updateChart() so a same-shape data refresh
-  // still reaches the canvas. This replaces the former updated()-hook
-  // on `weather`, which pushed a full setData+redraw on EVERY sensor
-  // tick (temperature 0.1° change → full canvas repaint) even though
-  // the chart reads only `forecasts` — see the perf pass 2026-08.
+  // Set when `forecasts` was rebuilt from source data; measureCard's skip path
+  // (chart alive, same column count) consumes it via updateChart() so a
+  // same-shape refresh still reaches the canvas.
   _forecastsDirty: boolean = false;
-  // --- Chart / scroll lifecycle ---
   _chartError: string | null = null;
   // Set when a `_refreshForecasts` pass throws on malformed source
   // data. Surfaced through `renderErrorBanner()`; cleared by the next
   // clean `_refreshForecasts`.
   _refreshError: string | null = null;
-  // Set when a synchronous render section (`renderMain`,
-  // `renderAttributes`, the forecast block) throws. Render-pass-scoped:
-  // cleared at the top of every render() so a section that heals stops
-  // reporting, and re-set this pass only if a section still throws.
-  // Both fields feed renderErrorBanner() so the card degrades to the
-  // banner instead of Lit aborting render() into a blank/white card.
+  // Set when a synchronous render section throws; cleared at the top of every
+  // render() so a healed section stops reporting. Feeds renderErrorBanner() so
+  // the card degrades to the banner instead of a blank card.
   _sectionError: string | null = null;
-  // Set when setConfig sees an incomplete config (a block is enabled
-  // but its required key is missing). NOT thrown — a thrown setConfig
-  // kills the whole card and breaks a freshly-added card before its
-  // editor can load. Surfaced through renderErrorBanner() so the card
-  // stays alive and the visual editor remains usable.
+  // Set when setConfig sees an incomplete config (a block is enabled but its
+  // required key is missing). Not thrown: a thrown setConfig kills the card
+  // before its editor can load. Shown via renderErrorBanner().
   _configError: string | null = null;
-  // True when this card instance is mounted inside the card-config
-  // dialog's live preview (hui-card-preview / hui-dialog-edit-card /
-  // hui-card-element-editor ancestor). Detected once in
-  // connectedCallback. The chart pipeline forces animation duration to
-  // 0 in that case so every editor click renders instantly instead of
-  // tweening for 500 ms — independent of the user's
-  // forecast.disable_animation setting, which only governs the live
-  // dashboard render path.
+  // True inside the card-config dialog's live preview (hui-card-preview /
+  // hui-dialog-edit-card / hui-card-element-editor ancestor), detected once in
+  // connectedCallback. The chart pipeline gets it as `inPreview`.
   _isInPreview: boolean = false;
-  // deno-lint-ignore no-explicit-any
   resizeObserver: any = null;
   resizeInitialized: boolean = false;
   _resizeRaf: number | null = null;
-  // The ha-card element the ResizeObserver is currently observing.
-  // Tracked because Lit can SWAP the <ha-card> element when the render
-  // branch changes (see updated()'s action-handler note) — the observer
-  // must follow the live element or it silently watches a detached one.
+  // The ha-card the ResizeObserver observes. Lit can swap <ha-card> when the
+  // render branch changes, so the observer must follow the live element.
   _resizeObservedCard: Element | null = null;
-  // deno-lint-ignore no-explicit-any
   _initialScrollObserver: any = null;
   _initialScrollApplied: boolean = false;
   _pendingScrollFrame: number | null = null;
   _lastScrollGeneration: string | undefined;
   _scrollUxTeardown: (() => void) | null = null;
-  // Two-phase forecast render (ADR-0016). The condition-icons and wind
-  // rows are wide DOM (one element per column); at hourly that's ~168
-  // each and they — not the chart canvas — dominate cold-mount (~140 ms
-  // of a ~235 ms hourly mount). We render placeholder-height rows on the
-  // first paint of a new chart generation, then fill the real rows in a
-  // post-paint idle callback. `_forecastRowsReadyGen` holds the
-  // generation key (forecast.type + column count) whose rows are fully
-  // rendered; while it differs from the current key the rows defer.
+  // Two-phase forecast render (ADR-0016): rows are placeholders on the first
+  // paint of a chart generation, filled post-paint. Holds the generation key
+  // (forecast.type + column count) whose rows are complete.
   _forecastRowsReadyGen: string = '';
   _forecastRowsRevealHandle: number | null = null;
   _actionHandlerTeardown: (() => void) | null = null;
   _clockTimer: ReturnType<typeof setInterval> | null = null;
-  // Cross-module shared flag (scroll-ux ↔ action-handler): a swipe /
-  // drag sets this so a trailing tap doesn't fire the card-level
-  // tap_action. Owned by scroll-ux but lives on the card so the
-  // action-handler can read it.
+  // Shared by scroll-ux and action-handler: a swipe/drag sets it so a trailing
+  // tap doesn't fire tap_action. Lives on the card so both can read it.
   _dragMoved: boolean = false;
   // Stable listener identity, so Lit doesn't rebind the mode toggle's
   // click handler on every render.
   _onModeToggle = (ev: Event): void => this._onModeToggleClick(ev);
-  // deno-lint-ignore no-explicit-any
   _teardownRegistry: any;
 
-// HA calls getConfigElement when the user clicks the visual editor.
-// Awaiting the dynamic import is supported (HA awaits the return
-// value), and tells rollup to split the editor into its own chunk —
-// users who only view the card never pay the editor's parse cost.
+// HA awaits the dynamic import; it splits the editor into its own chunk so
+// card viewers never pay its parse cost.
 static async getConfigElement() {
   await import('./weather-station-card-editor.js');
   return document.createElement("weather-station-card-editor");
 }
 
-// HA calls assertConfig before showing the visual editor. Throwing here
-// makes HA fall back to the YAML editor instead of trying to render an
-// editor that can't represent the current config — better escape hatch
-// than letting setConfig throw and breaking the whole card.
-// Surface only structural problems the editor can't represent; the
-// runtime mode-aware checks live in setConfig.
-// deno-lint-ignore no-explicit-any
+// Throwing makes HA fall back to the YAML editor instead of rendering an
+// editor that can't represent the config. Only structural problems; the
+// runtime checks live in setConfig.
 static assertConfig(config: any): void {
   if (!config || typeof config !== 'object') {
     throw new Error('Config must be an object.');
@@ -459,15 +342,9 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
   const ids = allEntities || [];
   const pick = (key: string): string => autoPickSensor(key, ids, hass as Parameters<typeof autoPickSensor>[2]);
 
-  // A freshly-added card lands with a fuller, closer-to-finished
-  // layout than bare DEFAULTS — the live panel, current condition, the
-  // full attributes row, clock + date, and a 5-day past/forecast
-  // window. The picker preview also renders this stub before any
-  // recorder data exists; the live now-panel (driven by hass.states,
-  // no recorder dependency) gives the picker an immediate, honest
-  // visual. Sensors and the weather entity are auto-detected — never
-  // hard-coded, they are instance-specific. Keys at their DEFAULTS
-  // value are covered by the spread; only the deltas are listed.
+  // A freshly-added card gets a fuller layout than bare DEFAULTS; the live
+  // panel needs no recorder data, so the picker preview is useful at once.
+  // Sensors and the weather entity are auto-detected; only deltas are listed.
   const weatherEntity = (allEntities || []).find(
     (eid: string) => eid.startsWith('weather.'),
   ) || '';
@@ -500,12 +377,9 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
 
   static get properties() {
     return {
-      // Deliberately NON-reactive: HA replaces the hass object 2–5×/s
-      // on ANY entity change in the instance, and a reactive `_hass`
-      // would schedule a full Lit render pass per tick. Everything the
-      // templates read live sits in the value-compared reactive props
-      // below, so a tick only renders when a displayed value actually
-      // changed. See ADR-0017.
+      // Deliberately non-reactive: HA replaces the hass object 2–5×/s, and a
+      // reactive `_hass` would schedule a full render per tick. Templates read the
+      // value-compared props below instead (ADR-0017).
       _hass: { attribute: false, hasChanged: () => false },
       config: {},
       language: {},
@@ -519,11 +393,9 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
       forecastChart: {type: Object},
       forecastItems: {type: Number},
       forecasts: { type: Array },
-      // renderAttributes reads these straight off `this`. They must be
-      // reactive in their own right now that _hass ticks no longer
-      // re-render the card (ADR-0017). All hold strings / undefined,
-      // so Lit's default !== check is a value comparison — assigning
-      // an unchanged reading schedules nothing.
+      // Read straight off `this` by renderAttributes, so reactive in their own
+      // right (ADR-0017). Values are strings / undefined, so Lit's default !==
+      // check is a value comparison.
       uv_index: { attribute: false },
       dew_point: { attribute: false },
       wind_gust_speed: { attribute: false },
@@ -548,10 +420,8 @@ static getStubConfig(hass: HassMain | null, _unusedEntities: string[], allEntiti
     };
   }
 
-// HA passes the card's user-edited YAML as a fresh object on every
-// `setConfig`. The shape is fully user-controlled so we type it as
-// `any` and let `cardConfig` apply defaults and structural normalisation.
-// deno-lint-ignore no-explicit-any
+// The shape is user-controlled, hence `any`; normalizeConfig applies the
+// defaults.
 setConfig(config: any) {
   const cardConfig: CardConfig = normalizeConfig(config);
 
@@ -568,11 +438,8 @@ setConfig(config: any) {
   this.config = cardConfig;
   this._rawConfig = config;
 
-  // Advisory config-schema check (Slice 2). Unknown keys and wrong-typed
-  // values are silently swallowed by the DEFAULTS spread above — this
-  // surfaces them as a banner instead. Advisory only: it NEVER throws,
-  // the card still renders with defaults. Genuine structural errors are
-  // still caught by the mode-aware throws below and `assertConfig`.
+  // Advisory config-schema check: unknown keys and wrong-typed values surface
+  // as a banner. It never throws; the card still renders.
   this._configWarnings = validateConfig(config);
   // A changed `time_zone` / `location.time_zone` must reach the calendar
   // without waiting for the next hass push.
@@ -580,15 +447,9 @@ setConfig(config: any) {
     this._sources.syncCalendar((this._hass.config as { time_zone?: unknown } | undefined)?.time_zone);
   }
 
-  // Mode-aware completeness check. Each enabled block has a required
-  // key: show_station → sensors.temperature, show_forecast →
-  // weather_entity. A missing one used to throw here — but a thrown
-  // setConfig kills the whole card, and a freshly-added card whose
-  // getStubConfig auto-detect found no temperature sensor would be dead
-  // before its editor could load. Record it as a non-fatal error
-  // instead: renderErrorBanner() surfaces it, the card still renders
-  // what it can, and the visual editor stays usable so the user can
-  // pick the missing entity.
+  // Mode-aware completeness: show_station needs sensors.temperature,
+  // show_forecast needs weather_entity. A miss is recorded, not thrown: a
+  // thrown setConfig would kill a freshly-added card before its editor loads.
   const configErrors: string[] = [];
   // The temperature-sensor requirement is waived when the Open-Meteo
   // no-station fallback is active (ADR-0015): the past block is filled
@@ -610,27 +471,17 @@ setConfig(config: any) {
   this._configError = configErrors.length ? configErrors.join(' ') : null;
 }
 
-// Reactivity entry-point — HA fires this 2–5x/second whenever any
-// entity in `hass.states` updates. Three phases:
-//   1. _extractSensorReadings — sensor → this.<reading> + unit detection
-//   2. _classifyLiveCondition — derive "now" condition + synthesize weather obj
-//   3. _sources.sync          — subscribe/unsubscribe + missing-sensor scan
-//                               (DataSourceController)
-// Splitting the work keeps each phase under a screenful and lets the
-// memoization in phase 2 be reasoned about in isolation from the
-// subscription churn in phase 3.
+// HA fires this 2–5×/s on any entity update. Phases: 1 _extractSensorReadings
+// (readings + units), 2 _classifyLiveCondition (live condition + synthesised
+// weather), 3 _sources.sync (subscriptions + missing-sensor scan).
 set hass(hass: HassMain) {
   this._hass = hass;
   this._sources.syncCalendar((hass.config as { time_zone?: unknown } | undefined)?.time_zone);
   const lang = this.config.locale || hass.selectedLanguage || hass.language || 'en';
   if (lang !== this.language) {
     this.language = lang;
-    // English ships eagerly as the fallback; every other language is
-    // in its own rollup chunk, lazy-loaded on first hass-set. Once
-    // the chunk lands the locale registry is populated and we ask
-    // Lit to re-render so the correct strings replace the en
-    // fallback. The await is a microtask if the chunk is already in
-    // the browser cache.
+    // English ships eagerly; other languages are lazy chunks. Re-render once
+    // the chunk lands so the right strings replace the en fallback.
     if (lang !== 'en' && lang.split('-')[0] !== 'en') {
       void ensureLocaleLoaded(lang).then(() => {
         this._refreshNextRain();
@@ -640,12 +491,8 @@ set hass(hass: HassMain) {
     this._refreshNextRain();
   }
 
-  // Entity-delta gate (ADR-0017): when none of the entities this card
-  // watches changed since the last full pass, skip all three phases.
-  // The data sources still get the fresh hass handle — they need it
-  // for their next WS call — but no reading extraction, classification
-  // or subscription churn runs, and (since nothing reactive is
-  // assigned) no Lit update is scheduled.
+  // Entity-delta gate (ADR-0017): if no watched entity changed, skip all three
+  // phases. The data sources still get the fresh hass for their next WS call.
   if (this._watchedStatesUnchanged(hass)) {
     this._sources.setHass(hass);
     return;
@@ -662,15 +509,9 @@ set hass(hass: HassMain) {
   this._watchedStatesSnapshot = this._captureWatchedStates(hass);
 }
 
-// All entity ids whose changes re-render this card: every configured
-// sensor and the weather entity, which feed the live panel, plus
-// sun.sun. The sun and moon lines are computed from the card location
-// (ADR-0022), not read from sun.sun; it stays watched only as the
-// card's render tick — its ~1/min attribute update re-renders the card,
-// refreshing the sun events, moon % and next moon event without a
-// card-level timer.
-// Anything NOT in this list is irrelevant to this card and safe to
-// ignore.
+// Every entity whose change re-renders the card: the configured sensors, the
+// weather entity and sun.sun. sun.sun is only the render tick for the
+// computed sun and moon lines (ADR-0022). Anything else is ignored.
 _watchedEntityIds(): string[] {
   const ids: string[] = [];
   const sensors = this.config?.sensors || {};
@@ -702,10 +543,8 @@ _watchedStatesUnchanged(hass: HassMain): boolean {
   // (The teardowns also null the snapshot; this guard is the backstop
   // for any future path that drops a source without doing that.)
   if (!this._sources.sourcesMatchConfig()) return false;
-  // HA state objects are immutable — an entity that didn't change
-  // keeps its object reference across hass objects, so reference
-  // equality is an exact "unchanged" test (the same check
-  // hasConfigOrEntityChanged in custom-card-helpers relies on).
+  // HA state objects are immutable: an unchanged entity keeps its reference,
+  // so reference equality is an exact "unchanged" test.
   for (const eid of Object.keys(snapshot)) {
     if (hass.states?.[eid] !== snapshot[eid]) return false;
   }
@@ -764,21 +603,14 @@ _extractSensorReadings(hass: HassMain): void {
   const rawAt = attrOf(sensors.zero_degree_level_48h, 'at');
   this.zero_degree_48h_at = typeof rawAt === 'string' && rawAt ? rawAt : undefined;
 
-  // Three precip shapes, all gated on whether the row is actually
-  // rendered (show_precipitation). When the row is hidden the
-  // derivation alone would still cost a buffer-prune + localStorage
-  // write + a 30-second recompute interval per set hass, so skipping
-  // it entirely matters; the raw state is written above either way, so
-  // re-enabling hot-loads from the existing localStorage buffer.
-  //
-  //   - Dedicated `sensors.precipitation_rate` (#253): a measured mm/h
-  //     reading wins over both paths below — nothing to reconstruct.
-  //     It replaces the precipitation reading, source included.
-  //   - Native rate sensor (unit ends in /h): convert the live value to
-  //     the configured display unit (mm ↔ in) and relabel.
+  // Gated on show_precipitation: a hidden row would still pay for a buffer
+  // prune, a localStorage write and a 30 s interval per hass set. Re-enabling
+  // hot-loads from the stored buffer. Three shapes:
+  //   - `sensors.precipitation_rate` (#253): measured mm/h; wins and replaces
+  //     the precipitation reading, source included.
+  //   - Native rate sensor (unit ends in /h): convert to the display unit.
   //   - Cumulative counter (everything else): derive a rate from the
-  //     sliding-anchor buffer; the derivation handles display
-  //     conversion internally.
+  //     sliding-anchor buffer.
   if (this.config.show_precipitation !== false) {
     const rate = this._applyLivePrecipRateSensor(hass);
     if (rate) {
@@ -798,26 +630,16 @@ _extractSensorReadings(hass: HassMain): void {
   this._liveSources = liveSourcesOf(r);
 }
 
-// A dedicated `sensors.precipitation_rate` entity (#253) short-circuits
-// both `sensors.precipitation` shapes: the value already IS a rate, so
-// there is nothing to pass through or reconstruct. Stations that expose
-// rate and daily total as separate entities (ESPHome rain gauges,
-// Ecowitt, WeatherFlow) can now feed both — the counter keeps driving
-// the chart bars, this drives the live cell and the classifier.
-//
-// Returns the rate reading, or null when no rate sensor is configured
-// or its state isn't numeric (unavailable / unknown / not yet in
-// hass.states), so the caller falls back to the `sensors.precipitation`
-// paths.
+// A dedicated `sensors.precipitation_rate` entity (#253) already is a rate,
+// so it short-circuits both `sensors.precipitation` paths. Returns null when
+// none is configured or its state isn't numeric.
 _applyLivePrecipRateSensor(hass: HassMain): Reading | null {
   const eid = this.config.sensors?.precipitation_rate;
   const reading = precipRateReading(eid, eid ? hass.states?.[eid] as StateLike | undefined : undefined, this.unitPrecip);
   if (!reading) return null;
 
-  // The cumulative derivation may have been running before the user
-  // added the rate sensor. Its 30-s tick would keep overwriting
-  // `precipitation` from the now-orphaned buffer, so release it here —
-  // at the point we actually take over, not on every miss.
+  // The cumulative derivation may already be running; its 30 s tick would keep
+  // overwriting `precipitation` from the orphaned buffer, so release it here.
   this._precipRate.stop();
   this.precipitation = reading.value;
   this.precipitation_unit = reading.unit;
@@ -852,32 +674,23 @@ onDerivedPrecipTick(): void {
   this.requestUpdate();
 }
 
-// Phase 2: classify the live "now" condition with minute-level
-// memoization, then synthesize a weather-entity stand-in for the
-// render layer. Same classifier as for daily forecast columns, just
-// fed with instantaneous values + an instantaneous clear-sky reference.
-// Precipitation only contributes when the sensor reports a rate (unit
-// ends in /h) — cumulative counters can't be turned into a current
-// rate without extra history and would otherwise spuriously trigger
-// 'rainy' on a dry day.
+// Phase 2: classify the live "now" condition (memoised per minute) and
+// synthesise a weather-entity stand-in. Precipitation only contributes when
+// the sensor reports a rate (see resolvePrecipRateInput).
 _classifyLiveCondition(hass: HassMain): void {
   const inputs = this._resolveLiveClassifierInputs(hass);
   const currentCondition = this._pickLiveCondition(inputs);
   const candidate = this._synthesizeWeatherEntity(currentCondition);
-  // Keep the previous object identity when nothing changed: `weather`
-  // is reference-compared by Lit, and updated() runs a full uPlot
-  // redraw via updateChart() whenever it flips. A fresh object per
-  // pass would mean a canvas redraw per pass (ADR-0017).
+  // Keep the previous object identity when nothing changed: `weather` is
+  // reference-compared by Lit, so a fresh object per pass would schedule a
+  // render per pass (ADR-0017).
   if (!this._weatherSynthesisEquals(this.weather, candidate)) {
     this.weather = candidate;
   }
 }
 
-// Field-wise equality of two synthesized weather stand-ins. Both come
-// out of _synthesizeWeatherEntity, so the attribute key set is fixed
-// and all values are scalars — comparing the candidate's keys covers
-// the full shape.
-// deno-lint-ignore no-explicit-any
+// Field-wise equality of two synthesised stand-ins; the attribute key set is
+// fixed and all values are scalars.
 _weatherSynthesisEquals(a: any, b: any): boolean {
   if (!a || !b) return false;
   if (a.state !== b.state) return false;
@@ -889,12 +702,7 @@ _weatherSynthesisEquals(a: any, b: any): boolean {
   return true;
 }
 
-// Pull the numeric inputs the live-condition classifier needs out of
-// hass.states. Detects whether the precipitation sensor reports a rate
-// (unit ends in /h) — cumulative counters can't be turned into an
-// instantaneous rate without history and would otherwise trigger
-// 'rainy' spuriously on a dry day.
-// deno-lint-ignore no-explicit-any
+// Pull the classifier's numeric inputs out of hass.states.
 _resolveLiveClassifierInputs(hass: HassMain): any {
   const sensors = this.config.sensors || {};
   const loc = resolveLocation(this.config, hass);
@@ -930,15 +738,9 @@ _resolveLiveClassifierInputs(hass: HassMain): any {
   };
 }
 
-// Memoize: classifyDay walks an ~80-line decision tree and clearSkyLuxAt
-// does ~4 trig ops + cos. Across the 2–5 hass ticks per second that
-// arrive when many entities update at once, the inputs rarely change —
-// sensors update at a far slower cadence than HA's WebSocket fan-out.
-// Cache key buckets the time at minute precision so clearskyNow drift
-// doesn't break the cache (lux moves ~50 lx/minute under a clear sky,
-// immaterial to the cloud-ratio threshold). Cache invalidates on
-// setConfig (condition_mapping changes) — see setConfig.
-// deno-lint-ignore no-explicit-any
+// Memoised: the inputs rarely change across the 2–5 hass ticks per second.
+// The key buckets time at minute precision so clear-sky drift doesn't break
+// the cache; setConfig clears it (condition_mapping changes).
 _pickLiveCondition(inputs: any): string | undefined {
   const { sensors, wxState, nowTemp, luxNow, precipRateNow, tempUnit, dewUnit, precipUnit, lat, lon } = inputs;
   const minuteKey = Math.floor(Date.now() / 60_000);
@@ -960,12 +762,9 @@ _pickLiveCondition(inputs: any): string | undefined {
   const clearskyNow = lat != null && lon != null
     ? clearSkyLuxAt(lat, lon, this.calendar, new Date())
     : 110000;
-  // precip_total here is precipRateNow — an instantaneous rate (mm/h)
-  // when the sensor reports a /h unit. Use period: 'hour' so the
-  // precipitation thresholds match the rate semantics, not 24 h totals.
-  // classifyDay is unit-blind — its thresholds are °C / mm / m/s. The
-  // live sensor values are raw in their native units (km/h, °F, in/h for
-  // many users), so normalise each before comparing against thresholds.
+  // precip_total is the instantaneous rate (mm/h), hence period 'hour'.
+  // classifyDay is unit-blind (°C / mm / m/s thresholds), so normalise the
+  // native-unit sensor values below first.
   const nowTempC = toCelsius(nowTemp, tempUnit);
   const condition = classifyDay({
     temp_max: nowTempC,
@@ -978,15 +777,13 @@ _pickLiveCondition(inputs: any): string | undefined {
     dew_point_mean: toCelsius(parseNumericSafe(this.dew_point), dewUnit),
     clearsky_lux: clearskyNow,
   }, this.config.condition_mapping || {}, 'hour');
-  // Without an illuminance sensor the classifier cannot measure cloud
-  // cover and bottoms out at 'cloudy'. The weather entity's own sky
-  // state is a better guess than a permanent overcast (#253); rain,
-  // fog and wind stay station-measured.
+  // Without an illuminance sensor the classifier bottoms out at 'cloudy'; the
+  // weather entity's sky state is a better guess (#253). Rain, fog and wind
+  // stay station-measured.
   const fromEntity = condition === 'cloudy' && luxNow == null && SKY_STATES.has(wxState);
-  // classifyDay has no night state; derive it from the card's computed
-  // sun position. Condition text and icon both follow the state.
-  // The entity path follows the same sun position: HA has no
-  // partly-cloudy-night state, so only 'sunny' and 'partlycloudy' change.
+  // classifyDay has no night state; derive it from the computed sun position.
+  // HA has no partly-cloudy-night state, so on the entity path only 'sunny'
+  // and 'partlycloudy' change.
   const belowHorizon = lat != null && lon != null && !isSunUp(new Date(), lat, lon);
   const entityDay = fromEntity && (wxState === 'sunny' || wxState === 'partlycloudy');
   const night = belowHorizon && (!fromEntity || entityDay);
@@ -1003,7 +800,6 @@ _pickLiveCondition(inputs: any): string | undefined {
 // fields here represent the SOURCE units (what the data layer actually
 // emits); the conversion code compares them against this.unitSpeed /
 // unitPressure to decide whether to convert.
-// deno-lint-ignore no-explicit-any
 _synthesizeWeatherEntity(currentCondition: string | undefined): any {
   return {
     state: currentCondition,
@@ -1055,10 +851,9 @@ _synthesizeWeatherEntity(currentCondition: string | undefined): any {
     this._registerLifecycleTeardowns();
   }
 
-  // Walk shadow-DOM hosts to find the card-config dialog wrappers HA
-  // mounts the live preview inside. Tag-name detection is fragile to
-  // HA frontend renames; failure mode is benign (animation stays on,
-  // i.e. today's behaviour). Cheap to compute once at connect time.
+  // Walk shadow-DOM hosts to find the card-config dialog wrappers HA mounts the
+  // live preview in. Tag names may change in HA; the failure mode is benign
+  // (animation stays on).
   _detectInPreview(): boolean {
     let host = (this.getRootNode() as ShadowRoot | undefined)?.host;
     let safetyDepth = 0;
@@ -1076,13 +871,9 @@ _synthesizeWeatherEntity(currentCondition: string | undefined): any {
     return false;
   }
 
-  // Wire every disconnect-time cleanup site through the single
-  // TeardownRegistry (the data sources drain their own, see
-  // data-source-controller.ts). Closures dereference `this._foo` at drain time,
-  // so resources that get replaced during the card's lifetime
-  // (e.g. _clockTimer rebuilt on settings change) are still torn down
-  // correctly. Registration is gated on registry.size to keep
-  // reconnect-after-disconnect idempotent.
+  // Every disconnect-time cleanup goes through the TeardownRegistry (the data
+  // sources drain their own). Closures read `this._foo` at drain time, so
+  // replaced resources are still torn down; registry.size gates re-registering.
   _registerLifecycleTeardowns() {
     if (this._teardownRegistry.size > 0) return;
     const r = this._teardownRegistry;
@@ -1118,9 +909,8 @@ _synthesizeWeatherEntity(currentCondition: string | undefined): any {
         this._clockTimer = null;
       }
     });
-    // Visibility gate (perf pass 2026-08): pause the 1 Hz clock and
-    // wake the hourly station poll when the tab/dashboard visibility
-    // flips. Registered here so disconnect always detaches it.
+    // Pause the 1 Hz clock and wake the hourly station poll when tab visibility
+    // flips.
     if (typeof document !== 'undefined') {
       const onVisibility = () => this._handleVisibilityChange();
       document.addEventListener('visibilitychange', onVisibility);
@@ -1377,11 +1167,9 @@ _resizeChartIfWidthChanged() {
   }
 }
 
-// deno-lint-ignore no-explicit-any
 ll(str: string): any {
   const selectedLocale: string = resolveLocaleKey(this.config.locale || this._lang);
 
-  // deno-lint-ignore no-explicit-any
   const localeAny = locale as Record<string, Record<string, any>>;
   // Per key, like the editor's tEditor: a language that lacks a key (or
   // has not finished loading) shows the English string, not a blank.
@@ -1887,7 +1675,6 @@ _scheduleForecastRowsReveal(): void {
 
   // The data-ready / loading branch, wrapped in one _safeSection catch
   // by render() (render/forecast-block.ts).
-  // deno-lint-ignore no-explicit-any
   _renderForecastBlock({ config, scrolling, contentWidthPct, visibleBars }: any) {
     return renderForecastBlock({
       config,
@@ -2147,13 +1934,11 @@ _liveCtx(language?: string): LivePanelCtx {
 // action-handler.ts), so a row click never also fires the card's
 // tap_action. Values without a backing entity (sensor not configured
 // AND no weather-entity fallback) render unwrapped — no dead cursor.
-// deno-lint-ignore no-explicit-any
 _entityLink(entityId: string | undefined, content: any): any {
   if (!entityId || !this._hass?.states?.[entityId]) return content;
   return this._activatable(() => this._fire('hass-more-info', { entityId }), content);
 }
 
-// deno-lint-ignore no-explicit-any
 _activatable(activate: (el: HTMLElement) => void, content: any, hasPopup?: 'dialog'): any {
   const open = (ev: Event) => {
     ev.stopPropagation();
@@ -2221,7 +2006,6 @@ _entityName(entityId: string): string {
 
 // Chart section of the popup, in the colours chart/orchestrator.ts
 // draws with.
-// deno-lint-ignore no-explicit-any
 _sourceLegend(config: any): LegendItem[] {
   return sourceLegend({
     config,
@@ -2267,7 +2051,6 @@ _openSourcesPopup(returnFocus: HTMLElement | null): void {
 
 // Both zero-degree rows open the forecast-curve popup when the 48 h
 // sensor carries a usable `forecast` attribute (#330), else more-info.
-// deno-lint-ignore no-explicit-any
 _zeroDegreeLink(entityId: string | undefined, content: any): any {
   if (!this.zero_degree_curve) return this._entityLink(entityId, content);
   return this._activatable((el) => this._openZeroDegreePopup(el), content, 'dialog');
