@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The weather symbol and the pressure trend now read every unit Home Assistant offers. Before, wind in knots was taken as m/s, a temperature in Kelvin as °C, and a pressure sensor in kPa always showed "Pressure stable". A sensor with a unit the card does not know no longer feeds the symbol; a sensor without any unit is read in Home Assistant's unit for that value (#478).
+
 ### Under the hood
 
 - One table of units and their conversion factors, taken from Home Assistant's own, as the base for a single units model. Nothing changes on the dashboard (#492).

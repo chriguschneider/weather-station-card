@@ -30,7 +30,16 @@ import {
 import { normalizeConfig, type CardConfig } from './card-config.js';
 import { pastFromOpenMeteo } from './past-source.js';
 import type { LiveSource } from './live-source.js';
-import { extractSensorReadings, liveSourcesOf, precipRateReading, type Reading, type SensorReadings, type StateLike, type StatesLike } from './sensor-readings.js';
+import {
+  extractSensorReadings,
+  liveSourcesOf,
+  precipRateReading,
+  type Reading,
+  type SensorReadings,
+  type StateLike,
+  type StatesLike,
+  type UnitSystemLike,
+} from './sensor-readings.js';
 import { AUTO_PICK_KEYS, autoPickSensor } from './sensor-match.js';
 import type { LegendItem } from './chart-legend.js';
 import { SourcesPopup, type SourceLine } from './sources-popup.js';
@@ -43,13 +52,11 @@ import { setupActionHandler } from './action-handler.js';
 import { TeardownRegistry } from './teardown-registry.js';
 import { PrecipRateController, type CounterState, type PrecipDisplay } from './precip-rate-controller.js';
 import {
-  toMetersPerSecond,
-  toCelsius,
-  toMillimeters,
   isPrecipRateUnit,
   formatPrecipDisplay,
   luxScaleFor,
 } from './utils/unit-converters.js';
+import { fromCanonical, parseUnit, toCanonical, type Quantity } from './utils/units.js';
 import { buildForecastChart, ChartBuildError, type ChartInputs } from './chart/orchestrator.js';
 import { DataSourceController } from './data-source-controller.js';
 import { sanitizeForecastEntries } from './chart/sanitize.js';
@@ -107,25 +114,38 @@ interface HassEntityState {
   attributes?: Record<string, unknown>;
 }
 
-/** Precipitation input for the live-condition classifier: a rate plus its
- *  unit, or a null rate when the sensor cannot express one.
+/** Precipitation input for the live-condition classifier in mm/h, or null
+ *  when no sensor expresses a rate.
  *
- *  A dedicated `sensors.precipitation_rate` entity (#253) is authoritative
- *  (mm/h), even with a bare `mm` unit: `toMillimeters` only reads the length
- *  base. A cumulative counter alone yields null; its total read as a rate
- *  would classify a dry day as 'rainy'. */
+ *  A dedicated `sensors.precipitation_rate` entity (#253) is a rate by
+ *  contract, so a bare `mm` from it counts as mm/h. A cumulative counter
+ *  counts only with a rate unit; its total read as a rate would classify
+ *  a dry day as 'rainy'. A sensor without a unit is read in
+ *  `assumedUnit` (ADR-0035 amendment of 2026-11-16). */
 function resolvePrecipRateInput(
   rateState: HassEntityState | null | undefined,
   counterState: HassEntityState | null | undefined,
-): { precipRateNow: number | null; precipUnit: string } {
-  const state = rateState ?? counterState;
-  const unitRaw = state?.attributes?.unit_of_measurement;
-  const precipUnit = typeof unitRaw === 'string' ? unitRaw : '';
-  const isRate = rateState ? true : isPrecipRateUnit(precipUnit);
-  return {
-    precipRateNow: isRate ? parseNumericSafe(state?.state) : null,
-    precipUnit,
-  };
+  assumedUnit: string,
+): number | null {
+  const unitOf = (s: HassEntityState): unknown => s.attributes?.unit_of_measurement || assumedUnit;
+  if (rateState) {
+    const n = parseNumericSafe(rateState.state);
+    const unit = unitOf(rateState);
+    return toCanonical('precipitation_rate', n, unit) ?? toCanonical('precipitation', n, unit);
+  }
+  return counterState
+    ? toCanonical('precipitation_rate', parseNumericSafe(counterState.state), unitOf(counterState))
+    : null;
+}
+
+/** A weather-sourced reading in the station's source unit, which the rows
+ *  still expect until they format from canonical (#478). Sensor values
+ *  and same-unit weather values pass through. */
+function inSourceUnit(quantity: Quantity, reading: Reading, sourceUnit: string): string | undefined {
+  if (reading.source?.kind !== 'weather' || reading.canonical === null) return reading.value;
+  if (parseUnit(quantity, reading.unit) === parseUnit(quantity, sourceUnit)) return reading.value;
+  const converted = fromCanonical(quantity, reading.canonical, sourceUnit);
+  return converted === null ? reading.value : String(converted);
 }
 
 declare global {
@@ -561,6 +581,8 @@ _extractSensorReadings(hass: HassMain): void {
     states: hass.states as StatesLike,
     weatherEntity: this.config.weather_entity,
     lastGood: this._lastGoodStates,
+    configUnits: this.config.units,
+    unitSystem: (hass.config as { unit_system?: UnitSystemLike } | undefined)?.unit_system,
   });
   this._readings = r;
 
@@ -574,13 +596,13 @@ _extractSensorReadings(hass: HassMain): void {
   this._sourceTempUnit = r.units.temperature;
   this._sourcePrecipUnit = r.units.precipBase;
 
-  this.temperature = r.temperature.value;
+  this.temperature = inSourceUnit('temperature', r.temperature, r.units.temperature);
   this.humidity = r.humidity.value;
-  this.pressure = r.pressure.value;
+  this.pressure = inSourceUnit('pressure', r.pressure, r.units.pressure);
   this.uv_index = r.uv_index.value;
-  this.windSpeed = r.wind_speed.value;
-  this.dew_point = r.dew_point.value;
-  this.wind_gust_speed = r.gust_speed.value;
+  this.windSpeed = inSourceUnit('speed', r.wind_speed, r.units.wind);
+  this.dew_point = inSourceUnit('temperature', r.dew_point, r.units.temperature);
+  this.wind_gust_speed = inSourceUnit('speed', r.gust_speed, r.units.wind);
   this.windDirection = r.wind_direction.value;
   this.illuminance = r.illuminance.value;
   this.precipitation = r.precipitation.value;
@@ -708,15 +730,22 @@ _resolveLiveClassifierInputs(hass: HassMain): any {
   const loc = resolveLocation(this.config, hass);
   const wxEntity = this.config.weather_entity ? hass.states?.[this.config.weather_entity] : null;
   const illuminanceState = sensors.illuminance ? hass.states?.[sensors.illuminance] : null;
-  const { precipRateNow, precipUnit } = resolvePrecipRateInput(
+  const precipRateMmH = resolvePrecipRateInput(
     sensors.precipitation_rate ? hass.states?.[sensors.precipitation_rate] : null,
     sensors.precipitation ? hass.states?.[sensors.precipitation] : null,
+    this._readings?.assumed.precipitation ?? 'mm',
   );
+  const r = this._readings;
 
   return {
     sensors,
     wxState: wxEntity?.state,
-    nowTemp: parseNumericSafe(this.temperature),
+    // Canonical (°C, m/s) from the readings, so the classifier compares
+    // against its thresholds without a unit.
+    tempC: r?.temperature.canonical ?? null,
+    dewPointC: r?.dew_point.canonical ?? null,
+    windMs: r?.wind_speed.canonical ?? null,
+    gustMs: r?.gust_speed.canonical ?? null,
     // Irradiance sensors scale into lux for the clear-sky ratio.
     luxNow: (() => {
       const raw = parseNumericSafe(illuminanceState?.state);
@@ -726,13 +755,7 @@ _resolveLiveClassifierInputs(hass: HassMain): any {
         illuminanceState?.attributes?.device_class,
       );
     })(),
-    precipRateNow,
-    // Source units so the classifier can normalise to its canonical
-    // °C / mm before comparing against thresholds. Dew point falls back
-    // to the temperature unit (same station, same scale in practice).
-    tempUnit: this._sourceTempUnit,
-    dewUnit: this._readings?.dew_point.unit ?? this._sourceTempUnit,
-    precipUnit,
+    precipRateMmH,
     lat: loc?.latitude,
     lon: loc?.longitude,
   };
@@ -742,12 +765,12 @@ _resolveLiveClassifierInputs(hass: HassMain): any {
 // The key buckets time at minute precision so clear-sky drift doesn't break
 // the cache; setConfig clears it (condition_mapping changes).
 _pickLiveCondition(inputs: any): string | undefined {
-  const { sensors, wxState, nowTemp, luxNow, precipRateNow, tempUnit, dewUnit, precipUnit, lat, lon } = inputs;
+  const { sensors, wxState, tempC, dewPointC, windMs, gustMs, luxNow, precipRateMmH, lat, lon } = inputs;
   const minuteKey = Math.floor(Date.now() / 60_000);
   const conditionKey =
-    nowTemp + '|' + luxNow + '|' + precipRateNow + '|' +
-    this.humidity + '|' + this.windSpeed + '|' + this.wind_gust_speed + '|' +
-    this.dew_point + '|' + wxState + '|' + minuteKey;
+    tempC + '|' + luxNow + '|' + precipRateMmH + '|' +
+    this.humidity + '|' + windMs + '|' + gustMs + '|' +
+    dewPointC + '|' + wxState + '|' + minuteKey;
   if (this._liveConditionKey === conditionKey) return this._liveCondition;
 
   // No station temperature sensor — defer to the weather entity's own
@@ -763,18 +786,15 @@ _pickLiveCondition(inputs: any): string | undefined {
     ? clearSkyLuxAt(lat, lon, this.calendar, new Date())
     : 110000;
   // precip_total is the instantaneous rate (mm/h), hence period 'hour'.
-  // classifyDay is unit-blind (°C / mm / m/s thresholds), so normalise the
-  // native-unit sensor values below first.
-  const nowTempC = toCelsius(nowTemp, tempUnit);
   const condition = classifyDay({
-    temp_max: nowTempC,
-    temp_min: nowTempC,
+    temp_max: tempC,
+    temp_min: tempC,
     humidity: parseNumericSafe(this.humidity),
     lux_max: luxNow,
-    precip_total: toMillimeters(precipRateNow, precipUnit),
-    wind_mean: toMetersPerSecond(parseNumericSafe(this.windSpeed), this._sourceWindUnit),
-    gust_max: toMetersPerSecond(parseNumericSafe(this.wind_gust_speed), this._sourceWindUnit),
-    dew_point_mean: toCelsius(parseNumericSafe(this.dew_point), dewUnit),
+    precip_total: precipRateMmH,
+    wind_mean: windMs,
+    gust_max: gustMs,
+    dew_point_mean: dewPointC,
     clearsky_lux: clearskyNow,
   }, this.config.condition_mapping || {}, 'hour');
   // Without an illuminance sensor the classifier bottoms out at 'cloudy'; the

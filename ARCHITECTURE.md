@@ -77,15 +77,26 @@ src/
 │
 ├── sensor-readings.ts         (v3.0, #451)  Live sensor extraction.
 │                              `extractSensorReadings` returns one
-│                              `{ value, unit, source }` per live key:
-│                              the source (station / stale / weather,
-│                              ADR-0031) is picked first and the value
-│                              follows from it; weather values are
-│                              rescaled into the sensor's unit. Also the
-│                              rate-sensor reading, `liveSourcesOf` for
-│                              the info popup and the unavailable test
-│                              the availability scan shares. Pure apart
-│                              from the caller's last-good map.
+│                              `{ value, unit, canonical, source }` per
+│                              live key: the source (station / stale /
+│                              weather, ADR-0031) is picked first and the
+│                              value and unit follow from it, as that
+│                              side gives them; `canonical` is the value
+│                              in its quantity's canonical unit
+│                              (ADR-0035). A sensor without a unit is
+│                              read in its quantity's assumed unit. Also
+│                              the card's `displayUnits`, the rate-sensor
+│                              reading, `liveSourcesOf` for the info
+│                              popup and the unavailable test the
+│                              availability scan shares. Pure apart from
+│                              the caller's last-good map.
+│
+├── display-units.ts           (ADR-0035)  The card's display units:
+│                              `resolveDisplayUnits` picks one unit per
+│                              quantity (temperature, pressure, speed,
+│                              precipitation) from an ordered candidate
+│                              list, `displayNumber` gives the rounded
+│                              number shown in that unit. Pure.
 │
 ├── sensor-match.ts            (v3.0, #451)  Which entity fits which
 │                              sensor slot: per-slot auto tiers plus

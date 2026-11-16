@@ -79,7 +79,7 @@ describe('main live condition at night', () => {
     vi.useFakeTimers({ now: new Date('2026-07-02T05:00:00Z') });
     expect(live(card, 50000)).toBe('partlycloudy');
     expect(card._mainIcon('partlycloudy')).toBe('mdi:weather-night-partly-cloudy');
-    expect(live(card, 50000, { precipRateNow: 1, precipUnit: 'mm/h' })).toBe('rainy');
+    expect(live(card, 50000, { precipRateMmH: 1 })).toBe('rainy');
     expect(card._mainIcon('rainy')).toBe('hass:weather-rainy');
     vi.setSystemTime(new Date('2026-07-01T20:00:00Z'));
     expect(live(card, 50000)).toBe('partlycloudy');
@@ -96,7 +96,7 @@ describe('main live condition at night', () => {
   it('entity condition without a lux sensor follows the sun at the card location', () => {
     const card = makeCard({ location: DENVER, time_zone: 'location' });
     const sensors = { temperature: 'sensor.t' };
-    const fromEntity = (wxState) => live(card, undefined, { sensors, wxState, nowTemp: 15 });
+    const fromEntity = (wxState) => live(card, undefined, { sensors, wxState, tempC: 15 });
     vi.useFakeTimers({ now: new Date('2026-07-01T20:00:00Z') });
     expect(fromEntity('partlycloudy')).toBe('partlycloudy');
     expect(card._mainIcon('partlycloudy')).toBe('hass:weather-partly-cloudy');
@@ -112,7 +112,7 @@ describe('main live condition at night', () => {
   it('entity rainy at night is unchanged', () => {
     const card = makeCard({ location: DENVER });
     vi.useFakeTimers({ now: new Date('2026-07-02T05:00:00Z') });
-    const result = live(card, undefined, { sensors: { temperature: 'sensor.t' }, wxState: 'rainy', nowTemp: 15 });
+    const result = live(card, undefined, { sensors: { temperature: 'sensor.t' }, wxState: 'rainy', tempC: 15 });
     expect(result).not.toBe('clear-night');
     expect(card._mainIcon('rainy')).toBe('hass:weather-rainy');
   });

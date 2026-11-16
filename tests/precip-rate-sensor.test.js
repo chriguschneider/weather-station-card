@@ -173,6 +173,26 @@ describe('sensors.precipitation_rate — live classifier', () => {
     expect(['rainy', 'pouring']).not.toContain(card.weather.state);
   });
 
+  it('reads a rate sensor without a unit in the assumed precipitation unit', () => {
+    const card = makeCard();
+    const hass = makeHass(states({
+      'sensor.rain_rate': { state: '12.0', attributes: {} },
+    }));
+    card.hass = hass;
+    expect(card._resolveLiveClassifierInputs(hass).precipRateMmH).toBe(12);
+    expect(['rainy', 'pouring']).toContain(card.weather.state);
+  });
+
+  it('takes the assumed precipitation unit from the unit system', () => {
+    const card = makeCard();
+    const hass = {
+      ...makeHass(states({ 'sensor.rain_rate': { state: '0.5', attributes: {} } })),
+    };
+    hass.config.unit_system = { accumulated_precipitation: 'in' };
+    card.hass = hass;
+    expect(card._resolveLiveClassifierInputs(hass).precipRateMmH).toBeCloseTo(12.7, 5);
+  });
+
   it('normalises an in/h rate before comparing against mm thresholds', () => {
     const card = makeCard();
     // 0.5 in/h = 12.7 mm/h — pouring. Read as a bare 0.5 it would be dry.

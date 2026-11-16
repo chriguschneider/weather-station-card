@@ -1,5 +1,6 @@
 // Live sensor extraction (#451): one reader per live key that returns
-// the value, the unit it is in and where it came from (ADR-0031).
+// the value, the unit it is in, the value in its canonical unit and
+// where it came from (ADR-0031, ADR-0035).
 //
 // The source is decided before the value is taken: `resolveLiveSource`
 // picks station / stale / weather, and the value follows from that
@@ -8,11 +9,9 @@
 // caller's last-good map (#213), which the readers update in place.
 
 import { resolveLiveSource, type LiveSource } from './live-source.js';
+import { resolveDisplayUnits, type DisplayUnits } from './display-units.js';
+import { parseUnit, toCanonical, type Quantity } from './utils/units.js';
 import {
-  toCelsius,
-  fromCelsius,
-  WIND_CONVERSION,
-  PRESSURE_CONVERSION,
   isPrecipRateUnit,
   precipBaseUnit,
   formatPrecipDisplay,
@@ -28,10 +27,16 @@ export interface StateLike {
 export type StatesLike = Record<string, StateLike | undefined> | undefined;
 
 export interface Reading<T = string> {
+  /** The supplying side's own value: the sensor state or the weather
+   *  attribute, unconverted. */
   value: T | undefined;
-  /** Unit `value` is in; for a rescaled weather value, the unit it was
-   *  rescaled into. */
+  /** Unit `value` is in. A sensor without a unit gets the assumed unit
+   *  of its quantity. */
   unit: string | undefined;
+  /** `value` in its quantity's canonical unit (ADR-0035); null for a key
+   *  without a quantity, a non-numeric value or a unit the table does
+   *  not know. */
+  canonical: number | null;
   source: LiveSource | undefined;
 }
 
@@ -61,6 +66,26 @@ export interface SensorReadings {
   /** Source units of the station, shared by related quantities: wind
    *  speed + gust, temperature + (entity) dew point. */
   units: { wind: string; pressure: string; temperature: string; precipBase: string };
+  /** The card's display units, one per quantity (ADR-0035). */
+  displayUnits: DisplayUnits;
+  /** The units a sensor without `unit_of_measurement` is read in. */
+  assumed: { pressure: string; precipitation: string };
+}
+
+/** `hass.config.unit_system`, keys as in Home Assistant's
+ *  `UnitSystem.as_dict` (homeassistant/util/unit_system.py). */
+export interface UnitSystemLike {
+  temperature?: unknown;
+  pressure?: unknown;
+  wind_speed?: unknown;
+  accumulated_precipitation?: unknown;
+}
+
+/** The card config's `units` block. */
+export interface ConfigUnitsLike {
+  pressure?: unknown;
+  speed?: unknown;
+  precipitation?: unknown;
 }
 
 /** HA's placeholder states for a sensor without a value. The extraction
@@ -92,13 +117,36 @@ const unitOf = (s: StateLike | undefined): string | undefined => {
   return typeof u === 'string' && u ? u : undefined;
 };
 
+// The quantity each key's value converts as; keys not listed have none.
+const QUANTITY_OF: Readonly<Partial<Record<string, Quantity>>> = {
+  temperature: 'temperature',
+  dew_point: 'temperature',
+  pressure: 'pressure',
+  wind_speed: 'speed',
+  gust_speed: 'speed',
+  // A counter in `mm` is no rate, so it gets no canonical value.
+  precipitation: 'precipitation_rate',
+  zero_degree_level: 'length',
+  zero_degree_level_48h: 'length',
+};
+
+// The first candidate the units table knows, as written.
+function knownUnit(quantity: Quantity, ...candidates: unknown[]): string | undefined {
+  const hit = candidates.find((c) => parseUnit(quantity, c) !== null);
+  return typeof hit === 'string' ? hit : undefined;
+}
+
 export function extractSensorReadings(input: {
   sensors: Record<string, unknown>;
   states: StatesLike;
   weatherEntity: string | undefined;
   lastGood: Record<string, string>;
+  configUnits?: ConfigUnitsLike;
+  unitSystem?: UnitSystemLike;
 }): SensorReadings {
   const { sensors, states, lastGood } = input;
+  const configUnits = input.configUnits ?? {};
+  const unitSystem = input.unitSystem ?? {};
   const weatherEntity = input.weatherEntity || undefined;
   const stateOf = (eid: string | undefined): StateLike | undefined =>
     eid ? states?.[eid] : undefined;
@@ -119,27 +167,18 @@ export function extractSensorReadings(input: {
     return typeof u === 'string' && u ? u : undefined;
   };
 
-  const sensorWindUnit = sensorUnit('wind_speed') || sensorUnit('gust_speed');
-  const sensorTempUnit = sensorUnit('temperature');
-  const sensorPressureUnit = sensorUnit('pressure');
   const units = sourceUnits(sensorUnit, wxUnit);
-
-  // A weather value is in the entity's unit. When the station sensor of
-  // the same quantity uses another unit (HA keeps unit_of_measurement
-  // while a sensor is unavailable), rescale it into the sensor's unit:
-  // otherwise a 20 °C entity reading behind an unavailable °F sensor
-  // shows as 20 °F and the classifier sees frost (#438).
-  const rescaleWind = factorRescale(WIND_CONVERSION, sensorWindUnit, wxUnit('wind_speed_unit'));
-  const rescaleTemp = tempRescale(sensorTempUnit, wxUnit('temperature_unit'));
-  const rescalePressure = factorRescale(PRESSURE_CONVERSION, sensorPressureUnit, wxUnit('pressure_unit'));
+  const assumed = assumedUnits(sensorUnit, wxUnit, unitSystem);
+  const sided = (key: string, sensorDefault: string, wx: string) => (fromWeather: boolean): string =>
+    fromWeather ? wx : sensorUnit(key) ?? sensorDefault;
 
   // The sensor's value (live or last good) wins, else the weather
-  // entity's current attribute. `unit` returns the unit for each side.
+  // entity's current attribute. `unit` returns the unit for each side;
+  // neither side is converted into the other's unit.
   const read = (
     key: string,
     wxKey: string | null,
     unit: (fromWeather: boolean) => string | undefined,
-    rescale?: (v: number) => number,
   ): Reading => {
     const sensorId = idOf(sensors[key]);
     const value = sensorValue(sensorId);
@@ -151,37 +190,79 @@ export function extractSensorReadings(input: {
       weatherEntity,
       weatherHasValue: wxRaw !== undefined && wxRaw !== null,
     });
-    if (source?.kind === 'weather') {
-      const num = Number(wxRaw);
-      const wxValue = rescale && Number.isFinite(num) ? String(rescale(num)) : String(wxRaw);
-      return { value: wxValue, unit: unit(true), source };
-    }
+    const fromWeather = source?.kind === 'weather';
     // A sensor-only key passes an empty state through as it is.
-    return { value: source || !wxKey ? value : undefined, unit: unit(false), source };
+    let shown = source || !wxKey ? value : undefined;
+    if (fromWeather) shown = String(wxRaw);
+    const shownUnit = unit(fromWeather);
+    const quantity = QUANTITY_OF[key];
+    const canonical = quantity ? toCanonical(quantity, parseNumericSafe(shown), shownUnit) : null;
+    return { value: shown, unit: shownUnit, canonical, source };
   };
 
-  const dewSensorUnit = sensorUnit('dew_point');
   // 'lx' is HA's illuminance unit (developers.home-assistant.io/docs/core/entity/sensor/).
   const illState = stateOf(idOf(sensors.illuminance));
   const illScale = luxScaleFor(illState?.attributes?.unit_of_measurement, illState?.attributes?.device_class);
   const illuminance = toLux(read('illuminance', null, () => (illScale !== 1 ? 'lx' : unitOf(illState))), illScale);
+  const zeroDegree = (key: string): Reading =>
+    read(key, null, () => (stateOf(idOf(sensors[key])) ? sensorUnit(key) ?? 'm' : undefined));
   return {
-    temperature: read('temperature', 'temperature', () => units.temperature, rescaleTemp),
+    temperature: read('temperature', 'temperature', sided('temperature', assumed.temperature, assumed.wxTemperature)),
     // HA weather entities report humidity in % (developers.home-assistant.io/docs/core/entity/weather/).
     humidity: read('humidity', 'humidity', (wx) => (wx ? '%' : sensorUnit('humidity'))),
-    pressure: read('pressure', 'pressure', () => units.pressure, rescalePressure),
+    pressure: read('pressure', 'pressure', sided('pressure', assumed.pressure, assumed.wxPressure)),
     uv_index: read('uv_index', 'uv_index', (wx) => (wx ? undefined : sensorUnit('uv_index'))),
-    wind_speed: read('wind_speed', 'wind_speed', () => units.wind, rescaleWind),
-    gust_speed: read('gust_speed', 'wind_gust_speed', () => units.wind, rescaleWind),
-    // An entity dew point is rescaled into the temperature unit, not the
-    // dew sensor's; a sensor dew point keeps the sensor's own unit.
-    dew_point: read('dew_point', 'dew_point', (wx) => (!wx && dewSensorUnit) || units.temperature, rescaleTemp),
+    wind_speed: read('wind_speed', 'wind_speed', sided('wind_speed', assumed.wind, assumed.wxWind)),
+    gust_speed: read('gust_speed', 'wind_gust_speed', sided('gust_speed', assumed.gust, assumed.wxWind)),
+    // An entity dew point is in the entity's temperature unit.
+    dew_point: read('dew_point', 'dew_point', sided('dew_point', assumed.dewPoint, assumed.wxTemperature)),
     wind_direction: readWindDirection(idOf(sensors.wind_direction), stateOf, weatherEntity, wxAttrs.wind_bearing),
     illuminance,
-    precipitation: read('precipitation', null, () => sensorUnit('precipitation')),
-    zero_degree_level: read('zero_degree_level', null, () => sensorUnit('zero_degree_level')),
-    zero_degree_level_48h: read('zero_degree_level_48h', null, () => sensorUnit('zero_degree_level_48h')),
+    precipitation: read('precipitation', null, () => sensorUnit('precipitation') ?? assumed.precipitation),
+    zero_degree_level: zeroDegree('zero_degree_level'),
+    zero_degree_level_48h: zeroDegree('zero_degree_level_48h'),
     units,
+    assumed: { pressure: assumed.pressure, precipitation: assumed.precipitation },
+    displayUnits: resolveDisplayUnits({
+      temperature: [sensorUnit('temperature'), wxUnit('temperature_unit'), unitSystem.temperature],
+      pressure: [configUnits.pressure, sensorUnit('pressure'), wxUnit('pressure_unit'), unitSystem.pressure],
+      speed: [
+        configUnits.speed, sensorUnit('wind_speed'), sensorUnit('gust_speed'),
+        wxUnit('wind_speed_unit'), unitSystem.wind_speed,
+      ],
+      precipitation: [
+        configUnits.precipitation, sensorUnit('precipitation'), sensorUnit('precipitation_rate'),
+        wxUnit('precipitation_unit'), unitSystem.accumulated_precipitation,
+      ],
+    }),
+  };
+}
+
+// A sensor without a unit is read in the unit Home Assistant would give
+// its quantity, not as an unknown unit (ADR-0035, amendment of
+// 2026-11-16): template sensors often carry none. A weather entity
+// without its unit attribute falls back to the unit system.
+function assumedUnits(
+  sensorUnit: (key: string) => string | undefined,
+  wxUnit: (attr: string) => string | undefined,
+  unitSystem: UnitSystemLike,
+) {
+  const temperature = knownUnit('temperature', wxUnit('temperature_unit'), unitSystem.temperature) ?? '°C';
+  const pressure = knownUnit('pressure', wxUnit('pressure_unit'), unitSystem.pressure) ?? 'hPa';
+  const wind = (otherKey: string): string =>
+    knownUnit('speed', sensorUnit(otherKey), wxUnit('wind_speed_unit'), unitSystem.wind_speed) ?? 'm/s';
+  return {
+    temperature,
+    dewPoint: knownUnit('temperature', sensorUnit('temperature')) ?? temperature,
+    pressure,
+    wind: wind('gust_speed'),
+    gust: wind('wind_speed'),
+    precipitation: knownUnit(
+      'precipitation', wxUnit('precipitation_unit'), unitSystem.accumulated_precipitation,
+    ) ?? 'mm',
+    wxTemperature: wxUnit('temperature_unit') ?? temperature,
+    wxPressure: wxUnit('pressure_unit') ?? pressure,
+    wxWind: wxUnit('wind_speed_unit') ?? knownUnit('speed', unitSystem.wind_speed) ?? 'm/s',
   };
 }
 
@@ -200,23 +281,6 @@ function sourceUnits(
     // default its display unit to the station's own base (in/h stays in).
     precipBase: precipBaseUnit(sensorUnit('precipitation') || sensorUnit('precipitation_rate')),
   };
-}
-
-// The weather entity's value expressed in the sensor's unit; undefined
-// when the units agree or the pair is not in the table.
-function factorRescale(
-  table: Readonly<Partial<Record<string, number>>>,
-  sensorUnit: string | undefined,
-  wxUnit: string | undefined,
-): ((v: number) => number) | undefined {
-  if (!sensorUnit || !wxUnit || sensorUnit === wxUnit) return undefined;
-  const factor = table[`${sensorUnit}->${wxUnit}`];
-  return factor !== undefined ? (v: number) => v * factor : undefined;
-}
-
-function tempRescale(sensorUnit: string | undefined, wxUnit: string | undefined): ((v: number) => number) | undefined {
-  if (!sensorUnit || !wxUnit || sensorUnit === wxUnit) return undefined;
-  return (v: number) => fromCelsius(toCelsius(v, wxUnit) ?? v, sensorUnit);
 }
 
 // Irradiance (W/m²) scales into lux here, so every consumer sees lux.
@@ -244,8 +308,8 @@ function readWindDirection(
     weatherEntity,
     weatherHasValue: wxBearing !== undefined && wxBearing !== null,
   });
-  if (source?.kind === 'weather') return { value: parseFloat(String(wxBearing)), unit: '°', source };
-  return { value: source ? bearing : undefined, unit: '°', source };
+  if (source?.kind === 'weather') return { value: parseFloat(String(wxBearing)), unit: '°', canonical: null, source };
+  return { value: source ? bearing : undefined, unit: '°', canonical: null, source };
 }
 
 /** A dedicated `sensors.precipitation_rate` (#253) as the live
@@ -264,7 +328,7 @@ export function precipRateReading(
   // that forgot the `/h` still gets the rate label.
   const sourceUnit = isPrecipRateUnit(rawUnit) ? rawUnit : `${precipBaseUnit(rawUnit)}/h`;
   const { value, unit } = formatPrecipDisplay(num, sourceUnit, displayUnit);
-  return { value, unit, source: { kind: 'station', entityId: sensorId } };
+  return { value, unit, canonical: null, source: { kind: 'station', entityId: sensorId } };
 }
 
 /** The per-key provenance record the info popup reads, plus the
