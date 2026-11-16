@@ -1,7 +1,6 @@
-// Card-level banners and placeholders (#472, ADR-0010 amendment): the
-// red error band, the amber config-warning band, the subtle
-// availability hint and the two placeholder cards. Plain functions over
-// a small context; main.ts collects the error fields and calls them.
+// Card-level banners and placeholders (ADR-0010, ADR-0034): the red error
+// band, the amber config-warning band, the availability hint and the two
+// placeholder cards.
 
 import { html, type TemplateResult } from 'lit';
 import { MIN_HA_VERSION, isHaVersionBelow } from '../const.js';
@@ -19,10 +18,8 @@ export interface BannerCtx {
 
 export function bannerErrors(ctx: BannerCtx): string[] {
   const errors: string[] = [];
-  // Compatibility warning first: a too-old HA frontend may have changed
-  // the APIs this card relies on, so flag it before the data-fetch
-  // errors (which can be a downstream symptom of that). isHaVersionBelow
-  // never false-fires on a current or unreadable version.
+  // First: a too-old HA frontend may be the cause of the data-fetch errors
+  // below. isHaVersionBelow never fires on a current or unreadable version.
   if (isHaVersionBelow(ctx.haVersion, MIN_HA_VERSION)) {
     errors.push(`This card expects Home Assistant ${MIN_HA_VERSION} or newer.`);
   }
@@ -32,16 +29,14 @@ export function bannerErrors(ctx: BannerCtx): string[] {
   if (ctx.chartError) errors.push(`Chart render failed: ${ctx.chartError}`);
   if (ctx.refreshError) errors.push(ctx.refreshError);
   if (ctx.sectionError) errors.push(ctx.sectionError);
-  // Unavailable sensors are deliberately NOT in this red band (#213): a
-  // routine HA restart used to paint one alarming line per sensor. They
-  // surface through renderAvailabilityNote instead.
+  // Unavailable sensors are deliberately NOT in this red band (#213); see
+  // renderAvailabilityNote.
   return errors;
 }
 
 export function renderErrorBanner(ctx: BannerCtx): TemplateResult {
   const errors = bannerErrors(ctx);
-  // Advisory config-schema warnings go in a separate amber band below
-  // the red one: they never stop the card, they flag a YAML mistake.
+  // Config-schema warnings are advisory: a separate amber band, never a stop.
   const warnings = ctx.configWarnings ?? [];
   const errorBanner = errors.length
     ? html`

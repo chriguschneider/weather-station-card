@@ -1,7 +1,6 @@
-// Scroll-position math of the forecast block (#472): the initial "scroll
-// to now" target and the day-pager realignment. Pure functions over the
-// wrapper's measured sizes; main.ts reads the DOM, owns the settle
-// observer and writes `scrollLeft`.
+// Scroll-position math of the forecast block (ADR-0034): the initial
+// "scroll to now" target and the day-pager realignment, as pure functions
+// over the wrapper's measured sizes.
 
 import { computeInitialScrollLeft } from '../format-utils.js';
 import { computeTodayPagerScrollLeft, effectiveVisibleBars } from '../forecast-utils.js';

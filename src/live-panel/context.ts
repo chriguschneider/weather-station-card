@@ -1,8 +1,6 @@
-// Live-panel render context (ADR-0010, amended for #449). The row
-// renderers in this directory are plain functions over this one object;
-// main.ts builds it once per render (`_liveCtx`) from its instance state.
-// Interaction (more-info, popups) stays in main.ts and comes in as the
-// two link callbacks, so nothing here touches the element or the DOM.
+// Live-panel render context (ADR-0010): the row renderers here are plain
+// functions over this one object. Interaction (more-info, popups) comes in
+// as the two link callbacks, so nothing here touches the element or the DOM.
 
 import type { Calendar } from '../utils/time-zone.js';
 import type { ZeroDegreePoint } from '../zero-degree-popup.js';
@@ -37,7 +35,7 @@ export interface LiveConfig {
   [key: string]: unknown;
 }
 
-/** The live readings `_extractSensorReadings` leaves on the card. */
+/** The live readings the card extracts from its sensors. */
 export interface LiveValues {
   temperature?: unknown;
   humidity?: unknown;
@@ -90,8 +88,7 @@ export interface LivePanelCtx {
 }
 
 /** Entity id backing a row: the configured sensor wins; rows whose value
- *  can fall back to the weather entity's attributes (see
- *  `_extractSensorReadings`) link to the weather entity in that case. */
+ *  can fall back to the weather entity's attributes link to it then. */
 export function attrEntity(
   config: LiveConfig | null | undefined,
   sensorKey: string,
@@ -121,13 +118,10 @@ export interface EntityFormatOptions {
 
 const NO_STATE = new Set(['unavailable', 'unknown']);
 
-/** "Format `value` like HA formats entity `eid`": HA's own formatter
- *  (`hass.formatEntityState`, HA ≥ 2023.9: the entity's display
- *  precision and the user's number format) on a copy of the entity's
- *  state carrying `value`; Intl otherwise. An entity that is unavailable
- *  carries no unit or precision to borrow, so a last-good value shown
- *  during an outage takes the Intl path too. One formatter for the row,
- *  the popup and the tooltips, so a level reads the same everywhere. */
+/** Formats `value` like HA formats entity `eid`: `hass.formatEntityState`
+ *  (HA ≥ 2023.9) on a copy of the state carrying `value`; Intl otherwise,
+ *  also for an unavailable entity (no unit or precision to borrow).
+ *  One formatter for row, popup and tooltips. */
 export function formatEntityNumber(
   ctx: Pick<LivePanelCtx, 'hass' | 'language'>,
   eid: string | undefined,

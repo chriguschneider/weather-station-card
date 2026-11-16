@@ -1,8 +1,6 @@
-// Forecast block of the card (#472, ADR-0010 amendment): the chart
-// container with its per-column rows, the mode toggle, the scroll
-// controls, the scroll timeline and the loading skeleton. Plain
-// functions over `ForecastBlockCtx`; main.ts builds the context and
-// keeps the chart lifecycle, the animation state and the event wiring.
+// Forecast block (ADR-0034): the chart container with its per-column rows,
+// the mode toggle, the scroll controls and timeline, and the loading
+// skeleton.
 
 import { html, type TemplateResult } from 'lit';
 import { guard } from 'lit/directives/guard.js';
@@ -151,10 +149,9 @@ export function timelineSegments(
   return segs;
 }
 
-// Scroll timeline / minimap for the scrolling hourly-ish modes: one
-// segment per day (width = its share of the columns), today bold, and a
-// thumb for the visible section. scroll-ux positions the thumb and binds
-// the pointer interaction; this renders only the static track.
+// Scroll timeline for the scrolling modes: one segment per day (width =
+// its share of the columns), today bold, plus a thumb. scroll-ux positions
+// the thumb and binds the pointer; this renders only the static track.
 export function renderScrollTimeline(
   forecasts: readonly unknown[] | null | undefined,
   calendar: Calendar,
@@ -189,16 +186,13 @@ export function renderScrollTimeline(
 }
 
 // One condition glyph per column, as an inline-SVG sprite reference
-// (ADR-0018). Per-time day/night resolution is gone: both variants map
-// to the same glyph, so the per-column sunrise math was dead work.
+// (ADR-0018).
 export function renderForecastConditionIcons(
   config: Pick<ForecastBlockConfig, 'forecast'>,
   forecasts: readonly unknown[] | null | undefined,
   forecastItems: number | undefined,
 ): TemplateResult {
   if (config.forecast.condition_icons === false) return html``;
-  // Drop malformed entries (null, missing datetime) before the per-item
-  // map dereferences them.
   const forecast = sanitizeForecastEntries(
     (forecasts ? forecasts.slice(0, forecastItems) : []) as ForecastEntryLike[],
   );
@@ -233,11 +227,10 @@ function renderReadyBlock(ctx: ForecastBlockCtx): TemplateResult {
   const fcType = config.forecast?.type;
   const animClass = forecastAnimClass(ctx.mountAnimationPlayed, ctx.lastForecastType, fcType);
   const disableClass = config.forecast?.disable_animation === true ? 'no-animation' : '';
-  // Two-phase render (ADR-0016): when the chart scrolls, the per-column
-  // condition / wind rows are the cold-mount bottleneck (~140 ms of a
-  // ~235 ms hourly mount). The first paint of a new chart generation
-  // gets placeholder-height rows (no layout shift); the card's reveal
-  // fills the real rows after paint. Non-scrolling views never defer.
+  // Two-phase render (ADR-0016): in a scrolling chart the per-column rows
+  // are the cold-mount bottleneck, so a new chart generation first paints
+  // placeholder-height rows and the reveal fills them. Non-scrolling views
+  // never defer.
   const rowsDeferred = scrolling
     && ctx.rowsReadyGen !== forecastRowsGenKey(fcType, ctx.forecasts);
   const enabled = rowsEnabled(config);
@@ -275,11 +268,10 @@ function renderReadyBlock(ctx: ForecastBlockCtx): TemplateResult {
           `;
 }
 
-// Loading state: reserve the same vertical space as the rows the ready
-// branch WILL render, so the swap doesn't push the page down ~50 px.
-// Heights match the rendered rows (24 px icon + 2 px margin; arrow plus
-// one line of speed text + 2 px). Wrapped wind text on narrow columns
-// under-reserves by ~10 px; over-reserving would shift up in the common case.
+// Loading state: reserve the height of the rows the ready branch will
+// render (24 px icon + 2 px margin; arrow plus one line of speed + 2 px),
+// so the swap does not shift the page. Wrapped wind text on narrow
+// columns under-reserves by ~10 px; over-reserving would shift up instead.
 function renderLoadingBlock(ctx: ForecastBlockCtx): TemplateResult {
   const { config } = ctx;
   const enabled = rowsEnabled(config);

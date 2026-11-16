@@ -1,8 +1,7 @@
 // Climate column rows: pressure, dew point / humidity, precipitation,
-// next rain. Each row returns null when its toggle is off or its value
-// is missing (Lit renders null as nothing), see ADR-0010 / ADR-0025.
-// The `*Text` helpers are the row's value text, shared with the
-// sources popup so the popup never formats a value a second way.
+// next rain (ADR-0010, ADR-0025). A row returns null when off or valueless.
+// The `*Text` helpers are shared with the sources popup so a value is
+// formatted one way only.
 
 import { html } from 'lit';
 import { getPressureTrend, getPressureTrendIcon } from '../pressure-trend.js';
@@ -47,9 +46,8 @@ export function climateRowPressure(ctx: LivePanelCtx, show: boolean, dPressure: 
   if (!show || dPressure == null || !isNumeric(dPressure)) return null;
   const trend = getPressureTrend(deltaHpa);
   const iconName = getPressureTrendIcon(trend) || 'gauge';
-  // Icon-only encoding: a `(±X.X/3h)` suffix wrapped on narrow columns.
-  // The tooltip carries trend + 3-h delta + influence; the delta stays in
-  // hPa (the WMO classification unit) even when the display is mmHg / inHg.
+  // Icon-only: the tooltip carries trend, 3-h delta and influence. The
+  // delta stays in hPa (the WMO classification unit) whatever the display unit.
   let ariaLabel = '';
   if (trend && deltaHpa != null && Number.isFinite(deltaHpa)) {
     const deltaStr = (deltaHpa > 0 ? '+' : '') + deltaHpa.toFixed(1);
@@ -65,7 +63,6 @@ export function climateRowPressure(ctx: LivePanelCtx, show: boolean, dPressure: 
 }
 
 function dewPointTitle(ctx: LivePanelCtx, band: string, tdRaw: number, tairRaw: number): string {
-  // The spread is shown in the display unit so it matches the row value.
   const spread = Math.max(0, tairRaw - tdRaw);
   return ctx.str('dew_point_tooltip_template')
     .replace('{td}', String(Math.round(tdRaw)))
@@ -74,9 +71,8 @@ function dewPointTitle(ctx: LivePanelCtx, band: string, tdRaw: number, tairRaw: 
     .replace('{band}', ctx.str(`dew_point_band_${band}`));
 }
 
-// Dew point and humidity share one line (v2.3): the dew point is the
-// headline value, humidity an optional second segment with its own icon
-// and entity link. Humidity alone renders when the dew point is hidden.
+// Dew point and humidity share one line: dew point first, humidity an
+// optional second segment. Humidity alone renders when the dew point is hidden.
 export function climateRowDewPoint(
   ctx: LivePanelCtx,
   show: boolean,
@@ -129,8 +125,7 @@ export function climateRowPrecip(
     html`<ha-icon icon="${icon}"></ha-icon> ${precipitationText(precipitation, precipitationUnit)}`)}`;
 }
 
-// Next-rain row (`sensors.next_rain`). Text, icon and tooltip are
-// prepared by main.ts `_refreshNextRain`; the tooltip names which horizon
+// Next-rain row (`sensors.next_rain`). The tooltip names which horizon
 // answered, so a forecast "~17:00" is never read as a radar observation.
 export function climateRowNextRain(
   ctx: LivePanelCtx,

@@ -1,7 +1,5 @@
 // Sun column rows: sun strength (UV / illuminance), sunrise + sunset,
-// moon. Sun and moon are computed in-card from the card location
-// (src/moon.ts, ADR-0022). Each row derives its data once; the template
-// and the sources-popup text both read from it.
+// moon. Sun and moon are computed in-card from the card location (ADR-0022).
 
 import { html } from 'lit';
 import { classifySunStrength, formatLux } from '../sun-strength.js';
@@ -106,8 +104,7 @@ export function sunEventTimes(ctx: LivePanelCtx): { rise: string; set: string } 
   return { rise: fmt.format(sunrise), set: fmt.format(sunset) };
 }
 
-// Both sun events share one line (rise first, set second); the moon is
-// its own line since ADR-0025.
+// Both sun events share one line, rise first.
 export function renderSun(ctx: LivePanelCtx) {
   const t = sunEventTimes(ctx);
   if (!t) return null;

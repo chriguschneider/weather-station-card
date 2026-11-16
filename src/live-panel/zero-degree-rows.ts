@@ -1,7 +1,6 @@
 // Zero-degree rows: the current level of the 0 °C isotherm (the snow
 // line) and its 48 h trend (#330, #333). Sensor-only; the unit is
-// whatever the entity reports. Every number goes through
-// `formatEntityNumber`, so the row, its tooltip and the popup agree.
+// whatever the entity reports.
 
 import { html, nothing } from 'lit';
 import { getDateTimeFormat } from '../utils/intl-cache.js';
@@ -109,9 +108,8 @@ function trendTitle(ctx: LivePanelCtx, view: TrendView, nowLevel: number | undef
 }
 
 // Trend row (`sensors.zero_degree_level_48h`, #333): with the sensor's
-// `forecast` curve the value is the target of the next movement (lowest
-// or highest level, weekday/time) and the icon its direction and pace.
-// When the target's snow line reaches the site, the value takes the
+// `forecast` curve the value is the target of the next movement and the
+// icon its direction and pace; a target reaching the site gets the
 // precipitation colour and a snowflake. Without a curve: the fallback.
 export function climateRowZeroDegree48h(
   ctx: LivePanelCtx,
@@ -155,9 +153,8 @@ export function climateRowZeroDegree48h(
 }
 
 // Trend row without a usable curve: value + arrow from the `change`
-// attribute (within ±100 m counts as steady), as in v2.12. An `at`
-// attribute (ISO datetime of the minimum) adds a tooltip with the lowest
-// value, its weekday/time and, when known, the current level.
+// attribute (within ±100 m counts as steady). An `at` attribute (ISO
+// datetime of the minimum) adds the lowest-value tooltip.
 export function zeroDegree48hFallback(
   ctx: LivePanelCtx,
   value: unknown,

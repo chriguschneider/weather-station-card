@@ -1,13 +1,8 @@
 // Zero-degree rows (#333): where the 0 °C isotherm is heading in the
 // next 48 h (trend row) and where the estimated snow line sits relative
 // to the location (current row). Pure functions, no DOM.
-//
-// Input is the `forecast` curve of `sensors.zero_degree_level_48h`
-// (hourly `{datetime, level}`, parsed by parseZeroDegreeCurve) in the
-// sensor's unit; elevations are always metres (HA's `config.elevation`
-// and the card's `elevation:` option are metres).
-//
-// The thresholds below are the card's own heuristics, decided in #333.
+// Input is the sensor's `forecast` curve in the sensor's unit; elevations
+// are always metres. The thresholds below are the card's own heuristics (#333).
 
 import { parseLocation } from './location.js';
 import { HOUR_MS } from './utils/time-zone.js';
@@ -223,13 +218,11 @@ function toMetres(value: unknown): number | undefined {
   return undefined;
 }
 
-/** Site elevation in metres: `location.elevation`, else the legacy
- *  top-level `elevation:` option, else an
- *  `elevation` attribute on the sensors (48 h first, then the current
- *  level — hass-meteoswiss-weather#227), else HA's configured elevation.
- *  A card with `location` coordinates is for another place: only
- *  `location.elevation` counts there, the other sources describe home or
- *  the sensor's station. */
+/** Site elevation in metres: `location.elevation`, else the top-level
+ *  `elevation:` option, else an `elevation` attribute on the sensors (48 h
+ *  first, then current; hass-meteoswiss-weather#227), else HA's config.
+ *  With `location` coordinates only `location.elevation` counts: the other
+ *  sources describe home or the sensor's station. */
 export function resolveElevation(
   config: { elevation?: unknown; location?: unknown } | null | undefined,
   sensorAttrs: ReadonlyArray<Record<string, unknown> | null | undefined>,

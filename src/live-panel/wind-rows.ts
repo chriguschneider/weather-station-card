@@ -1,6 +1,5 @@
 // Wind rows: the live panel's direction / speed / gust lines and the
-// forecast block's per-column wind row. Conversions go through the
-// lookup tables in utils/unit-converters.ts (ADR-0009).
+// forecast block's per-column wind row (conversions: ADR-0009).
 
 import { html } from 'lit';
 import { cardinalDirectionsIcon } from '../const.js';
@@ -90,10 +89,8 @@ interface ForecastWindEntry {
   wind_bearing?: number | string | null;
 }
 
-// Forecast wind row. Two toggles: forecast.show_wind_arrow (direction)
-// and forecast.show_wind_speed (speed). The deprecated
-// forecast.show_wind_forecast still accepts `false` as a hard master-off
-// so existing YAML that disabled the row keeps working.
+// Toggles: show_wind_arrow (direction) and show_wind_speed (speed). The
+// deprecated show_wind_forecast: false still switches the whole row off.
 export function renderForecastWind(
   ctx: LivePanelCtx,
   forecasts: readonly unknown[] | null | undefined,
