@@ -43,20 +43,28 @@ jobs:
           set -euo pipefail
 
           stars=$(gh api "repos/${REPO}" --jq '.stargazers_count')
-          # Downloads of the current stable version, counting only the main
-          # bundle: every release ships ~25 assets and HACS fetches all of
-          # them, so summing assets would over-count. Cumulative totals
-          # count the same users again at every update, and HACS's own
-          # figure drops to almost zero on each release. So take the highest
-          # count among stable releases of the last 7 days and the newest
-          # older one: a new release takes over once it passes the previous
-          # count, after 7 days at the latest. Needs no stored state.
+          # The main release asset is the file HACS installs, named by
+          # `filename` in hacs.json.
+          asset=$(gh api "repos/${REPO}/contents/hacs.json" --jq '.content' \
+            | base64 -d | jq -r '.filename // empty')
+          if [ -z "$asset" ]; then
+            echo "hacs.json has no filename, cannot tell the main asset" >&2
+            exit 1
+          fi
+          # Downloads of the current stable version, counting only that
+          # asset: a release can ship many files that HACS fetches together,
+          # so summing assets would over-count. Cumulative totals count the
+          # same users again at every update, and HACS's own figure drops to
+          # almost zero on each release. So take the highest count among
+          # stable releases of the last 7 days and the newest older one: a
+          # new release takes over once it passes the previous count, after
+          # 7 days at the latest. Needs no stored state.
           cutoff=$(( $(date +%s) - 604800 ))
           downloads=$(gh api --paginate --slurp "repos/${REPO}/releases?per_page=100" \
-            | jq --argjson cutoff "$cutoff" '
+            | jq --argjson cutoff "$cutoff" --arg asset "$asset" '
                 [ .[][] | select(.prerelease == false and .draft == false)
                   | { at: (.published_at | fromdateiso8601),
-                      n: ([.assets[] | select(.name == "weather-station-card.js")
+                      n: ([.assets[] | select(.name == $asset)
                            | .download_count] | add // 0) } ]
                 | sort_by(.at) | reverse
                 | ([ .[] | select(.at >= $cutoff) ]) as $recent
@@ -100,7 +108,7 @@ jobs:
           printf '{"schemaVersion":1,"label":"last commit","message":"%s","color":"%s"}\n' \
             "$last_commit" "$commit_color" > out/lastcommit.json
 
-          echo "stars=$stars downloads=$downloads release=$release last_commit=$last_commit"
+          echo "asset=$asset stars=$stars downloads=$downloads release=$release last_commit=$last_commit"
           cat out/downloads.json out/stars.json out/release.json out/lastcommit.json
 
       - name: Publish to badges branch
