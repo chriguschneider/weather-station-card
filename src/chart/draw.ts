@@ -17,7 +17,6 @@ export interface BuildChartOpts {
     borderColor: string | ReadonlyArray<string>;
     backgroundColor: string | ReadonlyArray<string>;
     barPercentage?: number;
-    segment?: unknown;
     hidden?: boolean;
   }>;
   plugins: ReadonlyArray<ChartPlugin>;
@@ -84,7 +83,6 @@ export interface UplotChart {
     tempLow: ReadonlyArray<number | null | undefined>;
   };
   update(): void;
-  reset(): void;
   destroy(): void;
   resize(width?: number, height?: number): void;
   draw(): void;
@@ -672,9 +670,6 @@ export function buildChart(target: HTMLElement, opts: BuildChartOpts): UplotChar
       }));
       const aligned = toAlignedData(dataBag.labels, splitDatasets, stationCount, hasBothBlocks, opts.isHourly);
       uplot.setData(aligned);
-    },
-    reset(): void {
-      // No-op: uPlot has no animation to reset; main.ts still calls it.
     },
     destroy(): void {
       try { uplot.destroy(); } catch { /* already gone */ }

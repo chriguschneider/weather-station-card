@@ -88,11 +88,6 @@ export class ChartBuildError extends Error {
   }
 }
 
-interface SegmentCtx {
-  p0DataIndex: number;
-  p1DataIndex: number;
-}
-
 /** True when the station/forecast boundary represents the SAME calendar
  *  day, i.e. station's last entry and forecast's first entry are both
  *  "today". Used to gate the daily-doubled-today framing — see the
@@ -127,20 +122,6 @@ function pickPerBarColor(
   return normal;
 }
 
-interface SegmentHelpersArgs {
-  stationCountForGap: number;
-  forecastCountForGap: number;
-  hasBothBlocks: boolean;
-  isHourlyish: boolean;
-}
-
-interface SegmentHelpers {
-  tempSegmentOpts: {
-    borderColor: (segCtx: SegmentCtx) => string | undefined;
-    borderDash: (segCtx: SegmentCtx) => number[] | undefined;
-  };
-}
-
 /** Mode/unit-static floor for the precipitation y-axis ceiling: hourly
  *  and today 4 mm (metric) / 1 in, daily 20 mm / 1 in. buildChart derives
  *  the actual ceiling from it and the data. */
@@ -160,54 +141,10 @@ export function computePrecipMax(
   return precipCeiling(precipAxisFloor(isHourlyish, lengthUnit), precip);
 }
 
-/** uPlot has no equivalent of Chart.js's global defaults — series
- *  colours and per-axis styling are passed directly into each
- *  instance. Theme tokens are still read at draw time (textColor /
- *  dividerColor) and forwarded into draw.ts via the opts bag. */
-function applyChartDefaults(_textColor: string, _dividerColor: string): void {
-  // intentional no-op (kept as a named function so the call-site
-  // ordering documentation stays readable)
-}
-
-/** Boundary handling between station and forecast blocks differs by mode:
- *
- *  - Daily combination: "today" appears as a doubled column (station-today
- *    on the left, forecast-today on the right). The segment between those
- *    two columns is suppressed (transparent) — measured vs. predicted of
- *    the SAME day shouldn't visually flow into each other.
- *
- *  - Hourly combination: there's no doubled hour. Station and forecast
- *    meet at "now" with one bar each side. The boundary segment is drawn
- *    DASHED — same visual cue we use for the rest of the forecast block,
- *    but applied to the transition itself, so the user reads the line as
- *    "measured up to now → predicted from now on" without a confusing
- *    transparent gap. */
-function buildSegmentHelpers(args: SegmentHelpersArgs): SegmentHelpers {
-  const { stationCountForGap, forecastCountForGap, hasBothBlocks, isHourlyish } = args;
-  const gapStartIdx = stationCountForGap - 1;
-  const isHourlyCombo = hasBothBlocks && isHourlyish;
-  const isBoundarySegment = (segCtx: SegmentCtx): boolean =>
-    segCtx.p0DataIndex === gapStartIdx && segCtx.p1DataIndex === gapStartIdx + 1;
-  const segmentSkip = (segCtx: SegmentCtx): string | undefined => {
-    if (!hasBothBlocks) return undefined;
-    if (!isHourlyCombo && isBoundarySegment(segCtx)) return 'transparent';
-    return undefined;
-  };
-  const segmentDash = (segCtx: SegmentCtx): number[] | undefined => {
-    if (segCtx.p0DataIndex >= stationCountForGap && forecastCountForGap > 0) {
-      return [6, 4];
-    }
-    if (isHourlyCombo && isBoundarySegment(segCtx)) return [6, 4];
-    return undefined;
-  };
-  return { tempSegmentOpts: { borderColor: segmentSkip, borderDash: segmentDash } };
-}
-
 interface BuildDatasetsArgs {
   ll: ChartInputs['ll'];
   config: any;
   data: any;
-  tempSegmentOpts: { borderColor: unknown; borderDash: unknown };
   temp1Color: string;
   temp2Color: string;
   precipPerBarColor: string[];
@@ -221,7 +158,7 @@ interface BuildDatasetsArgs {
  *  value labels are drawn by createTempLabelsPlugin, not here. */
 function buildDatasets(args: BuildDatasetsArgs): Array<Record<string, unknown>> {
   const {
-    ll, config, data, tempSegmentOpts,
+    ll, config, data,
     temp1Color, temp2Color, precipPerBarColor,
     showSunshine, sunshineFractionData, sunshinePerBarColor,
   } = args;
@@ -241,7 +178,6 @@ function buildDatasets(args: BuildDatasetsArgs): Array<Record<string, unknown>> 
       yAxisID: 'TempAxis',
       borderColor: temp1Color,
       backgroundColor: temp1Color,
-      segment: tempSegmentOpts,
     },
     {
       label: ll('tempLo'),
@@ -250,7 +186,6 @@ function buildDatasets(args: BuildDatasetsArgs): Array<Record<string, unknown>> 
       yAxisID: 'TempAxis',
       borderColor: temp2Color,
       backgroundColor: temp2Color,
-      segment: tempSegmentOpts,
       hidden: !data.tempLowAvailable,
     },
     {
@@ -421,14 +356,9 @@ function composeChart(inputs: ChartInputs, phase: { current: 'compute' | 'init' 
   const isHourlyish = config.forecast.type === 'hourly' || config.forecast.type === 'today';
   const precipFloor = precipAxisFloor(isHourlyish, lengthUnit);
 
-  applyChartDefaults(textColor, dividerColor);
-
   const stationCountForGap = inputs.stationCount;
   const forecastCountForGap = inputs.forecastCount;
   const hasBothBlocks = stationCountForGap > 0 && forecastCountForGap > 0;
-  const { tempSegmentOpts } = buildSegmentHelpers({
-    stationCountForGap, forecastCountForGap, hasBothBlocks, isHourlyish,
-  });
 
   const temp1Color = resolveCssVar(config.forecast.temperature1_color, 'rgba(255, 152, 0, 1.0)', themeHost);
   // Only the DEFAULT low-temp colour is theme-aware; a user-set colour
@@ -469,7 +399,7 @@ function composeChart(inputs: ChartInputs, phase: { current: 'compute' | 'init' 
     : config.forecast.chart_text_color;
 
   const datasets = buildDatasets({
-    ll, config, data, tempSegmentOpts,
+    ll, config, data,
     temp1Color, temp2Color,
     precipPerBarColor,
     showSunshine, sunshineFractionData, sunshinePerBarColor,
