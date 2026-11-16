@@ -20,13 +20,10 @@ import {
 import { resolveLocation } from './location.js';
 import { sunshineFromLuxHistory, type LuxSample } from './sunshine-source.js';
 import { stationUnits, weatherEntityUnits, type UnitSystemLike, type WeatherUnits } from './sensor-readings.js';
+import { depthUnitId } from './display-units.js';
 import { deltaToCanonical, toCanonical, type Quantity } from './utils/units.js';
 import { parseNumericSafe } from './utils/numeric.js';
-import {
-  luxScaleFor,
-  toCelsius,
-  toMillimeters,
-} from './utils/unit-converters.js';
+import { luxScaleFor } from './utils/unit-converters.js';
 import { dedupeRequest } from './utils/shared-requests.js';
 import { safeLocalStorage } from './utils/safe-storage.js';
 import { HOUR_MS, serverCalendar, type Calendar } from './utils/time-zone.js';
@@ -779,9 +776,7 @@ export class MeasuredDataSource {
     const dayMs = (date: Date): number => this.calendar.startOfDay(date).getTime();
 
     const units = this._stationUnits(sensors);
-    const tempUnit = this._sensorUnit(sensors.temperature);
-    const dewUnit = this._sensorUnit(sensors.dew_point) || tempUnit;
-    const precipUnit = this._sensorUnit(sensors.precipitation);
+    const precipUnit = depthUnitId(units.precipitation);
     const out: ForecastEntry[] = [];
     for (let i = 1; i <= days; i++) {
       const dayStart = this.calendar.addDays(start, i);
@@ -813,16 +808,24 @@ export class MeasuredDataSource {
           tempMin = tempMin == null ? live : Math.min(tempMin, live);
         }
       }
+      // Statistics and the live state are in the sensor's unit; the fold
+      // above works in it, everything below is canonical (ADR-0035).
+      const temperature = toCanonical('temperature', tempMax, units.temperature);
+      const templow = toCanonical('temperature', tempMin, units.temperature);
       const humidityMean = at(sensors.humidity, 'mean');
-      const pressureMean = at(sensors.pressure, 'mean');
+      const pressureMean = toCanonical('pressure', at(sensors.pressure, 'mean'), units.pressure);
       const windMean = toCanonical('speed', at(sensors.wind_speed, 'mean'), units.wind_speed);
       const gustMax = toCanonical('speed', at(sensors.gust_speed, 'max'), units.gust_speed);
       const luxMaxRaw = at(sensors.illuminance, 'max');
       const luxMax = luxMaxRaw != null ? luxMaxRaw * this._luxScale(sensors.illuminance) : luxMaxRaw;
-      const dewPointMean = at(sensors.dew_point, 'mean');
+      const dewPointMean = toCanonical('temperature', at(sensors.dew_point, 'mean'), units.dew_point);
 
       const precipitation = sensors.precipitation
-        ? bucketPrecipitation(byDate[sensors.precipitation], dayStartMs, prevKey)
+        ? toCanonical(
+          'precipitation',
+          bucketPrecipitation(byDate[sensors.precipitation], dayStartMs, prevKey),
+          precipUnit,
+        )
         : null;
 
       // Sunshine from a recorder sensor, in seconds or hours (attachSunshine
@@ -872,8 +875,8 @@ export class MeasuredDataSource {
 
       out.push({
         datetime: dayStart.toISOString(),
-        temperature: tempMax,
-        templow: tempMin,
+        temperature,
+        templow,
         precipitation,
         wind_speed: windMean,
         wind_gust_speed: gustMax,
@@ -883,14 +886,14 @@ export class MeasuredDataSource {
         uv_index: at(sensors.uv_index, 'max'),
         sunshine: sunshineRaw,
         condition: this._mapCondition({
-          temp_max: toCelsius(tempMax, tempUnit),
-          temp_min: toCelsius(tempMin, tempUnit),
+          temp_max: temperature,
+          temp_min: templow,
           humidity: humidityMean,
           lux_max: luxMax,
-          precip_total: toMillimeters(precipitation, precipUnit),
+          precip_total: precipitation,
           wind_mean: windMean,
           gust_max: gustMax,
-          dew_point_mean: toCelsius(dewPointMean, dewUnit),
+          dew_point_mean: dewPointMean,
         }, this.calendar.dayOfYear(dayStart)),
       });
     }
@@ -914,14 +917,6 @@ export class MeasuredDataSource {
       weatherEntity: this.config.weather_entity,
       unitSystem: this.hass?.config?.unit_system,
     });
-  }
-
-  /** Native unit_of_measurement of a sensor entity. classifyDay is
-   *  unit-blind (°C / mm / m/s), so inputs are normalised before it. */
-  private _sensorUnit(eid?: string): string | undefined {
-    return eid
-      ? (this.hass?.states?.[eid]?.attributes?.unit_of_measurement as string | undefined)
-      : undefined;
   }
 
   /** Entity's current numeric state, or null when missing / non-finite.
@@ -968,9 +963,7 @@ export class MeasuredDataSource {
     const hourMs = (date: Date): number => this.calendar.startOfHour(date).getTime();
 
     const units = this._stationUnits(sensors);
-    const tempUnit = this._sensorUnit(sensors.temperature);
-    const dewUnit = this._sensorUnit(sensors.dew_point) || tempUnit;
-    const precipUnit = this._sensorUnit(sensors.precipitation);
+    const precipUnit = depthUnitId(units.precipitation);
     const out: ForecastEntry[] = [];
     for (let i = 1; i <= hours; i++) {
       const hourStart = new Date(start.getTime() + i * HOUR_MS);
@@ -1000,12 +993,12 @@ export class MeasuredDataSource {
       let tempMax = at(sensors.temperature, 'max');
       let tempMin = at(sensors.temperature, 'min');
       const humidityMean = atOrLive(sensors.humidity, 'mean');
-      const pressureMean = atOrLive(sensors.pressure, 'mean');
+      const pressureMean = toCanonical('pressure', atOrLive(sensors.pressure, 'mean'), units.pressure);
       const windMean = toCanonical('speed', atOrLive(sensors.wind_speed, 'mean'), units.wind_speed);
       const gustMax = toCanonical('speed', atOrLive(sensors.gust_speed, 'max'), units.gust_speed);
       const luxMaxRaw = atOrLive(sensors.illuminance, 'max');
       const luxMax = luxMaxRaw != null ? luxMaxRaw * this._luxScale(sensors.illuminance) : luxMaxRaw;
-      const dewPointMean = atOrLive(sensors.dew_point, 'mean');
+      const dewPointMean = toCanonical('temperature', atOrLive(sensors.dew_point, 'mean'), units.dew_point);
       // A last hour with a single live datapoint: max/min collapse to it so
       // the classifier avoids its no-data fallback.
       if (isLastHour) {
@@ -1027,11 +1020,13 @@ export class MeasuredDataSource {
           precipitation = delta >= 0 ? delta : live;
         }
       }
+      // The fallbacks above work in the sensor's unit (ADR-0035).
+      const precipMm = toCanonical('precipitation', precipitation, precipUnit);
 
       out.push({
         datetime: hourStart.toISOString(),
-        temperature: tempMean,
-        precipitation,
+        temperature: toCanonical('temperature', tempMean, units.temperature),
+        precipitation: precipMm,
         wind_speed: windMean,
         wind_gust_speed: gustMax,
         wind_bearing: atOrLive(sensors.wind_direction, 'mean'),
@@ -1039,14 +1034,14 @@ export class MeasuredDataSource {
         humidity: humidityMean,
         uv_index: atOrLive(sensors.uv_index, 'max'),
         condition: this._mapHourCondition({
-          temp_max: toCelsius(tempMax, tempUnit),
-          temp_min: toCelsius(tempMin, tempUnit),
+          temp_max: toCanonical('temperature', tempMax, units.temperature),
+          temp_min: toCanonical('temperature', tempMin, units.temperature),
           humidity: humidityMean,
           lux_max: luxMax,
-          precip_total: toMillimeters(precipitation, precipUnit),
+          precip_total: precipMm,
           wind_mean: windMean,
           gust_max: gustMax,
-          dew_point_mean: toCelsius(dewPointMean, dewUnit),
+          dew_point_mean: dewPointMean,
           hourStart,
           clearsky_lux: luxFor(hourStart),
         }),
@@ -1191,7 +1186,8 @@ export class ForecastDataSource {
   }
 
   /** Daily entries are calendar days (#355), re-anchored at the card's
-   *  midnight; hourly entries stay instants. Wind and gust enter as m/s
+   *  midnight; hourly entries stay instants. Temperatures enter as °C,
+   *  precipitation as mm, wind and gust as m/s, pressure as hPa
    *  (ADR-0035). Always a copy. */
   private _normalizeEntry(
     e: ForecastEntry,
@@ -1208,11 +1204,19 @@ export class ForecastDataSource {
       if (fixed && fixed !== raw) out.datetime = fixed;
     }
     // An absent key stays absent and null stays null, so the chart keeps
-    // telling "no wind data" from "no such field".
-    for (const key of ['wind_speed', 'wind_gust_speed'] as const) {
+    // telling "no data" from "no such field".
+    const fields = [
+      ['temperature', 'temperature', units.temperature],
+      ['templow', 'temperature', units.temperature],
+      ['precipitation', 'precipitation', units.precipitation],
+      ['pressure', 'pressure', units.pressure],
+      ['wind_speed', 'speed', units.wind_speed],
+      ['wind_gust_speed', 'speed', units.wind_speed],
+    ] as const;
+    for (const [key, quantity, unit] of fields) {
       const value: unknown = e?.[key];
       if (value === undefined || value === null) continue;
-      out[key] = canonicalField('speed', value, units.wind_speed);
+      out[key] = canonicalField(quantity, value, unit);
     }
     return out;
   }

@@ -269,6 +269,9 @@ describe('MeasuredDataSource._buildForecast', () => {
       'sensor.rain': [{ start: dayMs(1).date.toISOString(), change: 5, max: 30 }],
     };
     const [entry] = ds._buildForecast(stats, sensors, startDay, 1);
+    expect(entry.temperature).toBeCloseTo(-1.1111, 4);
+    expect(entry.templow).toBeCloseTo(-3.8889, 4);
+    expect(entry.precipitation).toBe(5);
     expect(entry.condition).toBe('snowy');
   });
 
@@ -300,7 +303,85 @@ describe('MeasuredDataSource._buildForecast', () => {
       'sensor.rain': [{ start: dayMs(1).date.toISOString(), change: 0.5, max: 5 }],
     };
     const [entry] = ds._buildForecast(stats, sensors, startDay, 1);
+    expect(entry.precipitation).toBeCloseTo(12.7, 9);
     expect(entry.condition).toBe('pouring');
+  });
+
+  // ── ADR-0035: every entry value is canonical ─────────────────────
+  const day1 = () => dayMs(1).date.toISOString();
+  const withUnits = (units, extra = {}) => ({
+    config: { latitude: 47.4, ...(extra.config ?? {}) },
+    callWS: vi.fn(),
+    states: Object.fromEntries(Object.entries(units).map(([eid, u]) => [
+      eid,
+      { ...(u.state !== undefined ? { state: u.state } : {}), attributes: u.unit ? { unit_of_measurement: u.unit } : {} },
+    ])),
+  });
+  const buildOne = (hass, stats, config = {}) =>
+    new MeasuredDataSource(hass, { sensors, days: 1, ...config }, cal)._buildForecast(stats, sensors, startDay, 1)[0];
+
+  it.each([
+    ['in/h', 0.5, 12.7],
+    ['cm', 1.2, 12],
+  ])('reads a rain sensor in %s as its depth unit', (unit, change, mm) => {
+    const entry = buildOne(withUnits({ 'sensor.rain': { unit } }), {
+      'sensor.rain': [{ start: day1(), change }],
+    });
+    expect(entry.precipitation).toBeCloseTo(mm, 9);
+  });
+
+  it('converts Kelvin temperatures and inHg / kPa pressure', () => {
+    const k = buildOne(withUnits({ 'sensor.temp': { unit: 'K' }, 'sensor.pres': { unit: 'inHg' } }), {
+      'sensor.temp': [{ start: day1(), max: 293.15, min: 283.15 }],
+      'sensor.pres': [{ start: day1(), mean: 29.92 }],
+    });
+    expect(k.temperature).toBeCloseTo(20, 9);
+    expect(k.pressure).toBeCloseTo(1013.207, 3);
+    const kpa = buildOne(withUnits({ 'sensor.pres': { unit: 'kPa' } }), {
+      'sensor.pres': [{ start: day1(), mean: 101.3 }],
+    });
+    expect(kpa.pressure).toBeCloseTo(1013, 9);
+  });
+
+  it('reads a temperature sensor without a unit in the unit system, else the weather entity unit', () => {
+    const stats = { 'sensor.temp': [{ start: day1(), max: 68, min: 50 }] };
+    const fSystem = { config: { unit_system: { temperature: '°F' } } };
+    expect(buildOne(withUnits({ 'sensor.temp': {} }, fSystem), stats).temperature).toBeCloseTo(20, 9);
+    const hass = withUnits({ 'sensor.temp': {} }, fSystem);
+    hass.states['weather.home'] = { state: 'sunny', attributes: { temperature_unit: '°C' } };
+    expect(buildOne(hass, stats, { weather_entity: 'weather.home' }).temperature).toBe(68);
+  });
+
+  it('reads a dew sensor without a unit in the temperature sensor unit', () => {
+    const stats = {
+      'sensor.temp': [{ start: day1(), max: 59, min: 50 }],
+      'sensor.dew': [{ start: day1(), mean: 32 }],
+      'sensor.hum': [{ start: day1(), mean: 99 }],
+    };
+    const noDewUnit = buildOne(withUnits({ 'sensor.temp': { unit: '°F' }, 'sensor.dew': {} }), stats);
+    expect(noDewUnit.condition).toBe('cloudy');
+    // Guards the assumed unit: the same numbers read as °C are fog.
+    const dewC = buildOne(withUnits({ 'sensor.temp': { unit: '°F' }, 'sensor.dew': { unit: '°C' } }), stats);
+    expect(dewC.condition).toBe('fog');
+  });
+
+  it('gives a sensor in an unknown unit no value', () => {
+    const entry = buildOne(withUnits({ 'sensor.temp': { unit: 'foo' }, 'sensor.rain': { unit: '%' } }), {
+      'sensor.temp': [{ start: day1(), max: 30, min: 20 }],
+      'sensor.rain': [{ start: day1(), change: 3 }],
+    });
+    expect(entry.temperature).toBeNull();
+    expect(entry.templow).toBeNull();
+    expect(entry.precipitation).toBeNull();
+    expect(typeof entry.condition).toBe('string');
+  });
+
+  it("folds today's live reading in the sensor unit before converting", () => {
+    const entry = buildOne(withUnits({ 'sensor.temp': { unit: '°F', state: '72' } }), {
+      'sensor.temp': [{ start: day1(), max: 68, min: 50 }],
+    });
+    expect(entry.temperature).toBeCloseTo(22.2222, 4);
+    expect(entry.templow).toBeCloseTo(10, 9);
   });
 
   it("emits the recorder daily-max for today's sunshine bucket (#37 reverts the #16 substitution)", () => {
@@ -949,6 +1030,29 @@ describe('MeasuredDataSource hourly mode', () => {
     expect(entry.wind_speed).toBe(5);
   });
 
+  it('emits hourly temperature in °C and precipitation in mm (ADR-0035)', () => {
+    const hass = {
+      config: { latitude: 47.4, longitude: 8.5 },
+      states: {
+        'sensor.temp': { state: '50', attributes: { unit_of_measurement: '°F' } },
+        'sensor.rain': { attributes: { unit_of_measurement: 'in' } },
+      },
+      callWS: vi.fn(),
+    };
+    const ds = new MeasuredDataSource(hass, {
+      sensors, days: 1, forecast: { type: 'hourly' },
+    }, cal);
+    const stats = {
+      'sensor.temp': [{ start: hourMs(1).date.toISOString(), max: 60, min: 58, mean: 59 }],
+      'sensor.rain': [{ start: hourMs(1).date.toISOString(), change: 0.2 }],
+    };
+    const out = ds._buildHourlyForecast(stats, sensors, startHour, 2);
+    expect(out[0].temperature).toBeCloseTo(15, 9);
+    expect(out[0].precipitation).toBeCloseTo(5.08, 9);
+    // The last hour without a bucket reads the live state in its unit.
+    expect(out[1].temperature).toBeCloseTo(10, 9);
+  });
+
   it('falls back to live state for precipitation in the last hour', () => {
     const hass = {
       config: { latitude: 47.4, longitude: 8.5 },
@@ -1314,6 +1418,46 @@ describe('ForecastDataSource', () => {
     const entry = await windOf({ wind_speed: null });
     expect(entry.wind_speed).toBeNull();
     expect('wind_gust_speed' in entry).toBe(false);
+  });
+
+  // Temperature, precipitation and pressure follow the wind rule (ADR-0035).
+  const fieldsEntry = { temperature: 68, templow: 50, precipitation: 0.5, pressure: 29.92, humidity: 60 };
+
+  it('converts temperature, precipitation and pressure from the entity units', async () => {
+    Object.assign(hass.states['weather.home'].attributes, {
+      temperature_unit: '°F', precipitation_unit: 'in', pressure_unit: 'inHg',
+    });
+    const entry = await windOf(fieldsEntry);
+    expect(entry.temperature).toBeCloseTo(20, 9);
+    expect(entry.templow).toBeCloseTo(10, 9);
+    expect(entry.precipitation).toBeCloseTo(12.7, 9);
+    expect(entry.pressure).toBeCloseTo(1013.207, 3);
+    expect(entry.humidity).toBe(60);
+  });
+
+  it('reads temperature, precipitation and pressure in the unit system without entity units', async () => {
+    hass.config = { unit_system: { temperature: '°F', accumulated_precipitation: 'in', pressure: 'psi' } };
+    const entry = await windOf({ temperature: 68, precipitation: 0.5, pressure: 14.7 });
+    expect(entry.temperature).toBeCloseTo(20, 9);
+    expect(entry.precipitation).toBeCloseTo(12.7, 9);
+    expect(entry.pressure).toBeCloseTo(1013.529, 3);
+  });
+
+  it('keeps temperature, precipitation and pressure as delivered without any unit', async () => {
+    const entry = await windOf(fieldsEntry);
+    expect(entry).toEqual(expect.objectContaining(fieldsEntry));
+  });
+
+  it('gives a forecast temperature in an unknown unit no value', async () => {
+    hass.states['weather.home'].attributes.temperature_unit = 'foo';
+    const entry = await windOf({ temperature: 20 });
+    expect(entry.temperature).toBeNull();
+  });
+
+  it('keeps a null temperature null and parses a numeric string', async () => {
+    expect((await windOf({ temperature: null })).temperature).toBeNull();
+    conn.subscribeMessage.mockClear();
+    expect((await windOf({ temperature: '21.4' })).temperature).toBe(21.4);
   });
 
   it('unsubscribe disposes the underlying subscription', async () => {

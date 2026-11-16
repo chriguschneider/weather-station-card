@@ -15,6 +15,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Rain rate: sensors in mm/d, in/d or cm are converted, and the rain symbol follows the measured rate in every unit. A rain sensor with a unit the card does not know shows its own value instead of a made-up mm/h (#478).
 - Zero-degree level from a sensor in feet: the snow-line estimate in the tooltip is now in metres as labelled (it showed the feet figure), and the 48 h arrow treats a change within ±100 m as steady, not ±100 ft (#478).
 - Forecast wind is converted from every unit Home Assistant offers, knots included. In the today view the forecast wind was read in your station's unit and could be off by a factor of 3.6; a gust sensor in another unit than the wind sensor no longer distorts the weather symbol of past days (#478).
+- Past days and hours read every unit Home Assistant offers for temperature, rain and pressure. Before, only °F and inches were converted for the weather symbol: a station in Kelvin or with rain in cm got the wrong symbol. A sensor with a unit the card does not know leaves a gap instead of a number in the wrong unit; a sensor without any unit is read in Home Assistant's unit for that value (#478).
 
 ### Under the hood
 
