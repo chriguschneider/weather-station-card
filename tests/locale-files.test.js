@@ -38,6 +38,31 @@ describe('pressure tooltip template', () => {
   });
 });
 
+// ADR-0035, point 6: a unit reaches a text as {unit} or from the `units`
+// table, so a string never names one itself. `in` is not on the list: it
+// is a word in English, German, Italian, Dutch and Swedish.
+const UNIT_IN_TEXT = /(?<!\p{L})(?:°C|°F|hPa|mbar|kPa|inHg|mmHg|m\/s|km\/h|mph|kn|Bft|mm|cm|mm\/h|in\/h|lx|W\/m²)(?!\p{L})/u;
+// The hint quotes the chart's label ("mm %") as an example.
+const UNIT_EXEMPT_PATHS = new Set(['editor.show_chart_precip_probability_hint']);
+// "0 °C" is the name of the zero-degree level, not a reading.
+const ZERO_DEGREE_NAME = /(?<![\d.,])0 °C/g;
+
+describe('no hard-coded unit outside the units table', () => {
+  it.each(['en', ...files])('%s', async (lang) => {
+    await ensureLocaleLoaded(lang);
+    const hits = [];
+    const walk = (v, path) => {
+      if (typeof v === 'string') {
+        if (!UNIT_EXEMPT_PATHS.has(path) && UNIT_IN_TEXT.test(v.replace(ZERO_DEGREE_NAME, ''))) hits.push(`${path}: ${v}`);
+      } else if (v && typeof v === 'object') {
+        for (const [k, c] of Object.entries(v)) walk(c, path ? `${path}.${k}` : k);
+      }
+    };
+    for (const [k, v] of Object.entries(locale[lang])) if (k !== 'units') walk(v, k);
+    expect(hits).toEqual([]);
+  });
+});
+
 describe('card rendered in French', () => {
   it('the French table has no empty strings', async () => {
     await ensureLocaleLoaded('fr');
