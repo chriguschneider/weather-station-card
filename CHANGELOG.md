@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Hide the jump-to-now button.** A new switch in the editor under Chart → Chart rows, or `forecast.show_jump_to_now: false` in YAML. The button stays on by default (#540).
+
 ### Fixed
 
 - In the today view the jump-to-now button was always visible and sat over the rain values. It now appears only after you paged away from today, as in the other views (#540).

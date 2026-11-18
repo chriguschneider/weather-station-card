@@ -226,6 +226,7 @@ const cs: LocaleEntry = {
     'show_chart_precip_probability': 'Pravděpodobnost deště',
     'show_chart_precip_probability_hint': 'Zobrazí pravděpodobnost deště vedle množství v popisku srážek („4.2 / 85“ nad „mm %“). Bere se z entity počasí, pokud ji její předpověď poskytuje, jinak z Open-Meteo (poloha z Home Assistant). Suché dny zobrazují jen pravděpodobnost od 30 %.',
     'show_chart_mode_toggle': 'Tlačítko přepínání zobrazení',
+    'show_chart_jump_to_now': 'Tlačítko návratu na teď',
     'sunshine_availability': 'Dostupná data o slunečním svitu: {past} dní zpět, {future} dní předpovědi (Open-Meteo).',
     'sunshine_availability_pending': 'Sluneční svit: data se ještě načítají — uložte a znovu otevřete editor.',
     'sunshine_availability_warning': 'Nastavený počet dní předpovědi ({req}) překračuje dostupnost Open-Meteo — v posledních {gap} sloupcích budou pruhy slunečního svitu prázdné.',

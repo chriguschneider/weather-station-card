@@ -226,6 +226,7 @@ const pl: LocaleEntry = {
     'show_chart_precip_probability': 'Prawdopodobieństwo deszczu',
     'show_chart_precip_probability_hint': 'Pokazuje prawdopodobieństwo deszczu obok ilości w etykiecie opadów („4.2 / 85” nad „mm %”). Pobierane z encji pogodowej, gdy jej prognoza je podaje, w przeciwnym razie z Open-Meteo (lokalizacja z Home Assistant). W suche dni pokazywane jest samo prawdopodobieństwo od 30 %.',
     'show_chart_mode_toggle': 'Przycisk przełączania widoku',
+    'show_chart_jump_to_now': 'Przycisk powrotu do teraz',
     'sunshine_availability': 'Dostępne dane o nasłonecznieniu: {past} dni wstecz, {future} dni prognozy (Open-Meteo).',
     'sunshine_availability_pending': 'Nasłonecznienie: dane wciąż się ładują — zapisz i otwórz edytor ponownie.',
     'sunshine_availability_warning': 'Skonfigurowana liczba dni prognozy ({req}) przekracza dostępność Open-Meteo — w ostatnich {gap} kolumnach paski nasłonecznienia będą puste.',

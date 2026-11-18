@@ -7,7 +7,7 @@ import type { EditorLike, EditorContext, TogglePath } from './types.js';
 import { renderEditorPanel } from './expansion-panel.js';
 import { renderTogglePills } from './toggle-pills.js';
 
-// The seven auxiliary chart rows, as pill entries. `def` mirrors
+// The eight auxiliary chart rows, as pill entries. `def` mirrors
 // DEFAULTS_FORECAST (sunshine and the chance of rain are opt-in).
 export const CHART_ROW_PATHS: ReadonlyArray<TogglePath & { labelKey: string }> = [
   { path: 'forecast.condition_icons',          def: true,  labelKey: 'show_chart_icons' },
@@ -17,6 +17,7 @@ export const CHART_ROW_PATHS: ReadonlyArray<TogglePath & { labelKey: string }> =
   { path: 'forecast.show_sunshine',            def: false, labelKey: 'show_chart_sunshine' },
   { path: 'forecast.show_precip_probability',  def: false, labelKey: 'show_chart_precip_probability' },
   { path: 'forecast.show_mode_toggle',         def: true,  labelKey: 'show_chart_mode_toggle' },
+  { path: 'forecast.show_jump_to_now',        def: true,  labelKey: 'show_chart_jump_to_now' },
 ];
 
 const leafOf = (path: string): string => path.split('.').pop() as string;

@@ -289,6 +289,17 @@ describe('forecast block', () => {
     expect(el.querySelector('.src-btn')).toBeNull();
   });
 
+  it('show_jump_to_now: shown unless false; chevrons stay', () => {
+    const mk = (forecast) => mount(renderForecastBlock(blockCtx({
+      config: { forecast: { type: 'hourly', ...forecast } }, scrolling: true,
+    })));
+    expect(mk({}).querySelector('.jump-to-now')).not.toBeNull();
+    expect(mk({ show_jump_to_now: true }).querySelector('.jump-to-now')).not.toBeNull();
+    const off = mk({ show_jump_to_now: false });
+    expect(off.querySelector('.jump-to-now')).toBeNull();
+    expect(off.querySelectorAll('.scroll-indicator')).toHaveLength(2);
+  });
+
   it('scrolling hourly: deferred rows until the generation is ready, timeline shown', () => {
     const cfg = { show_main: false, forecast: { type: 'hourly', chart_height: 180, disable_animation: true } };
     const deferred = mount(renderForecastBlock(blockCtx({

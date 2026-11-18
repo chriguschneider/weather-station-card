@@ -226,6 +226,7 @@ const ro: LocaleEntry = {
     'show_chart_precip_probability': 'Probabilitate de ploaie',
     'show_chart_precip_probability_hint': 'Afișează probabilitatea de ploaie lângă cantitate în eticheta de precipitații („4.2 / 85” peste „mm %”). Luată din entitatea meteo când prognoza o oferă, altfel de la Open-Meteo (locația configurată în Home Assistant). Zilele uscate arată doar probabilitatea de la 30 % în sus.',
     'show_chart_mode_toggle': 'Buton de comutare a vizualizării',
+    'show_chart_jump_to_now': 'Buton de revenire la acum',
     'sunshine_availability': 'Date de soare disponibile: {past} zile trecute, {future} zile de prognoză (Open-Meteo).',
     'sunshine_availability_pending': 'Soare: datele se încarcă încă — salvează și redeschide editorul.',
     'sunshine_availability_warning': 'Zilele de prognoză configurate ({req}) depășesc disponibilitatea Open-Meteo — ultimele {gap} coloane vor afișa bare de soare goale.',

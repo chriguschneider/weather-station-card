@@ -226,6 +226,7 @@ const fi: LocaleEntry = {
     'show_chart_precip_probability': 'Sateen todennäköisyys',
     'show_chart_precip_probability_hint': 'Näyttää sateen todennäköisyyden määrän vieressä sademerkinnässä ("4.2 / 85" ja alla "mm %"). Otetaan sääentiteetistä, jos sen ennuste sen antaa, muuten Open-Meteosta (Home Assistantin sijainti). Kuivina päivinä näytetään vain todennäköisyys 30 %:sta alkaen.',
     'show_chart_mode_toggle': 'Näkymän vaihtopainike',
+    'show_chart_jump_to_now': 'Palaa nyt -painike',
     'sunshine_availability': 'Auringonpaistetietoja saatavilla: {past} päivää taaksepäin, {future} ennustepäivää (Open-Meteo).',
     'sunshine_availability_pending': 'Auringonpaiste: tietoja ladataan vielä — tallenna ja avaa editori uudelleen.',
     'sunshine_availability_warning': 'Määritetyt ennustepäivät ({req}) ylittävät Open-Meteon saatavuuden — viimeiset {gap} saraketta näyttävät tyhjät auringonpaistepalkit.',

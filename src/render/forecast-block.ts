@@ -20,6 +20,7 @@ export interface ForecastBlockConfig {
   forecast: {
     type?: string;
     show_mode_toggle?: boolean;
+    show_jump_to_now?: boolean;
     disable_animation?: boolean;
     condition_icons?: boolean;
     show_wind_forecast?: boolean;
@@ -208,7 +209,7 @@ export function renderForecastConditionIcons(
   `;
 }
 
-function renderScrollControls(): TemplateResult {
+function renderScrollControls(showJumpToNow: boolean): TemplateResult {
   return html`
               <button type="button" class="scroll-indicator scroll-indicator-left" aria-label="Scroll left" hidden>
                 <ha-icon icon="mdi:chevron-left" aria-hidden="true"></ha-icon>
@@ -216,9 +217,9 @@ function renderScrollControls(): TemplateResult {
               <button type="button" class="scroll-indicator scroll-indicator-right" aria-label="Scroll right" hidden>
                 <ha-icon icon="mdi:chevron-right" aria-hidden="true"></ha-icon>
               </button>
-              <button type="button" class="jump-to-now" aria-label="Jump to now" title="Jump to now" hidden>
+              ${showJumpToNow ? html`<button type="button" class="jump-to-now" aria-label="Jump to now" title="Jump to now" hidden>
                 <ha-icon icon="mdi:crosshairs-gps" aria-hidden="true"></ha-icon>
-              </button>
+              </button>` : ''}
             `;
 }
 
@@ -260,7 +261,7 @@ function renderReadyBlock(ctx: ForecastBlockCtx): TemplateResult {
             </div>
             ${renderModeToggle(config, ctx.onModeToggle)}
             ${config.show_main === false ? ctx.renderSourcesButton() : ''}
-            ${scrolling ? renderScrollControls() : ''}
+            ${scrolling ? renderScrollControls(config.forecast?.show_jump_to_now !== false) : ''}
             ${scrolling && (fcType === 'hourly' || fcType === 'today')
               ? renderScrollTimeline(ctx.forecasts, ctx.calendar, ctx.language, ctx.visibleBars)
               : ''}

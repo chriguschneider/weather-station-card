@@ -41,6 +41,7 @@ export const SECTION_KEYS: Record<SectionKey, ReadonlyArray<string>> = {
     'forecast.show_sunshine',
     'forecast.show_precip_probability',
     'forecast.show_mode_toggle',
+    'forecast.show_jump_to_now',
     'forecast.style',
     'forecast.round_temp',
     'forecast.disable_animation',

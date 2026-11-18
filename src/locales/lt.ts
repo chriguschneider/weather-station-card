@@ -226,6 +226,7 @@ const lt: LocaleEntry = {
     'show_chart_precip_probability': 'Lietaus tikimybė',
     'show_chart_precip_probability_hint': 'Rodo lietaus tikimybę šalia kiekio kritulių žymoje („4.2 / 85“ virš „mm %“). Imama iš orų objekto, jei jo prognozė ją pateikia, kitaip iš Open-Meteo (Home Assistant nustatyta vietovė). Sausomis dienomis nuo 30 % rodoma tik tikimybė.',
     'show_chart_mode_toggle': 'Rodinio perjungimo mygtukas',
+    'show_chart_jump_to_now': 'Grįžimo į dabartį mygtukas',
     'sunshine_availability': 'Saulės duomenys: {past} d. praeities, {future} d. prognozės (Open-Meteo).',
     'sunshine_availability_pending': 'Saulė: duomenys dar kraunami — išsaugokite ir atverkite redaktorių iš naujo.',
     'sunshine_availability_warning': 'Nustatytas prognozės dienų skaičius ({req}) viršija Open-Meteo galimybes — paskutiniuose stulpeliuose ({gap}) saulės juostos bus tuščios.',

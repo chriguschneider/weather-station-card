@@ -37,6 +37,8 @@ export const DEFAULTS_FORECAST = {
   disable_animation: false,
   // false locks the card to its configured forecast.type.
   show_mode_toggle: true,
+  // false leaves out the button that scrolls the chart back to now.
+  show_jump_to_now: true,
   '12hourformat': false,
 } as const;
 
