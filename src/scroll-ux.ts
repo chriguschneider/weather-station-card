@@ -24,6 +24,22 @@ function isDayPager(card: ScrollUxCard): boolean {
   return (card.config?.forecast as { type?: string } | undefined)?.type === 'today';
 }
 
+/** Where jump-to-now scrolls to, and the position at which its button
+ *  hides: the anchor page in the day pager, else the station/forecast
+ *  boundary. */
+function jumpTarget(card: ScrollUxCard, wrapper: HTMLElement): number {
+  const opts = {
+    stationCount: card._stationCount || 0,
+    forecastCount: card._forecastCount || 0,
+    contentWidth: wrapper.scrollWidth,
+    viewportWidth: wrapper.clientWidth,
+  };
+  const dayPage = isDayPager(card)
+    ? computeTodayPagerScrollLeft({ ...opts, forecasts: card.forecasts }, card.calendar)
+    : null;
+  return dayPage ?? computeInitialScrollLeft(opts);
+}
+
 /** Subset of the card the scroll-ux module reads / writes. */
 export interface ScrollUxCard {
   shadowRoot: ShadowRoot | null;
@@ -216,24 +232,7 @@ export function setupScrollUx(card: ScrollUxCard): void {
   };
   const onJumpClick = (ev: Event): void => {
     ev.stopPropagation();
-    // Day pager: the anchor page; other modes: the station/forecast
-    // boundary.
-    const dayPage = isDayPager(card)
-      ? computeTodayPagerScrollLeft({
-          forecasts: card.forecasts,
-          stationCount: card._stationCount || 0,
-          forecastCount: card._forecastCount || 0,
-          contentWidth: wrapper.scrollWidth,
-          viewportWidth: wrapper.clientWidth,
-        }, card.calendar)
-      : null;
-    const target = dayPage ?? computeInitialScrollLeft({
-      stationCount: card._stationCount || 0,
-      forecastCount: card._forecastCount || 0,
-      contentWidth: wrapper.scrollWidth,
-      viewportWidth: wrapper.clientWidth,
-    });
-    programmaticScrollTo(target);
+    programmaticScrollTo(jumpTarget(card, wrapper));
   };
   // These pointerdown handlers never preventDefault, so passive is safe.
   if (leftBtn) {
@@ -380,17 +379,11 @@ export function updateScrollIndicators(card: ScrollUxCard): void {
     if (wrapper.scrollLeft < max - slop) right.removeAttribute('hidden');
     else right.setAttribute('hidden', '');
   }
-  // Hidden within 10 % of a viewport width of `computeInitialScrollLeft`.
-  // That is the non-pager "now" position; the day pager's jump target is
-  // `computeTodayPagerScrollLeft`, so the two can differ there.
+  // Hidden within 10 % of a viewport width of the jump-to-now target, the
+  // same position a click scrolls to.
   const jump = block.querySelector<HTMLElement>('.jump-to-now');
   if (jump) {
-    const target = computeInitialScrollLeft({
-      stationCount: card._stationCount || 0,
-      forecastCount: card._forecastCount || 0,
-      contentWidth: wrapper.scrollWidth,
-      viewportWidth: wrapper.clientWidth,
-    });
+    const target = jumpTarget(card, wrapper);
     const offset = Math.abs(wrapper.scrollLeft - target);
     const threshold = Math.max(20, wrapper.clientWidth * 0.1);
     if (offset > threshold) jump.removeAttribute('hidden');

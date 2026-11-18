@@ -13,6 +13,7 @@ import {
   setupScrollUx,
   updateScrollIndicators,
 } from '../src/scroll-ux.js';
+import { calendarFor } from '../src/utils/time-zone.js';
 
 // ── Mock builders ─────────────────────────────────────────────────────
 // Each "element" mock just tracks the attributes scroll-ux pokes:
@@ -521,6 +522,7 @@ describe('setupScrollUx day pager', () => {
       forecasts: [{ datetime: new Date(2026, 7, 6, 0).toISOString() }],
     });
     card.config = { locale: 'en', forecast: { type: 'today' } };
+    card.calendar = calendarFor();
     return card;
   };
   const click = { type: 'click', stopPropagation: () => {} };
@@ -541,6 +543,31 @@ describe('setupScrollUx day pager', () => {
     jump.dispatchEvent(click);
     expect(wrapper.scrollTo).toHaveBeenCalledWith({ left: 0, behavior: 'smooth' });
     card._scrollUxTeardown();
+  });
+
+  it("jump-to-now hides on today's page and shows one viewport away", () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 7, 6, 12));
+    try {
+      // 16 blocks, today's midnight block is index 8 → page at 8/16 · 1600.
+      const forecasts = Array.from({ length: 16 }, (_, i) => ({
+        datetime: new Date(2026, 7, 5 + Math.floor(i / 8), (i % 8) * 3).toISOString(),
+      }));
+      const { block, wrapper, jump } = mockBlock({ scrollWidth: 1600, clientWidth: 200, scrollLeft: 800 });
+      const card = mockCard({ block, stationCount: 8, forecastCount: 8, forecasts });
+      card.config = { locale: 'en', forecast: { type: 'today' } };
+      card.calendar = calendarFor();
+      updateScrollIndicators(card);
+      expect(jump.hasAttribute('hidden')).toBe(true);
+      wrapper.scrollLeft = 1000;
+      updateScrollIndicators(card);
+      expect(jump.hasAttribute('hidden')).toBe(false);
+      wrapper.scrollLeft = 800;
+      updateScrollIndicators(card);
+      expect(jump.hasAttribute('hidden')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('chevrons page exactly one viewport, rounded onto a page boundary', () => {
