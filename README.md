@@ -55,15 +55,11 @@ measured next to what the forecast says, in one chart.
 - **Weather symbols from measurements.** Sunny, cloudy, rainy, fog, windy:
   derived from your sensors, not taken from a forecast
   ([how](docs/CONDITIONS.md)).
-- **Any station, any unit.** The card reads plain `sensor.*` entities
-  (Ecowitt, Tempest, Netatmo, Davis, ESPHome, …) in whatever unit Home
-  Assistant offers and shows them in yours: °C or °F, hPa or inHg, km/h,
-  mph, knots or Beaufort, mm or inches.
+- **Any station.** The card reads plain `sensor.*` entities (Ecowitt,
+  Tempest, Netatmo, Davis, ESPHome, …), in whatever unit they report.
 - **Any place.** A card can show another location, in that place's own
   time ([configuration](docs/CONFIGURATION.md#general)).
 - **No YAML needed.** A visual editor, translated into 25 languages.
-
-<img alt="The same station twice: once in hPa, km/h and mm, once in inHg, mph and inches" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/images/3.1-units.png" />
 
 ## Three views
 
