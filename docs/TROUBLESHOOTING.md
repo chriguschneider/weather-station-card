@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Common errors, what they mean, and what to do about them. The README has a [shorter quick-help section](../README.md#troubleshooting) covering the top three issues; this document is the full reference.
+Common errors, what they mean, and what to do about them. This document is the full reference.
 
 → Back to [README](../README.md)
 
@@ -22,10 +22,11 @@ a concrete cause:
 
 - **Brand-new sensor with no history.** The recorder takes one hour to
   produce the first daily statistic. Wait, then refresh.
-- **Browser cached the old bundle after an update.** Resources go through
-  HACS's `?hacstag=` query — bumping it (Settings → Dashboards → Resources,
-  edit the entry, change the suffix) forces every browser to re-fetch.
-  A "Reload frontend" via your user profile menu also works.
+- **Browser cached the old bundle after an update.** Reload the browser
+  (in the companion app: clear the frontend cache or restart the app).
+  The Marketplace and HACS add a version suffix to the resource URL on
+  every update; if a browser still serves the old bundle, change that
+  suffix by hand under Settings → Dashboards → Resources.
 - **Rain bars look tiny or clipped.** The rain axis is scaled in the
   card's precipitation unit: at least 20 mm for daily columns, 4 mm for
   hourly ones, 1 in for inches. That unit is `units.precipitation` if
