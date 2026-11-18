@@ -365,6 +365,21 @@ describe('validateConfig — HA wrapper keys and numeric strings (v2.0.1)', () =
     expect(validateConfig(cfg)).toEqual([]);
   });
 
+  it('does not flag card_mod (read by the card-mod plugin)', () => {
+    expect(
+      validateConfig({
+        ...validBaseConfig(),
+        card_mod: { style: 'ha-card { color: red; }' },
+      }),
+    ).toEqual([]);
+    expect(validateConfig({ ...validBaseConfig(), card_mod: 'x' })).toEqual([]);
+  });
+
+  it('still flags a misspelt card_mood', () => {
+    const problems = validateConfig({ ...validBaseConfig(), card_mood: {} });
+    expect(problems.join('\n')).toMatch(/Unknown option/);
+  });
+
   it('accepts numeric strings for nested number fields', () => {
     const cfg = {
       ...validBaseConfig(),

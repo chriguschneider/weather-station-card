@@ -29,6 +29,7 @@ const EXTRA_TOP_LEVEL_KEYS = [
   'grid_options',
   'view_layout',
   'visibility',
+  'card_mod', // read by the card-mod plugin from the card's config; the value is not inspected
 ] as const;
 
 // Retired options: not read, still accepted silently so existing
