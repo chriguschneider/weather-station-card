@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `icons_size` now changes the size of the forecast and main weather icons again.
+
 ## [3.1.0] — 2026-11-18
 
 ![The same station twice: once in hPa, km/h and mm, once in inHg, mph and inches](https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/images/3.1-units.png)
