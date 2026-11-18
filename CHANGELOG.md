@@ -12,7 +12,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 **Every unit, everywhere on the card.** Your station reports in °F, inHg, mph, knots or inches? The card now converts every value once and shows it in your unit: in the live panel, the tooltips, the chart and the weather symbol.
 
-*Confession from a metric country: I kept forgetting that 29.92 is a perfectly normal air pressure. Seven bug reports later, the card remembers for me.*
+*It took me seven bug reports to accept that not everyone thinks in hectopascals.*
 
 **What you need to do:** nothing. Reload the browser after updating.
 
