@@ -66,6 +66,8 @@ for "YAML-only" markers.
 
 ## General
 
+A top-level `card_mod` block is accepted without an "Unknown option" warning. Style the card with card-mod directly, not through `custom:mod-card`.
+
 The mode selector decides which blocks render. The YAML keeps two
 separate booleans (`show_station`, `show_forecast`) for backwards
 compatibility — the editor projects them onto a single radio.

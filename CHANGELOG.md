@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- A `card_mod:` block no longer shows an "Unknown option" warning. card-mod can style the card directly; wrapping it in `custom:mod-card` is not needed (#540).
+
 ## [3.1.0-beta.2] — 2026-11-16
 
 **Why this beta:** the card now handles units in one place. Every value, from your station, your weather service or Open-Meteo, is brought into one unit when it enters the card and converted into your display unit when it is shown. A forum report, the pressure change in hPa next to a value in inHg, was the seventh unit bug of this kind since May, so instead of one more patch the unit handling was rewritten. If your setup is not all-metric (°F, inHg, mph, knots, inches, kPa), this beta is for you: please check that every number carries the right unit.
