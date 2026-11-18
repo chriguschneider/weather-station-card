@@ -12,7 +12,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 **Every unit, everywhere on the card.** Your station reports in °F, inHg, mph, knots or inches? The card now converts every value once and shows it in your unit: in the live panel, the tooltips, the chart and the weather symbol.
 
-*It took me seven bug reports to accept that not everyone thinks in hectopascals.*
+*My unit handling had the survival instincts of the Mars Climate Orbiter. It took seven bug reports to notice the smoke.*
 
 **What you need to do:** nothing. Reload the browser after updating.
 
