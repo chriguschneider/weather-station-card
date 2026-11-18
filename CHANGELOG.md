@@ -10,7 +10,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ![The same station twice: once in hPa, km/h and mm, once in inHg, mph and inches](https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/images/3.1-units.png)
 
-**Every unit, everywhere on the card.** Your station reports in °F, inHg, mph, knots or inches? The card now converts every value once and shows it in your unit: in the live panel, the tooltips, the chart and the weather symbol. Before, a few spots were left behind, like a pressure change in hPa next to inHg.
+**Every unit, everywhere on the card.** Your station reports in °F, inHg, mph, knots or inches? The card now converts every value once and shows it in your unit: in the live panel, the tooltips, the chart and the weather symbol.
+
+*Confession from a metric country: I kept forgetting that 29.92 is a perfectly normal air pressure. Seven bug reports later, the card remembers for me.*
 
 **What you need to do:** nothing. Reload the browser after updating.
 
