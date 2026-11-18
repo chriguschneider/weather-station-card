@@ -6,14 +6,40 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Added
+## [3.1.0] — 2026-11-18
+
+![The same station twice: once in hPa, km/h and mm, once in inHg, mph and inches](https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/images/3.1-units.png)
+
+**Every unit, everywhere on the card.** Your station reports in °F, inHg, mph, knots or inches? The card now converts every value once and shows it in your unit: in the live panel, the tooltips, the chart and the weather symbol.
+
+*My unit handling had the survival instincts of the Mars Climate Orbiter. It took seven bug reports to notice the smoke.*
+
+**What you need to do:** nothing. Reload the browser after updating.
+
+### Details
+
+#### Added
 
 - **Hide the jump-to-now button.** A new switch in the editor under Chart → Chart rows, or `forecast.show_jump_to_now: false` in YAML. The button stays on by default (#540).
 
-### Fixed
+#### Changed
 
-- In the today view the jump-to-now button was always visible and sat over the rain values. It now appears only after you paged away from today, as in the other views (#540).
-- A `card_mod:` block no longer shows an "Unknown option" warning. card-mod can style the card directly; wrapping it in `custom:mod-card` is not needed (#540).
+- A pressure sensor in mbar, inHg or kPa is rounded like hPa (`940 hPa`, not `940.2 hPa`), and the main temperature carries the unit of your temperature sensor instead of Home Assistant's unit system.
+
+#### Fixed
+
+- **Live panel and tooltips.** Every unit Home Assistant offers is converted, knots, kPa and Kelvin included. The 3-hour pressure change and the dew-point spread use the unit of their row. A value in a unit the card does not know is shown as the sensor reports it, never under another unit's label.
+- **Chart.** Temperature line, rain bars, scale and labels are in one unit, also when your station, your weather service and Open-Meteo report in different ones. The rain unit follows your rain sensor or `units.precipitation`.
+- **Forecast wind in the today view** was up to 3.6 times too high when station and weather service reported wind in different units.
+- **Weather symbol and pressure trend** read every unit, for the live symbol and for past days. Before, wind in knots was taken as m/s and a pressure sensor in kPa always showed "Pressure stable".
+- **Rain, sunshine and snow line.** Rain sensors in mm/d, in/d or cm and sunshine sensors in minutes or seconds are read in their own unit. With a zero-degree sensor in feet, the snow-line estimate is in metres as labelled.
+- **Jump-to-now button.** In the today view it was always visible and sat over the rain values. It now appears only after you paged away from today (#540).
+- **card-mod.** A `card_mod:` block no longer shows an "Unknown option" warning; style the card directly, without `custom:mod-card` (#540).
+
+#### Under the hood
+
+- One table of units and conversion factors, taken from Home Assistant's own; every value enters the card through it and leaves in your display unit. The old converters are gone (#478).
+- The code that draws the card moved out of the main file into its own tested modules; comments were brought in line with the code and dead code removed (#472, #478).
 
 ## [3.1.0-beta.2] — 2026-11-16
 
