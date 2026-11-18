@@ -8,6 +8,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- In the today view the jump-to-now button was always visible and sat over the rain values. It now appears only after you paged away from today, as in the other views (#540).
 - A `card_mod:` block no longer shows an "Unknown option" warning. card-mod can style the card directly; wrapping it in `custom:mod-card` is not needed (#540).
 
 ## [3.1.0-beta.2] — 2026-11-16
