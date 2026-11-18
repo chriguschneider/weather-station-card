@@ -226,6 +226,7 @@ const es: LocaleEntry = {
     'show_chart_precip_probability': 'Probabilidad de lluvia',
     'show_chart_precip_probability_hint': 'Muestra la probabilidad de lluvia junto a la cantidad en la etiqueta de precipitación ("4.2 / 85" sobre "mm %"). Se toma de la entidad meteorológica si su pronóstico la incluye; si no, de Open-Meteo (ubicación configurada en Home Assistant). Los días secos muestran solo la probabilidad a partir del 30 %.',
     'show_chart_mode_toggle': 'Botón para cambiar de vista',
+    'show_chart_jump_to_now': 'Botón para volver a ahora',
     'sunshine_availability': 'Datos de sol disponibles: {past} días pasados, {future} días de previsión (Open-Meteo).',
     'sunshine_availability_pending': 'Horas de sol: los datos aún se están cargando — guarda y vuelve a abrir el editor.',
     'sunshine_availability_warning': 'Los días de previsión configurados ({req}) superan la disponibilidad de Open-Meteo — las últimas {gap} columnas mostrarán barras de sol vacías.',

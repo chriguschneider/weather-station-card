@@ -226,6 +226,7 @@ const ca: LocaleEntry = {
     'show_chart_precip_probability': 'Probabilitat de pluja',
     'show_chart_precip_probability_hint': 'Mostra la probabilitat de pluja al costat de la quantitat a l’etiqueta de precipitació ("4.2 / 85" sobre "mm %"). S’agafa de l’entitat meteorològica si la seva previsió la dona; si no, d’Open-Meteo (ubicació configurada al Home Assistant). Els dies secs només mostren la probabilitat a partir del 30 %.',
     'show_chart_mode_toggle': 'Botó per canviar de vista',
+    'show_chart_jump_to_now': 'Botó per tornar a ara',
     'sunshine_availability': 'Dades de sol disponibles: {past} dies passats, {future} dies de previsió (Open-Meteo).',
     'sunshine_availability_pending': 'Sol: les dades encara s’estan carregant — desa i torna a obrir l’editor.',
     'sunshine_availability_warning': 'Els dies de previsió configurats ({req}) superen la disponibilitat d’Open-Meteo — les últimes {gap} columnes mostraran barres de sol buides.',

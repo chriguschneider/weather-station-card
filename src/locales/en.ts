@@ -237,6 +237,7 @@ const en: LocaleEntry = {
     'show_chart_precip_probability': 'Chance of rain',
     'show_chart_precip_probability_hint': 'Prints the chance of rain next to the amount in the precipitation label ("4.2 / 85" over "mm %"). Taken from the weather entity when its forecast provides it, otherwise from Open-Meteo (using Home Assistant’s configured location, or the card’s location). Dry days show the chance alone from 30 % up.',
     'show_chart_mode_toggle': 'View-switch button',
+    'show_chart_jump_to_now': 'Jump-to-now button',
     'sunshine_availability': 'Sunshine data available: {past} past days, {future} forecast days (Open-Meteo).',
     'sunshine_availability_pending': 'Sunshine: data still loading — save and reopen the editor.',
     'sunshine_availability_warning': 'Configured forecast_days ({req}) exceeds Open-Meteo availability — the last {gap} columns will show empty sunshine bars.',

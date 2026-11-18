@@ -226,6 +226,7 @@ const nb: LocaleEntry = {
     'show_chart_precip_probability': 'Regnsannsynlighet',
     'show_chart_precip_probability_hint': 'Viser regnsannsynligheten ved siden av mengden i nedbørsetiketten («4.2 / 85» over «mm %»). Hentes fra værentiteten når prognosen har den, ellers fra Open-Meteo (posisjon fra Home Assistant). Tørre dager viser bare sannsynligheten fra 30 %.',
     'show_chart_mode_toggle': 'Knapp for å bytte visning',
+    'show_chart_jump_to_now': 'Knapp for å hoppe til nå',
     'sunshine_availability': 'Solskinnsdata tilgjengelig: {past} dager tilbake, {future} varseldager (Open-Meteo).',
     'sunshine_availability_pending': 'Solskinn: data lastes fremdeles — lagre og åpne editoren på nytt.',
     'sunshine_availability_warning': 'Konfigurerte varseldager ({req}) overstiger det Open-Meteo tilbyr — de siste {gap} kolonnene får tomme solskinnssøyler.',

@@ -226,6 +226,7 @@ const ko: LocaleEntry = {
     'show_chart_precip_probability': '강수 확률',
     'show_chart_precip_probability_hint': '강수량 라벨에 강수 확률을 양 옆에 함께 표시합니다("4.2 / 85" 위, "mm %" 아래). 날씨 엔티티의 예보에 값이 있으면 그 값을, 없으면 Open-Meteo에서 가져옵니다(Home Assistant에 설정된 위치 사용). 비가 없는 날은 30 % 이상일 때 확률만 표시합니다.',
     'show_chart_mode_toggle': '보기 전환 버튼',
+    'show_chart_jump_to_now': '현재로 이동 버튼',
     'sunshine_availability': '일조 데이터 제공 범위: 과거 {past}일, 예보 {future}일 (Open-Meteo).',
     'sunshine_availability_pending': '일조: 데이터를 아직 불러오는 중입니다 — 저장 후 편집기를 다시 열어 주세요.',
     'sunshine_availability_warning': '설정된 예보 일수({req})가 Open-Meteo 제공 범위를 초과합니다 — 마지막 {gap}개 열의 일조 막대는 비어 표시됩니다.',

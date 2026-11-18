@@ -351,11 +351,12 @@ describe('renderChartSection (schema-driven)', () => {
     ]);
   });
 
-  it('collapses the seven chart rows into one pill row', () => {
+  it('collapses the eight chart rows into one pill row', () => {
     const container = renderInto(renderChartSection, editor, makeCtx());
     expect(pillValues(container, 'chart_rows')).toEqual([
       'condition_icons', 'show_wind_arrow', 'show_wind_speed',
       'show_date', 'show_sunshine', 'show_precip_probability', 'show_mode_toggle',
+      'show_jump_to_now',
     ]);
   });
 
@@ -363,7 +364,7 @@ describe('renderChartSection (schema-driven)', () => {
     const container = renderInto(renderChartSection, editor, makeCtx());
     expect(pillsOn(container, 'chart_rows')).toEqual([
       'condition_icons', 'show_wind_arrow', 'show_wind_speed',
-      'show_date', 'show_mode_toggle',
+      'show_date', 'show_mode_toggle', 'show_jump_to_now',
     ]);
   });
 

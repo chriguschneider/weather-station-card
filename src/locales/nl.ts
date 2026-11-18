@@ -226,6 +226,7 @@ const nl: LocaleEntry = {
     'show_chart_precip_probability': 'Regenkans',
     'show_chart_precip_probability_hint': 'Toont de regenkans naast de hoeveelheid in het neerslaglabel ("4.2 / 85" boven "mm %"). Komt uit de weerentiteit als de verwachting die levert, anders van Open-Meteo (locatie uit Home Assistant). Droge dagen tonen alleen de kans vanaf 30 %.',
     'show_chart_mode_toggle': 'Weergave-wisselknop',
+    'show_chart_jump_to_now': 'Terug-naar-nu-knop',
     'sunshine_availability': 'Zonneschijngegevens beschikbaar: {past} dagen terug, {future} dagen vooruit (Open-Meteo).',
     'sunshine_availability_pending': 'Zonneschijn: gegevens worden nog geladen — sla op en open de editor opnieuw.',
     'sunshine_availability_warning': 'Het ingestelde aantal verwachtingsdagen ({req}) overschrijdt de beschikbaarheid van Open-Meteo — de laatste {gap} kolommen tonen lege zonneschijnbalken.',

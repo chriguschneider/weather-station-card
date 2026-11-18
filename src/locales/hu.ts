@@ -226,6 +226,7 @@ const hu: LocaleEntry = {
     'show_chart_precip_probability': 'Esővalószínűség',
     'show_chart_precip_probability_hint': 'Az esővalószínűséget mutatja a mennyiség mellett a csapadékcímkében („4.2 / 85” a „mm %” felett). Az időjárás-entitásból jön, ha az előrejelzése tartalmazza, különben az Open-Meteóból (a Home Assistant helye alapján). Száraz napokon 30 %-tól csak a valószínűség jelenik meg.',
     'show_chart_mode_toggle': 'Nézetváltó gomb',
+    'show_chart_jump_to_now': 'Ugrás a mostra gomb',
     'sunshine_availability': 'Napsütésadatok elérhetők: {past} múltbeli nap, {future} előrejelzési nap (Open-Meteo).',
     'sunshine_availability_pending': 'Napsütés: az adatok még töltődnek — mentsd el, majd nyisd meg újra a szerkesztőt.',
     'sunshine_availability_warning': 'A beállított előrejelzési napok száma ({req}) meghaladja az Open-Meteo által elérhetőt — az utolsó {gap} oszlopban üres napsütés-sáv jelenik meg.',

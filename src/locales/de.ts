@@ -231,6 +231,7 @@ const de: LocaleEntry = {
     'show_chart_precip_probability': 'Regenwahrscheinlichkeit',
     'show_chart_precip_probability_hint': 'Zeigt die Regenwahrscheinlichkeit neben der Menge in der Niederschlags-Beschriftung ("4.2 / 85" über "mm %"). Kommt aus der Wetter-Entität, wenn deren Vorhersage sie liefert, sonst von Open-Meteo (Standort aus Home Assistant oder der Standort der Karte). Trockene Tage zeigen ab 30 % nur die Wahrscheinlichkeit.',
     'show_chart_mode_toggle': 'Ansicht-Umschalt-Button',
+    'show_chart_jump_to_now': 'Zurück-zu-jetzt-Button',
     'sunshine_availability': 'Sonnenstunden-Daten verfügbar: {past} Tage Vergangenheit, {future} Tage Vorhersage (Open-Meteo).',
     'sunshine_availability_pending': 'Sonnenstunden: Daten werden geladen — speichere und öffne den Editor erneut.',
     'sunshine_availability_warning': 'Konfigurierte Vorhersage-Tage ({req}) übersteigen Open-Meteo-Verfügbarkeit — die letzten {gap} Spalten zeigen leere Sonnenstunden-Balken.',

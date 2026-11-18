@@ -232,6 +232,7 @@ const sr: LocaleEntry = {
     'show_chart_precip_probability': 'Шанса за кишу',
     'show_chart_precip_probability_hint': 'Исписује шансу за кишу поред количине у ознаци падавина ("4.2 / 85" изнад "mm %"). Преузима се од временског ентитета када је прогноза доступна, у супротном са Open-Meteo (кориsteći подешену локацију у Home Assistant-u). Суви дани приказују само шансу од 30 % навише.',
     'show_chart_mode_toggle': 'Дугме за промену приказа',
+    'show_chart_jump_to_now': 'Дугме за повратак на сада',
     'sunshine_availability': 'Доступни подаци о сунчевом сјају: {past} претходних дана, {future} дана прогнозе (Open-Meteo).',
     'sunshine_availability_pending': 'Сунчев сјај: подаци се још учитавају — сачувајте и поново отворите едитор.',
     'sunshine_availability_warning': 'Подешени forecast_days ({req}) премашује доступност на Open-Meteo — последњих {gap} колона приказаће празне траке сунчевог сјаја.',

@@ -226,6 +226,7 @@ const da: LocaleEntry = {
     'show_chart_precip_probability': 'Regnsandsynlighed',
     'show_chart_precip_probability_hint': 'Viser regnsandsynligheden ved siden af mængden i nedbørsetiketten ("4.2 / 85" over "mm %"). Hentes fra vejrenheden, når dens prognose leverer den, ellers fra Open-Meteo (placering fra Home Assistant). Tørre dage viser kun sandsynligheden fra 30 %.',
     'show_chart_mode_toggle': 'Knap til visningsskift',
+    'show_chart_jump_to_now': 'Knap til tilbage til nu',
     'sunshine_availability': 'Solskinsdata tilgængelige: {past} dage tilbage, {future} dage frem (Open-Meteo).',
     'sunshine_availability_pending': 'Solskin: data indlæses stadig — gem og åbn editoren igen.',
     'sunshine_availability_warning': 'Det valgte antal prognosedage ({req}) overstiger Open-Meteos tilgængelighed — de sidste {gap} kolonner viser tomme solskinsbjælker.',
