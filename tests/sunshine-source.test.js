@@ -420,12 +420,23 @@ describe('attachSunshine', () => {
       const dailyValues = [
         { date: localDateString(dayMs(-2), cal), value: 18000 }, // would have been 5h
         { date: localDateString(dayMs(-1), cal), value: 28800 }, // would have been 8h
-        { date: localDateString(dayMs(0), cal), value: 32400 },  // 9h forecast for today
+        { date: localDateString(dayMs(0), cal), value: 25200 },  // 7h forecast for today
       ];
       const result = attachSunshine(fc, cal, { dailyValues, latitude: 47 });
       expect(result[0].sunshine).toBe(4.2); // recorder preserved
       expect(result[1].sunshine).toBe(6.5); // recorder preserved
-      expect(result[2].sunshine).toBe(9);   // today filled from overlay
+      expect(result[2].sunshine).toBe(7);   // today filled from overlay
+    });
+
+    it('clamps sunshine to the day length on a short winter day', () => {
+      // Fixed date, not today: at 47° N the day is ~8.3 h on 21 December.
+      const winter = new Date(2026, 11, 21, 12, 0, 0, 0);
+      const fc = [{ datetime: winter.toISOString() }];
+      const dailyValues = [{ date: localDateString(winter, cal), value: 32400 }]; // 9h
+      const [entry] = attachSunshine(fc, cal, { dailyValues, latitude: 47 });
+      expect(entry.sunshine).toBe(entry.day_length);
+      expect(entry.day_length).toBeLessThan(9);
+      expect(entry.day_length).toBeGreaterThan(8);
     });
   });
 
