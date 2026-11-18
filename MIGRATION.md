@@ -228,4 +228,4 @@ this fork has substantially different defaults:
 - The `condition_mapping` block under `forecast.*` is supported here
   for tuning the classifier; upstream had no equivalent.
 
-See README's "Configuration reference" for the full v1.0 schema.
+See the [configuration reference](docs/CONFIGURATION.md) for the full v1.0 schema.

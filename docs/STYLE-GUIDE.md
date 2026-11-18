@@ -275,32 +275,41 @@ the user gains or has to do (re-configure, clear cache, update YAML, …).
 
 ### Structure
 
+Every entry has two parts: a short top part for people, with a picture,
+and the details below it. Most readers stop after the top part.
+
 ```markdown
 ## [X.Y.Z] — YYYY-MM-DD
 
-[1–2 sentences answering "what does this mean for me?" — what's new
-or better, and whether the user needs to do anything. If there are
-no user-facing changes, say exactly that in one plain sentence and
-keep the rest of the entry short — don't pad with tooling detail.]
+![One sentence that says what the picture shows](https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/images/<file>.png)
 
-### Added
-- [User-visible new capability, in their words.]
-### Changed
-- [User-visible behaviour difference. Mention the mechanism only if
-  it helps the user understand a trade-off.]
-### Fixed
-- [What was broken from the user's perspective; what's fixed now.]
-### Removed
-- ...
-### Deprecated
-- ...
-### Under the hood
-- [Internal cleanup, build/CI work, refactors with zero user-facing
-  effect. One short line each. If the whole release is internal,
-  this is the only section after the lead.]
-### Deferred to vX.Y+1
-- ...
+**<One sentence: what is new.>** <Two or three short sentences: what
+changes for me, with an everyday example. About 60 words at most, no
+file names, no issue numbers.>
+
+**What you need to do:** <one sentence, usually "nothing, reload the
+browser after updating">
+
+### Details
+
+#### Added / Changed / Deprecated / Removed / Fixed / Security
+
+- Grouped and summarised for dashboard owners, not one line per pull
+  request.
+
+#### Under the hood
+
+- Internal work, in a line or two.
 ```
+
+- **The picture is mandatory** and shows what changed, ideally before
+  and after. It lives in `images/`, is linked with an absolute
+  `raw.githubusercontent.com` URL (HACS drops relative paths) and is
+  never renamed after a release.
+- A beta adds one sentence to the top part: who should test it and how
+  to get it.
+- A final release after betas carries the whole content in its own
+  section, so the update dialog stands on its own.
 
 ### The "would they click Update?" test
 

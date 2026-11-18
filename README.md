@@ -15,7 +15,7 @@
   <a href="https://github.com/chriguschneider/weather-station-card/releases"><img alt="Downloads" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriguschneider%2Fweather-station-card%2Fbadges%2Fdownloads.json" /></a>
   <a href="https://github.com/chriguschneider/weather-station-card/stargazers"><img alt="Stars" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriguschneider%2Fweather-station-card%2Fbadges%2Fstars.json" /></a>
   <a href="https://github.com/chriguschneider/weather-station-card/commits/master"><img alt="Last commit" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriguschneider%2Fweather-station-card%2Fbadges%2Flastcommit.json" /></a>
-  <a href="#configuration"><img alt="Translated into 25 languages" src="https://img.shields.io/badge/translated-25_languages-41BDF5.svg" /></a>
+  <a href="#the-editor"><img alt="Translated into 25 languages" src="https://img.shields.io/badge/translated-25_languages-41BDF5.svg" /></a>
   <a href="https://buymeacoffee.com/chriguschneider"><img alt="Buy Me a Coffee" src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00.svg" /></a>
   <a href="#ai-assisted-development"><img alt="AI Assisted" src="https://img.shields.io/badge/AI-assisted-2196F3.svg" /></a>
 </p>
@@ -34,204 +34,87 @@
   <a href="CHANGELOG.md">Changelog</a>
 </p>
 
-A Lovelace card that charts your own weather station's history alongside any
-forecast — driven by sensor data, not a `weather.*` entity.
-
-<details>
-<summary><b>Table of contents</b></summary>
-
-- [What this card does](#what-this-card-does)
-- [Modes and chart resolutions](#modes-and-chart-resolutions)
-- [Installation](#installation)
-- [Configuration](#configuration) → [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
-- [Conditions, sensors, sunshine](#conditions-sensors-and-sunshine) → [docs/CONDITIONS.md](docs/CONDITIONS.md), [docs/SENSORS.md](docs/SENSORS.md)
-- [Snow line](#snow-line) · [Works together](#works-together)
-- [Contributing & architecture](#contributing--architecture)
-- [AI-assisted development](#ai-assisted-development)
-- [Community](#community)
-- [Attribution & licence](#attribution--licence)
-
-</details>
+A dashboard card for Home Assistant that draws what your own weather station
+measured next to what the forecast says, in one chart.
 
 <table>
 <tr>
-<td><img alt="Daily combination with sunshine, light theme" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/daily-combination-sunshine.png"></td>
-<td><img alt="Daily combination with sunshine, dark theme" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/daily-combination-sunshine-dark.png"></td>
+<td><img alt="Past days measured by the station on the left, the forecast on the right, light theme" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/daily-combination-sunshine.png" /></td>
+<td><img alt="The same card in a dark theme" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/daily-combination-sunshine-dark.png" /></td>
 </tr>
 </table>
 
-## What this card does
+## What it does
 
-Most Lovelace weather cards visualise a forecast served by a `weather.*`
-entity. If you actually run a weather station on-site, the more interesting
-view is *what happened over the past N days* — and whether the forecast got
-it right — while the most useful "now" panel reflects the live readings of
-those same sensors. This card does both:
+- **Past and forecast in one chart.** Your station's history on the left,
+  any `weather.*` forecast on the right, today in the middle. Measured
+  values are solid, predicted ones dashed.
+- **A live panel from your sensors.** Temperature, dew point, pressure with
+  its trend, wind, rain rate, UV, sun and moon. Tap a value for its history;
+  the ⓘ button tells where each value comes from.
+- **Weather symbols from measurements.** Sunny, cloudy, rainy, fog, windy:
+  derived from your sensors, not taken from a forecast
+  ([how](docs/CONDITIONS.md)).
+- **Any station.** The card reads plain `sensor.*` entities (Ecowitt,
+  Tempest, Netatmo, Davis, ESPHome, …), in whatever unit they report.
+- **Any place.** A card can show another location, in that place's own
+  time ([configuration](docs/CONFIGURATION.md#general)).
+- **No YAML needed.** A visual editor, translated into 25 languages.
 
-- A **past chart** with high / low temperature curves and daily
-  precipitation bars, plus an icon row of the worst-of-day weather
-  condition for each column. Today's column is highlighted. The number
-  of days is configurable (`days:`, 1–14).
-- An optional **forecast block** driven by a `weather.*` entity, drawn
-  in the same per-day layout next to the past chart. Forecast
-  temperature lines are dashed and forecast precipitation bars render
-  semi-transparent so predicted values read distinctly from measured
-  ones. Span is configurable separately (`forecast_days:`). The
-  precipitation label can also show the **chance of rain** next to the
-  amount (`forecast.show_precip_probability`), taken from the weather
-  entity or, when it has none, from Open-Meteo. The sunshine bar
-  (`forecast.show_sunshine`) takes the weather entity's
-  `sunshine_duration` first ([ADR-0028](docs/adr/0028-sunshine-entity-first.md)),
-  Open-Meteo only as fallback, and `sensors.sunshine_duration`
-  overrides today's value. MeteoSwiss Weather's `sunshine_duration_today`
-  sensor feeds that slot. `forecast.openmeteo: false` switches every
-  Open-Meteo request off.
-- A **live main panel** showing the current temperature, condition icon,
-  and (optionally) clock, weather attributes, sunrise/sunset and the
-  moon — exact illumination percentage on a dynamically drawn disc plus
-  the next moonrise/moonset, computed in-card with no Moon integration
-  needed (`location:` sets another place for Open-Meteo data, sunshine day
-length, and the sun and moon times).
-All values derive from current sensor states, not from a
-  forecast; every sensor-backed value is clickable and opens its
-  more-info dialog. With the MeteoSwiss Radar integration it can also
-  show [when rain is next expected](#next-rain-with-meteoswiss-radar).
-- A **compact visual editor** — everything is configurable without
-  YAML, and the whole card fits one editor screen (see
-  [below](#configuration)).
-- **Fully translated** — UI *and* editor — into 25 languages.
-
-Conditions are derived by a deterministic, meteorologically-grounded
-classifier (see [docs/CONDITIONS.md](docs/CONDITIONS.md#how-conditions-are-determined)
-— every threshold is tied to a WMO / NWS / AMS / IES source).
-
-**Works with any station that reaches Home Assistant as sensors.** The card
-never asks which hardware you own — it reads plain `sensor.*` entities, so an
-Ecowitt gateway, a WeatherFlow Tempest, Netatmo, Froggit, Davis, Ambient
-Weather, BTHome sensors, a Shelly Plus H&T or your own ESPHome build all feed
-it the same way. Stations that publish rain rate and daily total as separate
-entities can wire both, and solar-irradiance sensors (W/m²) work in the
-illuminance slot alongside lux. A `weather.*` entity is optional — you only
-need one for the forecast half of the chart.
-
-## Modes and chart resolutions
-
-The card has two independent axes: which **blocks** render
-(combination / station / forecast) and which time **resolution**
-the chart uses (daily / today / hourly). All nine combinations are
-supported; you cycle resolutions live with the chart's mode-toggle
-button.
+## Three views
 
 <table>
 <tr>
-<th></th>
-<th>Daily (default)</th>
-<th>Today (day pager)</th>
-<th>Hourly (7 days)</th>
+<th>Daily</th>
+<th>Today</th>
+<th>Hourly</th>
 </tr>
 <tr>
-<th>Combination</th>
-<td><img alt="Combination, daily" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/daily-combination-sunshine.png" /></td>
-<td><img alt="Combination, today" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/today-combination-sunshine.png" /></td>
-<td><img alt="Combination, hourly" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/hourly-combination-sunshine.png" /></td>
-</tr>
-<tr>
-<th>Station</th>
-<td><img alt="Station, daily" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/daily-station-sunshine.png" /></td>
-<td><img alt="Station, today" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/today-station-sunshine.png" /></td>
-<td><img alt="Station, hourly" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/hourly-station-sunshine.png" /></td>
-</tr>
-<tr>
-<th>Forecast</th>
-<td><img alt="Forecast, daily" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/daily-forecast-sunshine.png" /></td>
-<td><img alt="Forecast, today" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/today-forecast-sunshine.png" /></td>
-<td><img alt="Forecast, hourly" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/hourly-forecast-sunshine.png" /></td>
+<td><img alt="Daily view: one column per day" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/daily-combination-sunshine.png" /></td>
+<td><img alt="Today view: one day in three-hour blocks" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/today-combination-sunshine.png" /></td>
+<td><img alt="Hourly view: one column per hour, scrollable" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/hourly-combination-sunshine.png" /></td>
 </tr>
 </table>
 
-<!-- Dark-theme matrix as a collapsible block. Deliberately NOT the
-     <picture>/prefers-color-scheme mechanism: the HACS info-panel
-     sanitizer drops <picture>/<source> (see the README-image rule in
-     the repo conventions), while <details> with plain <img> children
-     survives both GitHub and HACS. -->
-<details>
-<summary>🌙 <b>Same matrix in a dark theme</b> (click to expand)</summary>
-<table>
-<tr>
-<th></th>
-<th>Daily (default)</th>
-<th>Today (day pager)</th>
-<th>Hourly (7 days)</th>
-</tr>
-<tr>
-<th>Combination</th>
-<td><img alt="Combination, daily, dark" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/daily-combination-sunshine-dark.png" /></td>
-<td><img alt="Combination, today, dark" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/today-combination-sunshine-dark.png" /></td>
-<td><img alt="Combination, hourly, dark" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/hourly-combination-sunshine-dark.png" /></td>
-</tr>
-<tr>
-<th>Station</th>
-<td><img alt="Station, daily, dark" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/daily-station-sunshine-dark.png" /></td>
-<td><img alt="Station, today, dark" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/today-station-sunshine-dark.png" /></td>
-<td><img alt="Station, hourly, dark" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/hourly-station-sunshine-dark.png" /></td>
-</tr>
-<tr>
-<th>Forecast</th>
-<td><img alt="Forecast, daily, dark" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/daily-forecast-sunshine-dark.png" /></td>
-<td><img alt="Forecast, today, dark" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/today-forecast-sunshine-dark.png" /></td>
-<td><img alt="Forecast, hourly, dark" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/tests-e2e/snapshots/render-modes.spec.ts/hourly-forecast-sunshine-dark.png" /></td>
-</tr>
-</table>
-</details>
+A button in the chart switches between them. Each view works with station
+and forecast together, station only or forecast only:
+[all nine combinations](docs/MODES.md).
 
-**Modes** (rows):
+## The editor
 
-- **Combination** — past sensor history + today as a doubled column
-  (measured + predicted) + forecast from a `weather.*` entity. Forecast
-  temperature lines are dashed and forecast precipitation bars draw at
-  ~45 % opacity so predicted values read distinctly from measured ones.
-- **Station** — past sensor history only, no forecast block. No
-  `weather.*` entity needed.
-- **Forecast** — forecast-only, no station-history block. Useful when
-  another sensor-history visualisation lives elsewhere on the
-  dashboard.
+<img alt="The visual editor: six panels, each header showing its current setting" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/images/editor-light.png" width="420" />
 
-**Chart resolutions** (columns):
+Everything is set in the card's editor; each panel's header shows what is
+set, so you rarely have to open one. Every YAML key is listed in
+[docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
-- **Daily** (default) — one column per day across the past + forecast
-  window. The classic view.
-- **Today** — a day pager: the viewport frames exactly one calendar
-  day as 8 × 3-hour blocks and pages day-wise through the whole
-  `days:` window. Chevrons step one day at a time, free scrolling
-  snaps to day boundaries, and the view opens on the current day
-  (measured hours solid, forecast hours dashed).
-- **Hourly** — one column per hour over 7 days, scrollable. 168
-  columns; the jump-to-now button snaps the viewport to the present
-  hour, and a slim day timeline below the chart shows where you are
-  (click or scrub it to navigate).
+## Works together
 
-## Installation
+Three independent installs, none needs the others: this card,
+[MeteoSwiss Weather](https://github.com/chriguschneider/hass-meteoswiss-weather)
+(weather entity and sensors from official Swiss open data) and
+[MeteoSwiss Radar](https://github.com/chriguschneider/hass-meteoswiss-radar)
+(radar animation and a next-rain sensor). Each link between them is an
+ordinary Home Assistant entity, so any other source works in the same slots.
 
-> **Compatible with any** `weather.*` **integration that exposes a daily forecast** —
-> Met.no, Open-Meteo, Pirateweather, AccuWeather, Buienradar, OpenWeatherMap (when configured for daily).
-> The forecast block subscribes via Home Assistant's standard `weather.subscribe_forecast` API,
-> so anything HA recognises as a weather entity should work.
+<img alt="Live panel with the next-rain row and the two snow-line rows" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/images/live-panel.png" />
 
-### HACS (recommended)
+| What you get | From | More |
+| --- | --- | --- |
+| **Next rain**: "in 12 min", "17:00" or "No rain" | the radar's next-rain sensor | [docs/NEXT-RAIN.md](docs/NEXT-RAIN.md) |
+| **Snow line** now and its trend over 48 h, with a forecast curve on tap | the weather integration's zero-degree sensors | [docs/SNOW-LINE.md](docs/SNOW-LINE.md) |
+| **Sunshine today** | the weather integration's sunshine sensor | [docs/SENSORS.md](docs/SENSORS.md) |
 
-The card is in the HACS default store — no custom repository needed.
+<img alt="Tapping a snow-line row opens the forecast curve of the zero-degree level" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/images/snow-line-popup.png" width="420" />
 
-**One-click**: [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=chriguschneider&category=frontend&repository=weather-station-card)
+## Get started
 
-Or manually:
+[![Open the card in the Home Assistant Marketplace](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=chriguschneider&category=frontend&repository=weather-station-card)
 
-1. In HACS, search for **Weather Station Card** and open the entry.
-2. Click **Download**.
-3. Hard-refresh your browser (Ctrl-F5 or equivalent) so the new resource
-   loads.
-4. Add the card to your dashboard via the Lovelace UI ("Add Card → Custom:
-   Weather Station Card") — the editor pre-fills your most likely weather
-   sensors via ranked auto-detect — or start from this minimal YAML:
+In Home Assistant open **Settings → Marketplace** (HACS on versions before
+2026.11), search for **Weather Station Card**, install it and reload the
+browser. Then add the card to a dashboard; the editor picks your most likely
+sensors. In YAML the smallest card is:
 
 ```yaml
 type: custom:weather-station-card
@@ -240,267 +123,45 @@ sensors:
   temperature: sensor.outdoor_temperature
 ```
 
-Every other key is optional — see
-[docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the full reference
-and more starting points.
+Betas, manual install and what to do after an update:
+[docs/INSTALLATION.md](docs/INSTALLATION.md).
 
-### Manual
+## Documentation
 
-1. Download `weather-station-card.js` from the [latest release](https://github.com/chriguschneider/weather-station-card/releases/latest).
-2. Copy it to `<config>/www/community/weather-station-card/`.
-3. In Home Assistant, go to **Settings → Dashboards → Resources** and add
-   `/local/community/weather-station-card/weather-station-card.js` as a
-   JavaScript module.
-4. Hard-refresh and add the card.
-
-## Configuration
-
-New cards default to **combination mode** — past station history on
-the left, forecast on the right — pre-populated with your most likely
-weather sensors via ranked auto-detect.
-
-The **visual editor fits one screen**: the four basics (mode, chart
-type, title, weather entity) stay directly visible, everything else
-lives in six collapsible panels whose headers summarise the current
-configuration — readable without opening anything. The editor is fully
-translated into 25 languages. Set `debug: true` in YAML to append a
-diagnostics panel that shows what the card detected.
-
-<table>
-<tr>
-<td><img alt="Visual editor, light theme" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/images/editor-light.png"></td>
-<td><img alt="Visual editor, dark theme" src="https://raw.githubusercontent.com/chriguschneider/weather-station-card/master/images/editor-dark.png"></td>
-</tr>
-</table>
-
-- **Basics** (always visible) — mode, chart type, title, weather entity
-- **Your weather station's sensors** — a "Past data" source choice
-  (station sensors, or Open-Meteo history when you have no station) and
-  the sensor pickers in a two-column grid
-- **Chart** — days / visible columns / chart height, the chart rows as
-  one row of toggle pills, style
-- **Live panel** — main-panel elements and attribute cells as toggle
-  pills, a clock dropdown (Off / On / On with seconds) plus a separate
-  "Time format" selector (24-hour / 12-hour), and an *Arrangement* board to drag the attribute rows
-  into the columns you want (saved as `attributes_layout`)
-- **Location** — latitude, longitude and time zone of the card's place,
-  and whether times are shown in server or location time
-- **Units** — pressure / wind-speed / precipitation display units
-- **Actions** — tap, hold, and double-tap behaviour
-
-Every YAML key is documented in **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**
-with type, default, and effect.
-
-## A card for another place
-
-A card can live at its location. With `location`, sunrise, sunset, moon
-and Open-Meteo data are for that place; `time_zone: location` shows the
-whole card, including the chart's days, in that place's time zone.
-
-In the editor, the *Location* panel does it without YAML: switch on
-*Use another location*, search for a place or click it on the map, and
-let *Determine elevation and time zone* fill the rest (Open-Meteo, only on
-a click). `elevation` (metres) is read for the zero-degree rows.
-
-A cabin in Montana, on a dashboard whose Home Assistant is elsewhere:
-
-```yaml
-type: custom:weather-station-card
-weather_entity: weather.montana
-location:
-  latitude: 46.87
-  longitude: -113.99
-  elevation: 1200
-  time_zone: America/Denver
-time_zone: location
-```
-
-A holiday home whose sun you want to see, but with the times you live by
-(`server` is the default):
-
-```yaml
-type: custom:weather-station-card
-weather_entity: weather.holiday_home
-location:
-  latitude: 46.02
-  longitude: 7.75
-time_zone: server
-```
-
-## Conditions, sensors, and sunshine
-
-The card derives weather conditions (sunny / cloudy / rainy / fog / windy / …)
-deterministically from your sensors, with thresholds tied to WMO / NWS / AMS / IES
-sources. Conditions `lightning`, `lightning-rainy`, and `hail` are never emitted
-because reliable detection requires dedicated hardware.
-
-For the full classifier rules, the live "now"-condition mechanic, sensor setup
-(precipitation rates vs. cumulative counters, sunshine duration via Open-Meteo),
-and customisation:
-
-- **[docs/CONDITIONS.md](docs/CONDITIONS.md)** — decision tree, live-vs-daily classifier, day/night-aware icons.
-- **[docs/SENSORS.md](docs/SENSORS.md)** — precipitation sensor wiring, sunshine duration setup, privacy notes.
-- **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** — error banners, common gotchas (recorder warm-up, HACS cache), known limitations.
-
-## Next rain with MeteoSwiss Radar
-
-The live panel can show when rain is next expected. The value comes from
-the **Next rain** sensor of the
-[MeteoSwiss Radar](https://github.com/chriguschneider/hass-meteoswiss-radar)
-integration. That sensor in turn can draw on the hourly forecast of a
-`weather.*` entity, for example from
-[MeteoSwiss Weather](https://github.com/chriguschneider/hass-meteoswiss-weather):
-
-```
-weather entity ──(hourly forecast)──▶ MeteoSwiss Radar ──(sensor …_next_rain)──▶ this card
-```
-
-Each link is an ordinary Home Assistant entity. The projects never call
-each other directly, so any part can be swapped or left out.
-
-**Setup**
-
-1. Install MeteoSwiss Radar and turn on *Rain sensors for my home* in its
-   options (off by default). If the radar is installed but this is off,
-   the card editor shows a hint pointing there.
-2. Optional: in the same options, pick a *Weather entity for the hourly
-   forecast*. Without one, "next rain" only looks as far as the radar
-   does (2 h). If that entity is MeteoSwiss Weather, switch on its
-   hourly forecast option; without it the forecast part has nothing
-   to read.
-3. In the card editor, pick the sensor under *Next rain* and switch on
-   the *Next rain* attribute pill. New cards find the sensor
-   automatically, even if the entity was renamed.
-
-**What the row shows**
-
-| Situation | Row | Icon |
-| --- | --- | --- |
-| Radar sees rain coming within the hour | `in 12 min`, counting down live | radar |
-| Radar or forecast answers further out | `17:00` (radar) or `~17:00` (forecast); weekday added beyond 24 h | radar / cloud-clock |
-| It is raining — the radar says so, or your station's rain rate is above zero | `Now` | rain |
-| Nothing in sight | `No rain` (hover to see how far the forecast was checked) | closed umbrella |
-
-The tooltip names which source answered, so a forecast time is never
-mistaken for a radar observation. Any other timestamp sensor works in
-the same slot. See `sensors.next_rain` and `show_next_rain` in
-[docs/CONFIGURATION.md](docs/CONFIGURATION.md).
-
-## Snow line
-
-Two rows in the attribute block show where the zero-degree level, and
-with it the snow line, is. Both read ordinary sensors, so they need the
-[MeteoSwiss Weather](https://github.com/chriguschneider/hass-meteoswiss-weather)
-integration's *Zero-degree level* and *Zero-degree level, lowest in 48 h*
-sensors (both disabled by default there: enable them in the entity
-settings) or any sensor of your own. Wire them as
-`sensors.zero_degree_level` and `sensors.zero_degree_level_48h` and
-switch on `show_zero_degree_level` / `show_zero_degree_level_48h`.
-
-- **Zero-degree level (now).** The icon tells how close the snow line is
-  to your site. The snow line is estimated 300 m below the zero-degree
-  level, an estimate only. The icon changes when it comes within 300 m
-  of your site and again when it reaches it.
-- **Zero-degree level in 48 h (trend row).** An arrow shows direction
-  and pace (rises fast · rises · stays · falls · falls fast), followed
-  by the next low or high with weekday and time. The tooltip adds the
-  turn after it ("then up to …"). If that low brings the snow line down
-  to your site, the value takes the chart's precipitation colour and a
-  ❄ is put in front of it.
-- **Popup on tap.** Tapping either zero-degree row opens the forecast curve with
-  day separators, the low point marked and a *History* button. Any
-  sensor with a `forecast` attribute of `{datetime, level}` points
-  works for the popup.
-
-Your site's elevation comes from, in this order: `location.elevation`,
-the card's top-level `elevation:` option (deprecated, move it to
-`location.elevation`; removal is planned for 4.0), the sensor's
-`elevation` attribute, and last Home Assistant's settings
-(Settings → System → General). With a `location`, Home Assistant's
-elevation is not used (it describes another place).
-
-<!-- Screenshot to add later: docs/images/zero-degree-popup.png -->
-
-Thresholds and details: [docs/CONFIGURATION.md](docs/CONFIGURATION.md#zero-degree-rows).
-
-## Works together
-
-Three independent installs, none needs the others: this card,
-[hass-meteoswiss-weather](https://github.com/chriguschneider/hass-meteoswiss-weather)
-(integration: weather entity and sensors) and
-[hass-meteoswiss-radar](https://github.com/chriguschneider/hass-meteoswiss-radar)
-(radar animation card and next-rain sensor). Each link is an ordinary
-Home Assistant entity.
-
-```
-hass-meteoswiss-weather ──(weather entity · station sensors · zero-degree level + curve + elevation · sunshine today)──▶ weather-station-card
-hass-meteoswiss-weather ──(hourly forecast)──▶ hass-meteoswiss-radar ──(next_rain sensor)──▶ weather-station-card
-```
-
-| What you want | Which piece | Setting |
-| --- | --- | --- |
-| Radar animation | the radar card | none in this card |
-| Next rain | radar integration (nowcast on, weather entity = MeteoSwiss Weather **with its hourly option on**) | `sensors.next_rain` |
-| Snow line now, lowest in 48 h, popup, trend | weather integration's `zero_degree_level` and `zero_degree_level_48h` (enable both) | `sensors.zero_degree_level`, `sensors.zero_degree_level_48h` |
-| Sunshine today | weather integration's `sunshine_duration_today` | `sensors.sunshine_duration` |
-| Measured values | your station sensors | `sensors.*` |
-
-Forum threads: [MeteoSwiss Radar](https://community.home-assistant.io/t/1022501), [MeteoSwiss Weather](https://community.home-assistant.io/t/meteoswiss-weather-official-swiss-open-data-no-app-api-history-back-to-1980/1029728).
-
-## Contributing & architecture
-
-PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the build flow.
-For a tour of how the card is wired internally (data sources, the merge
-model, the chart-plugin contract), read [ARCHITECTURE.md](ARCHITECTURE.md).
-For doc-writing conventions (length targets, voice, cross-linking), see
-[docs/STYLE-GUIDE.md](docs/STYLE-GUIDE.md).
-
-**Translations** are a well-bounded first contribution. The card ships
-fully translated — UI and editor — in 25 languages (one file per
-language under `src/locales/`). Corrections from native speakers and
-entirely new languages are equally welcome; a parity test guides you to
-every key a language must provide. The Location panel, snow line and info
-button texts added in 3.0 are machine translations in all languages except English and
-German; native-speaker corrections are especially welcome. See CONTRIBUTING.md.
-
-## AI-assisted development
-
-This card is built by Chrigu & Claude — a human and an LLM working
-together. Architecture decisions, design trade-offs, the
-meteorological grounding of the condition classifier, and the
-"what should this actually do?" calls are mine. A large share of
-the typing, refactors, test scaffolding, and tedious chart-plugin
-plumbing was done by [Claude Code](https://claude.com/claude-code).
-
-Every line is reviewed, tested (`npm run build` runs lint + 80%+
-coverage tests + visual regression on every push), and shipped
-consciously. The badge is here because transparency about how
-software is made matters more than pretending otherwise.
-
-If the card has earned a spot on your dashboard, [buying me a coffee](https://buymeacoffee.com/chriguschneider)
-is the nicest way to say thanks ❤️ *(Claude doesn't drink coffee.
-More for me.)*
+| | |
+| --- | --- |
+| [Installation](docs/INSTALLATION.md) | Marketplace, HACS, by hand, betas |
+| [Configuration](docs/CONFIGURATION.md) | every option, with examples |
+| [Modes](docs/MODES.md) | the nine combinations of blocks and views |
+| [Sensors](docs/SENSORS.md) | rain, sunshine and which sensor goes where |
+| [Conditions](docs/CONDITIONS.md) | how the weather symbol is worked out |
+| [Next rain](docs/NEXT-RAIN.md) · [Snow line](docs/SNOW-LINE.md) | the rows fed by the MeteoSwiss integrations |
+| [Troubleshooting](docs/TROUBLESHOOTING.md) | error banners and common gotchas |
+| [Changelog](CHANGELOG.md) · [Migration](MIGRATION.md) | what changed, and what to do when upgrading |
 
 ## Community
 
-- 💬 **Have a question or idea?** Open a [Discussion](https://github.com/chriguschneider/weather-station-card/discussions) — better than an issue if you're not sure whether something's a bug or just an unfamiliar config knob.
-- 🐛 **Found a bug or want a specific feature?** [Open an issue](https://github.com/chriguschneider/weather-station-card/issues/new/choose).
-- 🔧 **Want to contribute?** See [CONTRIBUTING.md](CONTRIBUTING.md) — adding a translation or a small fix is a well-bounded first PR.
-
-### Contributors
+Questions and ideas go to [Discussions](https://github.com/chriguschneider/weather-station-card/discussions),
+bugs to [Issues](https://github.com/chriguschneider/weather-station-card/issues/new/choose).
+Pull requests are welcome, and a translation fix is a good first one:
+[CONTRIBUTING.md](CONTRIBUTING.md), [ARCHITECTURE.md](ARCHITECTURE.md).
 
 <a href="https://github.com/chriguschneider/weather-station-card/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=chriguschneider/weather-station-card" alt="Contributors" />
 </a>
 
+## AI-assisted development
+
+This card is built by Chrigu & Claude, a human and an LLM working together.
+What the card should do, its architecture and the meteorology behind the
+symbols are mine; a large share of the typing, tests and refactors was done
+by [Claude Code](https://claude.com/claude-code). Every change is reviewed
+and tested before it ships. If the card has earned a spot on your dashboard,
+[buying me a coffee](https://buymeacoffee.com/chriguschneider) is the nicest
+way to say thanks ❤️ *(Claude doesn't drink coffee. More for me.)*
+
 ## Attribution & licence
 
-This project is a fork of [`mlamberts78/weather-chart-card`](https://github.com/mlamberts78/weather-chart-card)
-(forked from upstream v1.0.1, October 2024). The chart UI, icons, and
-renderer come from the upstream — what's new here is the sensor-history
-data layer (`src/data-source.ts`), the meteorological condition
-classifier (`src/condition-classifier.ts`), the live-condition wiring,
-and a visual editor reorganised around how users actually think about
-weather cards (mode → forecast → sensors → chart → live panel).
-
-Released under the MIT licence — same as upstream. See [LICENSE.md](LICENSE.md).
+A fork of [`mlamberts78/weather-chart-card`](https://github.com/mlamberts78/weather-chart-card)
+(upstream v1.0.1, October 2024). MIT licence, same as upstream:
+[LICENSE.md](LICENSE.md).
