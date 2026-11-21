@@ -512,7 +512,7 @@ function buildCardStyles({
       white-space: nowrap;
     }
     .wind-speed {
-      font-size: 11px;
+      font-size: ${labelsBaseSize || 11}px;
       text-align: end;
       font-variant-numeric: tabular-nums;
     }
@@ -579,7 +579,7 @@ function buildCardStyles({
         font-size: ${Math.max(8, (labelsBaseSize || 11) - 3)}px;
       }
       .wind-speed {
-        font-size: 10px;
+        font-size: ${Math.max(8, (labelsBaseSize || 11) - 1)}px;
       }
     }
 

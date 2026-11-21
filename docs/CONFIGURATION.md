@@ -391,7 +391,7 @@ plain icon and the trend row is never coloured.
 | `current_temp_size` | number (px) | `28` | Main-panel temperature font size. |
 | `time_size` | number (px) | `26` | Clock font size. |
 | `day_date_size` | number (px) | `15` | Day / date label font size. |
-| `forecast.labels_font_size` | number (px) | `11` | Chart axis tick label size. The wind unit and the precip unit ("mm" / "km/h") render at half this size. |
+| `forecast.labels_font_size` | number (px) | `11` | Chart axis tick label size. The wind speed number follows this size; the wind unit and the precip unit ("mm" / "km/h") render at half this size. |
 | `forecast.chart_height` | number (px) | `180` | Chart canvas height. |
 | `forecast.precip_bar_size` | number (%) | `100` | Width of precipitation bars (0–100 %). |
 
