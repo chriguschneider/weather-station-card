@@ -62,6 +62,27 @@ describe('cardStyles icons_size (#553)', () => {
   });
 });
 
+describe('cardStyles wind speed size (#555)', () => {
+  const speedSize = (css, selector) => {
+    const b = rulesFor(css, selector).find((x) => x.includes('font-size'));
+    return b && b.match(/font-size:\s*([^;]+);/)[1].trim();
+  };
+
+  it('follows labels_font_size in the wide and narrow layouts', () => {
+    const css = cardStyles({ ...opts, labelsBaseSize: 16 });
+    expect(speedSize(css, '.wind-speed')).toBe('16px');
+    const narrow = css.slice(css.indexOf('@container wsc-card (max-width: 360px)'));
+    expect(rulesFor(narrow, '.wind-speed')[0]).toContain('font-size: 15px');
+  });
+
+  it('keeps the default 11px and 10px unchanged', () => {
+    const css = cardStyles({ ...opts, labelsBaseSize: 11 });
+    expect(speedSize(css, '.wind-speed')).toBe('11px');
+    const narrow = css.slice(css.indexOf('@container wsc-card (max-width: 360px)'));
+    expect(rulesFor(narrow, '.wind-speed')[0]).toContain('font-size: 10px');
+  });
+});
+
 describe('cardStyles current temperature size', () => {
   const css = cardStyles(opts);
 

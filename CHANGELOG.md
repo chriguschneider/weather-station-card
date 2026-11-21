@@ -9,6 +9,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - `icons_size` now changes the size of the forecast and main weather icons again.
+- `forecast.labels_font_size` now also sizes the wind speed under the forecast, not only its unit.
 
 ## [3.1.0] — 2026-11-18
 
