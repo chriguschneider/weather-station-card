@@ -41,6 +41,27 @@ describe('cardStyles clock anchoring (#404)', () => {
   });
 });
 
+describe('cardStyles icons_size (#553)', () => {
+  const COND = '.conditions .wsc-icon,\n    .conditions ha-icon';
+  const iconSize = (css, selector) => {
+    const b = rulesFor(css, selector).find((x) => x.includes('--mdc-icon-size'));
+    return b && b.match(/--mdc-icon-size:\s*([^;]+);/)[1].trim();
+  };
+
+  it('sizes forecast-row icons and the main icon from iconsSize', () => {
+    const css = cardStyles({ ...opts, iconsSize: 40 });
+    expect(iconSize(css, COND)).toBe('40px');
+    expect(iconSize(css, '.main ha-icon')).toBe('80px');
+    expect(css).not.toMatch(/\bimg\b/);
+  });
+
+  it('keeps the default 25 at the previous main size', () => {
+    const css = cardStyles(opts);
+    expect(iconSize(css, COND)).toBe('25px');
+    expect(iconSize(css, '.main ha-icon')).toBe('50px');
+  });
+});
+
 describe('cardStyles current temperature size', () => {
   const css = cardStyles(opts);
 

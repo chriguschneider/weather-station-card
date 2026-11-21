@@ -53,9 +53,9 @@ function buildCardStyles({
        * a muted blue on HA's default theme. */
       color: var(--primary-text-color, #212121);
     }
-    img {
-      width: ${iconsSize}px;
-      height: ${iconsSize}px;
+    .conditions .wsc-icon,
+    .conditions ha-icon {
+      --mdc-icon-size: ${iconsSize}px;
     }
     /* .card is the query container for the @container rules at the end
      * of this sheet: a narrow HA grid slot (Companion app, mobile
@@ -77,14 +77,7 @@ function buildCardStyles({
       margin-bottom: 10px;
     }
     .main ha-icon {
-      --mdc-icon-size: 50px;
-      margin-right: 14px;
-      margin-inline-start: initial;
-      margin-inline-end: 14px;
-    }
-    .main img {
-      width: ${iconsSize * 2}px;
-      height: ${iconsSize * 2}px;
+      --mdc-icon-size: ${iconsSize * 2}px;
       margin-right: 14px;
       margin-inline-start: initial;
       margin-inline-end: 14px;
@@ -556,12 +549,7 @@ function buildCardStyles({
         font-size: ${Math.round(currentTempSize * 0.85)}px;
       }
       .main ha-icon {
-        --mdc-icon-size: 38px;
-        margin-inline-end: 10px;
-      }
-      .main img {
-        width: ${Math.round(iconsSize * 1.5)}px;
-        height: ${Math.round(iconsSize * 1.5)}px;
+        --mdc-icon-size: ${Math.round(iconsSize * 1.5)}px;
         margin-inline-end: 10px;
       }
       .main span:not(.wsc-entity-link) {
