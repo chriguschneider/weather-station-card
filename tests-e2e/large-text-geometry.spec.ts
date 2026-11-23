@@ -33,7 +33,7 @@ test.describe('large attribute and condition text', () => {
         fixture,
       );
 
-      const geo = await page.evaluate((w) => {
+      const measure = (w: number) => page.evaluate((w) => {
         const host = document.querySelector('weather-station-card') as HTMLElement;
         (host.parentElement as HTMLElement).style.width = `${w}px`;
         const sr = host.shadowRoot as ShadowRoot;
@@ -57,8 +57,22 @@ test.describe('large attribute and condition text', () => {
                     ? String(parseFloat(getComputedStyle(l).fontSize) * 1.2)
                     : getComputedStyle(l).lineHeight)),
               );
+              // Widest descendant poking out of .card's right edge.
+              const cardRight = card.getBoundingClientRect().right;
+              let worst = '';
+              let worstBy = 0;
+              for (const el of Array.from(card.querySelectorAll('*')) as HTMLElement[]) {
+                const by = el.getBoundingClientRect().right - cardRight;
+                if (by > worstBy) {
+                  worstBy = by;
+                  worst = `${el.tagName.toLowerCase()}.${String(el.className)}`;
+                }
+              }
               resolve({
-                overflow: card.scrollWidth > card.clientWidth,
+                scrollWidth: card.scrollWidth,
+                clientWidth: card.clientWidth,
+                worst,
+                worstBy,
                 overlaps,
                 lineCount: lines.length,
                 tallest,
@@ -66,9 +80,36 @@ test.describe('large attribute and condition text', () => {
             }),
           ),
         );
-      }, width);
+      }, w);
 
-      expect(geo.overflow).toBe(false);
+      const geo = await measure(width);
+      const info = `scrollWidth=${geo.scrollWidth} clientWidth=${geo.clientWidth} `
+        + `widest offender=${geo.worst} (+${geo.worstBy}px)`;
+
+      // Same fixture with default sizes: separates overflow the new options
+      // add from overflow that exists in the default layout anyway.
+      await unmountAll(page);
+      await mount(
+        page,
+        buildBaseConfig({
+          show_time: true,
+          show_humidity: true,
+          show_uv_index: true,
+          show_sun: true,
+        }),
+        fixture,
+      );
+      const base = await measure(width);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[${width}px] new: ${info}; default: scrollWidth=${base.scrollWidth} `
+        + `clientWidth=${base.clientWidth} widest offender=${base.worst} (+${base.worstBy}px)`,
+      );
+
+      expect(
+        (geo.scrollWidth as number) - (geo.clientWidth as number),
+        info,
+      ).toBeLessThanOrEqual((base.scrollWidth as number) - (base.clientWidth as number));
       expect(geo.overlaps).toBe(false);
       expect(geo.lineCount).toBeGreaterThan(0);
       // Icons are taller than the text, so allow a line box up to 2.5x the
