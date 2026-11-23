@@ -58,13 +58,7 @@ import { buildForecastChart, ChartBuildError, toDisplayData } from './chart/orch
 import type { DisplayUnits } from './display-units.js';
 import { DataSourceController } from './data-source-controller.js';
 import { sanitizeForecastEntries } from './chart/sanitize.js';
-import { cardStyles, DEFAULT_CONDITION_SIZE } from './chart/styles.js';
-
-// Font-size option → finite px > 0, else the fallback (invalid = unset).
-function positiveSize(value: unknown, fallback: number): number {
-  const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? n : fallback;
-}
+import { cardStyles } from './chart/styles.js';
 import { getDateTimeFormat } from './utils/intl-cache.js';
 import { isSunUp } from './moon.js';
 import { classifyNextRain, formatCheckedUntil, formatNextRain, nextRainIcon } from './next-rain.js';
@@ -105,6 +99,12 @@ import {
   resolveInitialScrollLeft,
 } from './render/scroll-position.js';
 import { calendarFor, type Calendar } from './utils/time-zone.js';
+
+// Font-size option → finite px > 0, else the fallback (invalid = unset).
+function positiveSize(value: unknown, fallback: number): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
 
 /** Card-side extension of `HassLike` with the locale fields the `Intl`
  *  formatters read. */
@@ -1488,7 +1488,7 @@ _scheduleForecastRowsReveal(): void {
         timeSize: config.time_size,
         dayDateSize: config.day_date_size,
         attributesSize: positiveSize(config.attributes_size, 0),
-        conditionSize: positiveSize(config.condition_size, DEFAULT_CONDITION_SIZE),
+        conditionSize: positiveSize(config.condition_size, DEFAULTS.condition_size),
         chartHeight: config.forecast.chart_height,
         titlePresent: !!config.title,
         labelsSmallSize,

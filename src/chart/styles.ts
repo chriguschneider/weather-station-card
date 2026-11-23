@@ -1,5 +1,7 @@
 // CSS string for the card's <style> block. Pure: config-dependent values
 // (icon / font sizes, chart height) arrive through CardStylesOpts.
+import { DEFAULTS } from '../defaults.js';
+
 export interface CardStylesOpts {
   iconsSize: number;
   currentTempSize: number;
@@ -18,18 +20,16 @@ export interface CardStylesOpts {
   extraBottomPad?: number;
 }
 
-// render() calls this on every pass while the nine inputs only change on a
+// render() calls this on every pass while the eleven inputs only change on a
 // config edit, so memoize per input combination. The cap is a leak guard
 // for long editor sessions.
-export const DEFAULT_CONDITION_SIZE = 18;
-
 const styleCache = new Map<string, string>();
 const STYLE_CACHE_MAX = 8;
 
 export function cardStyles(opts: CardStylesOpts): string {
   const key = [
     opts.iconsSize, opts.currentTempSize, opts.timeSize, opts.dayDateSize,
-    opts.attributesSize ?? 0, opts.conditionSize ?? DEFAULT_CONDITION_SIZE,
+    opts.attributesSize ?? 0, opts.conditionSize ?? DEFAULTS.condition_size,
     opts.chartHeight, opts.titlePresent, opts.labelsSmallSize, opts.labelsBaseSize,
     opts.extraBottomPad ?? 0,
   ].join('|');
@@ -49,7 +49,7 @@ function buildCardStyles({
   timeSize,
   dayDateSize,
   attributesSize = 0,
-  conditionSize = DEFAULT_CONDITION_SIZE,
+  conditionSize = DEFAULTS.condition_size,
   chartHeight,
   titlePresent,
   labelsSmallSize,
@@ -59,7 +59,7 @@ function buildCardStyles({
   // Both extras are emitted only when set, so the default sheet stays
   // identical to the pre-#557 one.
   const attrSize = attributesSize > 0 ? attributesSize : 0;
-  const condCustom = conditionSize !== DEFAULT_CONDITION_SIZE;
+  const condCustom = conditionSize !== DEFAULTS.condition_size;
   // Icon box beside the text: a 24px icon on ~14px card text.
   const attrIcon = (px: number) => Math.round(px * 1.7);
   const attrNarrow = Math.round(attrSize * 0.85);
