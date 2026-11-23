@@ -5,6 +5,10 @@ export interface CardStylesOpts {
   currentTempSize: number;
   timeSize: number;
   dayDateSize: number;
+  /** Attribute-row font size in px; 0 / unset = inherit, as before (#557). */
+  attributesSize?: number;
+  /** Condition text font size in px (#557). */
+  conditionSize?: number;
   chartHeight: number;
   titlePresent: boolean;
   labelsSmallSize: number;
@@ -17,12 +21,15 @@ export interface CardStylesOpts {
 // render() calls this on every pass while the nine inputs only change on a
 // config edit, so memoize per input combination. The cap is a leak guard
 // for long editor sessions.
+export const DEFAULT_CONDITION_SIZE = 18;
+
 const styleCache = new Map<string, string>();
 const STYLE_CACHE_MAX = 8;
 
 export function cardStyles(opts: CardStylesOpts): string {
   const key = [
     opts.iconsSize, opts.currentTempSize, opts.timeSize, opts.dayDateSize,
+    opts.attributesSize ?? 0, opts.conditionSize ?? DEFAULT_CONDITION_SIZE,
     opts.chartHeight, opts.titlePresent, opts.labelsSmallSize, opts.labelsBaseSize,
     opts.extraBottomPad ?? 0,
   ].join('|');
@@ -41,12 +48,49 @@ function buildCardStyles({
   currentTempSize,
   timeSize,
   dayDateSize,
+  attributesSize = 0,
+  conditionSize = DEFAULT_CONDITION_SIZE,
   chartHeight,
   titlePresent,
   labelsSmallSize,
   labelsBaseSize,
   extraBottomPad = 0,
 }: CardStylesOpts): string {
+  // Both extras are emitted only when set, so the default sheet stays
+  // identical to the pre-#557 one.
+  const attrSize = attributesSize > 0 ? attributesSize : 0;
+  const condCustom = conditionSize !== DEFAULT_CONDITION_SIZE;
+  // Icon box beside the text: a 24px icon on ~14px card text.
+  const attrIcon = (px: number) => Math.round(px * 1.7);
+  const attrNarrow = Math.round(attrSize * 0.85);
+  const attrBase = attrSize ? `
+    .attributes {
+      flex-wrap: wrap;
+      gap: 4px 12px;
+      font-size: ${attrSize}px;
+    }
+    .attributes .wsc-icon,
+    .attributes ha-icon {
+      --mdc-icon-size: ${attrIcon(attrSize)}px;
+    }
+    /* A line (icon + value + unit) never breaks inside; whole columns wrap. */
+    .attributes > div > div {
+      white-space: nowrap;
+    }` : '';
+  // The condition column reserves room for the absolute clock (about five
+  // characters wide) so a long, wrapped state never runs under it.
+  const condBase = condCustom ? `
+    .main .current-condition span:not(.wsc-entity-link) {
+      font-size: ${conditionSize}px;
+    }
+    .main > div:has(> .current-time) {
+      flex: 1 1 0;
+      min-width: 0;
+      padding-inline-end: ${Math.round(timeSize * 5)}px;
+    }
+    .main .current-condition {
+      overflow-wrap: break-word;
+    }` : '';
   return `
     ha-icon {
       /* Not --paper-item-icon-color / --state-icon-color: they resolve to
@@ -96,7 +140,7 @@ function buildCardStyles({
       margin-bottom: 6px;
       font-weight: 300;
       direction: ltr;
-    }
+    }${attrBase}${condBase}
     /* Availability hint (#213): one slim neutral row; the overdue variant
      * tints the icon with the warning colour. .wsc-stale dims the live
      * panel while values come from the last-known-good fallback. */
@@ -554,7 +598,13 @@ function buildCardStyles({
       }
       .main span:not(.wsc-entity-link) {
         font-size: 15px;
+      }${condCustom ? `
+      .main .current-condition span:not(.wsc-entity-link) {
+        font-size: ${Math.round(conditionSize * 0.85)}px;
       }
+      .main > div:has(> .current-time) {
+        padding-inline-end: ${Math.round(timeSize * 0.8 * 5)}px;
+      }` : ''}
       /* Only shrink the clock so it clears the condition text; the base
        * right:0 already lines up with the content edge. */
       .current-time {
@@ -567,8 +617,12 @@ function buildCardStyles({
       .attributes {
         flex-wrap: wrap;
         gap: 4px 12px;
-        font-size: 13px;
-      }
+        font-size: ${attrSize ? attrNarrow : 13}px;
+      }${attrSize ? `
+      .attributes .wsc-icon,
+      .attributes ha-icon {
+        --mdc-icon-size: ${attrIcon(attrNarrow)}px;
+      }` : ''}
       /* The zero-degree trend row keeps the time of its target and
        * drops the weekday (#333). */
       .wsc-zd-day {
@@ -591,7 +645,10 @@ function buildCardStyles({
         margin-top: 4px;
         text-align: left;
       }
-      .attributes {
+      ${condCustom ? `.main > div:has(> .current-time) {
+        padding-inline-end: 0;
+      }
+      ` : ''}.attributes {
         /* Start-aligned so wrapped groups do not spread across the row. */
         justify-content: flex-start;
       }

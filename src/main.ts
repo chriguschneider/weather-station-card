@@ -58,7 +58,13 @@ import { buildForecastChart, ChartBuildError, toDisplayData } from './chart/orch
 import type { DisplayUnits } from './display-units.js';
 import { DataSourceController } from './data-source-controller.js';
 import { sanitizeForecastEntries } from './chart/sanitize.js';
-import { cardStyles } from './chart/styles.js';
+import { cardStyles, DEFAULT_CONDITION_SIZE } from './chart/styles.js';
+
+// Font-size option → finite px > 0, else the fallback (invalid = unset).
+function positiveSize(value: unknown, fallback: number): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
 import { getDateTimeFormat } from './utils/intl-cache.js';
 import { isSunUp } from './moon.js';
 import { classifyNextRain, formatCheckedUntil, formatNextRain, nextRainIcon } from './next-rain.js';
@@ -1481,6 +1487,8 @@ _scheduleForecastRowsReveal(): void {
         currentTempSize: config.current_temp_size,
         timeSize: config.time_size,
         dayDateSize: config.day_date_size,
+        attributesSize: positiveSize(config.attributes_size, 0),
+        conditionSize: positiveSize(config.condition_size, DEFAULT_CONDITION_SIZE),
         chartHeight: config.forecast.chart_height,
         titlePresent: !!config.title,
         labelsSmallSize,

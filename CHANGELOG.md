@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- New `attributes_size` and `condition_size` options make the attribute row and the weather condition text larger; on narrow cards the attribute row moves onto two lines instead of squeezing.
+
 ### Fixed
 
 - `icons_size` now changes the size of the forecast and main weather icons again.

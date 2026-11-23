@@ -1,7 +1,8 @@
 // Editor partial "Live panel" (ADR-0023): the now-panel above the chart.
 // Main-panel and attribute toggles are pill rows under their on/off gates;
 // show_time / show_time_seconds are one clock dropdown.
-// Font-size knobs (current_temp_size, icons_size, time_size, day_date_size)
+// Font-size knobs (current_temp_size, icons_size, time_size, day_date_size,
+// attributes_size, condition_size)
 // stay in DEFAULTS + YAML only.
 
 import { html, type TemplateResult } from 'lit';
