@@ -21,6 +21,7 @@ import {
 // (`!== false` → true, `=== true` → false).
 export const MAIN_ELEMENT_PATHS: ReadonlyArray<TogglePath> = [
   { path: 'show_temperature',       def: true },
+  { path: 'show_apparent_temperature', def: false },
   { path: 'show_current_condition', def: false },
   { path: 'show_day',               def: false },
   { path: 'show_date',              def: false },

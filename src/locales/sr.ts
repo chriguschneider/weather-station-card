@@ -120,6 +120,7 @@ const sr: LocaleEntry = {
     'wind_direction': 'Смер ветра',
     'uv_index': 'УВ индекс',
     'dew_point': 'Тачка росе',
+    'apparent_temperature': 'Субјективни осећај',
     'sunshine_duration': 'Трајање сунчевог сјаја',
     'zero_degree_level': 'Висина границе нула степени',
     'zero_degree_level_48h': 'Висина границе нула степени, најнижа за 48 ч',
@@ -196,6 +197,7 @@ const sr: LocaleEntry = {
     // Toggles
     'show_main': 'Прикажи главни панел "сада"',
     'show_temperature': 'Прикажи тренутну температуру',
+    'show_apparent_temperature': 'Субјективни осећај',
     'show_current_condition': 'Прикажи тренутне временске прилике',
     'show_attributes': 'Прикажи ред sa атрибутима',
     'show_sources': 'Дугме за информације: извори података',

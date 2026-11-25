@@ -49,6 +49,7 @@ export interface SensorReadings {
   wind_speed: Reading;
   gust_speed: Reading;
   dew_point: Reading;
+  apparent_temperature: Reading;
   wind_direction: Reading<number>;
   /** In lux; irradiance sensors are scaled at extraction. */
   illuminance: Reading;
@@ -112,6 +113,7 @@ export const unitOf = (s: StateLike | undefined): string | undefined => {
 const QUANTITY_OF: Readonly<Partial<Record<string, Quantity>>> = {
   temperature: 'temperature',
   dew_point: 'temperature',
+  apparent_temperature: 'temperature',
   pressure: 'pressure',
   wind_speed: 'speed',
   gust_speed: 'speed',
@@ -201,6 +203,11 @@ export function extractSensorReadings(input: {
     gust_speed: read('gust_speed', 'wind_gust_speed', sided('gust_speed', assumed.gust, assumed.wxWind)),
     // An entity dew point is in the entity's temperature unit.
     dew_point: read('dew_point', 'dew_point', sided('dew_point', assumed.dewPoint, assumed.wxTemperature)),
+    // Shown as provided, never computed.
+    apparent_temperature: read(
+      'apparent_temperature', 'apparent_temperature',
+      sided('apparent_temperature', assumed.dewPoint, assumed.wxTemperature),
+    ),
     wind_direction: readWindDirection(idOf(sensors.wind_direction), stateOf, weatherEntity, wxAttrs.wind_bearing),
     illuminance,
     precipitation: read('precipitation', null, () => sensorUnit('precipitation') ?? assumed.precipitation),
