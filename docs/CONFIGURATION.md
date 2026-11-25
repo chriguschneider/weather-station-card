@@ -159,7 +159,7 @@ classifier, and (where relevant) the attribute readouts. Only
 | `sensors.pressure` | Pressure attribute |
 | `sensors.humidity` | Humidity attribute, fog detection |
 | `sensors.dew_point` | Fog detection (combined with humidity) |
-| `sensors.apparent_temperature` | Optional "feels like" temperature for the main panel (`show_apparent_temperature`), e.g. an Ecowitt `sensor.<station>_feels_like_temperature`. Without it the weather entity's `apparent_temperature` attribute is shown where the provider sets one. The card only displays the value, it never computes one |
+| `sensors.apparent_temperature` | Optional "feels like" temperature for the main panel (`show_apparent_temperature`), e.g. an Ecowitt `sensor.<station>_feels_like_temperature`. Without it the weather entity's `apparent_temperature` attribute is shown where the provider sets one. Without either, the card works it out from the station's own temperature, humidity and wind sensors (Australian BoM apparent temperature, no radiation term), shown as `computed` in the sources popup. Order: sensor, computed, weather attribute |
 | `sensors.precipitation` | Precipitation bars, rainy/pouring/snowy classification. A cumulative counter is what the bars need; the live rate is derived from it |
 | `sensors.precipitation_rate` | Optional dedicated **rate** entity (`mm/h`, `in/h`) for the live cell and the live condition. Use it when your station publishes rate and total as separate entities — the counter keeps feeding the bars, this replaces the card-side rate derivation and lets a counter-based setup classify rain. Never queried from the recorder. See [SENSORS.md → Station exposes rate and total separately](SENSORS.md#station-exposes-rate-and-total-separately). *(since v2.4)* |
 | `sensors.wind_speed` | Mean-wind classification, attribute readout |
@@ -209,7 +209,7 @@ matching attribute on `weather_entity`)
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `show_apparent_temperature` | bool | `false` | "Feels like" line under the current temperature (opt-in, under `show_main`). Shows `sensors.apparent_temperature`, else the weather entity's `apparent_temperature` attribute; no line when neither has a value. |
+| `show_apparent_temperature` | bool | `false` | "Feels like" line under the current temperature (opt-in, under `show_main`). Shows `sensors.apparent_temperature`, else a value computed from the station's temperature, humidity and wind sensors, else the weather entity's `apparent_temperature` attribute; no line when neither has a value. |
 | `show_attributes` | bool | `false` | Show humidity / pressure / dew point / sun / wind row. |
 | `show_humidity` | bool | `false` | Humidity, rendered on the dew-point line after the dew point (opt-in). When `show_dew_point` is off or no dew-point value is wired, humidity takes the line alone. *(changed in v2.3: was its own row)* |
 | `show_pressure` | bool | opt-out (`true` when value present) | Pressure attribute. |

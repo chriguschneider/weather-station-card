@@ -77,6 +77,37 @@ describe('feels-like line', () => {
     expect(line(card).textContent).not.toContain('-5');
   });
 
+  it('computes from station temperature, humidity and wind, linked to the temperature sensor', async () => {
+    const states = {
+      ...baseStates({ apparent_temperature: 9 }),
+      'sensor.temp': sensor('0', '°C'),
+      'sensor.hum': sensor('80', '%'),
+      'sensor.wind': sensor('5', 'm/s'),
+    };
+    const card = await mountCard(states, {
+      show_apparent_temperature: true,
+      sensors: { temperature: 'sensor.temp', humidity: 'sensor.hum', wind_speed: 'sensor.wind' },
+    });
+    expect(line(card).textContent).toContain('-5.9');
+    let opened;
+    card.addEventListener('hass-more-info', (e) => { opened = e.detail.entityId; });
+    line(card).querySelector('[role="button"]').click();
+    expect(opened).toBe('sensor.temp');
+  });
+
+  it('does not compute when an input is unavailable; the weather attribute shows', async () => {
+    const states = {
+      ...baseStates({ apparent_temperature: 9 }),
+      'sensor.hum': sensor('unavailable', '%'),
+      'sensor.wind': sensor('5', 'm/s'),
+    };
+    const card = await mountCard(states, {
+      show_apparent_temperature: true,
+      sensors: { temperature: 'sensor.temp', humidity: 'sensor.hum', wind_speed: 'sensor.wind' },
+    });
+    expect(line(card).textContent.replace(/\s+/g, ' ').trim()).toBe('Feels like 9 °C');
+  });
+
   it('renders no line without a sensor and without an attribute', async () => {
     const card = await mountCard(baseStates(), { show_apparent_temperature: true });
     expect(line(card)).toBeNull();

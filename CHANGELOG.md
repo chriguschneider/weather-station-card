@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Optional 'Feels like' line under the current temperature. Turn on *Feels like temperature* in the main-panel settings (`show_apparent_temperature: true`); it shows your station's feels-like sensor (`sensors.apparent_temperature`); without one, the card works it out from your station's temperature, humidity and wind, and otherwise uses the value your weather entity provides. Off by default, existing dashboards do not change.
+
 ### Fixed
 
 - `icons_size` now changes the size of the forecast and main weather icons again.
