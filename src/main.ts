@@ -1592,11 +1592,12 @@ renderMain({ config, weather } = this) {
 
   const shownApparent = config.show_apparent_temperature === true
     ? shownValue(live, 'apparent_temperature') : null;
+  const apparentSource = this._readings?.apparent_temperature.source;
   const feelsLikeTpl = shownApparent ? html`
     <div class="feels-like">
       ${this._entityLink(
-        live.readings.apparent_temperature.source?.kind === 'computed'
-          ? live.readings.apparent_temperature.source.entityId
+        apparentSource?.kind === 'computed'
+          ? apparentSource.entityId
           : this._attrEntity('apparent_temperature'),
         html`<span>${this.ll('feelsLike')} ${shownText(shownApparent)}</span>`,
       )}
