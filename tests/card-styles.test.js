@@ -107,3 +107,36 @@ describe('cardStyles current temperature size', () => {
     expect(blocks.some((b) => b.includes('font-size: 15px'))).toBe(true);
   });
 });
+
+describe('cardStyles attributes_size / condition_size (#557)', () => {
+  const NARROW = (css) => css.slice(css.indexOf('max-width: 360px'));
+  const COND = '.main .current-condition span:not(.wsc-entity-link)';
+  const size = (css, sel) => {
+    const b = rulesFor(css, sel).find((x) => x.includes('font-size'));
+    return b && b.match(/font-size:\s*([^;]+);/)[1].trim();
+  };
+
+  it('defaults emit no extra attribute or condition rules', () => {
+    const css = cardStyles(opts);
+    expect(rulesFor(css, '.attributes')[0]).not.toContain('font-size');
+    expect(rulesFor(css, COND)).toEqual([]);
+    expect(rulesFor(css, '.attributes > div > div')).toEqual([]);
+    expect(size(NARROW(css), '.attributes')).toBe('13px');
+    expect(cardStyles({ ...opts, attributesSize: 0, conditionSize: 18 })).toBe(css);
+  });
+
+  it('sets the sizes in the base rules and scales them in the 360px rule', () => {
+    const css = cardStyles({ ...opts, attributesSize: 20, conditionSize: 28 });
+    expect(rulesFor(css, '.attributes').some((b) => b.includes('font-size: 20px'))).toBe(true);
+    expect(size(css, COND)).toBe('28px');
+    expect(size(NARROW(css), '.attributes')).toBe('17px');
+    expect(size(NARROW(css), COND)).toBe('24px');
+    expect(rulesFor(css, '.attributes > div > div')[0]).toContain('white-space: nowrap');
+  });
+
+  it('leaves the temperature unit size alone', () => {
+    const css = cardStyles({ ...opts, attributesSize: 20, conditionSize: 28 });
+    expect(size(css, '.main span:not(.wsc-entity-link)')).toBe('18px');
+    expect(size(NARROW(css), '.main span:not(.wsc-entity-link)')).toBe('15px');
+  });
+});
