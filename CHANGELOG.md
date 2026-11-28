@@ -8,7 +8,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- New `attributes_size` and `condition_size` options make the attribute row and the weather condition text larger; on narrow cards the attribute row moves onto two lines instead of squeezing.
+- New `attributes_size` and `condition_size` options (YAML only) make the attribute row and the weather condition text larger; on narrow cards the attribute row moves onto two lines instead of squeezing.
 - Optional 'Feels like' line under the current temperature. Turn on *Feels like temperature* in the main-panel settings (`show_apparent_temperature: true`); it shows your station's feels-like sensor (`sensors.apparent_temperature`); without one, the card works it out from your station's temperature, humidity and wind, and otherwise uses the value your weather entity provides. Off by default, existing dashboards do not change.
 
 ### Fixed

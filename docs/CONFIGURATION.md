@@ -159,7 +159,7 @@ classifier, and (where relevant) the attribute readouts. Only
 | `sensors.pressure` | Pressure attribute |
 | `sensors.humidity` | Humidity attribute, fog detection |
 | `sensors.dew_point` | Fog detection (combined with humidity) |
-| `sensors.apparent_temperature` | Optional "feels like" temperature for the main panel (`show_apparent_temperature`), e.g. an Ecowitt `sensor.<station>_feels_like_temperature`. Without it the weather entity's `apparent_temperature` attribute is shown where the provider sets one. Without either, the card works it out from the station's own temperature, humidity and wind sensors (Australian BoM apparent temperature, no radiation term), shown as `computed` in the sources popup. Order: sensor, computed, weather attribute |
+| `sensors.apparent_temperature` | Optional "feels like" temperature for the main panel (`show_apparent_temperature`), e.g. an Ecowitt `sensor.<station>_feels_like_temperature`. Without it the weather entity's `apparent_temperature` attribute is shown where the provider sets one. Without either, the card works it out from the station's own temperature, humidity and wind sensors (Australian BoM apparent temperature, no radiation term); this needs all three live. A configured sensor that is unavailable keeps showing its last value rather than falling back to the computed one. Order: sensor, computed, weather attribute |
 | `sensors.precipitation` | Precipitation bars, rainy/pouring/snowy classification. A cumulative counter is what the bars need; the live rate is derived from it |
 | `sensors.precipitation_rate` | Optional dedicated **rate** entity (`mm/h`, `in/h`) for the live cell and the live condition. Use it when your station publishes rate and total as separate entities — the counter keeps feeding the bars, this replaces the card-side rate derivation and lets a counter-based setup classify rain. Never queried from the recorder. See [SENSORS.md → Station exposes rate and total separately](SENSORS.md#station-exposes-rate-and-total-separately). *(since v2.4)* |
 | `sensors.wind_speed` | Mean-wind classification, attribute readout |
@@ -389,12 +389,12 @@ plain icon and the trend row is never coloured.
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `icons_size` | number (px) | `25` | Forecast-row icon size. |
+| `icons_size` | number (px) | `25` | Icon size in px. Sets the forecast-row icons; the main weather icon is twice this value, or 1.5× on cards ≤ 360 px. |
 | `current_temp_size` | number (px) | `28` | Main-panel temperature font size. |
 | `time_size` | number (px) | `26` | Clock font size. |
 | `day_date_size` | number (px) | `15` | Day / date label font size. |
-| `attributes_size` | number (px) | `0` (unset) | Attribute-row font size (pressure, humidity, wind, …); its icons scale with it. `0` keeps the inherited size. When set, whole columns wrap onto a second line once they no longer fit, at any card width, so a large value puts the row on two lines in a narrow card. Cards ≤ 360 px use 85 % of it. |
-| `condition_size` | number (px) | `18` | Font size of the condition text under the temperature. Long states wrap between words beside the clock instead of running under it. Cards ≤ 360 px use 85 % of it. |
+| `attributes_size` | number (px) | `0` (unset) | Attribute-row font size (pressure, humidity, wind, …); its icons scale with it. `0` keeps the inherited size. When set, whole columns wrap onto a second line once they no longer fit, at any card width, so a large value puts the row on two lines in a narrow card. Cards ≤ 360 px use 85 % of it. YAML only (not in the visual editor). |
+| `condition_size` | number (px) | `18` | Font size of the condition text under the temperature. Long states wrap between words beside the clock instead of running under it. Cards ≤ 360 px use 85 % of it. YAML only (not in the visual editor). |
 | `forecast.labels_font_size` | number (px) | `11` | Chart axis tick label size. The wind speed number follows this size; the wind unit and the precip unit ("mm" / "km/h") render at half this size. |
 | `forecast.chart_height` | number (px) | `180` | Chart canvas height. |
 | `forecast.precip_bar_size` | number (%) | `100` | Width of precipitation bars (0–100 %). |
