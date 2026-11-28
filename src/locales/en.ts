@@ -121,6 +121,7 @@ const en: LocaleEntry = {
     'wind_direction': 'Wind direction',
     'uv_index': 'UV index',
     'dew_point': 'Dew point',
+    'apparent_temperature': 'Feels-like temperature',
     'sunshine_duration': 'Sunshine duration',
     'zero_degree_level': 'Zero-degree level',
     'zero_degree_level_48h': 'Zero-degree level, lowest in 48 h',
@@ -201,6 +202,7 @@ const en: LocaleEntry = {
     // Toggles
     'show_main': 'Show "now" main panel',
     'show_temperature': 'Show current temperature',
+    'show_apparent_temperature': 'Feels like temperature',
     'show_current_condition': 'Show current condition',
     'show_attributes': 'Show attributes row',
     'show_sources': 'Info button: data sources',

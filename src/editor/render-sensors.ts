@@ -47,7 +47,7 @@ function buildSensorFields(hass: HassWithStates | null): Array<{ key: string; ca
     // sunshine_duration has no matcher: its picker lists every sensor.
     'uv_index', 'sunshine_duration',
     'zero_degree_level', 'zero_degree_level_48h',
-    'next_rain',
+    'apparent_temperature', 'next_rain',
   ].map((key) => ({ key, candidates: candidates(key) }));
 }
 

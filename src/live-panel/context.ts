@@ -62,7 +62,7 @@ export interface LiveValues {
 }
 
 export const LIVE_READING_KEYS = [
-  'temperature', 'dew_point', 'pressure', 'wind_speed', 'gust_speed', 'zero_degree_level', 'zero_degree_level_48h',
+  'temperature', 'dew_point', 'apparent_temperature', 'pressure', 'wind_speed', 'gust_speed', 'zero_degree_level', 'zero_degree_level_48h',
 ] as const;
 export type LiveReadingKey = typeof LIVE_READING_KEYS[number];
 
@@ -122,11 +122,12 @@ export function unitLabel(ctx: Pick<LivePanelCtx, 'units'>, unit: string | undef
   return ctx.units[key] ?? key;
 }
 
-export type ShownKey = 'temperature' | 'dew_point' | 'pressure' | 'wind_speed' | 'gust_speed';
+export type ShownKey = 'temperature' | 'dew_point' | 'apparent_temperature' | 'pressure' | 'wind_speed' | 'gust_speed';
 
 const SHOWN_QUANTITY: Readonly<Record<ShownKey, DisplayQuantity>> = {
   temperature: 'temperature',
   dew_point: 'temperature',
+  apparent_temperature: 'temperature',
   pressure: 'pressure',
   wind_speed: 'speed',
   gust_speed: 'speed',

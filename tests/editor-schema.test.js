@@ -218,7 +218,8 @@ describe('renderSensorsSection (schema-driven)', () => {
       'wind_speed', 'gust_speed',
       'wind_direction', 'illuminance',
       'uv_index', 'sunshine_duration',
-      'zero_degree_level', 'zero_degree_level_48h', 'next_rain',
+      'zero_degree_level', 'zero_degree_level_48h',
+      'apparent_temperature', 'next_rain',
     ]);
   });
 
@@ -481,7 +482,7 @@ describe('renderLivePanelSection (schema-driven)', () => {
       makeCtx({ cfg: { show_main: true } }),
     );
     expect(pillValues(container, 'main_elements')).toEqual([
-      'show_temperature', 'show_current_condition', 'show_day', 'show_date',
+      'show_temperature', 'show_apparent_temperature', 'show_current_condition', 'show_day', 'show_date',
     ]);
     const clock = findField(container, 'clock_mode');
     expect(selectOptionValues(clock.field)).toEqual([

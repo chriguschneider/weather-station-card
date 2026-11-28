@@ -54,6 +54,7 @@ export const DEFAULTS = {
   show_forecast: true,
   show_main: false,
   show_temperature: true,
+  show_apparent_temperature: false,
   show_current_condition: false,
   show_attributes: false,
   show_time: false,

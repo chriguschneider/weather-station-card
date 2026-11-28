@@ -49,6 +49,7 @@ export const SECTION_KEYS: Record<SectionKey, ReadonlyArray<string>> = {
   live_panel: [
     'show_main',
     'show_temperature',
+    'show_apparent_temperature',
     'show_current_condition',
     'show_time',
     'show_time_seconds',

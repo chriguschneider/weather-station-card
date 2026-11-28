@@ -12,6 +12,7 @@ import { resolveLiveSource, type LiveSource } from './live-source.js';
 import { resolveDisplayUnits, type DisplayUnits } from './display-units.js';
 import { CANONICAL_UNIT, parseUnit, toCanonical, type Quantity } from './utils/units.js';
 import { parseNumericSafe } from './utils/numeric.js';
+import { apparentTemperature } from './utils/apparent-temperature.js';
 
 export interface StateLike {
   state: string;
@@ -37,7 +38,7 @@ export interface Reading<T = string> {
 /** Keys whose provenance the info popup lists (ADR-0031). */
 export const LIVE_SOURCE_KEYS = [
   'temperature', 'humidity', 'pressure', 'uv_index', 'wind_speed',
-  'dew_point', 'gust_speed', 'wind_direction', 'illuminance', 'precipitation',
+  'dew_point', 'apparent_temperature', 'gust_speed', 'wind_direction', 'illuminance', 'precipitation',
 ] as const;
 export type LiveSourceKey = typeof LIVE_SOURCE_KEYS[number];
 
@@ -49,6 +50,7 @@ export interface SensorReadings {
   wind_speed: Reading;
   gust_speed: Reading;
   dew_point: Reading;
+  apparent_temperature: Reading;
   wind_direction: Reading<number>;
   /** In lux; irradiance sensors are scaled at extraction. */
   illuminance: Reading;
@@ -112,6 +114,7 @@ export const unitOf = (s: StateLike | undefined): string | undefined => {
 const QUANTITY_OF: Readonly<Partial<Record<string, Quantity>>> = {
   temperature: 'temperature',
   dew_point: 'temperature',
+  apparent_temperature: 'temperature',
   pressure: 'pressure',
   wind_speed: 'speed',
   gust_speed: 'speed',
@@ -191,16 +194,29 @@ export function extractSensorReadings(input: {
     : read('illuminance', null, () => unitOf(illState));
   const zeroDegree = (key: string): Reading =>
     read(key, null, () => (stateOf(idOf(sensors[key])) ? sensorUnit(key) ?? 'm' : undefined));
+  const temperature = read('temperature', 'temperature', sided('temperature', assumed.temperature, assumed.wxTemperature));
+  // HA weather entities report humidity in % (developers.home-assistant.io/docs/core/entity/weather/).
+  const humidity = read('humidity', 'humidity', (wx) => (wx ? '%' : sensorUnit('humidity')));
+  const windSpeed = read('wind_speed', 'wind_speed', sided('wind_speed', assumed.wind, assumed.wxWind));
+  // Order: the feels-like sensor, then computed from the station's own
+  // temperature, humidity and wind, then the weather attribute.
+  let apparent = read(
+    'apparent_temperature', 'apparent_temperature',
+    sided('apparent_temperature', assumed.dewPoint, assumed.wxTemperature),
+  );
+  if (apparent.source?.kind !== 'station' && apparent.source?.kind !== 'stale') {
+    apparent = computeApparent(temperature, humidity, windSpeed) ?? apparent;
+  }
   return {
-    temperature: read('temperature', 'temperature', sided('temperature', assumed.temperature, assumed.wxTemperature)),
-    // HA weather entities report humidity in % (developers.home-assistant.io/docs/core/entity/weather/).
-    humidity: read('humidity', 'humidity', (wx) => (wx ? '%' : sensorUnit('humidity'))),
+    temperature,
+    humidity,
     pressure: read('pressure', 'pressure', sided('pressure', assumed.pressure, assumed.wxPressure)),
     uv_index: read('uv_index', 'uv_index', (wx) => (wx ? undefined : sensorUnit('uv_index'))),
-    wind_speed: read('wind_speed', 'wind_speed', sided('wind_speed', assumed.wind, assumed.wxWind)),
+    wind_speed: windSpeed,
     gust_speed: read('gust_speed', 'wind_gust_speed', sided('gust_speed', assumed.gust, assumed.wxWind)),
     // An entity dew point is in the entity's temperature unit.
     dew_point: read('dew_point', 'dew_point', sided('dew_point', assumed.dewPoint, assumed.wxTemperature)),
+    apparent_temperature: apparent,
     wind_direction: readWindDirection(idOf(sensors.wind_direction), stateOf, weatherEntity, wxAttrs.wind_bearing),
     illuminance,
     precipitation: read('precipitation', null, () => sensorUnit('precipitation') ?? assumed.precipitation),
@@ -219,6 +235,22 @@ export function extractSensorReadings(input: {
         wxUnit('precipitation_unit'), unitSystem.accumulated_precipitation,
       ],
     }),
+  };
+}
+
+// Computed only from live station readings: a stale or weather-entity
+// input would present an old or a provider's number as the station's.
+function computeApparent(temperature: Reading, humidity: Reading, wind: Reading): Reading | undefined {
+  if (temperature.source?.kind !== 'station' || humidity.source?.kind !== 'station'
+    || wind.source?.kind !== 'station') return undefined;
+  const rh = parseNumericSafe(humidity.value);
+  if (temperature.canonical === null || wind.canonical === null || rh === null) return undefined;
+  const at = apparentTemperature(temperature.canonical, rh, wind.canonical);
+  if (at === null) return undefined;
+  const rounded = Math.round(at * 100) / 100;
+  return {
+    value: String(rounded), unit: CANONICAL_UNIT.temperature, canonical: rounded,
+    source: { kind: 'computed', entityId: temperature.source.entityId },
   };
 }
 

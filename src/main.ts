@@ -64,7 +64,7 @@ import { isSunUp } from './moon.js';
 import { classifyNextRain, formatCheckedUntil, formatNextRain, nextRainIcon } from './next-rain.js';
 import { parseZeroDegreeCurve, ZeroDegreePopup, type ZeroDegreePoint } from './zero-degree-popup.js';
 import {
-  attrEntity, LIVE_READING_KEYS, shownValue, unitLabel,
+  attrEntity, LIVE_READING_KEYS, shownValue, shownText, unitLabel,
   type LiveHass, type LivePanelCtx, type LiveReading, type LiveReadingKey,
 } from './live-panel/context.js';
 import { renderAttributes as renderLiveAttributes } from './live-panel/attributes.js';
@@ -1598,6 +1598,20 @@ renderMain({ config, weather } = this) {
     ? html`${shownTemperature.value}<span>${shownTemperature.unit}</span>`
     : html`—<span>${unitLabel(live, live.displayUnits.temperature)}</span>`;
 
+  const shownApparent = config.show_apparent_temperature === true
+    ? shownValue(live, 'apparent_temperature') : null;
+  const apparentSource = this._readings?.apparent_temperature.source;
+  const feelsLikeTpl = shownApparent ? html`
+    <div class="feels-like">
+      ${this._entityLink(
+        apparentSource?.kind === 'computed'
+          ? apparentSource.entityId
+          : this._attrEntity('apparent_temperature'),
+        html`<span>${this.ll('feelsLike')} ${shownText(shownApparent)}</span>`,
+      )}
+    </div>
+  ` : '';
+
   // The condition glyph opens the weather entity's more-info (it carries the
   // forecast panel); station-only setups use the temperature sensor.
   const iconHtml = this._entityLink(
@@ -1617,6 +1631,7 @@ renderMain({ config, weather } = this) {
       <div>
         <div>
           ${showTemperature ? this._entityLink(this._attrEntity('temperature'), temperatureTpl) : ''}
+          ${feelsLikeTpl}
           ${showCurrentCondition ? html`
             <div class="current-condition">
               ${this._entityLink(

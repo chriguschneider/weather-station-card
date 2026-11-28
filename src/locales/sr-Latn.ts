@@ -120,6 +120,7 @@ const sr_Latn: LocaleEntry = {
     'wind_direction': 'Smer vetra',
     'uv_index': 'UV indeks',
     'dew_point': 'Tačka rose',
+    'apparent_temperature': 'Subjektivni osećaj',
     'sunshine_duration': 'Trajanje sunčevog sjaja',
     'zero_degree_level': 'Visina granice nula stepeni',
     'zero_degree_level_48h': 'Visina granice nula stepeni, najniža za 48 č',
@@ -196,6 +197,7 @@ const sr_Latn: LocaleEntry = {
     // Toggles
     'show_main': 'Prikaži glavni panel "sada"',
     'show_temperature': 'Prikaži trenutnu temperaturu',
+    'show_apparent_temperature': 'Subjektivni osećaj',
     'show_current_condition': 'Prikaži trenutne vremenske prilike',
     'show_attributes': 'Prikaži red sa atributima',
     'show_sources': 'Dugme za informacije: izvori podataka',
