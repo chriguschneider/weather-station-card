@@ -56,8 +56,8 @@ function buildCardStyles({
   labelsBaseSize,
   extraBottomPad = 0,
 }: CardStylesOpts): string {
-  // Both extras are emitted only when set: the default sheet has no
-  // attribute or condition rules.
+  // Both extras are emitted only when set: the default sheet carries no
+  // attribute- or condition-size rules beyond the fixed narrow-card ones.
   const attrSize = attributesSize > 0 ? attributesSize : 0;
   const condCustom = conditionSize !== DEFAULTS.condition_size;
   // Icon box beside the text: a 24px icon on ~14px card text.
