@@ -7,7 +7,7 @@ export interface CardStylesOpts {
   currentTempSize: number;
   timeSize: number;
   dayDateSize: number;
-  /** Attribute-row font size in px; 0 / unset = inherit, as before (#557). */
+  /** Attribute-row font size in px; 0 / unset emits no declaration, so the row keeps its inherited size. */
   attributesSize?: number;
   /** Condition text font size in px (#557). */
   conditionSize?: number;
@@ -56,8 +56,8 @@ function buildCardStyles({
   labelsBaseSize,
   extraBottomPad = 0,
 }: CardStylesOpts): string {
-  // Both extras are emitted only when set, so the default sheet stays
-  // identical to the pre-#557 one.
+  // Both extras are emitted only when set: the default sheet has no
+  // attribute or condition rules.
   const attrSize = attributesSize > 0 ? attributesSize : 0;
   const condCustom = conditionSize !== DEFAULTS.condition_size;
   // Icon box beside the text: a 24px icon on ~14px card text.

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 // show_apparent_temperature (#562): the optional "Feels like" line under
-// the current temperature. Sensor first, weather attribute second, never
-// computed; display units apply (ADR-0035).
+// the current temperature. Order: sensor, then computed from live station
+// temperature, humidity and wind, then the weather attribute. Display units
+// apply (ADR-0035).
 
 import { describe, it, expect, afterEach } from 'vitest';
 import '../src/main.js';
