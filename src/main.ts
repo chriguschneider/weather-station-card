@@ -100,6 +100,12 @@ import {
 } from './render/scroll-position.js';
 import { calendarFor, type Calendar } from './utils/time-zone.js';
 
+// Font-size option → finite px > 0, else the fallback (invalid = unset).
+function positiveSize(value: unknown, fallback: number): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
 /** Card-side extension of `HassLike` with the locale fields the `Intl`
  *  formatters read. */
 interface HassMain extends HassLike {
@@ -1481,6 +1487,8 @@ _scheduleForecastRowsReveal(): void {
         currentTempSize: config.current_temp_size,
         timeSize: config.time_size,
         dayDateSize: config.day_date_size,
+        attributesSize: positiveSize(config.attributes_size, 0),
+        conditionSize: positiveSize(config.condition_size, DEFAULTS.condition_size),
         chartHeight: config.forecast.chart_height,
         titlePresent: !!config.title,
         labelsSmallSize,

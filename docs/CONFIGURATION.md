@@ -393,6 +393,8 @@ plain icon and the trend row is never coloured.
 | `current_temp_size` | number (px) | `28` | Main-panel temperature font size. |
 | `time_size` | number (px) | `26` | Clock font size. |
 | `day_date_size` | number (px) | `15` | Day / date label font size. |
+| `attributes_size` | number (px) | `0` (unset) | Attribute-row font size (pressure, humidity, wind, …); its icons scale with it. `0` keeps the inherited size. When set, whole columns wrap onto a second line once they no longer fit, at any card width, so a large value puts the row on two lines in a narrow card. Cards ≤ 360 px use 85 % of it. |
+| `condition_size` | number (px) | `18` | Font size of the condition text under the temperature. Long states wrap between words beside the clock instead of running under it. Cards ≤ 360 px use 85 % of it. |
 | `forecast.labels_font_size` | number (px) | `11` | Chart axis tick label size. The wind speed number follows this size; the wind unit and the precip unit ("mm" / "km/h") render at half this size. |
 | `forecast.chart_height` | number (px) | `180` | Chart canvas height. |
 | `forecast.precip_bar_size` | number (%) | `100` | Width of precipitation bars (0–100 %). |

@@ -102,6 +102,9 @@ export const DEFAULTS = {
   current_temp_size: 28,
   time_size: 26,
   day_date_size: 15,
+  // 0 = inherit the card text size (no declaration emitted).
+  attributes_size: 0,
+  condition_size: 18,
 
   days: 7,
 
